@@ -46,7 +46,7 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
 function cleanReply(value: string, preserveLines: boolean): string {
   const withoutFences = value
     .replace(/```/g, '')
-    .replace(/\u2014/g, ' - ')
+    .replace(/[\u2013\u2014\u2015]/g, ' - ')
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
 
   if (!preserveLines) return withoutFences.replace(/\s+/g, ' ').trim();
@@ -94,7 +94,7 @@ function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
     'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
     'Do not become theatrical, submissive, corporate, preachy, or excessively cute.',
     'Use the requested language. In German use natural du-form.',
-    'Keep it concise. Use at most two fitting emoji and never use an em dash.',
+    'Keep it concise. Use at most two fitting emoji and never use an em dash, en dash, or horizontal bar.',
     'Do not claim memories, personal knowledge, facts, or actions not supplied by the application.',
     'Do not invent or address the member by a personal name.',
     'Never write or repeat a person name. The application handles safe name prefixes separately.',

@@ -158,13 +158,27 @@ async function main(): Promise<void> {
   check('the individualized lead is present', locked.startsWith('That ticker'));
   check('the protected text is byte-for-byte intact', locked.endsWith(protectedText));
 
-  console.log('\n5. Output sanitation removes forbidden formatting');
-  const forbiddenDash = String.fromCodePoint(0x2014);
-  nextReply = `I keep 216 messages ${forbiddenDash} with 108 public.`;
-  const sanitized = await generateOllamaReply(config, statusRequest, fakeFetch);
-  check('the reply contains no em dash', !sanitized.includes(forbiddenDash), sanitized);
+  console.log('\n5. Output sanitation removes every forbidden dash character');
+  const forbiddenDashes = [0x2013, 0x2014, 0x2015].map((codePoint) =>
+    String.fromCodePoint(codePoint),
+  );
+  for (const forbiddenDash of forbiddenDashes) {
+    nextReply = `I keep 216 messages ${forbiddenDash} with 108 public.`;
+    const sanitized = await generateOllamaReply(config, statusRequest, fakeFetch);
+    check(
+      `the reply removes U+${forbiddenDash.codePointAt(0)?.toString(16).toUpperCase()}`,
+      !forbiddenDashes.some((character) => sanitized.includes(character)),
+      sanitized,
+    );
+  }
 
-  console.log('\n6. Runtime mode controls wording without affecting the fallback');
+  console.log('\n6. Unicode wording survives without mojibake');
+  nextReply = 'Dein Archiv enthält 216 Beiträge. 108 davon sind öffentlich. 🔐';
+  const unicode = await generateOllamaReply(config, statusRequest, fakeFetch);
+  check('German umlauts survive', unicode.includes('enthält') && unicode.includes('Beiträge'));
+  check('emoji survives', unicode.includes('🔐'));
+
+  console.log('\n7. Runtime mode controls wording without affecting the fallback');
   const db = new MemoryDb();
   const runtime = await AiRuntimeService.load(db, config, { fetchImpl: fakeFetch });
 
