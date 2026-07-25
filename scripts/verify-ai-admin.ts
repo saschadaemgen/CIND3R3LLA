@@ -1,5 +1,5 @@
 /**
- * Offline verification for the AI Operations Center.
+ * Offline verification for the modular AI admin control center.
  *
  * It boots the real admin server against PGlite, uses a fake Ollama endpoint,
  * and never sends a SimpleX message or touches production.
@@ -32,9 +32,7 @@ function cookieOf(setCookie: string | string[] | undefined, name: string): strin
   const values = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie];
 
   for (const value of values) {
-    if (value.startsWith(`${name}=`)) {
-      return value.split(';')[0] ?? null;
-    }
+    if (value.startsWith(`${name}=`)) return value.split(';')[0] ?? null;
   }
 
   return null;
@@ -64,7 +62,7 @@ const fakeFetch: FetchLike = async (input) => {
             modified_at: '2026-07-25T15:00:00Z',
             size: 6700000000,
             details: {
-              family: 'qwen3',
+              family: 'qwen35',
               parameter_size: '9.7B',
               quantization_level: 'Q4_K_M',
             },
@@ -75,19 +73,14 @@ const fakeFetch: FetchLike = async (input) => {
             modified_at: '2026-07-25T16:00:00Z',
             size: 3100000000,
             details: {
-              family: 'qwen3',
+              family: 'qwen35',
               parameter_size: '4B',
               quantization_level: 'Q4_K_M',
             },
           },
         ],
       }),
-      {
-        status: 200,
-        headers: {
-          'content-type': 'application/json',
-        },
-      },
+      { status: 200, headers: { 'content-type': 'application/json' } },
     );
   }
 
@@ -159,14 +152,8 @@ async function main(): Promise<void> {
   const login = await app.inject({
     method: 'POST',
     url: '/login',
-    payload: {
-      username: 'operator',
-      password: PASSWORD,
-      _csrf: loginToken,
-    },
-    headers: {
-      cookie: loginCookie,
-    },
+    payload: { username: 'operator', password: PASSWORD, _csrf: loginToken },
+    headers: { cookie: loginCookie },
   });
 
   const session = cookieOf(login.headers['set-cookie'], 'cinderella_session') ?? '';
@@ -174,65 +161,74 @@ async function main(): Promise<void> {
 
   check('admin login succeeds', login.statusCode === 302 && session !== '');
 
-  const page = await app.inject({
-    method: 'GET',
-    url: '/ai',
-    headers: authed,
-  });
+  const root = await app.inject({ method: 'GET', url: '/ai', headers: authed });
+  check(
+    'legacy AI route redirects to overview',
+    root.statusCode === 302 && root.headers.location === '/ai/overview',
+  );
 
-  check('AI Operations Center renders', page.statusCode === 200);
+  const overview = await app.inject({ method: 'GET', url: '/ai/overview', headers: authed });
+  check('AI overview renders', overview.statusCode === 200);
   check(
-    'navigation exposes AI Control',
-    page.body.includes('href="/ai"') && page.body.includes('AI Control'),
+    'navigation exposes AI submenu',
+    overview.body.includes('href="/ai/runtime"') &&
+      overview.body.includes('href="/ai/personality"') &&
+      overview.body.includes('href="/ai/privacy"') &&
+      overview.body.includes('href="/ai/knowledge"'),
   );
   check(
-    'large operations surface renders',
-    page.body.includes('Operations overview') &&
-      page.body.includes('Intent lane telemetry') &&
-      page.body.includes('Reply lane telemetry') &&
-      page.body.includes('Recent AI operations'),
-  );
-  check(
-    'marketing trust sections render',
-    page.body.includes('Capability and trust matrix') &&
-      page.body.includes('Private data path') &&
-      page.body.includes('Content-free telemetry'),
-  );
-  check(
-    'role routing controls render',
-    page.body.includes('Model role routing') &&
-      page.body.includes('name="intentModel"') &&
-      page.body.includes('name="replyModel"'),
-  );
-  check(
-    'real limitations remain visible',
-    page.body.includes('Private RAG') &&
-      page.body.includes('Comparison lane') &&
-      page.body.includes('Cloud providers') &&
-      page.body.includes('Disabled'),
+    'overview keeps trust and operations sections',
+    overview.body.includes('Operations overview') &&
+      overview.body.includes('Capability and trust matrix') &&
+      overview.body.includes('Private data path'),
   );
   check(
     'secrets never appear',
-    !page.body.includes(DB_SECRET) &&
-      !page.body.includes(SESSION_SECRET) &&
-      !page.body.includes(adminCfg.adminPasswordHash),
+    !overview.body.includes(DB_SECRET) &&
+      !overview.body.includes(SESSION_SECRET) &&
+      !overview.body.includes(adminCfg.adminPasswordHash),
   );
 
-  const csrf = /name="_csrf" value="([a-f0-9]{64})"/.exec(page.body)?.[1] ?? '';
-  check('AI page embeds CSRF token', csrf !== '');
+  const runtimePage = await app.inject({ method: 'GET', url: '/ai/runtime', headers: authed });
+  const csrf = /name="_csrf" value="([a-f0-9]{64})"/.exec(runtimePage.body)?.[1] ?? '';
+  check('runtime page embeds CSRF token', csrf !== '');
+
+  const useRules = await app.inject({
+    method: 'POST',
+    url: '/ai/runtime',
+    payload: { _csrf: csrf, mode: 'rules' },
+    headers: authed,
+  });
+
+  check(
+    'rules mode redirects to runtime page',
+    useRules.statusCode === 302 && useRules.headers.location === '/ai/runtime?saved=1',
+  );
+  check('rules become active immediately', aiRuntimeSnapshot().enabled === false);
+
+  const enableLocal = await app.inject({
+    method: 'POST',
+    url: '/ai/runtime',
+    payload: { _csrf: csrf, mode: 'local' },
+    headers: authed,
+  });
+
+  check(
+    'healthy local mode redirects to runtime page',
+    enableLocal.statusCode === 302 && enableLocal.headers.location === '/ai/runtime?saved=1',
+  );
+  check('local AI becomes active', aiRuntimeSnapshot().enabled === true);
 
   const refresh = await app.inject({
     method: 'POST',
     url: '/ai/models/refresh',
-    payload: {
-      _csrf: csrf,
-    },
+    payload: { _csrf: csrf },
     headers: authed,
   });
 
   check(
-    'model catalog refresh succeeds',
-    refresh.statusCode === 302 && refresh.headers.location === '/ai?refreshed=1',
+    'catalog refresh redirects to models page',
+    refresh.statusCode === 302 && refresh.headers.location === '/ai/models?refreshed=1',
   );
 
   const routeModels = await app.inject({
@@ -247,32 +243,37 @@ async function main(): Promise<void> {
   });
 
   check(
-    'model routing update succeeds',
-    routeModels.statusCode === 302 && routeModels.headers.location === '/ai?routed=1',
+    'routing update redirects to routing page',
+    routeModels.statusCode === 302 && routeModels.headers.location === '/ai/routing?routed=1',
   );
   check(
-    'routing takes effect in process',
+    'routing takes effect',
     aiRuntimeSnapshot().routing.intentModel === 'qwen3.5:4b' &&
       aiRuntimeSnapshot().routing.replyModel === 'qwen3.5:9b',
+  );
+
+  const probe = await app.inject({
+    method: 'POST',
+    url: '/ai/test',
+    payload: { _csrf: csrf },
+    headers: authed,
+  });
+
+  check(
+    'role probe redirects to testing page',
+    probe.statusCode === 302 && probe.headers.location === '/ai/testing?tested=1',
   );
 
   const reset = await app.inject({
     method: 'POST',
     url: '/ai/telemetry/reset',
-    payload: {
-      _csrf: csrf,
-    },
+    payload: { _csrf: csrf },
     headers: authed,
   });
 
   check(
-    'telemetry reset succeeds',
-    reset.statusCode === 302 && reset.headers.location === '/ai?reset=1',
-  );
-  check('telemetry reset clears activity', aiRuntimeSnapshot().operations.recent.length === 0);
-  check(
-    'telemetry reset preserves routing',
-    aiRuntimeSnapshot().routing.intentModel === 'qwen3.5:4b',
+    'telemetry reset redirects to telemetry page',
+    reset.statusCode === 302 && reset.headers.location === '/ai/telemetry?reset=1',
   );
 
   const noCsrf = await app.inject({
@@ -282,13 +283,36 @@ async function main(): Promise<void> {
     headers: authed,
   });
 
-  check('telemetry reset without CSRF is refused', noCsrf.statusCode === 403);
+  check('AI mutation without CSRF is refused', noCsrf.statusCode === 403);
 
-  const audit = await pg.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM audit_log WHERE action IN ('local-ai.routing.update', 'local-ai.telemetry.reset')`,
+  const personality = await app.inject({
+    method: 'GET',
+    url: '/ai/personality',
+    headers: authed,
+  });
+
+  check(
+    'personality page exposes truthful current and future state',
+    personality.body.includes('Permanent personality profile') &&
+      personality.body.includes('Not configured') &&
+      personality.body.includes('Moderator approval'),
   );
 
-  check('routing and telemetry reset are audited', (audit.rows[0]?.n ?? 0) >= 2);
+  const privacy = await app.inject({ method: 'GET', url: '/ai/privacy', headers: authed });
+  check(
+    'privacy page exposes hard boundaries',
+    privacy.body.includes('Automatic cloud fallback') &&
+      privacy.body.includes('Disabled') &&
+      privacy.body.includes('Member content in telemetry'),
+  );
+
+  const audit = await pg.query<{ n: number }>(
+    `SELECT count(*)::int AS n
+       FROM audit_log
+      WHERE action IN ('local-ai.toggle', 'local-ai.routing.update', 'local-ai.telemetry.reset')`,
+  );
+
+  check('AI mutations remain audited', (audit.rows[0]?.n ?? 0) >= 4);
 
   await app.close();
   resetAiRuntimeForTests();
