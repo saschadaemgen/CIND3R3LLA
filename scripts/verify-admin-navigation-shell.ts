@@ -35,6 +35,10 @@ function cookieOf(setCookie: string | string[] | undefined, name: string): strin
   return null;
 }
 
+function topMainNavigation(body: string): string {
+  return /<nav(?=[^>]*\bdata-main-navigation(?:\s|=|>))[^>]*>[\s\S]*?<\/nav>/.exec(body)?.[0] ?? '';
+}
+
 function contextSidebar(body: string): string {
   return /<aside[^>]*data-context-sidebar[^>]*>[\s\S]*?<\/aside>/.exec(body)?.[0] ?? '';
 }
@@ -145,15 +149,15 @@ async function main(): Promise<void> {
 
   const dashboard = await app.inject({ method: 'GET', url: '/dashboard', headers });
   check('dashboard renders', dashboard.statusCode === 200);
+  const dashboardMainNavigation = topMainNavigation(dashboard.body);
   check(
     'top main navigation is present',
-    dashboard.body.includes('data-main-navigation') &&
-      dashboard.body.includes('>Dashboard<') &&
-      dashboard.body.includes('>Content<') &&
-      dashboard.body.includes('>Interaction<') &&
-      dashboard.body.includes('>AI Control<') &&
-      dashboard.body.includes('>Plugins<') &&
-      dashboard.body.includes('>System<'),
+    dashboardMainNavigation.includes('href="/dashboard"') &&
+      dashboardMainNavigation.includes('href="/messages"') &&
+      dashboardMainNavigation.includes('href="/interaction/addressing"') &&
+      dashboardMainNavigation.includes('href="/ai/overview"') &&
+      dashboardMainNavigation.includes('href="/plugins"') &&
+      dashboardMainNavigation.includes('href="/settings"'),
   );
   check(
     'dashboard has no redundant contextual sidebar',

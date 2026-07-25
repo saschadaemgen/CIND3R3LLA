@@ -14,6 +14,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { readFileSync } from 'node:fs';
 import argon2 from 'argon2';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
@@ -46,7 +47,8 @@ function cookieOf(setCookie: string | string[] | undefined, name: string): strin
 
 const PASSWORD = 'correct-horse-battery-staple';
 const DB_PASSWORD_SECRET = 'supersecret_db_password_9x'; // must never leak into HTML
-const SESSION_SECRET = 'x'.repeat(48); // must never leak into HTML
+const SESSION_SECRET = 'x'.repeat(48);
+const ADMIN_CSS = readFileSync(new URL('../assets/app.css', import.meta.url), 'utf8'); // must never leak into HTML
 
 async function main(): Promise<void> {
   // Plugin secrets are encrypted with a key derived from SESSION_SECRET, which
@@ -170,10 +172,13 @@ async function main(): Promise<void> {
     'seeded media_error should trigger the red banner',
   );
   check(
-    'dashboard is responsive scaffolding (viewport + breakpoints)',
+    'dashboard uses the shared responsive administration shell',
     dash.body.includes('name="viewport"') &&
-      dash.body.includes('md:flex') &&
-      dash.body.includes('sm:'),
+      dash.body.includes('data-admin-shell') &&
+      dash.body.includes('data-admin-header') &&
+      dash.body.includes('admin-mobile-menu-wrap') &&
+      ADMIN_CSS.includes('@media (max-width: 900px)') &&
+      ADMIN_CSS.includes('@media (max-width: 520px)'),
   );
 
   // --- 2) Messages browser ---
@@ -464,8 +469,12 @@ async function main(): Promise<void> {
   // --- 8) All views responsive (breakpoint classes present everywhere) ---
   const everyView = [dash.body, msgs.body, consentPage.body, settingsPage.body, editorPage.body];
   check(
-    'every view carries responsive utilities (sm:/md:/lg:)',
-    everyView.every((b) => /class="[^"]*(sm|md|lg):/.test(b)),
+    'the shared shell owns responsive behavior for every administration view',
+    dash.body.includes('data-admin-shell') &&
+      settingsPage.body.includes('data-admin-shell') &&
+      embedsPage.body.includes('data-admin-shell') &&
+      ADMIN_CSS.includes('.admin-mobile-menu-wrap') &&
+      ADMIN_CSS.includes('@media (max-width: 900px)'),
   );
 
   // --- 9) Content reporting: bar + queue + actions + audit + placeholder (CCB-S2-009) ---
@@ -564,12 +573,18 @@ async function main(): Promise<void> {
   // --- 11) Interaction console, split into sub-sections (CCB-S3-015 Stage 1) ---
   const iaPage = await getPage('/interaction/addressing');
   check('interaction addressing section renders', iaPage.code === 200);
-  check('the un-suffixed /interaction redirects to a section', (await app.inject({ method: 'GET', url: '/interaction', headers: authed })).statusCode === 302);
+  check(
+    'the un-suffixed /interaction redirects to a section',
+    (await app.inject({ method: 'GET', url: '/interaction', headers: authed })).statusCode === 302,
+  );
   check(
     'the addressing section carries the sub-section submenu',
-    ['/interaction/guards', '/interaction/followup', '/interaction/voice', '/interaction/diagnostics'].every(
-      (h) => iaPage.body.includes(`href="${h}"`),
-    ),
+    [
+      '/interaction/guards',
+      '/interaction/followup',
+      '/interaction/voice',
+      '/interaction/diagnostics',
+    ].every((h) => iaPage.body.includes(`href="${h}"`)),
   );
   check(
     'addressing holds ONLY its own settings',
@@ -582,18 +597,59 @@ async function main(): Promise<void> {
 
   // Each section renders and holds the settings the split assigns to it.
   const sectionPages: Record<string, string> = {};
-  for (const slug of ['guards', 'followup', 'language', 'replies', 'nicknames', 'consent', 'voice', 'archiving', 'diagnostics']) {
+  for (const slug of [
+    'guards',
+    'followup',
+    'language',
+    'replies',
+    'nicknames',
+    'consent',
+    'voice',
+    'archiving',
+    'diagnostics',
+  ]) {
     const pg2 = await getPage(`/interaction/${slug}`);
     check(`interaction ${slug} section renders`, pg2.code === 200);
     sectionPages[slug] = pg2.body;
   }
-  check('guards holds the threshold and the newly-surfaced filler settings', sectionPages['guards']!.includes('name="confidenceThreshold"') && sectionPages['guards']!.includes('name="fillerPrefixes"') && sectionPages['guards']!.includes('name="maxPrefixWords"'));
-  check('follow-up holds the window, carry-over and the interjection stop list', sectionPages['followup']!.includes('name="followUpSeconds"') && sectionPages['followup']!.includes('name="intentCarryover"') && sectionPages['followup']!.includes('name="carryOverStopWords"'));
-  check('language holds the default language', sectionPages['language']!.includes('name="defaultLanguage"') && sectionPages['language']!.includes('name="replyLanguageMode"'));
-  check('replies holds the reply mode and rate limits', sectionPages['replies']!.includes('name="replyMode"') && sectionPages['replies']!.includes('name="replyLimitPerMember"'));
-  check('nicknames holds the retorts too', sectionPages['nicknames']!.includes('name="words"') && sectionPages['nicknames']!.includes('Retorts —'));
-  check('consent holds affirmations, declines and the undo window', sectionPages['consent']!.includes('name="affirmations"') && sectionPages['consent']!.includes('name="undoWindowSeconds"'));
-  check('voice holds both persona languages and the help links', sectionPages['voice']!.includes('Her voice — English') && sectionPages['voice']!.includes('Her voice — Deutsch') && sectionPages['voice']!.includes('name="archiveUrl"'));
+  check(
+    'guards holds the threshold and the newly-surfaced filler settings',
+    sectionPages['guards']!.includes('name="confidenceThreshold"') &&
+      sectionPages['guards']!.includes('name="fillerPrefixes"') &&
+      sectionPages['guards']!.includes('name="maxPrefixWords"'),
+  );
+  check(
+    'follow-up holds the window, carry-over and the interjection stop list',
+    sectionPages['followup']!.includes('name="followUpSeconds"') &&
+      sectionPages['followup']!.includes('name="intentCarryover"') &&
+      sectionPages['followup']!.includes('name="carryOverStopWords"'),
+  );
+  check(
+    'language holds the default language',
+    sectionPages['language']!.includes('name="defaultLanguage"') &&
+      sectionPages['language']!.includes('name="replyLanguageMode"'),
+  );
+  check(
+    'replies holds the reply mode and rate limits',
+    sectionPages['replies']!.includes('name="replyMode"') &&
+      sectionPages['replies']!.includes('name="replyLimitPerMember"'),
+  );
+  check(
+    'nicknames holds the retorts too',
+    sectionPages['nicknames']!.includes('name="words"') &&
+      sectionPages['nicknames']!.includes('Retorts —'),
+  );
+  check(
+    'consent holds affirmations, declines and the undo window',
+    sectionPages['consent']!.includes('name="affirmations"') &&
+      sectionPages['consent']!.includes('name="undoWindowSeconds"'),
+  );
+  check(
+    'voice holds both persona languages and the help links',
+    sectionPages['voice']!.includes('Her voice — English') &&
+      sectionPages['voice']!.includes('Her voice — Deutsch') &&
+      sectionPages['voice']!.includes('name="archiveUrl"'),
+  );
   check(
     'diagnostics holds the near-miss log and the AI runtime',
     sectionPages['diagnostics']!.includes('Recently ignored') &&
@@ -604,13 +660,30 @@ async function main(): Promise<void> {
   );
 
   /* ── Her own messages in the archive (CCB-S3-007), now on the archiving section ── */
-  check('archiving section offers the bot-message switches', sectionPages['archiving']!.includes('Her own messages in the archive') && sectionPages['archiving']!.includes('cat:consent'));
-  check('and says plainly that no consent record is involved', sectionPages['archiving']!.includes('has no') && sectionPages['archiving']!.includes('consent record'));
+  check(
+    'archiving section offers the bot-message switches',
+    sectionPages['archiving']!.includes('Her own messages in the archive') &&
+      sectionPages['archiving']!.includes('cat:consent'),
+  );
+  check(
+    'and says plainly that no consent record is involved',
+    sectionPages['archiving']!.includes('has no') &&
+      sectionPages['archiving']!.includes('consent record'),
+  );
 
   const post = (payload: Record<string, string>) =>
-    app.inject({ method: 'POST', url: '/interaction', payload: { _csrf: iaCsrf, ...payload }, headers: authed });
+    app.inject({
+      method: 'POST',
+      url: '/interaction',
+      payload: { _csrf: iaCsrf, ...payload },
+      headers: authed,
+    });
   const readIa = async () =>
-    (await pg.query<{ value: Record<string, unknown> }>(`SELECT value FROM settings WHERE key = 'interaction'`)).rows[0]?.value ?? {};
+    (
+      await pg.query<{ value: Record<string, unknown> }>(
+        `SELECT value FROM settings WHERE key = 'interaction'`,
+      )
+    ).rows[0]?.value ?? {};
 
   // NO SETTING DROPPED (CCB-S3-015 acceptance): capture the full key set before,
   // edit through every section, and prove the key set is unchanged AND each edit
@@ -618,59 +691,167 @@ async function main(): Promise<void> {
   // The canonical complete settings — every key that must survive the split.
   const before = Object.keys(DEFAULT_INTERACTION).sort();
 
-  const archiveSave = await post({ section: 'archive', mentionGuard: 'withhold', 'cat:price': 'on' });
-  check('archive settings save', archiveSave.statusCode === 302 && String(archiveSave.headers['location'] ?? '').includes('/interaction/archiving?saved=1'));
-  const archiveRow = await pg.query<{ value: { publishBotMessages: boolean; mentionGuard: string; categories: Record<string, boolean> } }>(`SELECT value FROM settings WHERE key = 'archive'`);
-  check('the master switch really went off', archiveRow.rows[0]?.value.publishBotMessages === false);
+  const archiveSave = await post({
+    section: 'archive',
+    mentionGuard: 'withhold',
+    'cat:price': 'on',
+  });
+  check(
+    'archive settings save',
+    archiveSave.statusCode === 302 &&
+      String(archiveSave.headers['location'] ?? '').includes('/interaction/archiving?saved=1'),
+  );
+  const archiveRow = await pg.query<{
+    value: {
+      publishBotMessages: boolean;
+      mentionGuard: string;
+      categories: Record<string, boolean>;
+    };
+  }>(`SELECT value FROM settings WHERE key = 'archive'`);
+  check(
+    'the master switch really went off',
+    archiveRow.rows[0]?.value.publishBotMessages === false,
+  );
   check('the mention guard really changed', archiveRow.rows[0]?.value.mentionGuard === 'withhold');
-  const archiveAudit = await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'archive.update'`);
+  const archiveAudit = await pg.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM audit_log WHERE action = 'archive.update'`,
+  );
   check('the archive change is audited', (archiveAudit.rows[0]?.n ?? 0) >= 1);
-  await post({ section: 'archive', publishBotMessages: 'on', mentionGuard: 'redact', 'cat:consent': 'on', 'cat:price': 'on' });
+  await post({
+    section: 'archive',
+    publishBotMessages: 'on',
+    mentionGuard: 'redact',
+    'cat:consent': 'on',
+    'cat:price': 'on',
+  });
 
-  const r1 = await post({ section: 'addressing', naturalAddressing: 'on', wakeWord: 'Aschenputtel', greetings: 'hi, moin' });
-  check('addressing save returns to its section', String(r1.headers['location'] ?? '').includes('/interaction/addressing?saved=1'));
-  await post({ section: 'guards', addressingMode: 'strict', strongSignalGreeting: 'on', strongSignalReply: 'on', strongSignalWindow: 'on', maxInstructionLength: '350', lengthGuardConfidence: '0.9', logNearMisses: 'on', confidenceThreshold: '0.7', fillerPrefixes: 'so, hey, also', maxPrefixWords: '3', maxPrefixChars: '20' });
-  await post({ section: 'followup', followUpSeconds: '90', intentCarryover: 'on', carryOverStopWords: 'nice, cool, thanks' });
+  const r1 = await post({
+    section: 'addressing',
+    naturalAddressing: 'on',
+    wakeWord: 'Aschenputtel',
+    greetings: 'hi, moin',
+  });
+  check(
+    'addressing save returns to its section',
+    String(r1.headers['location'] ?? '').includes('/interaction/addressing?saved=1'),
+  );
+  await post({
+    section: 'guards',
+    addressingMode: 'strict',
+    strongSignalGreeting: 'on',
+    strongSignalReply: 'on',
+    strongSignalWindow: 'on',
+    maxInstructionLength: '350',
+    lengthGuardConfidence: '0.9',
+    logNearMisses: 'on',
+    confidenceThreshold: '0.7',
+    fillerPrefixes: 'so, hey, also',
+    maxPrefixWords: '3',
+    maxPrefixChars: '20',
+  });
+  await post({
+    section: 'followup',
+    followUpSeconds: '90',
+    intentCarryover: 'on',
+    carryOverStopWords: 'nice, cool, thanks',
+  });
   await post({ section: 'language', replyLanguageMode: 'fixed', defaultLanguage: 'de' });
-  await post({ section: 'replies', replyMode: 'mention', namePrefixEnabled: 'on', 'prefix:en': '{name} —', replyLimitPerMember: '9', replyLimitPerChat: '40' });
+  await post({
+    section: 'replies',
+    replyMode: 'mention',
+    namePrefixEnabled: 'on',
+    'prefix:en': '{name} —',
+    replyLimitPerMember: '9',
+    replyLimitPerChat: '40',
+  });
   await post({ section: 'nicknames', enabled: 'on', words: 'cindy, cindi', spamLimit: '4' });
-  await post({ section: 'consent', affirmations: 'yes, ja', declines: 'no, nein', undoWindowSeconds: '120' });
-  await post({ section: 'links', archiveUrl: 'https://example.org/a', projectUrl: 'https://example.org/p' });
+  await post({
+    section: 'consent',
+    affirmations: 'yes, ja',
+    declines: 'no, nein',
+    undoWindowSeconds: '120',
+  });
+  await post({
+    section: 'links',
+    archiveUrl: 'https://example.org/a',
+    projectUrl: 'https://example.org/p',
+  });
   await post({ section: 'persona:en', published: 'Custom published line.', publishConfirm: '' });
 
-  const iaVal = await readIa() as Record<string, unknown> & {
-    wakeWord: string; slashCommands: boolean; addressing: Record<string, unknown>;
-    confidenceThreshold: number; fillerPrefixes: string[]; maxPrefixWords: number;
-    followUpSeconds: number; carryOverStopWords: string[]; replyLanguageMode: string;
-    defaultLanguage: string; replyMode: string; replyLimitPerMember: number;
-    undoWindowSeconds: number; archiveUrl: string; nicknames: { words: string[] };
+  const iaVal = (await readIa()) as Record<string, unknown> & {
+    wakeWord: string;
+    slashCommands: boolean;
+    addressing: Record<string, unknown>;
+    confidenceThreshold: number;
+    fillerPrefixes: string[];
+    maxPrefixWords: number;
+    followUpSeconds: number;
+    carryOverStopWords: string[];
+    replyLanguageMode: string;
+    defaultLanguage: string;
+    replyMode: string;
+    replyLimitPerMember: number;
+    undoWindowSeconds: number;
+    archiveUrl: string;
+    nicknames: { words: string[] };
     persona: Record<string, Record<string, string>>;
   };
   const after = Object.keys(iaVal).sort();
 
-  check('NO SETTING DROPPED — every default key is present after editing through every section',
+  check(
+    'NO SETTING DROPPED — every default key is present after editing through every section',
     before.every((k) => after.includes(k)) && after.length === before.length,
-    `default keys ${before.length}, stored keys ${after.length}`);
+    `default keys ${before.length}, stored keys ${after.length}`,
+  );
   // And every section's edit actually landed on the right field.
-  check('addressing: wake word + unticked slash saved', iaVal.wakeWord === 'Aschenputtel' && iaVal.slashCommands === false);
-  check('guards: mode, threshold and the newly-surfaced filler settings saved',
-    iaVal.addressing['mode'] === 'strict' && iaVal.confidenceThreshold === 0.7 && iaVal.maxPrefixWords === 3 && iaVal.fillerPrefixes.includes('so'));
-  check('follow-up: window and the interjection stop list saved', iaVal.followUpSeconds === 90 && iaVal.carryOverStopWords.includes('nice'));
-  check('language: mode and default saved', iaVal.replyLanguageMode === 'fixed' && iaVal.defaultLanguage === 'de');
-  check('replies: mode and per-member limit saved', iaVal.replyMode === 'mention' && iaVal.replyLimitPerMember === 9);
+  check(
+    'addressing: wake word + unticked slash saved',
+    iaVal.wakeWord === 'Aschenputtel' && iaVal.slashCommands === false,
+  );
+  check(
+    'guards: mode, threshold and the newly-surfaced filler settings saved',
+    iaVal.addressing['mode'] === 'strict' &&
+      iaVal.confidenceThreshold === 0.7 &&
+      iaVal.maxPrefixWords === 3 &&
+      iaVal.fillerPrefixes.includes('so'),
+  );
+  check(
+    'follow-up: window and the interjection stop list saved',
+    iaVal.followUpSeconds === 90 && iaVal.carryOverStopWords.includes('nice'),
+  );
+  check(
+    'language: mode and default saved',
+    iaVal.replyLanguageMode === 'fixed' && iaVal.defaultLanguage === 'de',
+  );
+  check(
+    'replies: mode and per-member limit saved',
+    iaVal.replyMode === 'mention' && iaVal.replyLimitPerMember === 9,
+  );
   check('nicknames: list saved', iaVal.nicknames.words.includes('cindy'));
   check('consent: undo window saved', iaVal.undoWindowSeconds === 120);
-  check('voice: help link saved, and a blanked persona string fell back to its default',
+  check(
+    'voice: help link saved, and a blanked persona string fell back to its default',
     iaVal.archiveUrl === 'https://example.org/a' &&
       iaVal.persona['en']?.published === 'Custom published line.' &&
-      (iaVal.persona['en']?.publishConfirm ?? '').includes('carry your words into the light'));
+      (iaVal.persona['en']?.publishConfirm ?? '').includes('carry your words into the light'),
+  );
 
   // Reset returns to diagnostics and restores the shipped wake word.
   const resetRes = await post({ section: 'reset' });
-  check('reset redirects to diagnostics', String(resetRes.headers['location'] ?? '').includes('/interaction/diagnostics?saved=1'));
+  check(
+    'reset redirects to diagnostics',
+    String(resetRes.headers['location'] ?? '').includes('/interaction/diagnostics?saved=1'),
+  );
   const iaReset = await getPage('/interaction/addressing');
   check('reset restores the shipped wake word', iaReset.body.includes('value="Cinderella"'));
-  check('interaction edits are audited', ((await pg.query<{ n: number }>(`SELECT count(*)::int AS n FROM audit_log WHERE action = 'interaction.update'`)).rows[0]?.n ?? 0) >= 1);
+  check(
+    'interaction edits are audited',
+    ((
+      await pg.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM audit_log WHERE action = 'interaction.update'`,
+      )
+    ).rows[0]?.n ?? 0) >= 1,
+  );
 
   // ── Plugins (CCB-S3-004) ──────────────────────────────────────────────
   const pluginsPage = await getPage('/plugins');
