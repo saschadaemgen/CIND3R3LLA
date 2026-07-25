@@ -32,6 +32,7 @@
     "verify:ai": "tsx scripts/verify-ai-resolver.ts",
     "verify:ai-runtime": "tsx scripts/verify-ai-runtime.ts",
     "verify:ai-admin": "tsx scripts/verify-ai-admin.ts",
+    "verify:ai-models": "tsx scripts/verify-ai-models.ts",
     "verify:ai-replies": "tsx scripts/verify-ai-replies.ts",
     "verify:ai-live": "tsx scripts/verify-local-ai.ts",
     "verify:price": "tsx scripts/verify-price.ts",

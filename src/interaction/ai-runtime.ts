@@ -1,5 +1,5 @@
 /**
- * Runtime control and in-memory telemetry for the private Ollama resolver.
+ * Runtime control, model discovery, and in-memory telemetry for the private Ollama resolver.
  *
  * Environment configuration decides whether local AI is available at all. The
  * persisted preference decides whether this process uses it or the deterministic
@@ -52,6 +52,23 @@ export interface AiProbeSnapshot {
   error: string | null;
 }
 
+export interface AiModelInfo {
+  name: string;
+  sizeBytes: number | null;
+  modifiedAt: string | null;
+  family: string | null;
+  parameterSize: string | null;
+  quantizationLevel: string | null;
+}
+
+export interface AiModelCatalogSnapshot {
+  at: string | null;
+  ok: boolean | null;
+  latencyMs: number | null;
+  models: AiModelInfo[];
+  error: string | null;
+}
+
 export interface AiRuntimeSnapshot {
   available: boolean;
   requestedEnabled: boolean;
@@ -62,6 +79,7 @@ export interface AiRuntimeSnapshot {
   timeoutMs: number;
   metrics: AiRuntimeMetrics;
   probe: AiProbeSnapshot;
+  catalog: AiModelCatalogSnapshot;
 }
 
 export interface AiRuntimeDeps {
@@ -95,17 +113,37 @@ function storedPreference(value: unknown, fallback: boolean): boolean {
   return typeof enabled === 'boolean' ? enabled : fallback;
 }
 
-function modelNames(value: unknown): string[] {
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function modelCatalog(value: unknown): AiModelInfo[] {
   const models = record(value)['models'];
   if (!Array.isArray(models)) throw new Error('Ollama returned an invalid model list.');
 
   return models
-    .map((entry) => {
+    .map((entry): AiModelInfo | null => {
       const item = record(entry);
-      const name = item['name'] ?? item['model'];
-      return typeof name === 'string' ? name.trim() : '';
+      const details = record(item['details']);
+      const name = optionalString(item['name'] ?? item['model']);
+
+      if (!name) return null;
+
+      return {
+        name,
+        sizeBytes: optionalNumber(item['size']),
+        modifiedAt: optionalString(item['modified_at']),
+        family: optionalString(details['family']),
+        parameterSize: optionalString(details['parameter_size']),
+        quantizationLevel: optionalString(details['quantization_level']),
+      };
     })
-    .filter((name) => name !== '');
+    .filter((model): model is AiModelInfo => model !== null)
+    .sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function errorMessage(error: unknown): string {
@@ -137,6 +175,13 @@ export class AiRuntimeService implements OllamaResolverObserver {
     ok: null,
     latencyMs: null,
     modelPresent: null,
+    error: null,
+  };
+  private catalogState: AiModelCatalogSnapshot = {
+    at: null,
+    ok: null,
+    latencyMs: null,
+    models: [],
     error: null,
   };
 
@@ -242,10 +287,14 @@ export class AiRuntimeService implements OllamaResolverObserver {
         lastError: m.lastError,
       },
       probe: { ...this.probeState },
+      catalog: {
+        ...this.catalogState,
+        models: this.catalogState.models.map((model) => ({ ...model })),
+      },
     };
   }
 
-  async testConnection(): Promise<AiProbeSnapshot> {
+  async refreshModels(): Promise<AiModelCatalogSnapshot> {
     if (!this.config.enabled) {
       throw new Error('Local AI is disabled by LOCAL_AI_ENABLED.');
     }
@@ -259,13 +308,51 @@ export class AiRuntimeService implements OllamaResolverObserver {
       const response = await this.fetchImpl(endpoint, { signal: controller.signal });
       if (!response.ok) throw new Error(`Ollama HTTP ${response.status}.`);
 
-      const names = modelNames(await response.json());
-      const present = names.includes(this.config.model);
+      const models = modelCatalog(await response.json());
+      const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+
+      this.catalogState = {
+        at: this.now().toISOString(),
+        ok: true,
+        latencyMs,
+        models,
+        error: null,
+      };
+
+      return this.snapshot().catalog;
+    } catch (error) {
+      const message = controller.signal.aborted
+        ? `Ollama model discovery timed out after ${this.config.timeoutMs} ms.`
+        : errorMessage(error);
+      const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+
+      this.catalogState = {
+        at: this.now().toISOString(),
+        ok: false,
+        latencyMs,
+        models: this.catalogState.models.map((model) => ({ ...model })),
+        error: message,
+      };
+
+      throw new Error(message);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  async testConnection(): Promise<AiProbeSnapshot> {
+    const started = performance.now();
+
+    try {
+      const catalog = await this.refreshModels();
+      const present = catalog.models.some((model) => model.name === this.config.model);
+
       if (!present) {
         throw new Error(`Configured model "${this.config.model}" is not installed on Ollama.`);
       }
 
-      const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const latencyMs = catalog.latencyMs ?? Math.round((performance.now() - started) * 10) / 10;
+
       this.probeState = {
         at: this.now().toISOString(),
         ok: true,
@@ -273,12 +360,12 @@ export class AiRuntimeService implements OllamaResolverObserver {
         modelPresent: true,
         error: null,
       };
+
       return { ...this.probeState };
     } catch (error) {
-      const message = controller.signal.aborted
-        ? `Ollama probe timed out after ${this.config.timeoutMs} ms.`
-        : errorMessage(error);
+      const message = errorMessage(error);
       const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+
       this.probeState = {
         at: this.now().toISOString(),
         ok: false,
@@ -286,9 +373,8 @@ export class AiRuntimeService implements OllamaResolverObserver {
         modelPresent: false,
         error: message,
       };
+
       throw new Error(message);
-    } finally {
-      clearTimeout(timeout);
     }
   }
 
@@ -383,11 +469,23 @@ function unavailableSnapshot(): AiRuntimeSnapshot {
       modelPresent: null,
       error: null,
     },
+    catalog: {
+      at: null,
+      ok: null,
+      latencyMs: null,
+      models: [],
+      error: null,
+    },
   };
 }
 
 export function aiRuntimeSnapshot(): AiRuntimeSnapshot {
   return activeRuntime?.snapshot() ?? unavailableSnapshot();
+}
+
+export async function refreshAiModelCatalog(): Promise<AiModelCatalogSnapshot> {
+  if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
+  return activeRuntime.refreshModels();
 }
 
 export async function testAiRuntimeConnection(): Promise<AiProbeSnapshot> {

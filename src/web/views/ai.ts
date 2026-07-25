@@ -1,7 +1,7 @@
 /**
  * Dedicated AI control center for Cinderella.
  *
- * This surface exposes the runtime switch, model probe, current provider lane,
+ * This surface exposes the runtime switch, model probe, installed model catalog,
  * resolver telemetry, and the safety boundary around local inference. Provider
  * credentials and boot secrets never enter this view.
  */
@@ -9,8 +9,10 @@
 import type { FastifyInstance } from 'fastify';
 import {
   aiRuntimeSnapshot,
+  refreshAiModelCatalog,
   setAiRuntimeEnabled,
   testAiRuntimeConnection,
+  type AiModelInfo,
 } from '../../interaction/ai-runtime.js';
 import { html, page, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
@@ -29,6 +31,23 @@ function displayTime(value: string | null): string {
 
 function displayLatency(value: number | null): string {
   return value === null ? 'Not recorded' : `${value.toFixed(1)} ms`;
+}
+
+function displayBytes(value: number | null): string {
+  if (value === null) return 'Unknown';
+  if (value < 1024) return `${value} B`;
+
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let scaled = value;
+  let unit = 'B';
+
+  for (const candidate of units) {
+    scaled /= 1024;
+    unit = candidate;
+    if (scaled < 1024) break;
+  }
+
+  return `${scaled >= 100 ? scaled.toFixed(0) : scaled.toFixed(1)} ${unit}`;
 }
 
 function endpointScope(baseUrl: string): string {
@@ -66,36 +85,84 @@ function definitionList(rows: Array<[string, string | SafeHtml]>): SafeHtml {
   </dl>`;
 }
 
+function modelTable(models: AiModelInfo[], configuredModel: string): SafeHtml {
+  if (models.length === 0) {
+    return html`<p class="text-sm text-slate-500">
+      No model inventory has been loaded yet. Refresh the catalog to read the local Ollama node.
+    </p>`;
+  }
+
+  return html`<div class="overflow-x-auto">
+    <table class="min-w-full text-left text-sm">
+      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 font-medium">Model</th>
+          <th class="px-3 py-2 font-medium">Size</th>
+          <th class="px-3 py-2 font-medium">Family</th>
+          <th class="px-3 py-2 font-medium">Parameters</th>
+          <th class="px-3 py-2 font-medium">Quantization</th>
+          <th class="px-3 py-2 font-medium">Modified</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        ${models.map(
+          (model) =>
+            html`<tr>
+              <td class="px-3 py-3 font-medium text-slate-900">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span>${model.name}</span>
+                  ${model.name === configuredModel ? badge('Configured', 'blue') : null}
+                </div>
+              </td>
+              <td class="px-3 py-3 text-slate-600">${displayBytes(model.sizeBytes)}</td>
+              <td class="px-3 py-3 text-slate-600">${model.family ?? 'Unknown'}</td>
+              <td class="px-3 py-3 text-slate-600">${model.parameterSize ?? 'Unknown'}</td>
+              <td class="px-3 py-3 text-slate-600">${model.quantizationLevel ?? 'Unknown'}</td>
+              <td class="px-3 py-3 text-slate-600">${displayTime(model.modifiedAt)}</td>
+            </tr>`,
+        )}
+      </tbody>
+    </table>
+  </div>`;
+}
+
 export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
   app.get<{
     Querystring: {
       saved?: string;
       tested?: string;
+      refreshed?: string;
       error?: string;
     };
   }>('/ai', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
 
-    const notice = req.query.tested
+    const notice = req.query.refreshed
       ? html`<div
           class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
         >
-          Model probe passed. The configured Ollama model is online and available.
+          Model catalog refreshed from the configured Ollama endpoint.
         </div>`
-      : req.query.saved
+      : req.query.tested
         ? html`<div
             class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
           >
-            Runtime mode updated. The new route is active without a service restart.
+            Model probe passed. The configured Ollama model is online and available.
           </div>`
-        : req.query.error
+        : req.query.saved
           ? html`<div
-              class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-              ${req.query.error}
+              Runtime mode updated. The new route is active without a service restart.
             </div>`
-          : null;
+          : req.query.error
+            ? html`<div
+                class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                ${req.query.error}
+              </div>`
+            : null;
 
     const runtimeTone = snapshot.enabled ? 'green' : 'slate';
     const runtimeLabel = snapshot.enabled ? 'Local AI active' : 'Deterministic rules active';
@@ -107,6 +174,14 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
         : snapshot.probe.ok === false
           ? 'Probe failed'
           : 'Not tested';
+    const catalogTone =
+      snapshot.catalog.ok === true ? 'green' : snapshot.catalog.ok === false ? 'red' : 'slate';
+    const catalogLabel =
+      snapshot.catalog.ok === true
+        ? `${snapshot.catalog.models.length} models discovered`
+        : snapshot.catalog.ok === false
+          ? 'Catalog refresh failed'
+          : 'Catalog not loaded';
 
     reply.type('text/html');
 
@@ -117,14 +192,14 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       body: html`
         ${pageHeader(
           'AI Control',
-          'Runtime routing, local model health, telemetry, and the safety perimeter around Cinderella.',
+          'Runtime routing, local model inventory, telemetry, and the safety perimeter around Cinderella.',
         )}
         ${notice}
 
         <div class="mb-4 flex flex-wrap gap-2">
           ${badge(runtimeLabel, runtimeTone)}
           ${badge(snapshot.available ? 'Environment gate open' : 'Environment gate closed', snapshot.available ? 'blue' : 'amber')}
-          ${badge(probeLabel, probeTone)}
+          ${badge(probeLabel, probeTone)} ${badge(catalogLabel, catalogTone)}
           ${badge(endpointScope(snapshot.baseUrl), endpointScope(snapshot.baseUrl) === 'External endpoint' ? 'amber' : 'slate')}
         </div>
 
@@ -202,6 +277,48 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
             `,
           )}
         </div>
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          ${card(
+            'Model roles',
+            definitionList([
+              ['Intent classification', snapshot.model || 'Not configured'],
+              ['Reply wording', snapshot.model || 'Not configured'],
+              ['Private RAG', 'Not configured'],
+              ['Comparison lane', 'Disabled'],
+            ]),
+          )}
+          ${card(
+            'Catalog status',
+            html`
+              ${definitionList([
+                ['Last refresh', displayTime(snapshot.catalog.at)],
+                ['Discovery latency', displayLatency(snapshot.catalog.latencyMs)],
+                ['Installed models', String(snapshot.catalog.models.length)],
+                ['Last discovery error', snapshot.catalog.error ?? 'None'],
+              ])}
+              <form method="post" action="/ai/models/refresh" class="mt-4">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <button
+                  type="submit"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Refresh model catalog
+                </button>
+              </form>
+              <p class="mt-3 text-xs text-slate-500">
+                Discovery reads metadata from the configured local endpoint. It does not pull,
+                remove, or switch a model.
+              </p>
+            `,
+          )}
+        </div>
+
+        ${card(
+          'Installed Ollama models',
+          modelTable(snapshot.catalog.models, snapshot.model),
+          'mt-4',
+        )}
 
         <div class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
           ${stat('Intent requests', snapshot.metrics.requests)}
@@ -284,6 +401,15 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     try {
       await testAiRuntimeConnection();
       return reply.redirect('/ai?tested=1');
+    } catch (error) {
+      return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
+    }
+  });
+
+  app.post('/ai/models/refresh', async (_req, reply) => {
+    try {
+      await refreshAiModelCatalog();
+      return reply.redirect('/ai?refreshed=1');
     } catch (error) {
       return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
     }

@@ -57,7 +57,30 @@ const fakeFetch: FetchLike = async (input) => {
   if (url.pathname === '/api/tags') {
     return new Response(
       JSON.stringify({
-        models: [{ name: 'qwen3.5:9b', model: 'qwen3.5:9b' }],
+        models: [
+          {
+            name: 'qwen3.5:9b',
+            model: 'qwen3.5:9b',
+            modified_at: '2026-07-25T15:00:00Z',
+            size: 6700000000,
+            details: {
+              family: 'qwen3',
+              parameter_size: '9.7B',
+              quantization_level: 'Q4_K_M',
+            },
+          },
+          {
+            name: 'nomic-embed-text:latest',
+            model: 'nomic-embed-text:latest',
+            modified_at: '2026-07-25T16:00:00Z',
+            size: 274302450,
+            details: {
+              family: 'nomic-bert',
+              parameter_size: '137M',
+              quantization_level: 'F16',
+            },
+          },
+        ],
       }),
       {
         status: 200,
@@ -175,6 +198,16 @@ async function main(): Promise<void> {
       page.body.includes('Safety perimeter'),
   );
   check(
+    'model role and catalog cards render',
+    page.body.includes('Model roles') &&
+      page.body.includes('Catalog status') &&
+      page.body.includes('Installed Ollama models'),
+  );
+  check(
+    'empty catalog state is explicit before refresh',
+    page.body.includes('No model inventory has been loaded yet'),
+  );
+  check(
     'secrets never appear',
     !page.body.includes(DB_SECRET) &&
       !page.body.includes(SESSION_SECRET) &&
@@ -183,6 +216,43 @@ async function main(): Promise<void> {
 
   const csrf = /name="_csrf" value="([a-f0-9]{64})"/.exec(page.body)?.[1] ?? '';
   check('AI page embeds CSRF token', csrf !== '');
+
+  const refresh = await app.inject({
+    method: 'POST',
+    url: '/ai/models/refresh',
+    payload: {
+      _csrf: csrf,
+    },
+    headers: authed,
+  });
+
+  check(
+    'model catalog refresh succeeds',
+    refresh.statusCode === 302 && refresh.headers.location === '/ai?refreshed=1',
+  );
+  check(
+    'runtime stores discovered model metadata',
+    aiRuntimeSnapshot().catalog.ok === true && aiRuntimeSnapshot().catalog.models.length === 2,
+  );
+
+  const refreshedPage = await app.inject({
+    method: 'GET',
+    url: '/ai?refreshed=1',
+    headers: authed,
+  });
+
+  check(
+    'refreshed catalog lists installed models',
+    refreshedPage.body.includes('qwen3.5:9b') &&
+      refreshedPage.body.includes('nomic-embed-text:latest'),
+  );
+  check(
+    'catalog renders model metadata',
+    refreshedPage.body.includes('9.7B') &&
+      refreshedPage.body.includes('Q4_K_M') &&
+      refreshedPage.body.includes('137M'),
+  );
+  check('configured model is marked', refreshedPage.body.includes('Configured'));
 
   const useRules = await app.inject({
     method: 'POST',
@@ -236,14 +306,12 @@ async function main(): Promise<void> {
 
   const noCsrf = await app.inject({
     method: 'POST',
-    url: '/ai/runtime',
-    payload: {
-      mode: 'rules',
-    },
+    url: '/ai/models/refresh',
+    payload: {},
     headers: authed,
   });
 
-  check('runtime mutation without CSRF is refused', noCsrf.statusCode === 403);
+  check('catalog refresh without CSRF is refused', noCsrf.statusCode === 403);
 
   const audit = await pg.query<{ n: number }>(
     `SELECT count(*)::int AS n FROM audit_log WHERE action = 'local-ai.toggle'`,
