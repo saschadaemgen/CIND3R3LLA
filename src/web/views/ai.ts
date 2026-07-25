@@ -1,20 +1,22 @@
 /**
  * Dedicated AI control center for Cinderella.
  *
- * This surface exposes the runtime switch, model probe, installed model catalog,
- * resolver telemetry, and the safety boundary around local inference. Provider
- * credentials and boot secrets never enter this view.
+ * This surface exposes the runtime switch, role routing, model probe, installed model catalog,
+ * resolver telemetry, and the safety boundary around local inference. Provider credentials and
+ * boot secrets never enter this view.
  */
 
 import type { FastifyInstance } from 'fastify';
 import {
   aiRuntimeSnapshot,
   refreshAiModelCatalog,
+  setAiModelRouting,
   setAiRuntimeEnabled,
   testAiRuntimeConnection,
   type AiModelInfo,
+  type AiModelRoutingSnapshot,
 } from '../../interaction/ai-runtime.js';
-import { html, page, type SafeHtml } from '../html.js';
+import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader, stat } from './ui.js';
 
@@ -85,7 +87,34 @@ function definitionList(rows: Array<[string, string | SafeHtml]>): SafeHtml {
   </dl>`;
 }
 
-function modelTable(models: AiModelInfo[], configuredModel: string): SafeHtml {
+function modelNames(models: AiModelInfo[], routing: AiModelRoutingSnapshot): string[] {
+  return [
+    ...new Set([
+      ...models.map((model) => model.name),
+      routing.defaultModel,
+      routing.intentModel,
+      routing.replyModel,
+    ]),
+  ]
+    .filter((name) => name !== '')
+    .sort((left, right) => left.localeCompare(right));
+}
+
+function modelSelect(name: string, current: string, models: string[]): SafeHtml {
+  return html`<select
+    name="${name}"
+    class="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+  >
+    ${models.map(
+      (model) =>
+        html`<option value="${model}" ${model === current ? raw('selected') : ''}>
+          ${model}
+        </option>`,
+    )}
+  </select>`;
+}
+
+function modelTable(models: AiModelInfo[], routing: AiModelRoutingSnapshot): SafeHtml {
   if (models.length === 0) {
     return html`<p class="text-sm text-slate-500">
       No model inventory has been loaded yet. Refresh the catalog to read the local Ollama node.
@@ -111,7 +140,9 @@ function modelTable(models: AiModelInfo[], configuredModel: string): SafeHtml {
               <td class="px-3 py-3 font-medium text-slate-900">
                 <div class="flex flex-wrap items-center gap-2">
                   <span>${model.name}</span>
-                  ${model.name === configuredModel ? badge('Configured', 'blue') : null}
+                  ${model.name === routing.intentModel ? badge('Intent', 'blue') : null}
+                  ${model.name === routing.replyModel ? badge('Reply', 'green') : null}
+                  ${model.name === routing.defaultModel ? badge('Env default', 'slate') : null}
                 </div>
               </td>
               <td class="px-3 py-3 text-slate-600">${displayBytes(model.sizeBytes)}</td>
@@ -132,37 +163,45 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       saved?: string;
       tested?: string;
       refreshed?: string;
+      routed?: string;
       error?: string;
     };
   }>('/ai', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
+    const availableModels = modelNames(snapshot.catalog.models, snapshot.routing);
 
-    const notice = req.query.refreshed
+    const notice = req.query.routed
       ? html`<div
           class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
         >
-          Model catalog refreshed from the configured Ollama endpoint.
+          Model routing updated. New intent and reply requests use the selected local lanes.
         </div>`
-      : req.query.tested
+      : req.query.refreshed
         ? html`<div
             class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
           >
-            Model probe passed. The configured Ollama model is online and available.
+            Model catalog refreshed from the configured Ollama endpoint.
           </div>`
-        : req.query.saved
+        : req.query.tested
           ? html`<div
               class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-              Runtime mode updated. The new route is active without a service restart.
+              Role probe passed. Every selected local model is online and available.
             </div>`
-          : req.query.error
+          : req.query.saved
             ? html`<div
-                class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
               >
-                ${req.query.error}
+                Runtime mode updated. The new route is active without a service restart.
               </div>`
-            : null;
+            : req.query.error
+              ? html`<div
+                  class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                >
+                  ${req.query.error}
+                </div>`
+              : null;
 
     const runtimeTone = snapshot.enabled ? 'green' : 'slate';
     const runtimeLabel = snapshot.enabled ? 'Local AI active' : 'Deterministic rules active';
@@ -170,9 +209,9 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       snapshot.probe.ok === true ? 'green' : snapshot.probe.ok === false ? 'red' : 'slate';
     const probeLabel =
       snapshot.probe.ok === true
-        ? 'Probe passed'
+        ? 'Role probe passed'
         : snapshot.probe.ok === false
-          ? 'Probe failed'
+          ? 'Role probe failed'
           : 'Not tested';
     const catalogTone =
       snapshot.catalog.ok === true ? 'green' : snapshot.catalog.ok === false ? 'red' : 'slate';
@@ -239,7 +278,7 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
               </form>
 
               <p class="mt-3 text-xs text-slate-500">
-                Enabling is fail-closed. Cinderella probes the endpoint and configured model before
+                Enabling is fail-closed. Cinderella verifies every selected role model before
                 switching away from rules.
               </p>
             `,
@@ -250,12 +289,12 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
               ${definitionList([
                 ['Provider', 'Ollama'],
                 ['Endpoint', snapshot.baseUrl || 'Not configured'],
-                ['Model', snapshot.model || 'Not configured'],
+                ['Environment default', snapshot.routing.defaultModel || 'Not configured'],
                 ['Timeout', snapshot.timeoutMs > 0 ? `${snapshot.timeoutMs} ms` : 'Not configured'],
-                ['Last probe', displayTime(snapshot.probe.at)],
+                ['Last role probe', displayTime(snapshot.probe.at)],
                 ['Probe latency', displayLatency(snapshot.probe.latencyMs)],
                 [
-                  'Model present',
+                  'Selected models present',
                   snapshot.probe.modelPresent === null
                     ? 'Not tested'
                     : snapshot.probe.modelPresent
@@ -271,7 +310,7 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
                   type="submit"
                   class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
-                  Test configured model
+                  Test active role models
                 </button>
               </form>
             `,
@@ -280,14 +319,51 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
 
         <div class="mt-4 grid gap-4 lg:grid-cols-2">
           ${card(
-            'Model roles',
+            'Model role routing',
+            html`
+              <form method="post" action="/ai/routing" class="flex flex-col gap-4">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Intent classification model</span>
+                  ${modelSelect('intentModel', snapshot.routing.intentModel, availableModels)}
+                  <span class="text-xs text-slate-500">
+                    Classifies member text only. Consent actions still require deterministic
+                    agreement.
+                  </span>
+                </label>
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Reply wording model</span>
+                  ${modelSelect('replyModel', snapshot.routing.replyModel, availableModels)}
+                  <span class="text-xs text-slate-500">
+                    Rephrases finished read-only replies. It receives no execution or transport
+                    access.
+                  </span>
+                </label>
+                <button
+                  type="submit"
+                  class="self-start rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                >
+                  Apply model routing
+                </button>
+              </form>
+              <p class="mt-3 text-xs text-slate-500">
+                Saving refreshes the local inventory and refuses missing models. No cloud route is
+                created.
+              </p>
+            `,
+          )}
+          ${card(
+            'Future lanes',
             definitionList([
-              ['Intent classification', snapshot.model || 'Not configured'],
-              ['Reply wording', snapshot.model || 'Not configured'],
               ['Private RAG', 'Not configured'],
               ['Comparison lane', 'Disabled'],
+              ['Cloud provider', 'Disabled'],
+              ['Automatic cloud fallback', 'Disabled'],
             ]),
           )}
+        </div>
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
           ${card(
             'Catalog status',
             html`
@@ -312,11 +388,20 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
               </p>
             `,
           )}
+          ${card(
+            'Active route summary',
+            definitionList([
+              ['Intent model', snapshot.routing.intentModel],
+              ['Reply model', snapshot.routing.replyModel],
+              ['Environment default', snapshot.routing.defaultModel],
+              ['Resolver state', snapshot.activeResolver],
+            ]),
+          )}
         </div>
 
         ${card(
           'Installed Ollama models',
-          modelTable(snapshot.catalog.models, snapshot.model),
+          modelTable(snapshot.catalog.models, snapshot.routing),
           'mt-4',
         )}
 
@@ -345,24 +430,24 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
             'Safety perimeter',
             html`<ul class="space-y-2 text-sm text-slate-700">
               <li>
-                <strong>Local-first route:</strong> the configured endpoint is shown above and no
-                cloud fallback is enabled here.
+                <strong>Local-only routing:</strong> role changes are limited to models discovered
+                on the configured private Ollama endpoint.
               </li>
               <li>
-                <strong>Deterministic execution:</strong> the model classifies or phrases, but it
-                never performs an action.
+                <strong>Deterministic execution:</strong> the intent model classifies, but it never
+                performs an action.
               </li>
               <li>
                 <strong>Consent boundary:</strong> publish, unpublish, undo, and confirmation flows
                 remain deterministic.
               </li>
               <li>
-                <strong>Automatic fallback:</strong> timeouts, malformed output, unsafe wording, and
-                model failures return to rules.
+                <strong>Reply isolation:</strong> the wording model can only rewrite a finished,
+                guarded reply.
               </li>
               <li>
-                <strong>Runtime isolation:</strong> switching modes does not restart Cinderella or
-                alter other VPS services.
+                <strong>Automatic fallback:</strong> timeouts, malformed output, unsafe wording, and
+                model failures return to rules.
               </li>
             </ul>`,
           )}
@@ -392,6 +477,19 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     try {
       await setAiRuntimeEnabled(mode === 'local', actor);
       return reply.redirect('/ai?saved=1');
+    } catch (error) {
+      return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
+    }
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/ai/routing', async (req, reply) => {
+    const intentModel = typeof req.body['intentModel'] === 'string' ? req.body['intentModel'] : '';
+    const replyModel = typeof req.body['replyModel'] === 'string' ? req.body['replyModel'] : '';
+    const actor = req.session?.username ?? 'unknown';
+
+    try {
+      await setAiModelRouting(intentModel, replyModel, actor);
+      return reply.redirect('/ai?routed=1');
     } catch (error) {
       return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
     }

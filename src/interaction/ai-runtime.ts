@@ -1,10 +1,10 @@
 /**
- * Runtime control, model discovery, and in-memory telemetry for the private Ollama resolver.
+ * Runtime control, role routing, model discovery, and in-memory telemetry for private Ollama.
  *
- * Environment configuration decides whether local AI is available at all. The
- * persisted preference decides whether this process uses it or the deterministic
- * rules. Enabling is fail-closed: the endpoint and configured model are probed
- * before the resolver is swapped in. Disabling switches to rules immediately.
+ * Environment configuration decides whether local AI is available at all. Persisted settings
+ * decide whether this process uses local AI and which installed model serves each supported role.
+ * Enabling and routing changes are fail-closed because the selected models are verified before
+ * the active resolver is changed.
  */
 
 import type { LocalAiConfig } from '../config.js';
@@ -24,9 +24,15 @@ import { generateOllamaReply, type AiReplyRequest } from './ollama-reply.js';
 import { activeResolverName, resetIntentResolver, setIntentResolver } from './resolver.js';
 
 const RUNTIME_KEY = 'local-ai-runtime';
+const ROUTING_KEY = 'local-ai-model-routing';
 
 interface StoredRuntimeSettings {
   enabled: boolean;
+}
+
+interface StoredRoutingSettings {
+  intentModel: string;
+  replyModel: string;
 }
 
 export interface AiRuntimeMetrics {
@@ -69,6 +75,12 @@ export interface AiModelCatalogSnapshot {
   error: string | null;
 }
 
+export interface AiModelRoutingSnapshot {
+  defaultModel: string;
+  intentModel: string;
+  replyModel: string;
+}
+
 export interface AiRuntimeSnapshot {
   available: boolean;
   requestedEnabled: boolean;
@@ -77,6 +89,7 @@ export interface AiRuntimeSnapshot {
   baseUrl: string;
   model: string;
   timeoutMs: number;
+  routing: AiModelRoutingSnapshot;
   metrics: AiRuntimeMetrics;
   probe: AiProbeSnapshot;
   catalog: AiModelCatalogSnapshot;
@@ -111,6 +124,19 @@ function record(value: unknown): Record<string, unknown> {
 function storedPreference(value: unknown, fallback: boolean): boolean {
   const enabled = record(value)['enabled'];
   return typeof enabled === 'boolean' ? enabled : fallback;
+}
+
+function cleanModelName(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : fallback;
+}
+
+function storedRouting(value: unknown, fallback: string): StoredRoutingSettings {
+  const raw = record(value);
+
+  return {
+    intentModel: cleanModelName(raw['intentModel'], fallback),
+    replyModel: cleanModelName(raw['replyModel'], fallback),
+  };
 }
 
 function optionalString(value: unknown): string | null {
@@ -150,10 +176,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function uniqueModels(routing: StoredRoutingSettings): string[] {
+  return [...new Set([routing.intentModel, routing.replyModel])];
+}
+
 let activeRuntime: AiRuntimeService | undefined;
 
 export class AiRuntimeService implements OllamaResolverObserver {
   private requestedEnabled: boolean;
+  private routingState: StoredRoutingSettings;
   private readonly fetchImpl: FetchLike;
   private readonly now: () => Date;
   private readonly metricsState: MutableMetrics = {
@@ -189,9 +220,11 @@ export class AiRuntimeService implements OllamaResolverObserver {
     private readonly db: Queryable,
     private readonly config: LocalAiConfig,
     requestedEnabled: boolean,
+    routing: StoredRoutingSettings,
     deps: AiRuntimeDeps,
   ) {
     this.requestedEnabled = requestedEnabled;
+    this.routingState = routing;
     this.fetchImpl = deps.fetchImpl ?? fetch;
     this.now = deps.now ?? (() => new Date());
   }
@@ -201,56 +234,55 @@ export class AiRuntimeService implements OllamaResolverObserver {
     config: LocalAiConfig,
     deps: AiRuntimeDeps = {},
   ): Promise<AiRuntimeService> {
-    const stored = await getSetting(db, RUNTIME_KEY);
+    const runtimeSetting = await getSetting(db, RUNTIME_KEY);
+    const routingSetting = await getSetting(db, ROUTING_KEY);
     const service = new AiRuntimeService(
       db,
       config,
-      storedPreference(stored, config.enabled),
+      storedPreference(runtimeSetting, config.enabled),
+      storedRouting(routingSetting, config.model),
       deps,
     );
+
     activeRuntime = service;
     service.applyResolver();
     return service;
   }
 
-  /** Receives a successful model classification from the resolver wrapper. */
   success(event: OllamaResolveSuccess): void {
-    const m = this.metricsState;
-    m.requests++;
-    m.successes++;
-    m.totalLatencyMs += event.latencyMs;
-    m.lastLatencyMs = event.latencyMs;
-    m.lastSuccessAt = this.now().toISOString();
-    m.lastModelIntent = event.modelIntent;
-    m.lastFinalIntent = event.finalIntent;
-    m.lastError = null;
-    if (event.modelIntent !== event.finalIntent) m.guardOverrides++;
+    const metrics = this.metricsState;
+    metrics.requests++;
+    metrics.successes++;
+    metrics.totalLatencyMs += event.latencyMs;
+    metrics.lastLatencyMs = event.latencyMs;
+    metrics.lastSuccessAt = this.now().toISOString();
+    metrics.lastModelIntent = event.modelIntent;
+    metrics.lastFinalIntent = event.finalIntent;
+    metrics.lastError = null;
+
+    if (event.modelIntent !== event.finalIntent) metrics.guardOverrides++;
   }
 
-  /** A thrown model error means resolver.ts will use the deterministic fallback. */
   failure(event: OllamaResolveFailure): void {
-    const m = this.metricsState;
-    m.requests++;
-    m.failures++;
-    m.fallbacks++;
-    m.totalLatencyMs += event.latencyMs;
-    m.lastLatencyMs = event.latencyMs;
-    m.lastFailureAt = this.now().toISOString();
-    m.lastError = event.error;
+    const metrics = this.metricsState;
+    metrics.requests++;
+    metrics.failures++;
+    metrics.fallbacks++;
+    metrics.totalLatencyMs += event.latencyMs;
+    metrics.lastLatencyMs = event.latencyMs;
+    metrics.lastFailureAt = this.now().toISOString();
+    metrics.lastError = event.error;
   }
 
-  /**
-   * Gives the local model one chance to phrase an already-decided reply.
-   *
-   * The engine owns the facts and the action. A wording failure is deliberately
-   * non-fatal: returning null makes the engine use its deterministic persona
-   * string immediately.
-   */
   async personalize(request: AiReplyRequest): Promise<string | null> {
     if (!this.isEnabled()) return null;
 
     try {
-      return await generateOllamaReply(this.config, request, this.fetchImpl);
+      return await generateOllamaReply(
+        this.configForModel(this.routingState.replyModel),
+        request,
+        this.fetchImpl,
+      );
     } catch (error) {
       log.warn(
         `Local AI reply wording failed; using the deterministic fallback (${errorMessage(error)}).`,
@@ -260,9 +292,11 @@ export class AiRuntimeService implements OllamaResolverObserver {
   }
 
   snapshot(): AiRuntimeSnapshot {
-    const m = this.metricsState;
+    const metrics = this.metricsState;
     const averageLatencyMs =
-      m.requests > 0 ? Math.round((m.totalLatencyMs / m.requests) * 10) / 10 : null;
+      metrics.requests > 0
+        ? Math.round((metrics.totalLatencyMs / metrics.requests) * 10) / 10
+        : null;
 
     return {
       available: this.config.enabled,
@@ -272,19 +306,24 @@ export class AiRuntimeService implements OllamaResolverObserver {
       baseUrl: this.config.baseUrl,
       model: this.config.model,
       timeoutMs: this.config.timeoutMs,
+      routing: {
+        defaultModel: this.config.model,
+        intentModel: this.routingState.intentModel,
+        replyModel: this.routingState.replyModel,
+      },
       metrics: {
-        requests: m.requests,
-        successes: m.successes,
-        failures: m.failures,
-        fallbacks: m.fallbacks,
-        guardOverrides: m.guardOverrides,
+        requests: metrics.requests,
+        successes: metrics.successes,
+        failures: metrics.failures,
+        fallbacks: metrics.fallbacks,
+        guardOverrides: metrics.guardOverrides,
         averageLatencyMs,
-        lastLatencyMs: m.lastLatencyMs,
-        lastSuccessAt: m.lastSuccessAt,
-        lastFailureAt: m.lastFailureAt,
-        lastModelIntent: m.lastModelIntent,
-        lastFinalIntent: m.lastFinalIntent,
-        lastError: m.lastError,
+        lastLatencyMs: metrics.lastLatencyMs,
+        lastSuccessAt: metrics.lastSuccessAt,
+        lastFailureAt: metrics.lastFailureAt,
+        lastModelIntent: metrics.lastModelIntent,
+        lastFinalIntent: metrics.lastFinalIntent,
+        lastError: metrics.lastError,
       },
       probe: { ...this.probeState },
       catalog: {
@@ -345,10 +384,11 @@ export class AiRuntimeService implements OllamaResolverObserver {
 
     try {
       const catalog = await this.refreshModels();
-      const present = catalog.models.some((model) => model.name === this.config.model);
+      const installed = new Set(catalog.models.map((model) => model.name));
+      const missing = uniqueModels(this.routingState).filter((model) => !installed.has(model));
 
-      if (!present) {
-        throw new Error(`Configured model "${this.config.model}" is not installed on Ollama.`);
+      if (missing.length > 0) {
+        throw new Error(`Selected role model not installed: ${missing.join(', ')}.`);
       }
 
       const latencyMs = catalog.latencyMs ?? Math.round((performance.now() - started) * 10) / 10;
@@ -378,18 +418,60 @@ export class AiRuntimeService implements OllamaResolverObserver {
     }
   }
 
+  async setRouting(
+    intentModel: string,
+    replyModel: string,
+    actor: string,
+  ): Promise<AiRuntimeSnapshot> {
+    const nextRouting: StoredRoutingSettings = {
+      intentModel: cleanModelName(intentModel, ''),
+      replyModel: cleanModelName(replyModel, ''),
+    };
+
+    if (!nextRouting.intentModel || !nextRouting.replyModel) {
+      throw new Error('Intent and reply model selections are required.');
+    }
+
+    const catalog = await this.refreshModels();
+    const installed = new Set(catalog.models.map((model) => model.name));
+    const missing = uniqueModels(nextRouting).filter((model) => !installed.has(model));
+
+    if (missing.length > 0) {
+      throw new Error(`Cannot route to an uninstalled model: ${missing.join(', ')}.`);
+    }
+
+    const previous = { ...this.routingState };
+
+    try {
+      await setSetting(this.db, ROUTING_KEY, nextRouting satisfies StoredRoutingSettings);
+      await writeAudit(this.db, actor, 'local-ai.routing.update', 'local-ai', {
+        intentModel: nextRouting.intentModel,
+        replyModel: nextRouting.replyModel,
+      });
+    } catch (error) {
+      await setSetting(this.db, ROUTING_KEY, previous).catch(() => undefined);
+      throw error;
+    }
+
+    this.routingState = nextRouting;
+    this.applyResolver();
+    return this.snapshot();
+  }
+
   async setEnabled(enabled: boolean, actor: string): Promise<AiRuntimeSnapshot> {
     if (enabled) {
       if (!this.config.enabled) {
         throw new Error('Local AI cannot be enabled because LOCAL_AI_ENABLED is false.');
       }
+
       await this.testConnection();
 
       try {
         await setSetting(this.db, RUNTIME_KEY, { enabled } satisfies StoredRuntimeSettings);
         await writeAudit(this.db, actor, 'local-ai.toggle', 'local-ai', {
           enabled,
-          model: this.config.model,
+          intentModel: this.routingState.intentModel,
+          replyModel: this.routingState.replyModel,
         });
       } catch (error) {
         await setSetting(this.db, RUNTIME_KEY, { enabled: false }).catch(() => undefined);
@@ -401,21 +483,30 @@ export class AiRuntimeService implements OllamaResolverObserver {
       return this.snapshot();
     }
 
-    // Disabling is fail-closed: rules become active before any database write.
     this.requestedEnabled = false;
     this.applyResolver();
+
     try {
       await setSetting(this.db, RUNTIME_KEY, { enabled } satisfies StoredRuntimeSettings);
       await writeAudit(this.db, actor, 'local-ai.toggle', 'local-ai', {
         enabled,
-        model: this.config.model,
+        intentModel: this.routingState.intentModel,
+        replyModel: this.routingState.replyModel,
       });
     } catch (error) {
       throw new Error(
         `Rules are active for this process, but the preference could not be persisted: ${errorMessage(error)}`,
       );
     }
+
     return this.snapshot();
+  }
+
+  private configForModel(model: string): LocalAiConfig {
+    return {
+      ...this.config,
+      model,
+    };
   }
 
   private isEnabled(): boolean {
@@ -425,12 +516,14 @@ export class AiRuntimeService implements OllamaResolverObserver {
   private applyResolver(): void {
     if (this.isEnabled()) {
       setIntentResolver(
-        createOllamaIntentResolver(this.config, {
+        createOllamaIntentResolver(this.configForModel(this.routingState.intentModel), {
           fetchImpl: this.fetchImpl,
           observer: this,
         }),
       );
-      log.info(`Local AI runtime enabled with model "${this.config.model}".`);
+      log.info(
+        `Local AI runtime enabled with intent model "${this.routingState.intentModel}" and reply model "${this.routingState.replyModel}".`,
+      );
       return;
     }
 
@@ -448,6 +541,11 @@ function unavailableSnapshot(): AiRuntimeSnapshot {
     baseUrl: '',
     model: '',
     timeoutMs: 0,
+    routing: {
+      defaultModel: '',
+      intentModel: '',
+      replyModel: '',
+    },
     metrics: {
       requests: 0,
       successes: 0,
@@ -488,6 +586,15 @@ export async function refreshAiModelCatalog(): Promise<AiModelCatalogSnapshot> {
   return activeRuntime.refreshModels();
 }
 
+export async function setAiModelRouting(
+  intentModel: string,
+  replyModel: string,
+  actor: string,
+): Promise<AiRuntimeSnapshot> {
+  if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
+  return activeRuntime.setRouting(intentModel, replyModel, actor);
+}
+
 export async function testAiRuntimeConnection(): Promise<AiProbeSnapshot> {
   if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
   return activeRuntime.testConnection();
@@ -501,13 +608,11 @@ export async function setAiRuntimeEnabled(
   return activeRuntime.setEnabled(enabled, actor);
 }
 
-/** Uses local AI for wording only when the runtime is currently active. */
 export async function personalizeAiReply(request: AiReplyRequest): Promise<string | null> {
   if (!activeRuntime) return null;
   return activeRuntime.personalize(request);
 }
 
-/** Test-only reset for the module-level runtime and resolver singleton. */
 export function resetAiRuntimeForTests(): void {
   activeRuntime = undefined;
   resetIntentResolver();

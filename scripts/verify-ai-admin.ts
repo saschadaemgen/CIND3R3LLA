@@ -70,14 +70,14 @@ const fakeFetch: FetchLike = async (input) => {
             },
           },
           {
-            name: 'nomic-embed-text:latest',
-            model: 'nomic-embed-text:latest',
+            name: 'qwen3.5:4b',
+            model: 'qwen3.5:4b',
             modified_at: '2026-07-25T16:00:00Z',
-            size: 274302450,
+            size: 3100000000,
             details: {
-              family: 'nomic-bert',
-              parameter_size: '137M',
-              quantization_level: 'F16',
+              family: 'qwen3',
+              parameter_size: '4B',
+              quantization_level: 'Q4_K_M',
             },
           },
         ],
@@ -198,14 +198,16 @@ async function main(): Promise<void> {
       page.body.includes('Safety perimeter'),
   );
   check(
-    'model role and catalog cards render',
-    page.body.includes('Model roles') &&
-      page.body.includes('Catalog status') &&
-      page.body.includes('Installed Ollama models'),
+    'role routing controls render',
+    page.body.includes('Model role routing') &&
+      page.body.includes('name="intentModel"') &&
+      page.body.includes('name="replyModel"'),
   );
   check(
-    'empty catalog state is explicit before refresh',
-    page.body.includes('No model inventory has been loaded yet'),
+    'future lanes stay disabled',
+    page.body.includes('Private RAG') &&
+      page.body.includes('Comparison lane') &&
+      page.body.includes('Cloud provider'),
   );
   check(
     'secrets never appear',
@@ -230,29 +232,60 @@ async function main(): Promise<void> {
     'model catalog refresh succeeds',
     refresh.statusCode === 302 && refresh.headers.location === '/ai?refreshed=1',
   );
-  check(
-    'runtime stores discovered model metadata',
-    aiRuntimeSnapshot().catalog.ok === true && aiRuntimeSnapshot().catalog.models.length === 2,
-  );
 
-  const refreshedPage = await app.inject({
-    method: 'GET',
-    url: '/ai?refreshed=1',
+  const routeModels = await app.inject({
+    method: 'POST',
+    url: '/ai/routing',
+    payload: {
+      _csrf: csrf,
+      intentModel: 'qwen3.5:4b',
+      replyModel: 'qwen3.5:9b',
+    },
     headers: authed,
   });
 
   check(
-    'refreshed catalog lists installed models',
-    refreshedPage.body.includes('qwen3.5:9b') &&
-      refreshedPage.body.includes('nomic-embed-text:latest'),
+    'model routing update succeeds',
+    routeModels.statusCode === 302 && routeModels.headers.location === '/ai?routed=1',
   );
   check(
-    'catalog renders model metadata',
-    refreshedPage.body.includes('9.7B') &&
-      refreshedPage.body.includes('Q4_K_M') &&
-      refreshedPage.body.includes('137M'),
+    'routing takes effect in process',
+    aiRuntimeSnapshot().routing.intentModel === 'qwen3.5:4b' &&
+      aiRuntimeSnapshot().routing.replyModel === 'qwen3.5:9b',
   );
-  check('configured model is marked', refreshedPage.body.includes('Configured'));
+
+  const routedPage = await app.inject({
+    method: 'GET',
+    url: '/ai?routed=1',
+    headers: authed,
+  });
+
+  check(
+    'routed page marks intent and reply models',
+    routedPage.body.includes('Intent') &&
+      routedPage.body.includes('Reply') &&
+      routedPage.body.includes('qwen3.5:4b'),
+  );
+
+  const invalidRoute = await app.inject({
+    method: 'POST',
+    url: '/ai/routing',
+    payload: {
+      _csrf: csrf,
+      intentModel: 'ghost-model:latest',
+      replyModel: 'qwen3.5:9b',
+    },
+    headers: authed,
+  });
+
+  check(
+    'uninstalled routing target is refused',
+    invalidRoute.statusCode === 302 && String(invalidRoute.headers.location).includes('/ai?error='),
+  );
+  check(
+    'failed routing leaves the active route unchanged',
+    aiRuntimeSnapshot().routing.intentModel === 'qwen3.5:4b',
+  );
 
   const useRules = await app.inject({
     method: 'POST',
@@ -281,43 +314,32 @@ async function main(): Promise<void> {
   });
 
   check(
-    'healthy local model enables without restart',
+    'healthy role models enable without restart',
     enableLocal.statusCode === 302 && enableLocal.headers.location === '/ai?saved=1',
   );
-  check('local AI is active after the probe', aiRuntimeSnapshot().enabled === true);
+  check('local AI is active after the role probe', aiRuntimeSnapshot().enabled === true);
   check(
-    'successful enable records the probe',
+    'successful enable records the role probe',
     aiRuntimeSnapshot().probe.ok === true && aiRuntimeSnapshot().probe.modelPresent === true,
-  );
-
-  const testModel = await app.inject({
-    method: 'POST',
-    url: '/ai/test',
-    payload: {
-      _csrf: csrf,
-    },
-    headers: authed,
-  });
-
-  check(
-    'model test route succeeds',
-    testModel.statusCode === 302 && testModel.headers.location === '/ai?tested=1',
   );
 
   const noCsrf = await app.inject({
     method: 'POST',
-    url: '/ai/models/refresh',
-    payload: {},
+    url: '/ai/routing',
+    payload: {
+      intentModel: 'qwen3.5:9b',
+      replyModel: 'qwen3.5:9b',
+    },
     headers: authed,
   });
 
-  check('catalog refresh without CSRF is refused', noCsrf.statusCode === 403);
+  check('routing mutation without CSRF is refused', noCsrf.statusCode === 403);
 
   const audit = await pg.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM audit_log WHERE action = 'local-ai.toggle'`,
+    `SELECT count(*)::int AS n FROM audit_log WHERE action IN ('local-ai.toggle', 'local-ai.routing.update')`,
   );
 
-  check('runtime changes are audited', (audit.rows[0]?.n ?? 0) >= 2);
+  check('runtime and routing changes are audited', (audit.rows[0]?.n ?? 0) >= 3);
 
   await app.close();
   resetAiRuntimeForTests();
