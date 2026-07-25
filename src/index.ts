@@ -39,7 +39,7 @@ import { SiteService } from './site/settings.js';
 import { ArchiveService } from './archive/settings.js';
 import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
-import { AiRuntimeService } from './interaction/ai-runtime.js';
+import { AiRuntimeService, personalizeAiReply } from './interaction/ai-runtime.js';
 import { activeResolverName } from './interaction/resolver.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
@@ -158,6 +158,7 @@ async function startCaptureWorker(
     const engine = new InteractionEngine({
       db: getPool(),
       settings: () => interaction.get(),
+      personalize: personalizeAiReply,
       // Handed over only while the plugin is enabled; when it is off, PRICE is
       // not in the active intent catalog either, so this is belt and braces.
       // Handed over only while the plugin is enabled; when it is off, PRICE is
@@ -240,7 +241,9 @@ async function startCaptureWorker(
       // operator loses the check's protection and would never know.
       const emsg = err instanceof Error ? err.message : String(err);
       log.warn(`Media: could not check published derivatives (${emsg}).`);
-      status.error(`Boot self-check failed: could not verify published media derivatives (${emsg}).`);
+      status.error(
+        `Boot self-check failed: could not verify published media derivatives (${emsg}).`,
+      );
     }
 
     // A pin that no enabled provider can serve fails SILENTLY and forever
@@ -282,7 +285,9 @@ async function startCaptureWorker(
           (n) => cp.providers[n]?.enabled && providerKeyStatus(cp, n).undecryptable,
         );
         if (dead.length > 0) {
-          log.warn(`Plugins: ${dead.length} stored provider key(s) cannot be decrypted: ${dead.join(', ')}.`);
+          log.warn(
+            `Plugins: ${dead.length} stored provider key(s) cannot be decrypted: ${dead.join(', ')}.`,
+          );
           status.error(
             `Provider API key(s) stored but UNDECRYPTABLE: ${dead.join(', ')} (was SESSION_SECRET rotated?). ` +
               `They cannot authenticate; re-enter or clear them on the Plugins page.`,

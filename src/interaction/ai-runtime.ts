@@ -20,6 +20,7 @@ import {
   type OllamaResolveSuccess,
   type OllamaResolverObserver,
 } from './ollama-resolver.js';
+import { generateOllamaReply, type AiReplyRequest } from './ollama-reply.js';
 import { activeResolverName, resetIntentResolver, setIntentResolver } from './resolver.js';
 
 const RUNTIME_KEY = 'local-ai-runtime';
@@ -191,6 +192,26 @@ export class AiRuntimeService implements OllamaResolverObserver {
     m.lastLatencyMs = event.latencyMs;
     m.lastFailureAt = this.now().toISOString();
     m.lastError = event.error;
+  }
+
+  /**
+   * Gives the local model one chance to phrase an already-decided reply.
+   *
+   * The engine owns the facts and the action. A wording failure is deliberately
+   * non-fatal: returning null makes the engine use its deterministic persona
+   * string immediately.
+   */
+  async personalize(request: AiReplyRequest): Promise<string | null> {
+    if (!this.isEnabled()) return null;
+
+    try {
+      return await generateOllamaReply(this.config, request, this.fetchImpl);
+    } catch (error) {
+      log.warn(
+        `Local AI reply wording failed; using the deterministic fallback (${errorMessage(error)}).`,
+      );
+      return null;
+    }
   }
 
   snapshot(): AiRuntimeSnapshot {
@@ -380,6 +401,12 @@ export async function setAiRuntimeEnabled(
 ): Promise<AiRuntimeSnapshot> {
   if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
   return activeRuntime.setEnabled(enabled, actor);
+}
+
+/** Uses local AI for wording only when the runtime is currently active. */
+export async function personalizeAiReply(request: AiReplyRequest): Promise<string | null> {
+  if (!activeRuntime) return null;
+  return activeRuntime.personalize(request);
 }
 
 /** Test-only reset for the module-level runtime and resolver singleton. */

@@ -63,6 +63,7 @@ import { candidateMetric } from '../plugins/crypto-prices/service.js';
 import { formatOutbound, type OutboundReply } from './reply.js';
 import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
+import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 
 export interface InteractionDeps {
   db: Queryable;
@@ -114,6 +115,14 @@ export interface InteractionDeps {
     rateLimitPerChat: number;
     disclaimer: string;
   };
+  /**
+   * Optional local-AI wording layer.
+   *
+   * It receives a reply whose meaning and facts are already fixed. Returning
+   * null keeps the deterministic persona string. Tests and rules-only instances
+   * can omit it entirely.
+   */
+  personalize?: (request: AiReplyRequest) => Promise<string | null>;
 }
 
 interface ReplyOptions {
@@ -180,7 +189,6 @@ const IMPLICIT_MIN_CONFIDENCE = 0.8;
 /** Longest fragment that still counts as an elliptical follow-up (§7c). */
 const CARRY_OVER_MAX_TOKENS = 4;
 
-
 /**
  * What kind of member message each intent represents, for the archive
  * (CCB-S3-009 §2). UNKNOWN maps to nothing: a message she did not understand is
@@ -197,6 +205,25 @@ const MEMBER_CATEGORY_FOR_INTENT: Record<string, MemberCategory | null> = {
   UNDO: 'consent',
   UNKNOWN: null,
 };
+
+/**
+ * Replies that may be reworded freely because they cannot change consent or
+ * execute an action. Consent, undo, and action outcomes deliberately stay on
+ * their deterministic strings.
+ */
+const AI_PERSONALIZED_KEYS = new Set<PersonaKey>([
+  'status',
+  'searchResult',
+  'notUnderstood',
+  'price',
+  'conversion',
+  'priceUnknownAsset',
+  'priceAmbiguous',
+  'priceUnavailable',
+  'priceThrottled',
+]);
+
+const AI_LOCKED_KEYS = new Set<PersonaKey>(['priceAmbiguous']);
 
 /**
  * Is this fragment pure reaction rather than an instruction (§1)?
@@ -968,7 +995,7 @@ export class InteractionEngine {
           links: [s.archiveUrl, s.projectUrl].filter((u) => u),
           label: s.botLabel,
         });
-    await this.replyBody(msg, s, body);
+    await this.replyBody(msg, s, lang, body);
   }
 
   /**
@@ -978,23 +1005,31 @@ export class InteractionEngine {
   private async replyBody(
     msg: CapturedMessage,
     s: InteractionSettings,
+    lang: string,
     body: string,
   ): Promise<void> {
-    const out = formatOutbound(body, {
+    const personalized = await this.personalizedBody(msg, lang, 'help', body, 'locked');
+    const out = formatOutbound(personalized, {
       mode: s.replyMode,
-      prefixTemplate: this.prefixTemplate(s, this.replyLanguage(msg, s, msg.text, undefined, this.now())),
+      prefixTemplate: this.prefixTemplate(s, lang),
       displayName: msg.senderDisplayName,
       allowQuote: true,
     });
     const mentions: ReplyMention[] = out.prefixName
       ? [{ displayName: out.prefixName, memberId: msg.senderMemberId }]
       : [];
-    await this.sendReply(msg, s, out, {}, {
-      category: 'help',
-      lang: this.replyLanguage(msg, s, msg.text, undefined, this.now()),
-      mentions,
-      replyTo: { groupId: msg.groupId, itemId: msg.itemId },
-    });
+    await this.sendReply(
+      msg,
+      s,
+      out,
+      {},
+      {
+        category: 'help',
+        lang,
+        mentions,
+        replyTo: { groupId: msg.groupId, itemId: msg.itemId },
+      },
+    );
   }
 
   /* ── Actions ───────────────────────────────────────────────────────────── */
@@ -1116,13 +1151,14 @@ export class InteractionEngine {
     const index = this.state.pickRetort(msg.groupId, list.length, this.random);
     const retort = index >= 0 ? list[index] : undefined;
     if (retort) {
+      const personalized = await this.personalizedBody(msg, lang, 'nickname', retort, 'free');
       // A retort is a snub, not an address: no name prefix (that would read as
       // her talking TO the member, contradicting "never opens a conversation")
       // and no quote.
       await this.sendReply(
         msg,
         s,
-        { text: retort, quote: false },
+        { text: personalized, quote: false },
         { openWindow: false },
         // A retort names nobody — the instruction was discarded, not read, and a
         // retort carries no name prefix (that would read as her talking TO them).
@@ -1164,6 +1200,42 @@ export class InteractionEngine {
     return t[lang] ?? t[s.defaultLanguage] ?? t['en'] ?? null;
   }
 
+  /**
+   * Asks local AI to phrase a deterministic draft around the member's actual
+   * message. The caller always receives usable text: no runtime, rules mode,
+   * network failure, malformed output, or lost required fact can escape this
+   * method as a broken reply.
+   */
+  private async personalizedBody(
+    msg: CapturedMessage,
+    lang: string,
+    kind: AiReplyRequest['kind'],
+    deterministicDraft: string,
+    mode: AiReplyMode,
+    requiredLiterals: string[] = [],
+  ): Promise<string> {
+    const personalize = this.deps.personalize;
+    if (!personalize) return deterministicDraft;
+
+    try {
+      const personalized = await personalize({
+        kind,
+        lang,
+        memberMessage: msg.text,
+        deterministicDraft,
+        mode,
+        requiredLiterals,
+        blockedLiterals: [msg.senderDisplayName],
+      });
+      return personalized?.trim() || deterministicDraft;
+    } catch (error) {
+      log.debug(
+        `Interaction: reply personalization failed (${error instanceof Error ? error.message : String(error)}).`,
+      );
+      return deterministicDraft;
+    }
+  }
+
   private async reply(
     msg: CapturedMessage,
     s: InteractionSettings,
@@ -1177,9 +1249,33 @@ export class InteractionEngine {
     // happens here rather than inside sendReply's try/catch, so a broken prefix
     // template fails loudly instead of being swallowed as a failed send.
     const suffix = opts.suffix?.trim();
-    const body = suffix
-      ? `${fillPersona(this.persona(s, lang, key), vars)}\n${suffix}`
-      : fillPersona(this.persona(s, lang, key), vars);
+    const deterministicDraft = fillPersona(this.persona(s, lang, key), vars);
+    let core = deterministicDraft;
+
+    if (AI_PERSONALIZED_KEYS.has(key)) {
+      const mode: AiReplyMode = AI_LOCKED_KEYS.has(key) ? 'locked' : 'free';
+      const requiredLiterals =
+        mode === 'free'
+          ? [
+              ...new Set(
+                Object.values(vars)
+                  .map(String)
+                  .map((value) => value.trim())
+                  .filter(Boolean),
+              ),
+            ]
+          : [];
+      core = await this.personalizedBody(
+        msg,
+        lang,
+        key,
+        deterministicDraft,
+        mode,
+        requiredLiterals,
+      );
+    }
+
+    const body = suffix ? `${core}\n${suffix}` : core;
     const out = formatOutbound(body, {
       mode: s.replyMode,
       prefixTemplate: this.prefixTemplate(s, lang),
