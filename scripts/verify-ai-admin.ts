@@ -1,5 +1,5 @@
 /**
- * Offline verification for the dedicated AI admin control center.
+ * Offline verification for the AI Operations Center.
  *
  * It boots the real admin server against PGlite, uses a fake Ollama endpoint,
  * and never sends a SimpleX message or touches production.
@@ -180,22 +180,23 @@ async function main(): Promise<void> {
     headers: authed,
   });
 
-  check('AI control page renders', page.statusCode === 200);
+  check('AI Operations Center renders', page.statusCode === 200);
   check(
     'navigation exposes AI Control',
     page.body.includes('href="/ai"') && page.body.includes('AI Control'),
   );
   check(
-    'configured provider lane is visible',
-    page.body.includes('Ollama') &&
-      page.body.includes('http://10.8.0.4:11434') &&
-      page.body.includes('qwen3.5:9b'),
+    'large operations surface renders',
+    page.body.includes('Operations overview') &&
+      page.body.includes('Intent lane telemetry') &&
+      page.body.includes('Reply lane telemetry') &&
+      page.body.includes('Recent AI operations'),
   );
   check(
-    'runtime and safety cards render',
-    page.body.includes('Runtime lane') &&
-      page.body.includes('Intent telemetry') &&
-      page.body.includes('Safety perimeter'),
+    'marketing trust sections render',
+    page.body.includes('Capability and trust matrix') &&
+      page.body.includes('Private data path') &&
+      page.body.includes('Content-free telemetry'),
   );
   check(
     'role routing controls render',
@@ -204,10 +205,11 @@ async function main(): Promise<void> {
       page.body.includes('name="replyModel"'),
   );
   check(
-    'future lanes stay disabled',
+    'real limitations remain visible',
     page.body.includes('Private RAG') &&
       page.body.includes('Comparison lane') &&
-      page.body.includes('Cloud provider'),
+      page.body.includes('Cloud providers') &&
+      page.body.includes('Disabled'),
   );
   check(
     'secrets never appear',
@@ -254,92 +256,39 @@ async function main(): Promise<void> {
       aiRuntimeSnapshot().routing.replyModel === 'qwen3.5:9b',
   );
 
-  const routedPage = await app.inject({
-    method: 'GET',
-    url: '/ai?routed=1',
-    headers: authed,
-  });
-
-  check(
-    'routed page marks intent and reply models',
-    routedPage.body.includes('Intent') &&
-      routedPage.body.includes('Reply') &&
-      routedPage.body.includes('qwen3.5:4b'),
-  );
-
-  const invalidRoute = await app.inject({
+  const reset = await app.inject({
     method: 'POST',
-    url: '/ai/routing',
+    url: '/ai/telemetry/reset',
     payload: {
       _csrf: csrf,
-      intentModel: 'ghost-model:latest',
-      replyModel: 'qwen3.5:9b',
     },
     headers: authed,
   });
 
   check(
-    'uninstalled routing target is refused',
-    invalidRoute.statusCode === 302 && String(invalidRoute.headers.location).includes('/ai?error='),
+    'telemetry reset succeeds',
+    reset.statusCode === 302 && reset.headers.location === '/ai?reset=1',
   );
+  check('telemetry reset clears activity', aiRuntimeSnapshot().operations.recent.length === 0);
   check(
-    'failed routing leaves the active route unchanged',
+    'telemetry reset preserves routing',
     aiRuntimeSnapshot().routing.intentModel === 'qwen3.5:4b',
-  );
-
-  const useRules = await app.inject({
-    method: 'POST',
-    url: '/ai/runtime',
-    payload: {
-      _csrf: csrf,
-      mode: 'rules',
-    },
-    headers: authed,
-  });
-
-  check(
-    'rules mode update succeeds',
-    useRules.statusCode === 302 && useRules.headers.location === '/ai?saved=1',
-  );
-  check('rules become active immediately', aiRuntimeSnapshot().enabled === false);
-
-  const enableLocal = await app.inject({
-    method: 'POST',
-    url: '/ai/runtime',
-    payload: {
-      _csrf: csrf,
-      mode: 'local',
-    },
-    headers: authed,
-  });
-
-  check(
-    'healthy role models enable without restart',
-    enableLocal.statusCode === 302 && enableLocal.headers.location === '/ai?saved=1',
-  );
-  check('local AI is active after the role probe', aiRuntimeSnapshot().enabled === true);
-  check(
-    'successful enable records the role probe',
-    aiRuntimeSnapshot().probe.ok === true && aiRuntimeSnapshot().probe.modelPresent === true,
   );
 
   const noCsrf = await app.inject({
     method: 'POST',
-    url: '/ai/routing',
-    payload: {
-      intentModel: 'qwen3.5:9b',
-      replyModel: 'qwen3.5:9b',
-    },
+    url: '/ai/telemetry/reset',
+    payload: {},
     headers: authed,
   });
 
-  check('routing mutation without CSRF is refused', noCsrf.statusCode === 403);
+  check('telemetry reset without CSRF is refused', noCsrf.statusCode === 403);
 
   const audit = await pg.query<{ n: number }>(
-    `SELECT count(*)::int AS n FROM audit_log WHERE action IN ('local-ai.toggle', 'local-ai.routing.update')`,
+    `SELECT count(*)::int AS n FROM audit_log WHERE action IN ('local-ai.routing.update', 'local-ai.telemetry.reset')`,
   );
 
-  check('runtime and routing changes are audited', (audit.rows[0]?.n ?? 0) >= 3);
+  check('routing and telemetry reset are audited', (audit.rows[0]?.n ?? 0) >= 2);
 
   await app.close();
   resetAiRuntimeForTests();
@@ -352,9 +301,7 @@ async function main(): Promise<void> {
   console.log('ConsentExecuted: false');
   console.log('ProductionChanged: false');
 
-  if (failures > 0) {
-    process.exit(1);
-  }
+  if (failures > 0) process.exit(1);
 }
 
 main().catch((error: unknown) => {

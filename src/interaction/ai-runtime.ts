@@ -1,10 +1,10 @@
 /**
- * Runtime control, role routing, model discovery, and in-memory telemetry for private Ollama.
+ * Runtime control, role routing, model discovery, and content-free operations telemetry for private Ollama.
  *
- * Environment configuration decides whether local AI is available at all. Persisted settings
- * decide whether this process uses local AI and which installed model serves each supported role.
- * Enabling and routing changes are fail-closed because the selected models are verified before
- * the active resolver is changed.
+ * Environment configuration decides whether local AI is available at all. Persisted settings decide
+ * whether this process uses local AI and which installed model serves each supported role. Enabling
+ * and routing changes are fail-closed because the selected models are verified before the active
+ * resolver is changed.
  */
 
 import type { LocalAiConfig } from '../config.js';
@@ -25,6 +25,7 @@ import { activeResolverName, resetIntentResolver, setIntentResolver } from './re
 
 const RUNTIME_KEY = 'local-ai-runtime';
 const ROUTING_KEY = 'local-ai-model-routing';
+const ACTIVITY_CAPACITY = 50;
 
 interface StoredRuntimeSettings {
   enabled: boolean;
@@ -48,6 +49,54 @@ export interface AiRuntimeMetrics {
   lastModelIntent: Intent | null;
   lastFinalIntent: Intent | null;
   lastError: string | null;
+}
+
+export interface AiReplyMetrics {
+  requests: number;
+  successes: number;
+  failures: number;
+  fallbacks: number;
+  averageLatencyMs: number | null;
+  lastLatencyMs: number | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastReplyKind: string | null;
+  lastReplyMode: AiReplyRequest['mode'] | null;
+  lastErrorCategory: string | null;
+}
+
+export type AiActivityRole = 'intent' | 'reply' | 'runtime' | 'routing' | 'catalog' | 'probe';
+export type AiActivityOutcome = 'success' | 'failure' | 'fallback' | 'change';
+
+export interface AiActivityEvent {
+  id: number;
+  at: string;
+  role: AiActivityRole;
+  outcome: AiActivityOutcome;
+  model: string | null;
+  operation: string;
+  latencyMs: number | null;
+  detail: string;
+}
+
+export interface AiOperationsSummary {
+  totalRequests: number;
+  successes: number;
+  failures: number;
+  fallbacks: number;
+  successRate: number | null;
+  fallbackRate: number | null;
+  lastActivityAt: string | null;
+  activityCapacity: number;
+  contentStored: false;
+  metricsPersistence: 'memory';
+}
+
+export interface AiOperationsTelemetry {
+  summary: AiOperationsSummary;
+  intent: AiRuntimeMetrics & { model: string };
+  reply: AiReplyMetrics & { model: string };
+  recent: AiActivityEvent[];
 }
 
 export interface AiProbeSnapshot {
@@ -91,6 +140,8 @@ export interface AiRuntimeSnapshot {
   timeoutMs: number;
   routing: AiModelRoutingSnapshot;
   metrics: AiRuntimeMetrics;
+  replyMetrics: AiReplyMetrics;
+  operations: AiOperationsTelemetry;
   probe: AiProbeSnapshot;
   catalog: AiModelCatalogSnapshot;
 }
@@ -100,7 +151,7 @@ export interface AiRuntimeDeps {
   now?: () => Date;
 }
 
-interface MutableMetrics {
+interface MutableIntentMetrics {
   requests: number;
   successes: number;
   failures: number;
@@ -113,6 +164,53 @@ interface MutableMetrics {
   lastModelIntent: Intent | null;
   lastFinalIntent: Intent | null;
   lastError: string | null;
+}
+
+interface MutableReplyMetrics {
+  requests: number;
+  successes: number;
+  failures: number;
+  fallbacks: number;
+  totalLatencyMs: number;
+  lastLatencyMs: number | null;
+  lastSuccessAt: string | null;
+  lastFailureAt: string | null;
+  lastReplyKind: string | null;
+  lastReplyMode: AiReplyRequest['mode'] | null;
+  lastErrorCategory: string | null;
+}
+
+function emptyIntentMetrics(): MutableIntentMetrics {
+  return {
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    fallbacks: 0,
+    guardOverrides: 0,
+    totalLatencyMs: 0,
+    lastLatencyMs: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastModelIntent: null,
+    lastFinalIntent: null,
+    lastError: null,
+  };
+}
+
+function emptyReplyMetrics(): MutableReplyMetrics {
+  return {
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    fallbacks: 0,
+    totalLatencyMs: 0,
+    lastLatencyMs: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastReplyKind: null,
+    lastReplyMode: null,
+    lastErrorCategory: null,
+  };
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -176,8 +274,47 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function safeErrorCategory(error: unknown): string {
+  const message = errorMessage(error).toLowerCase();
+
+  if (message.includes('timed out') || message.includes('abort')) return 'timeout';
+  if (message.includes('http')) return 'http-error';
+  if (
+    message.includes('malformed') ||
+    message.includes('invalid') ||
+    message.includes('empty') ||
+    message.includes('no completion')
+  ) {
+    return 'invalid-output';
+  }
+  if (
+    message.includes('required literal') ||
+    message.includes('blocked text') ||
+    message.includes('unsafe')
+  ) {
+    return 'guard-rejection';
+  }
+  if (
+    message.includes('not installed') ||
+    message.includes('missing') ||
+    message.includes('unavailable')
+  ) {
+    return 'unavailable';
+  }
+
+  return 'runtime-error';
+}
+
 function uniqueModels(routing: StoredRoutingSettings): string[] {
   return [...new Set([routing.intentModel, routing.replyModel])];
+}
+
+function average(total: number, requests: number): number | null {
+  return requests > 0 ? Math.round((total / requests) * 10) / 10 : null;
+}
+
+function rate(value: number, total: number): number | null {
+  return total > 0 ? Math.round((value / total) * 1000) / 10 : null;
 }
 
 let activeRuntime: AiRuntimeService | undefined;
@@ -187,20 +324,10 @@ export class AiRuntimeService implements OllamaResolverObserver {
   private routingState: StoredRoutingSettings;
   private readonly fetchImpl: FetchLike;
   private readonly now: () => Date;
-  private readonly metricsState: MutableMetrics = {
-    requests: 0,
-    successes: 0,
-    failures: 0,
-    fallbacks: 0,
-    guardOverrides: 0,
-    totalLatencyMs: 0,
-    lastLatencyMs: null,
-    lastSuccessAt: null,
-    lastFailureAt: null,
-    lastModelIntent: null,
-    lastFinalIntent: null,
-    lastError: null,
-  };
+  private intentMetricsState: MutableIntentMetrics = emptyIntentMetrics();
+  private replyMetricsState: MutableReplyMetrics = emptyReplyMetrics();
+  private activityState: AiActivityEvent[] = [];
+  private activitySequence = 0;
   private probeState: AiProbeSnapshot = {
     at: null,
     ok: null,
@@ -250,40 +377,112 @@ export class AiRuntimeService implements OllamaResolverObserver {
   }
 
   success(event: OllamaResolveSuccess): void {
-    const metrics = this.metricsState;
+    const metrics = this.intentMetricsState;
+    const guarded = event.modelIntent !== event.finalIntent;
+    const at = this.now().toISOString();
+
     metrics.requests++;
     metrics.successes++;
     metrics.totalLatencyMs += event.latencyMs;
     metrics.lastLatencyMs = event.latencyMs;
-    metrics.lastSuccessAt = this.now().toISOString();
+    metrics.lastSuccessAt = at;
     metrics.lastModelIntent = event.modelIntent;
     metrics.lastFinalIntent = event.finalIntent;
     metrics.lastError = null;
 
-    if (event.modelIntent !== event.finalIntent) metrics.guardOverrides++;
+    if (guarded) metrics.guardOverrides++;
+
+    this.pushActivity({
+      at,
+      role: 'intent',
+      outcome: 'success',
+      model: this.routingState.intentModel,
+      operation: 'classify',
+      latencyMs: event.latencyMs,
+      detail: guarded ? 'deterministic guard override' : 'classification accepted',
+    });
   }
 
   failure(event: OllamaResolveFailure): void {
-    const metrics = this.metricsState;
+    const metrics = this.intentMetricsState;
+    const at = this.now().toISOString();
+
     metrics.requests++;
     metrics.failures++;
     metrics.fallbacks++;
     metrics.totalLatencyMs += event.latencyMs;
     metrics.lastLatencyMs = event.latencyMs;
-    metrics.lastFailureAt = this.now().toISOString();
+    metrics.lastFailureAt = at;
     metrics.lastError = event.error;
+
+    this.pushActivity({
+      at,
+      role: 'intent',
+      outcome: 'fallback',
+      model: this.routingState.intentModel,
+      operation: 'classify',
+      latencyMs: event.latencyMs,
+      detail: safeErrorCategory(event.error),
+    });
   }
 
   async personalize(request: AiReplyRequest): Promise<string | null> {
     if (!this.isEnabled()) return null;
 
+    const started = performance.now();
+    const metrics = this.replyMetricsState;
+    const operation = request.kind.slice(0, 80);
+    const model = this.routingState.replyModel;
+    metrics.requests++;
+
     try {
-      return await generateOllamaReply(
-        this.configForModel(this.routingState.replyModel),
-        request,
-        this.fetchImpl,
-      );
+      const reply = await generateOllamaReply(this.configForModel(model), request, this.fetchImpl);
+      const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
+
+      metrics.successes++;
+      metrics.totalLatencyMs += latencyMs;
+      metrics.lastLatencyMs = latencyMs;
+      metrics.lastSuccessAt = at;
+      metrics.lastReplyKind = operation;
+      metrics.lastReplyMode = request.mode;
+      metrics.lastErrorCategory = null;
+
+      this.pushActivity({
+        at,
+        role: 'reply',
+        outcome: 'success',
+        model,
+        operation,
+        latencyMs,
+        detail: request.mode,
+      });
+
+      return reply;
     } catch (error) {
+      const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
+      const category = safeErrorCategory(error);
+
+      metrics.failures++;
+      metrics.fallbacks++;
+      metrics.totalLatencyMs += latencyMs;
+      metrics.lastLatencyMs = latencyMs;
+      metrics.lastFailureAt = at;
+      metrics.lastReplyKind = operation;
+      metrics.lastReplyMode = request.mode;
+      metrics.lastErrorCategory = category;
+
+      this.pushActivity({
+        at,
+        role: 'reply',
+        outcome: 'fallback',
+        model,
+        operation,
+        latencyMs,
+        detail: category,
+      });
+
       log.warn(
         `Local AI reply wording failed; using the deterministic fallback (${errorMessage(error)}).`,
       );
@@ -292,11 +491,12 @@ export class AiRuntimeService implements OllamaResolverObserver {
   }
 
   snapshot(): AiRuntimeSnapshot {
-    const metrics = this.metricsState;
-    const averageLatencyMs =
-      metrics.requests > 0
-        ? Math.round((metrics.totalLatencyMs / metrics.requests) * 10) / 10
-        : null;
+    const intent = this.intentMetricsSnapshot();
+    const reply = this.replyMetricsSnapshot();
+    const totalRequests = intent.requests + reply.requests;
+    const successes = intent.successes + reply.successes;
+    const failures = intent.failures + reply.failures;
+    const fallbacks = intent.fallbacks + reply.fallbacks;
 
     return {
       available: this.config.enabled,
@@ -311,19 +511,30 @@ export class AiRuntimeService implements OllamaResolverObserver {
         intentModel: this.routingState.intentModel,
         replyModel: this.routingState.replyModel,
       },
-      metrics: {
-        requests: metrics.requests,
-        successes: metrics.successes,
-        failures: metrics.failures,
-        fallbacks: metrics.fallbacks,
-        guardOverrides: metrics.guardOverrides,
-        averageLatencyMs,
-        lastLatencyMs: metrics.lastLatencyMs,
-        lastSuccessAt: metrics.lastSuccessAt,
-        lastFailureAt: metrics.lastFailureAt,
-        lastModelIntent: metrics.lastModelIntent,
-        lastFinalIntent: metrics.lastFinalIntent,
-        lastError: metrics.lastError,
+      metrics: intent,
+      replyMetrics: reply,
+      operations: {
+        summary: {
+          totalRequests,
+          successes,
+          failures,
+          fallbacks,
+          successRate: rate(successes, totalRequests),
+          fallbackRate: rate(fallbacks, totalRequests),
+          lastActivityAt: this.activityState.at(-1)?.at ?? null,
+          activityCapacity: ACTIVITY_CAPACITY,
+          contentStored: false,
+          metricsPersistence: 'memory',
+        },
+        intent: {
+          ...intent,
+          model: this.routingState.intentModel,
+        },
+        reply: {
+          ...reply,
+          model: this.routingState.replyModel,
+        },
+        recent: this.activityState.map((event) => ({ ...event })),
       },
       probe: { ...this.probeState },
       catalog: {
@@ -349,14 +560,25 @@ export class AiRuntimeService implements OllamaResolverObserver {
 
       const models = modelCatalog(await response.json());
       const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
 
       this.catalogState = {
-        at: this.now().toISOString(),
+        at,
         ok: true,
         latencyMs,
         models,
         error: null,
       };
+
+      this.pushActivity({
+        at,
+        role: 'catalog',
+        outcome: 'success',
+        model: null,
+        operation: 'refresh',
+        latencyMs,
+        detail: `${models.length} models discovered`,
+      });
 
       return this.snapshot().catalog;
     } catch (error) {
@@ -364,14 +586,25 @@ export class AiRuntimeService implements OllamaResolverObserver {
         ? `Ollama model discovery timed out after ${this.config.timeoutMs} ms.`
         : errorMessage(error);
       const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
 
       this.catalogState = {
-        at: this.now().toISOString(),
+        at,
         ok: false,
         latencyMs,
         models: this.catalogState.models.map((model) => ({ ...model })),
         error: message,
       };
+
+      this.pushActivity({
+        at,
+        role: 'catalog',
+        outcome: 'failure',
+        model: null,
+        operation: 'refresh',
+        latencyMs,
+        detail: safeErrorCategory(message),
+      });
 
       throw new Error(message);
     } finally {
@@ -392,27 +625,49 @@ export class AiRuntimeService implements OllamaResolverObserver {
       }
 
       const latencyMs = catalog.latencyMs ?? Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
 
       this.probeState = {
-        at: this.now().toISOString(),
+        at,
         ok: true,
         latencyMs,
         modelPresent: true,
         error: null,
       };
 
+      this.pushActivity({
+        at,
+        role: 'probe',
+        outcome: 'success',
+        model: null,
+        operation: 'role-models',
+        latencyMs,
+        detail: 'all selected models present',
+      });
+
       return { ...this.probeState };
     } catch (error) {
       const message = errorMessage(error);
       const latencyMs = Math.round((performance.now() - started) * 10) / 10;
+      const at = this.now().toISOString();
 
       this.probeState = {
-        at: this.now().toISOString(),
+        at,
         ok: false,
         latencyMs,
         modelPresent: false,
         error: message,
       };
+
+      this.pushActivity({
+        at,
+        role: 'probe',
+        outcome: 'failure',
+        model: null,
+        operation: 'role-models',
+        latencyMs,
+        detail: safeErrorCategory(message),
+      });
 
       throw new Error(message);
     }
@@ -455,6 +710,17 @@ export class AiRuntimeService implements OllamaResolverObserver {
 
     this.routingState = nextRouting;
     this.applyResolver();
+
+    this.pushActivity({
+      at: this.now().toISOString(),
+      role: 'routing',
+      outcome: 'change',
+      model: null,
+      operation: 'role-assignment',
+      latencyMs: null,
+      detail: 'local role routing updated',
+    });
+
     return this.snapshot();
   }
 
@@ -480,6 +746,17 @@ export class AiRuntimeService implements OllamaResolverObserver {
 
       this.requestedEnabled = true;
       this.applyResolver();
+
+      this.pushActivity({
+        at: this.now().toISOString(),
+        role: 'runtime',
+        outcome: 'change',
+        model: null,
+        operation: 'enable',
+        latencyMs: null,
+        detail: 'local AI enabled',
+      });
+
       return this.snapshot();
     }
 
@@ -499,7 +776,81 @@ export class AiRuntimeService implements OllamaResolverObserver {
       );
     }
 
+    this.pushActivity({
+      at: this.now().toISOString(),
+      role: 'runtime',
+      outcome: 'change',
+      model: null,
+      operation: 'disable',
+      latencyMs: null,
+      detail: 'deterministic rules enabled',
+    });
+
     return this.snapshot();
+  }
+
+  async resetTelemetry(actor: string): Promise<AiRuntimeSnapshot> {
+    await writeAudit(this.db, actor, 'local-ai.telemetry.reset', 'local-ai', {
+      previousIntentRequests: this.intentMetricsState.requests,
+      previousReplyRequests: this.replyMetricsState.requests,
+      previousActivityEvents: this.activityState.length,
+    });
+
+    this.intentMetricsState = emptyIntentMetrics();
+    this.replyMetricsState = emptyReplyMetrics();
+    this.activityState = [];
+    this.activitySequence = 0;
+
+    return this.snapshot();
+  }
+
+  private intentMetricsSnapshot(): AiRuntimeMetrics {
+    const metrics = this.intentMetricsState;
+
+    return {
+      requests: metrics.requests,
+      successes: metrics.successes,
+      failures: metrics.failures,
+      fallbacks: metrics.fallbacks,
+      guardOverrides: metrics.guardOverrides,
+      averageLatencyMs: average(metrics.totalLatencyMs, metrics.requests),
+      lastLatencyMs: metrics.lastLatencyMs,
+      lastSuccessAt: metrics.lastSuccessAt,
+      lastFailureAt: metrics.lastFailureAt,
+      lastModelIntent: metrics.lastModelIntent,
+      lastFinalIntent: metrics.lastFinalIntent,
+      lastError: metrics.lastError,
+    };
+  }
+
+  private replyMetricsSnapshot(): AiReplyMetrics {
+    const metrics = this.replyMetricsState;
+
+    return {
+      requests: metrics.requests,
+      successes: metrics.successes,
+      failures: metrics.failures,
+      fallbacks: metrics.fallbacks,
+      averageLatencyMs: average(metrics.totalLatencyMs, metrics.requests),
+      lastLatencyMs: metrics.lastLatencyMs,
+      lastSuccessAt: metrics.lastSuccessAt,
+      lastFailureAt: metrics.lastFailureAt,
+      lastReplyKind: metrics.lastReplyKind,
+      lastReplyMode: metrics.lastReplyMode,
+      lastErrorCategory: metrics.lastErrorCategory,
+    };
+  }
+
+  private pushActivity(event: Omit<AiActivityEvent, 'id'>): void {
+    this.activitySequence++;
+    this.activityState.push({
+      id: this.activitySequence,
+      ...event,
+    });
+
+    if (this.activityState.length > ACTIVITY_CAPACITY) {
+      this.activityState.splice(0, this.activityState.length - ACTIVITY_CAPACITY);
+    }
   }
 
   private configForModel(model: string): LocalAiConfig {
@@ -533,6 +884,34 @@ export class AiRuntimeService implements OllamaResolverObserver {
 }
 
 function unavailableSnapshot(): AiRuntimeSnapshot {
+  const metrics: AiRuntimeMetrics = {
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    fallbacks: 0,
+    guardOverrides: 0,
+    averageLatencyMs: null,
+    lastLatencyMs: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastModelIntent: null,
+    lastFinalIntent: null,
+    lastError: null,
+  };
+  const replyMetrics: AiReplyMetrics = {
+    requests: 0,
+    successes: 0,
+    failures: 0,
+    fallbacks: 0,
+    averageLatencyMs: null,
+    lastLatencyMs: null,
+    lastSuccessAt: null,
+    lastFailureAt: null,
+    lastReplyKind: null,
+    lastReplyMode: null,
+    lastErrorCategory: null,
+  };
+
   return {
     available: false,
     requestedEnabled: false,
@@ -546,19 +925,24 @@ function unavailableSnapshot(): AiRuntimeSnapshot {
       intentModel: '',
       replyModel: '',
     },
-    metrics: {
-      requests: 0,
-      successes: 0,
-      failures: 0,
-      fallbacks: 0,
-      guardOverrides: 0,
-      averageLatencyMs: null,
-      lastLatencyMs: null,
-      lastSuccessAt: null,
-      lastFailureAt: null,
-      lastModelIntent: null,
-      lastFinalIntent: null,
-      lastError: null,
+    metrics,
+    replyMetrics,
+    operations: {
+      summary: {
+        totalRequests: 0,
+        successes: 0,
+        failures: 0,
+        fallbacks: 0,
+        successRate: null,
+        fallbackRate: null,
+        lastActivityAt: null,
+        activityCapacity: ACTIVITY_CAPACITY,
+        contentStored: false,
+        metricsPersistence: 'memory',
+      },
+      intent: { ...metrics, model: '' },
+      reply: { ...replyMetrics, model: '' },
+      recent: [],
     },
     probe: {
       at: null,
@@ -593,6 +977,11 @@ export async function setAiModelRouting(
 ): Promise<AiRuntimeSnapshot> {
   if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
   return activeRuntime.setRouting(intentModel, replyModel, actor);
+}
+
+export async function resetAiOperationsTelemetry(actor: string): Promise<AiRuntimeSnapshot> {
+  if (!activeRuntime) throw new Error('Local AI runtime is not initialized.');
+  return activeRuntime.resetTelemetry(actor);
 }
 
 export async function testAiRuntimeConnection(): Promise<AiProbeSnapshot> {

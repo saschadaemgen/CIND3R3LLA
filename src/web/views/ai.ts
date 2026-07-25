@@ -1,18 +1,19 @@
 /**
- * Dedicated AI control center for Cinderella.
+ * AI Operations Center for Cinderella.
  *
- * This surface exposes the runtime switch, role routing, model probe, installed model catalog,
- * resolver telemetry, and the safety boundary around local inference. Provider credentials and
- * boot secrets never enter this view.
+ * This surface exposes local runtime control, role routing, model inventory, content-free telemetry,
+ * a recent operations buffer, and the safety boundaries around private inference.
  */
 
 import type { FastifyInstance } from 'fastify';
 import {
   aiRuntimeSnapshot,
   refreshAiModelCatalog,
+  resetAiOperationsTelemetry,
   setAiModelRouting,
   setAiRuntimeEnabled,
   testAiRuntimeConnection,
+  type AiActivityEvent,
   type AiModelInfo,
   type AiModelRoutingSnapshot,
 } from '../../interaction/ai-runtime.js';
@@ -33,6 +34,10 @@ function displayTime(value: string | null): string {
 
 function displayLatency(value: number | null): string {
   return value === null ? 'Not recorded' : `${value.toFixed(1)} ms`;
+}
+
+function displayRate(value: number | null): string {
+  return value === null ? 'Not recorded' : `${value.toFixed(1)}%`;
 }
 
 function displayBytes(value: number | null): string {
@@ -157,6 +162,64 @@ function modelTable(models: AiModelInfo[], routing: AiModelRoutingSnapshot): Saf
   </div>`;
 }
 
+function activityTone(outcome: AiActivityEvent['outcome']): 'green' | 'red' | 'amber' | 'blue' {
+  if (outcome === 'success') return 'green';
+  if (outcome === 'failure') return 'red';
+  if (outcome === 'fallback') return 'amber';
+  return 'blue';
+}
+
+function activityTable(events: AiActivityEvent[]): SafeHtml {
+  if (events.length === 0) {
+    return html`<p class="text-sm text-slate-500">
+      No AI operations have been recorded in this process yet.
+    </p>`;
+  }
+
+  return html`<div class="overflow-x-auto">
+    <table class="min-w-full text-left text-sm">
+      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+        <tr>
+          <th class="px-3 py-2 font-medium">Time</th>
+          <th class="px-3 py-2 font-medium">Lane</th>
+          <th class="px-3 py-2 font-medium">Outcome</th>
+          <th class="px-3 py-2 font-medium">Operation</th>
+          <th class="px-3 py-2 font-medium">Model</th>
+          <th class="px-3 py-2 font-medium">Latency</th>
+          <th class="px-3 py-2 font-medium">Detail</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        ${[...events].reverse().map(
+          (event) =>
+            html`<tr>
+              <td class="whitespace-nowrap px-3 py-3 text-slate-600">${displayTime(event.at)}</td>
+              <td class="px-3 py-3 font-medium text-slate-900">${event.role}</td>
+              <td class="px-3 py-3">${badge(event.outcome, activityTone(event.outcome))}</td>
+              <td class="px-3 py-3 text-slate-600">${event.operation}</td>
+              <td class="px-3 py-3 text-slate-600">${event.model ?? 'System'}</td>
+              <td class="px-3 py-3 text-slate-600">${displayLatency(event.latencyMs)}</td>
+              <td class="px-3 py-3 text-slate-600">${event.detail}</td>
+            </tr>`,
+        )}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+function capabilityRow(
+  capability: string,
+  status: string,
+  tone: 'green' | 'slate' | 'amber' | 'blue',
+  proof: string,
+): SafeHtml {
+  return html`<tr>
+    <td class="px-3 py-3 font-medium text-slate-900">${capability}</td>
+    <td class="px-3 py-3">${badge(status, tone)}</td>
+    <td class="px-3 py-3 text-slate-600">${proof}</td>
+  </tr>`;
+}
+
 export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
   app.get<{
     Querystring: {
@@ -164,44 +227,52 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       tested?: string;
       refreshed?: string;
       routed?: string;
+      reset?: string;
       error?: string;
     };
   }>('/ai', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
     const availableModels = modelNames(snapshot.catalog.models, snapshot.routing);
+    const operations = snapshot.operations;
 
-    const notice = req.query.routed
+    const notice = req.query.reset
       ? html`<div
           class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
         >
-          Model routing updated. New intent and reply requests use the selected local lanes.
+          In-memory AI telemetry and the recent operations buffer were cleared.
         </div>`
-      : req.query.refreshed
+      : req.query.routed
         ? html`<div
             class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
           >
-            Model catalog refreshed from the configured Ollama endpoint.
+            Model routing updated. New intent and reply requests use the selected local lanes.
           </div>`
-        : req.query.tested
+        : req.query.refreshed
           ? html`<div
               class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
             >
-              Role probe passed. Every selected local model is online and available.
+              Model catalog refreshed from the configured Ollama endpoint.
             </div>`
-          : req.query.saved
+          : req.query.tested
             ? html`<div
                 class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
               >
-                Runtime mode updated. The new route is active without a service restart.
+                Role probe passed. Every selected local model is online and available.
               </div>`
-            : req.query.error
+            : req.query.saved
               ? html`<div
-                  class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                  class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
                 >
-                  ${req.query.error}
+                  Runtime mode updated. The new route is active without a service restart.
                 </div>`
-              : null;
+              : req.query.error
+                ? html`<div
+                    class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                  >
+                    ${req.query.error}
+                  </div>`
+                : null;
 
     const runtimeTone = snapshot.enabled ? 'green' : 'slate';
     const runtimeLabel = snapshot.enabled ? 'Local AI active' : 'Deterministic rules active';
@@ -225,13 +296,13 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     reply.type('text/html');
 
     return page({
-      title: 'AI Control',
+      title: 'AI Operations',
       active: 'ai',
       csrfToken: csrf,
       body: html`
         ${pageHeader(
-          'AI Control',
-          'Runtime routing, local model inventory, telemetry, and the safety perimeter around Cinderella.',
+          'AI Operations Center',
+          'Private model routing, operational telemetry, inventory, trust signals, and the safety perimeter around Cinderella.',
         )}
         ${notice}
 
@@ -240,9 +311,88 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
           ${badge(snapshot.available ? 'Environment gate open' : 'Environment gate closed', snapshot.available ? 'blue' : 'amber')}
           ${badge(probeLabel, probeTone)} ${badge(catalogLabel, catalogTone)}
           ${badge(endpointScope(snapshot.baseUrl), endpointScope(snapshot.baseUrl) === 'External endpoint' ? 'amber' : 'slate')}
+          ${badge('Content-free telemetry', 'green')} ${badge('Cloud fallback disabled', 'slate')}
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-2">
+        ${card(
+          'Operations overview',
+          html`<div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            ${stat('Total AI requests', operations.summary.totalRequests)}
+            ${stat('Successful calls', operations.summary.successes, 'green')}
+            ${stat('Failures', operations.summary.failures, operations.summary.failures > 0 ? 'red' : 'slate')}
+            ${stat('Fallbacks', operations.summary.fallbacks, operations.summary.fallbacks > 0 ? 'amber' : 'slate')}
+            ${stat('Success rate', displayRate(operations.summary.successRate), 'green')}
+            ${stat('Fallback rate', displayRate(operations.summary.fallbackRate), operations.summary.fallbacks > 0 ? 'amber' : 'slate')}
+            ${stat('Installed models', snapshot.catalog.models.length)}
+            ${stat('Stored member content', '0', 'green')}
+          </div>`,
+        )}
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+          ${card(
+            'Intent lane telemetry',
+            html`
+              ${definitionList([
+                ['Model', operations.intent.model],
+                ['Requests', String(operations.intent.requests)],
+                ['Successes', String(operations.intent.successes)],
+                ['Failures', String(operations.intent.failures)],
+                ['Fallbacks', String(operations.intent.fallbacks)],
+                ['Guard overrides', String(operations.intent.guardOverrides)],
+                ['Average latency', displayLatency(operations.intent.averageLatencyMs)],
+                ['Last latency', displayLatency(operations.intent.lastLatencyMs)],
+                ['Last success', displayTime(operations.intent.lastSuccessAt)],
+                ['Last failure', displayTime(operations.intent.lastFailureAt)],
+                ['Last model intent', operations.intent.lastModelIntent ?? 'Not recorded'],
+                ['Last final intent', operations.intent.lastFinalIntent ?? 'Not recorded'],
+              ])}
+            `,
+          )}
+          ${card(
+            'Reply lane telemetry',
+            html`
+              ${definitionList([
+                ['Model', operations.reply.model],
+                ['Requests', String(operations.reply.requests)],
+                ['Successes', String(operations.reply.successes)],
+                ['Failures', String(operations.reply.failures)],
+                ['Fallbacks', String(operations.reply.fallbacks)],
+                ['Average latency', displayLatency(operations.reply.averageLatencyMs)],
+                ['Last latency', displayLatency(operations.reply.lastLatencyMs)],
+                ['Last success', displayTime(operations.reply.lastSuccessAt)],
+                ['Last failure', displayTime(operations.reply.lastFailureAt)],
+                ['Last reply kind', operations.reply.lastReplyKind ?? 'Not recorded'],
+                ['Last reply mode', operations.reply.lastReplyMode ?? 'Not recorded'],
+                ['Last error category', operations.reply.lastErrorCategory ?? 'None'],
+              ])}
+            `,
+          )}
+        </div>
+
+        ${card(
+          'Recent AI operations',
+          html`
+            ${activityTable(operations.recent)}
+            <div class="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <p class="text-xs text-slate-500">
+                The buffer keeps at most ${operations.summary.activityCapacity} metadata-only
+                events. Member text, prompts, names, and generated replies are never stored here.
+              </p>
+              <form method="post" action="/ai/telemetry/reset">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <button
+                  type="submit"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Reset operations telemetry
+                </button>
+              </form>
+            </div>
+          `,
+          'mt-4',
+        )}
+
+        <div class="mt-4 grid gap-4 lg:grid-cols-2">
           ${card(
             'Runtime lane',
             html`
@@ -353,12 +503,16 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
             `,
           )}
           ${card(
-            'Future lanes',
+            'Operational envelope',
             definitionList([
+              ['Metrics persistence', 'In memory until process restart'],
+              ['Activity capacity', `${operations.summary.activityCapacity} metadata events`],
+              ['Member content retained', 'No'],
+              ['Prompt content retained', 'No'],
+              ['Automatic cloud fallback', 'Disabled'],
+              ['Cloud providers', 'Disabled'],
               ['Private RAG', 'Not configured'],
               ['Comparison lane', 'Disabled'],
-              ['Cloud provider', 'Disabled'],
-              ['Automatic cloud fallback', 'Disabled'],
             ]),
           )}
         </div>
@@ -395,6 +549,8 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
               ['Reply model', snapshot.routing.replyModel],
               ['Environment default', snapshot.routing.defaultModel],
               ['Resolver state', snapshot.activeResolver],
+              ['Last AI activity', displayTime(operations.summary.lastActivityAt)],
+              ['Endpoint scope', endpointScope(snapshot.baseUrl)],
             ]),
           )}
         </div>
@@ -404,55 +560,72 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
           modelTable(snapshot.catalog.models, snapshot.routing),
           'mt-4',
         )}
-
-        <div class="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          ${stat('Intent requests', snapshot.metrics.requests)}
-          ${stat('Successful calls', snapshot.metrics.successes, 'green')}
-          ${stat('Failures', snapshot.metrics.failures, snapshot.metrics.failures > 0 ? 'red' : 'slate')}
-          ${stat('Automatic fallbacks', snapshot.metrics.fallbacks, snapshot.metrics.fallbacks > 0 ? 'amber' : 'slate')}
-          ${stat('Guard overrides', snapshot.metrics.guardOverrides, snapshot.metrics.guardOverrides > 0 ? 'blue' : 'slate')}
-        </div>
-
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          ${card(
-            'Intent telemetry',
-            definitionList([
-              ['Average latency', displayLatency(snapshot.metrics.averageLatencyMs)],
-              ['Last latency', displayLatency(snapshot.metrics.lastLatencyMs)],
-              ['Last success', displayTime(snapshot.metrics.lastSuccessAt)],
-              ['Last failure', displayTime(snapshot.metrics.lastFailureAt)],
-              ['Last model intent', snapshot.metrics.lastModelIntent ?? 'Not recorded'],
-              ['Last final intent', snapshot.metrics.lastFinalIntent ?? 'Not recorded'],
-              ['Last error', snapshot.metrics.lastError ?? 'None'],
-            ]),
-          )}
-          ${card(
-            'Safety perimeter',
-            html`<ul class="space-y-2 text-sm text-slate-700">
-              <li>
-                <strong>Local-only routing:</strong> role changes are limited to models discovered
-                on the configured private Ollama endpoint.
-              </li>
-              <li>
-                <strong>Deterministic execution:</strong> the intent model classifies, but it never
-                performs an action.
-              </li>
-              <li>
-                <strong>Consent boundary:</strong> publish, unpublish, undo, and confirmation flows
-                remain deterministic.
-              </li>
-              <li>
-                <strong>Reply isolation:</strong> the wording model can only rewrite a finished,
-                guarded reply.
-              </li>
-              <li>
-                <strong>Automatic fallback:</strong> timeouts, malformed output, unsafe wording, and
-                model failures return to rules.
-              </li>
-            </ul>`,
-          )}
-        </div>
-
+        ${card(
+          'Capability and trust matrix',
+          html`<div class="overflow-x-auto">
+            <table class="min-w-full text-left text-sm">
+              <thead
+                class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500"
+              >
+                <tr>
+                  <th class="px-3 py-2 font-medium">Capability</th>
+                  <th class="px-3 py-2 font-medium">Status</th>
+                  <th class="px-3 py-2 font-medium">Technical proof</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${capabilityRow('Private local inference', snapshot.available ? 'Available' : 'Disabled', snapshot.available ? 'green' : 'amber', endpointScope(snapshot.baseUrl))}
+                ${capabilityRow('Independent role routing', 'Enabled', 'green', `${snapshot.routing.intentModel} for intent, ${snapshot.routing.replyModel} for replies`)}
+                ${capabilityRow('Deterministic action execution', 'Enforced', 'green', 'Models classify or phrase but cannot execute actions')}
+                ${capabilityRow('Consent safety gate', 'Enforced', 'green', 'Publish and unpublish require deterministic agreement')}
+                ${capabilityRow('Automatic rule fallback', 'Enabled', 'green', 'Model failures return to deterministic rules')}
+                ${capabilityRow('Content-free operations telemetry', 'Enabled', 'green', 'Only model, lane, outcome, latency, and fixed metadata are buffered')}
+                ${capabilityRow('Audited operator changes', 'Enabled', 'green', 'Runtime, routing, and telemetry reset actions write audit records')}
+                ${capabilityRow('Cloud providers', 'Disabled', 'slate', 'No cloud provider configuration exists')}
+                ${capabilityRow('Automatic cloud fallback', 'Disabled', 'slate', 'No route can silently leave the private lane')}
+                ${capabilityRow('Private RAG', 'Not configured', 'amber', 'Knowledge indexing is reserved for a later controlled phase')}
+                ${capabilityRow('Model comparison', 'Disabled', 'slate', 'Parallel comparison requests are not active')}
+              </tbody>
+            </table>
+          </div>`,
+          'mt-4',
+        )}
+        ${card(
+          'Private data path',
+          html`<div class="grid gap-3 text-sm md:grid-cols-5">
+            <div class="rounded-lg border border-slate-200 p-3">
+              <strong class="block text-slate-900">1. SimpleX input</strong>
+              <span class="text-slate-600"
+                >Message enters Cinderella through the existing private bot path.</span
+              >
+            </div>
+            <div class="rounded-lg border border-slate-200 p-3">
+              <strong class="block text-slate-900">2. Deterministic guard</strong>
+              <span class="text-slate-600"
+                >Rules establish safety boundaries and the allowed intent catalog.</span
+              >
+            </div>
+            <div class="rounded-lg border border-slate-200 p-3">
+              <strong class="block text-slate-900">3. Private model lane</strong>
+              <span class="text-slate-600"
+                >The VPS reaches Ollama over the private WireGuard route.</span
+              >
+            </div>
+            <div class="rounded-lg border border-slate-200 p-3">
+              <strong class="block text-slate-900">4. Guarded result</strong>
+              <span class="text-slate-600"
+                >Structured output is checked before Cinderella accepts it.</span
+              >
+            </div>
+            <div class="rounded-lg border border-slate-200 p-3">
+              <strong class="block text-slate-900">5. Deterministic execution</strong>
+              <span class="text-slate-600"
+                >Only application code can read data, confirm consent, or perform an action.</span
+              >
+            </div>
+          </div>`,
+          'mt-4',
+        )}
         ${
           snapshot.probe.error
             ? card(
@@ -490,6 +663,15 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     try {
       await setAiModelRouting(intentModel, replyModel, actor);
       return reply.redirect('/ai?routed=1');
+    } catch (error) {
+      return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
+    }
+  });
+
+  app.post('/ai/telemetry/reset', async (req, reply) => {
+    try {
+      await resetAiOperationsTelemetry(req.session?.username ?? 'unknown');
+      return reply.redirect('/ai?reset=1');
     } catch (error) {
       return reply.redirect('/ai?error=' + encodeURIComponent(errorMessage(error)));
     }

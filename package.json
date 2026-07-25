@@ -34,6 +34,7 @@
     "verify:ai-admin": "tsx scripts/verify-ai-admin.ts",
     "verify:ai-models": "tsx scripts/verify-ai-models.ts",
     "verify:ai-routing": "tsx scripts/verify-ai-routing.ts",
+    "verify:ai-telemetry": "tsx scripts/verify-ai-telemetry.ts",
     "verify:ai-replies": "tsx scripts/verify-ai-replies.ts",
     "verify:ai-live": "tsx scripts/verify-local-ai.ts",
     "verify:price": "tsx scripts/verify-price.ts",
