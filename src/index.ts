@@ -13,7 +13,15 @@
  * attached file into the media store, recording its path.
  */
 
-import { loadAdminConfig, loadConfig, redactConfig, type Config } from './config.js';
+import {
+  loadAdminConfig,
+  loadConfig,
+  loadLocalAiConfig,
+  redactConfig,
+  redactLocalAiConfig,
+  type Config,
+  type LocalAiConfig,
+} from './config.js';
 import { log, setLogLevel } from './log.js';
 import { startBot, type BotHandle } from './bot/client.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
@@ -31,7 +39,8 @@ import { SiteService } from './site/settings.js';
 import { ArchiveService } from './archive/settings.js';
 import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
-import { activeResolverName } from './interaction/resolver.js';
+import { createOllamaIntentResolver } from './interaction/ollama-resolver.js';
+import { activeResolverName, setIntentResolver } from './interaction/resolver.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
@@ -41,9 +50,15 @@ import { status } from './web/status.js';
 import { registerAdminViews } from './web/views/index.js';
 import { startQueue, stopQueue } from './queue/index.js';
 
-function runConfigCheck(cfg: Config): void {
+function runConfigCheck(cfg: Config, localAi: LocalAiConfig): void {
   log.info('Configuration loaded:', redactConfig(cfg));
+  log.info('Local AI configuration:', redactLocalAiConfig(localAi));
   log.info('Config valid. Exiting 0.');
+}
+
+function configureIntentResolver(localAi: LocalAiConfig): void {
+  if (!localAi.enabled) return;
+  setIntentResolver(createOllamaIntentResolver(localAi));
 }
 
 /** Ensures the archive DB is reachable and the schema has been migrated. */
@@ -372,11 +387,13 @@ async function runApp(cfg: Config): Promise<void> {
 
 async function main(): Promise<void> {
   const cfg = loadConfig();
+  const localAi = loadLocalAiConfig();
   setLogLevel(cfg.logLevel);
+  configureIntentResolver(localAi);
   log.info('Cinderella booting…');
 
   if (process.argv.includes('--check')) {
-    runConfigCheck(cfg);
+    runConfigCheck(cfg, localAi);
     return;
   }
 

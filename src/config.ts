@@ -68,6 +68,19 @@ export interface AdminConfig {
   rpName: string;
 }
 
+
+/**
+ * Optional private local-AI resolver. The endpoint is restricted to loopback or
+ * private IP space so archived member text cannot be sent to a public service by
+ * a configuration typo.
+ */
+export interface LocalAiConfig {
+  enabled: boolean;
+  baseUrl: string;
+  model: string;
+  timeoutMs: number;
+}
+
 class ConfigError extends Error {
   override name = 'ConfigError';
 }
@@ -86,6 +99,86 @@ function optional(name: string, fallback: string): string {
   const value = process.env[name];
   if (value === undefined || value.trim() === '') return fallback;
   return value.trim();
+}
+
+
+function optionalBoolean(name: string, fallback: boolean): boolean {
+  const value = process.env[name];
+  if (value === undefined || value.trim() === '') return fallback;
+
+  switch (value.trim().toLowerCase()) {
+    case '1':
+    case 'true':
+    case 'yes':
+    case 'on':
+      return true;
+    case '0':
+    case 'false':
+    case 'no':
+    case 'off':
+      return false;
+    default:
+      throw new ConfigError(`${name} must be true or false.`);
+  }
+}
+
+function optionalInteger(name: string, fallback: number, min: number, max: number): number {
+  const raw = optional(name, String(fallback));
+  const value = Number.parseInt(raw, 10);
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw new ConfigError(`${name} must be an integer from ${min} to ${max} (got "${raw}").`);
+  }
+  return value;
+}
+
+function isPrivateAiHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+
+  const octets = host.split('.').map((part) => Number.parseInt(part, 10));
+  if (
+    octets.length === 4 &&
+    octets.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+  ) {
+    const first = octets[0] as number;
+    const second = octets[1] as number;
+    return (
+      first === 10 ||
+      first === 127 ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    );
+  }
+
+  if (host === '::1') return true;
+  const firstGroup = host.split(':')[0] ?? '';
+  return /^(?:fc|fd)/.test(firstGroup) || /^fe[89ab]/.test(firstGroup);
+}
+
+function normalizeLocalAiBaseUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new ConfigError(`LOCAL_AI_BASE_URL must be a valid URL (got "${raw}").`);
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new ConfigError('LOCAL_AI_BASE_URL must use http or https.');
+  }
+  if (url.username || url.password) {
+    throw new ConfigError('LOCAL_AI_BASE_URL must not contain credentials.');
+  }
+  if (url.pathname !== '/' || url.search || url.hash) {
+    throw new ConfigError('LOCAL_AI_BASE_URL must contain only scheme, host, and optional port.');
+  }
+  if (!isPrivateAiHost(url.hostname)) {
+    throw new ConfigError(
+      'LOCAL_AI_BASE_URL must use localhost or a private IP address. Public AI endpoints are disabled.',
+    );
+  }
+
+  return url.origin;
 }
 
 let cached: Config | undefined;
@@ -121,6 +214,38 @@ export function loadConfig(): Config {
 export function resolveAvatarPath(): string {
   const filesFolder = resolve(optional('SIMPLEX_FILES_FOLDER', './state/files'));
   return resolve(optional('AVATAR_PATH', resolve(filesFolder, '..', 'avatar.jpg')));
+}
+
+let cachedLocalAi: LocalAiConfig | undefined;
+
+/**
+ * Loads the optional private Ollama classifier configuration. No network request
+ * is made here, so config checks stay deterministic.
+ */
+export function loadLocalAiConfig(): LocalAiConfig {
+  if (cachedLocalAi) return cachedLocalAi;
+
+  const enabled = optionalBoolean('LOCAL_AI_ENABLED', false);
+  const baseUrl = normalizeLocalAiBaseUrl(optional('LOCAL_AI_BASE_URL', 'http://127.0.0.1:11434'));
+
+  cachedLocalAi = {
+    enabled,
+    baseUrl,
+    model: optional('LOCAL_AI_MODEL', 'qwen3.5:9b'),
+    timeoutMs: optionalInteger('LOCAL_AI_TIMEOUT_MS', 15000, 250, 60000),
+  };
+
+  return cachedLocalAi;
+}
+
+/** A log-safe view of the local-AI configuration. */
+export function redactLocalAiConfig(config: LocalAiConfig): Record<string, string> {
+  return {
+    enabled: config.enabled ? 'yes' : 'no',
+    baseUrl: config.baseUrl,
+    model: config.model,
+    timeoutMs: String(config.timeoutMs),
+  };
 }
 
 let cachedAdmin: AdminConfig | undefined;
