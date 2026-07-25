@@ -34,10 +34,14 @@ import {
 } from '../../archive/settings.js';
 import { NEAR_MISS_REASONS, recentNearMisses } from '../../interaction/near-misses.js';
 import { missingHelpPlaceholders } from '../../interaction/help.js';
-import { activeResolverName } from '../../interaction/resolver.js';
+import {
+  aiRuntimeSnapshot,
+  setAiRuntimeEnabled,
+  testAiRuntimeConnection,
+} from '../../interaction/ai-runtime.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
-import { card, pageHeader } from './ui.js';
+import { badge, card, fmtDate, pageHeader } from './ui.js';
 
 const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
 
@@ -288,7 +292,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     { slug: 'diagnostics', title: 'Diagnostics', desc: 'The near-miss log, and the resolver currently in use.' },
   ];
 
-  app.get<{ Params: { section?: string }; Querystring: { saved?: string; error?: string } }>(
+  app.get<{ Params: { section?: string }; Querystring: { saved?: string; tested?: string; error?: string } }>(
     '/interaction/:section',
     async (req, reply) => {
       const slug = req.params.section ?? 'addressing';
@@ -298,7 +302,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       const s = interaction.get();
       const csrf = req.session?.csrfToken ?? '';
 
-      const notice = req.query.saved
+      const notice = req.query.tested
+        ? html`<div
+            class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+          >
+            Connection test passed. The configured Ollama model is available.
+          </div>`
+        : req.query.saved
         ? html`<div
             class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
           >
@@ -480,13 +490,84 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         archiving: () => archiveCard(ctx.archive.get(), csrf),
         diagnostics: () => {
           const nearMisses = recentNearMisses(25);
+          const runtime = aiRuntimeSnapshot();
+          const metrics = runtime.metrics;
+          const probe = runtime.probe;
+          const averageLatency =
+            metrics.averageLatencyMs === null ? '-' : `${metrics.averageLatencyMs.toFixed(1)} ms`;
+          const lastLatency =
+            metrics.lastLatencyMs === null ? '-' : `${metrics.lastLatencyMs.toFixed(1)} ms`;
+
           return html`${card(
-            'Resolver',
-            html`<p class="text-sm text-slate-600">
-              Intent resolver in use:
-              <code class="rounded bg-slate-100 px-1">${activeResolverName()}</code>. The seam lets a
-              smarter resolver replace the rules without touching the rest of the layer.
-            </p>`,
+            'AI runtime',
+            html`<div class="mb-4 flex flex-wrap items-center gap-2">
+                ${badge(runtime.enabled ? 'local AI active' : 'rules active', runtime.enabled ? 'green' : 'slate')}
+                ${badge(
+                  probe.ok === true
+                    ? 'model reachable'
+                    : probe.ok === false
+                      ? 'model unreachable'
+                      : 'not tested',
+                  probe.ok === true ? 'green' : probe.ok === false ? 'red' : 'slate',
+                )}
+              </div>
+              <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Active resolver</dt>
+                <dd><code class="rounded bg-slate-100 px-1">${runtime.activeResolver}</code></dd>
+                <dt class="text-slate-500">Environment permission</dt>
+                <dd>${runtime.available ? 'enabled' : 'disabled'}</dd>
+                <dt class="text-slate-500">Stored preference</dt>
+                <dd>${runtime.requestedEnabled ? 'local AI' : 'rules'}</dd>
+                <dt class="text-slate-500">Model</dt>
+                <dd><code class="rounded bg-slate-100 px-1">${runtime.model || '-'}</code></dd>
+                <dt class="text-slate-500">Private endpoint</dt>
+                <dd><code class="rounded bg-slate-100 px-1">${runtime.baseUrl || '-'}</code></dd>
+                <dt class="text-slate-500">Timeout</dt>
+                <dd>${runtime.timeoutMs > 0 ? `${runtime.timeoutMs} ms` : '-'}</dd>
+                <dt class="text-slate-500">Classifications</dt>
+                <dd>${metrics.requests} total, ${metrics.successes} successful, ${metrics.fallbacks} rule fallback(s)</dd>
+                <dt class="text-slate-500">Safety overrides</dt>
+                <dd>${metrics.guardOverrides}</dd>
+                <dt class="text-slate-500">Average / last latency</dt>
+                <dd>${averageLatency} / ${lastLatency}</dd>
+                <dt class="text-slate-500">Last successful call</dt>
+                <dd>${fmtDate(metrics.lastSuccessAt)}</dd>
+                <dt class="text-slate-500">Last failed call</dt>
+                <dd>${fmtDate(metrics.lastFailureAt)}</dd>
+                <dt class="text-slate-500">Last model / final intent</dt>
+                <dd>${metrics.lastModelIntent ?? '-'} / ${metrics.lastFinalIntent ?? '-'}</dd>
+                <dt class="text-slate-500">Last probe</dt>
+                <dd>${fmtDate(probe.at)}${probe.latencyMs === null ? '' : ` (${probe.latencyMs.toFixed(1)} ms)`}</dd>
+                <dt class="text-slate-500">Last error</dt>
+                <dd class="break-all ${metrics.lastError || probe.error ? 'text-red-700' : 'text-slate-500'}">
+                  ${metrics.lastError ?? probe.error ?? 'none'}
+                </dd>
+              </dl>
+              ${runtime.available
+                ? html`<form method="post" action="/interaction" class="mt-4 flex flex-wrap gap-2">
+                    <input type="hidden" name="_csrf" value="${csrf}" />
+                    <input type="hidden" name="section" value="ai-runtime" />
+                    <button
+                      type="submit"
+                      name="action"
+                      value="test"
+                      class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      Test model
+                    </button>
+                    ${runtime.enabled
+                      ? html`<button type="submit" name="action" value="disable" class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-medium text-amber-800 hover:bg-amber-100">Use rules</button>`
+                      : html`<button type="submit" name="action" value="enable" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Use local AI</button>`}
+                  </form>`
+                : html`<p class="mt-4 text-sm text-amber-700">
+                    Local AI is unavailable because <code>LOCAL_AI_ENABLED</code> is false. This
+                    environment gate cannot be bypassed from the admin console.
+                  </p>`}
+              <p class="mt-3 text-xs text-slate-500">
+                Enabling first probes the private endpoint and confirms that the configured model is
+                installed. A model error never executes an action; the deterministic resolver handles
+                that message instead. Disabling switches to rules before the preference is written.
+              </p>`,
           )}
           ${card(
             'Recently ignored (near misses)',
@@ -555,6 +636,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       if (sec.startsWith('retorts:')) return 'nicknames';
       if (sec === 'archive') return 'archiving';
       if (sec === 'reset') return 'diagnostics';
+      if (sec === 'ai-runtime') return 'diagnostics';
       return sec;
     };
     const back = (extra: string): string => `/interaction/${pageFor(section)}${extra}`;
@@ -654,6 +736,21 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       } else if (section === 'reset') {
         await interaction.save(DEFAULT_INTERACTION, actor);
         return reply.redirect(back('?saved=1'));
+      } else if (section === 'ai-runtime') {
+        const action = bodyString(body, 'action');
+        if (action === 'test') {
+          await testAiRuntimeConnection();
+          return reply.redirect(back('?tested=1'));
+        }
+        if (action === 'enable') {
+          await setAiRuntimeEnabled(true, actor);
+          return reply.redirect(back('?saved=1'));
+        }
+        if (action === 'disable') {
+          await setAiRuntimeEnabled(false, actor);
+          return reply.redirect(back('?saved=1'));
+        }
+        throw new Error('Unknown local AI runtime action.');
       } else {
         return reply.redirect(`/interaction/addressing?error=${encodeURIComponent('Unknown section.')}`);
       }

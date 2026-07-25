@@ -39,8 +39,8 @@ import { SiteService } from './site/settings.js';
 import { ArchiveService } from './archive/settings.js';
 import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
-import { createOllamaIntentResolver } from './interaction/ollama-resolver.js';
-import { activeResolverName, setIntentResolver } from './interaction/resolver.js';
+import { AiRuntimeService } from './interaction/ai-runtime.js';
+import { activeResolverName } from './interaction/resolver.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
@@ -54,11 +54,6 @@ function runConfigCheck(cfg: Config, localAi: LocalAiConfig): void {
   log.info('Configuration loaded:', redactConfig(cfg));
   log.info('Local AI configuration:', redactLocalAiConfig(localAi));
   log.info('Config valid. Exiting 0.');
-}
-
-function configureIntentResolver(localAi: LocalAiConfig): void {
-  if (!localAi.enabled) return;
-  setIntentResolver(createOllamaIntentResolver(localAi));
 }
 
 /** Ensures the archive DB is reachable and the schema has been migrated. */
@@ -318,7 +313,7 @@ async function startCaptureWorker(
   }
 }
 
-async function runApp(cfg: Config): Promise<void> {
+async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   await assertDbReady();
   const settings = await SettingsService.load(getPool(), cfg.logLevel);
 
@@ -334,6 +329,7 @@ async function runApp(cfg: Config): Promise<void> {
   const archive = await ArchiveService.load(getPool());
   const interaction = await InteractionService.load(getPool());
   const plugins = await PluginService.load(getPool());
+  await AiRuntimeService.load(getPool(), localAi);
 
   // One process (A2): the admin web server and the capture worker together.
   const adminCfg = loadAdminConfig();
@@ -389,7 +385,6 @@ async function main(): Promise<void> {
   const cfg = loadConfig();
   const localAi = loadLocalAiConfig();
   setLogLevel(cfg.logLevel);
-  configureIntentResolver(localAi);
   log.info('Cinderella booting…');
 
   if (process.argv.includes('--check')) {
@@ -397,7 +392,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  await runApp(cfg);
+  await runApp(cfg, localAi);
 }
 
 main()

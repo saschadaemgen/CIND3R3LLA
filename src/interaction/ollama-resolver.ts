@@ -27,8 +27,26 @@ import { ruleResolver } from './rules.js';
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export interface OllamaResolveSuccess {
+  latencyMs: number;
+  modelIntent: Intent;
+  finalIntent: Intent;
+  confidence: number;
+}
+
+export interface OllamaResolveFailure {
+  latencyMs: number;
+  error: string;
+}
+
+export interface OllamaResolverObserver {
+  success(event: OllamaResolveSuccess): void;
+  failure(event: OllamaResolveFailure): void;
+}
+
 export interface OllamaResolverDeps {
   fetchImpl?: FetchLike;
+  observer?: OllamaResolverObserver;
 }
 
 const CONSENT_CONFIDENCE = 0.9;
@@ -328,33 +346,48 @@ export function createOllamaIntentResolver(
   return {
     name: `ollama:${config.model}`,
     async resolve(text: string, ctx: IntentContext): Promise<IntentResult> {
-      const rules = await ruleResolver.resolve(text, ctx);
-      const model = await classify(text, config, fetchImpl);
+      const started = performance.now();
 
-      if (model.intent === 'UNKNOWN' || model.confidence < ctx.threshold) {
-        return unknownResult(model.lang);
-      }
+      try {
+        const rules = await ruleResolver.resolve(text, ctx);
+        const model = await classify(text, config, fetchImpl);
+        let result: IntentResult;
 
-      if (isConsentIntent(model.intent)) {
-        if (
-          rules.intent !== model.intent ||
-          rules.confidence < ctx.threshold ||
-          model.confidence < Math.max(ctx.threshold, CONSENT_CONFIDENCE)
-        ) {
-          if (rules.intent !== 'UNKNOWN' && !isConsentIntent(rules.intent)) {
-            return rules;
+        if (model.intent === 'UNKNOWN' || model.confidence < ctx.threshold) {
+          result = unknownResult(model.lang);
+        } else if (isConsentIntent(model.intent)) {
+          if (
+            rules.intent !== model.intent ||
+            rules.confidence < ctx.threshold ||
+            model.confidence < Math.max(ctx.threshold, CONSENT_CONFIDENCE)
+          ) {
+            result =
+              rules.intent !== 'UNKNOWN' && !isConsentIntent(rules.intent)
+                ? rules
+                : unknownResult(model.lang);
+          } else {
+            result = mergeMatching(model, rules);
           }
-          return unknownResult(model.lang);
+        } else if (rules.intent === model.intent) {
+          result = mergeMatching(model, rules);
+        } else {
+          result = model;
         }
 
-        return mergeMatching(model, rules);
+        deps.observer?.success({
+          latencyMs: Math.round((performance.now() - started) * 10) / 10,
+          modelIntent: model.intent,
+          finalIntent: result.intent,
+          confidence: result.confidence,
+        });
+        return result;
+      } catch (error) {
+        deps.observer?.failure({
+          latencyMs: Math.round((performance.now() - started) * 10) / 10,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
       }
-
-      if (rules.intent === model.intent) {
-        return mergeMatching(model, rules);
-      }
-
-      return model;
     },
   };
 }

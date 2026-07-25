@@ -594,7 +594,14 @@ async function main(): Promise<void> {
   check('nicknames holds the retorts too', sectionPages['nicknames']!.includes('name="words"') && sectionPages['nicknames']!.includes('Retorts —'));
   check('consent holds affirmations, declines and the undo window', sectionPages['consent']!.includes('name="affirmations"') && sectionPages['consent']!.includes('name="undoWindowSeconds"'));
   check('voice holds both persona languages and the help links', sectionPages['voice']!.includes('Her voice — English') && sectionPages['voice']!.includes('Her voice — Deutsch') && sectionPages['voice']!.includes('name="archiveUrl"'));
-  check('diagnostics holds the near-miss log and the resolver', sectionPages['diagnostics']!.includes('Recently ignored') && sectionPages['diagnostics']!.includes('Intent resolver in use'));
+  check(
+    'diagnostics holds the near-miss log and the AI runtime',
+    sectionPages['diagnostics']!.includes('Recently ignored') &&
+      sectionPages['diagnostics']!.includes('AI runtime') &&
+      sectionPages['diagnostics']!.includes('Active resolver') &&
+      sectionPages['diagnostics']!.includes('Environment permission') &&
+      sectionPages['diagnostics']!.includes('Safety overrides'),
+  );
 
   /* ── Her own messages in the archive (CCB-S3-007), now on the archiving section ── */
   check('archiving section offers the bot-message switches', sectionPages['archiving']!.includes('Her own messages in the archive') && sectionPages['archiving']!.includes('cat:consent'));
