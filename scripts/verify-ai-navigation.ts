@@ -151,6 +151,7 @@ async function main(): Promise<void> {
 
   const routes = [
     ['/ai/overview', 'AI Overview'],
+    ['/ai/profiles', 'AI Profiles and Groups'],
     ['/ai/runtime', 'AI Runtime'],
     ['/ai/models', 'AI Models'],
     ['/ai/routing', 'AI Routing'],

@@ -327,16 +327,43 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
 export function registerNav(): void {
   setNavItems([
-    { key: 'dashboard', href: '/dashboard', label: 'Dashboard', icon: icon('dashboard') },
-    { key: 'messages', href: '/messages', label: 'Messages', icon: icon('messages') },
-    { key: 'consent', href: '/consent', label: 'Consent', icon: icon('consent') },
-    { key: 'settings', href: '/settings', label: 'Settings', icon: icon('settings') },
+    {
+      key: 'dashboard',
+      href: '/dashboard',
+      label: 'Dashboard',
+      icon: icon('dashboard'),
+    },
+    {
+      key: 'content',
+      href: '/messages',
+      label: 'Content',
+      icon: icon('messages'),
+      children: [
+        {
+          key: 'messages',
+          href: '/messages',
+          label: 'Messages',
+          icon: icon('messages'),
+        },
+        {
+          key: 'consent',
+          href: '/consent',
+          label: 'Consent',
+          icon: icon('consent'),
+        },
+        {
+          key: 'reports',
+          href: '/reports',
+          label: 'Reports',
+          icon: icon('alert'),
+        },
+      ],
+    },
     {
       key: 'interaction',
       href: '/interaction/addressing',
       label: 'Interaction',
       icon: icon('interaction'),
-      // Sub-sections (CCB-S3-015 Stage 1), same submenu pattern as Plugins.
       children: [
         {
           key: 'interaction:addressing',
@@ -413,6 +440,12 @@ export function registerNav(): void {
           icon: icon('interaction'),
         },
         {
+          key: 'ai:profiles',
+          href: '/ai/profiles',
+          label: 'Profiles & Groups',
+          icon: icon('interaction'),
+        },
+        {
           key: 'ai:runtime',
           href: '/ai/runtime',
           label: 'Runtime',
@@ -485,18 +518,53 @@ export function registerNav(): void {
       href: '/plugins',
       label: 'Plugins',
       icon: icon('plugin'),
-      // Installing a plugin adds a child here; no sidebar change is needed.
-      children: listPlugins().map((p) => ({
-        key: `plugin:${p.id}`,
-        href: p.adminPath,
-        label: p.name,
-        icon: icon('plugin'),
-      })),
+      children: [
+        {
+          key: 'plugins',
+          href: '/plugins',
+          label: 'Overview',
+          icon: icon('plugin'),
+        },
+        ...listPlugins().map((plugin) => ({
+          key: `plugin:${plugin.id}`,
+          href: plugin.adminPath,
+          label: plugin.name,
+          icon: icon('plugin'),
+        })),
+      ],
     },
-    { key: 'security', href: '/security', label: 'Security', icon: icon('shield') },
-    { key: 'embeds', href: '/embeds', label: 'Embeds', icon: icon('embed') },
-    { key: 'site', href: '/website', label: 'Website', icon: icon('site') },
-    { key: 'reports', href: '/reports', label: 'Reports', icon: icon('alert') },
+    {
+      key: 'system',
+      href: '/settings',
+      label: 'System',
+      icon: icon('settings'),
+      children: [
+        {
+          key: 'settings',
+          href: '/settings',
+          label: 'Settings',
+          icon: icon('settings'),
+        },
+        {
+          key: 'security',
+          href: '/security',
+          label: 'Security',
+          icon: icon('shield'),
+        },
+        {
+          key: 'embeds',
+          href: '/embeds',
+          label: 'Embeds',
+          icon: icon('embed'),
+        },
+        {
+          key: 'site',
+          href: '/website',
+          label: 'Website',
+          icon: icon('site'),
+        },
+      ],
+    },
   ]);
 }
 
