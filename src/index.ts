@@ -41,6 +41,7 @@ import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
 import { AiRuntimeService, personalizeAiReply } from './interaction/ai-runtime.js';
 import { activeResolverName } from './interaction/resolver.js';
+import { RuntimePolicyService } from './profiles/runtime-policy.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
@@ -172,7 +173,9 @@ async function startCaptureWorker(
       send: sendAndArchive,
     });
     noteReply = (g, m) => engine.noteExternalReply(g, m);
-    hooks.onInteraction = (msg) => engine.handle(msg);
+    const runtimePolicy = new RuntimePolicyService(getPool());
+    hooks.onInteraction = (msg) =>
+      runtimePolicy.handleInteraction(msg, async () => engine.handle(msg));
     // CCB-S3-009: the message is already archived by now; this records what kind
     // of instruction it was, which is what the category switches act on.
     hooks.onInstruction = async (msg, category) => {
