@@ -148,6 +148,13 @@ async function main(): Promise<void> {
       css.includes('admin-sidebar-marker-in'),
   );
   check(
+    'header separator uses a full width moving scan',
+    css.includes('.admin-header-glow::after') &&
+      css.includes('@keyframes admin-header-scan') &&
+      css.includes('translate3d(655%, 0, 0)') &&
+      css.includes('animation: admin-header-scan 3.8s ease-in-out infinite alternate'),
+  );
+  check(
     'asset copier publishes the navigation script',
     copier.includes("assets', 'admin-navigation.js") &&
       copier.includes("public', 'assets', 'admin-navigation.js"),

@@ -825,18 +825,59 @@ body {
 
 .admin-header-glow {
   position: absolute;
-  right: 8%;
+  right: 0;
   bottom: -1px;
-  left: 8%;
-  height: 1px;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
   background: linear-gradient(
     90deg,
     transparent,
-    rgba(69, 189, 209, 0.34),
-    rgba(232, 56, 159, 0.72),
-    rgba(69, 189, 209, 0.34),
+    rgba(69, 189, 209, 0.16),
+    rgba(232, 56, 159, 0.12),
+    rgba(69, 189, 209, 0.16),
     transparent
   );
+}
+
+.admin-header-glow::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -18%;
+  width: 18%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(69, 189, 209, 0.72),
+    rgba(255, 255, 255, 0.96),
+    rgba(232, 56, 159, 0.88),
+    transparent
+  );
+  box-shadow:
+    0 0 14px rgba(69, 189, 209, 0.54),
+    0 0 20px rgba(232, 56, 159, 0.42);
+  content: '';
+  animation: admin-header-scan 3.8s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes admin-header-scan {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(655%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-header-glow::after {
+    left: 41%;
+    animation: none;
+  }
 }
 
 .admin-header-inner {
