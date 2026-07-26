@@ -148,11 +148,13 @@ async function main(): Promise<void> {
       css.includes('admin-sidebar-marker-in'),
   );
   check(
-    'header separator uses a full width moving scan',
-    css.includes('.admin-header-glow::after') &&
-      css.includes('@keyframes admin-header-scan') &&
-      css.includes('translate3d(655%, 0, 0)') &&
-      css.includes('animation: admin-header-scan 3.8s ease-in-out infinite alternate'),
+    'header separator uses the approved occasional beam',
+    css.includes('@keyframes admin-approved-header-beam') &&
+      css.includes('background-position: 120% 0') &&
+      css.includes('background-position: -18% 0') &&
+      css.includes('animation: admin-approved-header-beam 24s ease-in-out infinite') &&
+      css.includes('.admin-header-glow::after') &&
+      css.includes('content: none;'),
   );
   check(
     'asset copier publishes the navigation script',

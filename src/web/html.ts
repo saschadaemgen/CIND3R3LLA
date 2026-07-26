@@ -52,6 +52,12 @@ export function html(strings: TemplateStringsArray, ...values: Interpolatable[])
   return new SafeHtml(output);
 }
 
+function distributedWord(value: string, className: string): SafeHtml {
+  return html`<span class="${className} admin-brand-wordmark" aria-hidden="true">
+    ${Array.from(value).map((character) => html`<span>${character}</span>`)}
+  </span>`;
+}
+
 export interface PageOptions {
   title: string;
   active?: string;
@@ -98,7 +104,7 @@ const RESOURCE_LINKS: ResourceLink[] = [
   { href: '/en/docs', label: 'Docs', icon: BOOK_ICON },
   {
     href: 'https://github.com/saschadaemgen/cinderella',
-    label: 'Cinderella Git',
+    label: 'CIND3R3LLA Git',
     icon: GITHUB_ICON,
     external: true,
   },
@@ -288,19 +294,21 @@ function megaNavigationPanel(item: NavItem, active: string | undefined): SafeHtm
               <h3 class="admin-mega-group-title">${group}</h3>
               <div class="admin-mega-group-links">
                 ${children.map(
-                (child) =>
-                  html`<a
-                    href="${child.href}"
-                    class="admin-mega-link"
-                    ${child.key === active ? raw('aria-current="page"') : ''}
-                  >
-                    <span class="admin-mega-link-icon">${child.icon}</span>
-                    <span class="admin-mega-link-copy">
-                      <span class="admin-mega-link-label">${child.label}</span>
-                      <span class="admin-mega-link-description">${megaItemDescription(child)}</span>
-                    </span>
-                  </a>`,
-              )}
+                  (child) =>
+                    html`<a
+                      href="${child.href}"
+                      class="admin-mega-link"
+                      ${child.key === active ? raw('aria-current="page"') : ''}
+                    >
+                      <span class="admin-mega-link-icon">${child.icon}</span>
+                      <span class="admin-mega-link-copy">
+                        <span class="admin-mega-link-label">${child.label}</span>
+                        <span class="admin-mega-link-description"
+                          >${megaItemDescription(child)}</span
+                        >
+                      </span>
+                    </a>`,
+                )}
               </div>
             </section>`,
         )}
@@ -409,7 +417,11 @@ export function reportBarHtml(count: number): string {
 
 function fixedFooter(): SafeHtml {
   return html`<footer class="admin-footer" data-admin-footer>
-    <div class="admin-footer-version">Version 0.0.1-alpha</div>
+    <div class="admin-footer-version">
+      <span class="admin-footer-product">CIND3R3LLA</span>
+      <span aria-hidden="true"> · </span>
+      <span>Version 0.0.1-alpha</span>
+    </div>
     <a
       class="admin-footer-copyright"
       href="https://it-and-more.systems/"
@@ -430,17 +442,9 @@ export function page(options: PageOptions): string {
         <div class="admin-header-glow" aria-hidden="true"></div>
         <div class="admin-header-inner">
           <a href="/dashboard" class="admin-brand" data-admin-brand>
-            <img
-              class="admin-brand-avatar"
-              src="/assets/site/cinderella-avatar.jpg"
-              alt=""
-              aria-hidden="true"
-              width="42"
-              height="42"
-            />
-            <span class="admin-brand-copy">
-              <span class="admin-brand-name">Cinderella</span>
-              <span class="admin-brand-subtitle">Control Center</span>
+            <span class="admin-brand-copy" aria-label="CIND3R3LLA administration">
+              ${distributedWord('CIND3R3LLA', 'admin-brand-name')}
+              ${distributedWord('administration', 'admin-brand-subtitle')}
             </span>
           </a>
 
@@ -507,13 +511,14 @@ export function page(options: PageOptions): string {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="noindex, nofollow" />
         <meta name="theme-color" content="#050A12" />
-        <title>${options.title} | Cinderella</title>
+        <title>${options.title} | CIND3R3LLA</title>
         <link rel="stylesheet" href="/assets/app.css" />
         <script src="/assets/htmx.min.js" defer></script>
         ${
           chrome
             ? html`<script src="/assets/webauthn-browser.js" defer></script>
                 <script src="/assets/auth.js" defer></script>
+                <script src="/assets/admin-effects.js" defer></script>
                 <script src="/assets/admin-navigation.js" defer></script>`
             : html``
         }
@@ -526,7 +531,7 @@ export function page(options: PageOptions): string {
         ${csrfToken ? raw(`hx-headers='{"x-csrf-token":"${escapeHtml(csrfToken)}"}'`) : ''}
       >
         <div class="admin-shell" data-admin-shell>
-          <div class="admin-stars" aria-hidden="true"></div>
+          <canvas id="admin-starfield" class="admin-starfield" aria-hidden="true"></canvas>
           ${header}
           <div class="admin-workspace">
             ${contextualSidebar}

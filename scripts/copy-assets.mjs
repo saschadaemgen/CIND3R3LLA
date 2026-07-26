@@ -30,6 +30,10 @@ copyFileSync(
   join(root, 'assets', 'admin-navigation.js'),
   join(root, 'public', 'assets', 'admin-navigation.js'),
 );
+copyFileSync(
+  join(root, 'assets', 'admin-effects.js'),
+  join(root, 'public', 'assets', 'admin-effects.js'),
+);
 
 // Marketing-site static assets (CCB-S3-001): self-hosted webfonts + brand avatar,
 // served same-origin under the site's strict CSP (font-src/img-src 'self').
@@ -45,5 +49,5 @@ for (const f of readdirSync(join(siteSrc, 'fonts'))) {
 }
 
 console.log(
-  `copied htmx.min.js, webauthn-browser.js, auth.js, admin-navigation.js, site avatar + ${fontCount} fonts -> public/assets/`,
+  `copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, site avatar + ${fontCount} fonts -> public/assets/`,
 );
