@@ -307,8 +307,13 @@ async function main(): Promise<void> {
 
   check('profiles page renders', page.statusCode === 200);
   check(
-    'sidebar exposes Profiles and Groups',
-    page.body.includes('href="/ai/profiles"') && page.body.includes('Profiles &amp; Groups'),
+    'sidebar exposes Access Control',
+    page.body.includes('href="/ai/profiles"') && page.body.includes('Access Control'),
+  );
+  check(
+    'duplicate profile creation is hidden from the normal workflow',
+    !page.body.includes('Create Cinderella profile') &&
+      page.body.includes('Created through AI Bot Setup'),
   );
   check(
     'profile and groups are visible',

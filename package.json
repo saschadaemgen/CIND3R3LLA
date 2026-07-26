@@ -28,6 +28,7 @@
     "verify:admin-navigation-shell": "tsx scripts/verify-admin-navigation-shell.ts",
     "verify:admin-mega-navigation": "tsx scripts/verify-admin-mega-navigation.ts",
     "verify:admin-brand-fx": "tsx scripts/verify-admin-brand-fx.ts",
+    "verify:admin-setup-workflow": "tsx scripts/verify-admin-setup-workflow.ts",
     "verify:security": "tsx scripts/verify-security.ts",
     "verify:public": "tsx scripts/verify-public.ts",
     "verify:site": "tsx scripts/verify-site.ts",

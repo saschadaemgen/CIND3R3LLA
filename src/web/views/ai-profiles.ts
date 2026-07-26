@@ -1,5 +1,5 @@
 /**
- * Cinderella profile, group, and technical identity administration.
+ * AI bot access profile, group, and technical identity administration.
  *
  * This is the persistent policy foundation. It does not join SimpleX groups,
  * accept invitation links, or activate remote command execution.
@@ -359,13 +359,13 @@ export function registerAiProfiles(app: FastifyInstance, ctx: ViewContext): void
       reply.type('text/html');
 
       return page({
-        title: 'AI Profiles and Groups',
+        title: 'Access Control',
         active: 'ai:profiles',
         csrfToken: csrf,
         body: html`
           ${pageHeader(
-            'AI Profiles and Groups',
-            'Persistent Cinderella profiles, team groups, member groups, and role assignments backed by technical SimpleX identifiers.',
+            'Access Control',
+            'Manage groups, roles, and technical trust assignments for AI bots created through the guided setup.',
           )}
           ${
             req.query.saved
@@ -394,43 +394,14 @@ export function registerAiProfiles(app: FastifyInstance, ctx: ViewContext): void
             ${badge('Policy enforcement not active yet', 'amber')}
           </div>
 
-          ${card(
-            'Create Cinderella profile',
-            html`
-              <form method="post" action="/ai/profiles" class="grid gap-3 lg:grid-cols-3">
-                <input type="hidden" name="_csrf" value="${csrf}" />
-                <input type="hidden" name="action" value="create-profile" />
-                <label class="text-sm">
-                  <span class="font-medium text-slate-700">Profile name</span>
-                  <input
-                    name="displayName"
-                    required
-                    maxlength="80"
-                    placeholder="Cinderella Main"
-                    class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2"
-                  />
-                </label>
-                <label class="text-sm">
-                  <span class="font-medium text-slate-700">Profile slug</span>
-                  <input
-                    name="slug"
-                    required
-                    minlength="2"
-                    maxlength="63"
-                    pattern="[a-z0-9][a-z0-9-]{1,62}"
-                    placeholder="cinderella-main"
-                    class="mt-1 w-full rounded-lg border border-slate-300 px-2 py-2 font-mono"
-                  />
-                </label>
-                <button
-                  type="submit"
-                  class="self-end rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
-                >
-                  Create profile
-                </button>
-              </form>
-            `,
-          )}
+          <section class="access-control-managed">
+            <h2>Created through AI Bot Setup</h2>
+            <p>
+              Bot identity and access policy are separate internally, but administrators should not
+              create the same AI bot twice. New AI bots start in the guided setup.
+            </p>
+            <a href="/ai/onboarding">Open AI Bot Setup</a>
+          </section>
 
           <div class="mt-4 grid gap-4 lg:grid-cols-2">
             ${card(
@@ -477,10 +448,10 @@ export function registerAiProfiles(app: FastifyInstance, ctx: ViewContext): void
               profiles.length > 0
                 ? profiles.map((profile) => profileCard(profile, csrf))
                 : card(
-                    'No profiles configured',
+                    'No access policy configured',
                     html`<p class="text-sm text-slate-600">
-                      Create the first Cinderella profile before assigning a team group, normal
-                      groups, owners, administrators, or moderators.
+                      Complete AI Bot Setup first. Access policy will be connected after identity,
+                      group, and role verification.
                     </p>`,
                   )
             }

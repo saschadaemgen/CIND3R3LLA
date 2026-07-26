@@ -266,22 +266,30 @@ async function main(): Promise<void> {
     headers: { cookie: session },
   });
 
-  check('onboarding page renders', page.statusCode === 200);
-  check('navigation exposes Bot Onboarding', page.body.includes('Bot Onboarding'));
-  check('complete SDK option grid is visible', page.body.includes('Complete SDK BotOptions grid'));
+  check('setup page renders', page.statusCode === 200);
+  check('navigation exposes AI Bot Setup', page.body.includes('AI Bot Setup'));
+  check('primary action is visible', page.body.includes('Create AI Bot'));
+  check('compact list is visible', page.body.includes('setup-list-item'));
+  check('selected detail is visible', page.body.includes('Selected AI Bot'));
+  const renderedDialogs = (page.body.match(/data-setup-dialog/g) ?? []).length;
+  const renderedSteps = (page.body.match(/data-setup-step="/g) ?? []).length;
   check(
-    'automatic contact setting is visible',
+    'each rendered assistant has five steps',
+    renderedDialogs > 0 && renderedSteps === renderedDialogs * 5,
+  );
+  check(
+    'automatic contact setting is visible inside assistant',
     page.body.includes('Accept contact requests automatically'),
   );
   check(
-    'manual and automatic invitation modes are visible',
+    'manual and automatic invitation modes are available',
     Boolean(
       page.body.includes('Automatic for approved contacts') &&
       page.body.includes('Automatic for approved groups'),
     ),
   );
   check(
-    'all SDK roles are visible',
+    'all SDK roles remain available',
     Boolean(
       page.body.includes('Relay') &&
       page.body.includes('Observer') &&
@@ -293,22 +301,15 @@ async function main(): Promise<void> {
     ),
   );
   check(
-    'capability inventory is visible',
+    'capability reference remains available',
     Boolean(
       page.body.includes('apiAcceptContactRequest') &&
       page.body.includes('receivedGroupInvitation') &&
       page.body.includes('apiListMembers'),
     ),
   );
-  check(
-    'workflow is visible',
-    Boolean(
-      page.body.includes('Waiting for contact request') &&
-      page.body.includes('Group invitation pending') &&
-      page.body.includes('Policy ready'),
-    ),
-  );
   check('runtime boundary is explicit', page.body.includes('No SDK actions in this phase'));
+  check('wizard client is loaded', page.body.includes('/assets/admin-setup-wizard.js'));
 
   await app.close();
   await pg.close();

@@ -442,13 +442,13 @@ export function registerNav(): void {
         {
           key: 'ai:onboarding',
           href: '/ai/onboarding',
-          label: 'Bot Onboarding',
+          label: 'AI Bot Setup',
           icon: icon('interaction'),
         },
         {
           key: 'ai:profiles',
           href: '/ai/profiles',
-          label: 'Profiles & Groups',
+          label: 'Access Control',
           icon: icon('interaction'),
         },
         {
