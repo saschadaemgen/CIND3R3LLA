@@ -440,6 +440,12 @@ export function registerNav(): void {
           icon: icon('interaction'),
         },
         {
+          key: 'ai:onboarding',
+          href: '/ai/onboarding',
+          label: 'Bot Onboarding',
+          icon: icon('interaction'),
+        },
+        {
           key: 'ai:profiles',
           href: '/ai/profiles',
           label: 'Profiles & Groups',

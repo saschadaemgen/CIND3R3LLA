@@ -38,6 +38,7 @@
     "verify:ai-telemetry": "tsx scripts/verify-ai-telemetry.ts",
     "verify:ai-navigation": "tsx scripts/verify-ai-navigation.ts",
     "verify:ai-profiles": "tsx scripts/verify-ai-profiles.ts",
+    "verify:bot-onboarding": "tsx scripts/verify-bot-onboarding.ts",
     "verify:runtime-policy": "tsx scripts/verify-runtime-policy.ts",
     "verify:ai-replies": "tsx scripts/verify-ai-replies.ts",
     "verify:ai-live": "tsx scripts/verify-local-ai.ts",
