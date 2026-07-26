@@ -67,6 +67,8 @@ export interface NavItem {
   href: string;
   label: string;
   icon: SafeHtml;
+  description?: string;
+  megaGroup?: string;
   children?: NavItem[];
 }
 
@@ -131,17 +133,192 @@ function containsActive(item: NavItem, active: string | undefined): boolean {
   return item.children?.some((child) => containsActive(child, active)) ?? false;
 }
 
-function topNavigationLink(item: NavItem, active: string | undefined): SafeHtml {
+const MEGA_SECTION_DESCRIPTIONS: Record<string, string> = {
+  content: 'Manage captured messages, publication consent, and review queues.',
+  interaction: 'Control how Cinderella addresses people, responds, follows up, and archives.',
+  ai: 'Configure models, profiles, runtime policy, knowledge, safety, and operational testing.',
+  plugins: 'Review installed extensions and open each plugin control surface.',
+  system: 'Manage core settings, security, embeds, and website delivery.',
+};
+
+const MEGA_GROUPS_BY_SECTION: Record<string, Record<string, string>> = {
+  content: {
+    messages: 'Publishing',
+    consent: 'Governance',
+    reports: 'Review',
+  },
+  interaction: {
+    'interaction:addressing': 'Conversation',
+    'interaction:language': 'Conversation',
+    'interaction:replies': 'Conversation',
+    'interaction:nicknames': 'Conversation',
+    'interaction:voice': 'Conversation',
+    'interaction:guards': 'Behavior & Safety',
+    'interaction:followup': 'Behavior & Safety',
+    'interaction:consent': 'Behavior & Safety',
+    'interaction:archiving': 'Operations',
+    'interaction:diagnostics': 'Operations',
+  },
+  ai: {
+    'ai:overview': 'Foundation',
+    'ai:onboarding': 'Foundation',
+    'ai:profiles': 'Foundation',
+    'ai:runtime': 'Foundation',
+    'ai:models': 'Intelligence',
+    'ai:routing': 'Intelligence',
+    'ai:personality': 'Intelligence',
+    'ai:knowledge': 'Intelligence',
+    'ai:hardware': 'Operations',
+    'ai:telemetry': 'Operations',
+    'ai:testing': 'Operations',
+    'ai:audit': 'Operations',
+    'ai:privacy': 'Safety & Connectivity',
+    'ai:providers': 'Safety & Connectivity',
+  },
+  plugins: {
+    plugins: 'Management',
+  },
+  system: {
+    settings: 'Core',
+    security: 'Core',
+    embeds: 'Delivery',
+    site: 'Delivery',
+  },
+};
+
+const MEGA_ITEM_DESCRIPTIONS: Record<string, string> = {
+  messages: 'Captured items and publication state.',
+  consent: 'Consent records and publication decisions.',
+  reports: 'Items that require administrator review.',
+  'interaction:addressing': 'Names, mentions, and direct addressing.',
+  'interaction:guards': 'Safety gates and response boundaries.',
+  'interaction:followup': 'Follow up behavior and timing.',
+  'interaction:language': 'Language detection and selection.',
+  'interaction:replies': 'Reply rules and response style.',
+  'interaction:nicknames': 'Member naming and aliases.',
+  'interaction:consent': 'Conversation consent behavior.',
+  'interaction:voice': 'Voice and audio interaction settings.',
+  'interaction:archiving': 'Archive behavior and publication flow.',
+  'interaction:diagnostics': 'Interaction diagnostics and evidence.',
+  'ai:overview': 'Current AI state and operational summary.',
+  'ai:onboarding': 'Bot identity, contacts, invitations, and roles.',
+  'ai:profiles': 'Policy profiles, groups, and authorities.',
+  'ai:runtime': 'Runtime mode and local model controls.',
+  'ai:models': 'Installed and available model catalog.',
+  'ai:routing': 'Intent and reply model routing.',
+  'ai:hardware': 'GPU, memory, and runtime capacity.',
+  'ai:telemetry': 'Performance and request telemetry.',
+  'ai:personality': 'Personality profiles and behavior.',
+  'ai:privacy': 'Privacy gates and safety controls.',
+  'ai:providers': 'Local and external provider policy.',
+  'ai:knowledge': 'Private knowledge and retrieval controls.',
+  'ai:testing': 'Model comparison and controlled tests.',
+  'ai:audit': 'AI policy and administrator audit history.',
+  plugins: 'Plugin catalog and extension status.',
+  settings: 'General system configuration.',
+  security: 'Authentication, sessions, and access controls.',
+  embeds: 'Public embed configuration.',
+  site: 'Website content and delivery controls.',
+};
+
+function megaGroup(root: NavItem, child: NavItem): string {
+  return (
+    child.megaGroup ??
+    MEGA_GROUPS_BY_SECTION[root.key]?.[child.key] ??
+    (root.key === 'plugins' ? 'Installed plugins' : 'Explore')
+  );
+}
+
+function megaItemDescription(item: NavItem): string {
+  return item.description ?? MEGA_ITEM_DESCRIPTIONS[item.key] ?? `Open ${item.label} controls.`;
+}
+
+function topNavigationLink(
+  item: NavItem,
+  active: string | undefined,
+  megaEnabled = true,
+): SafeHtml {
   const branchActive = containsActive(item, active);
+  const hasMega = megaEnabled && Boolean(item.children?.length);
 
   return html`<a
     href="${item.href}"
+    data-main-section="${item.key}"
     data-main-active="${branchActive ? 'true' : 'false'}"
+    ${hasMega ? raw(`data-mega-trigger="${escapeHtml(item.key)}"`) : ''}
     class="admin-main-nav-link"
+    ${hasMega ? raw(`aria-haspopup="true" aria-expanded="false" aria-controls="admin-mega-${escapeHtml(item.key)}"`) : ''}
     ${branchActive ? raw('aria-current="page"') : ''}
   >
     ${item.label}
   </a>`;
+}
+
+function megaNavigationPanel(item: NavItem, active: string | undefined): SafeHtml {
+  const groups = new Map<string, NavItem[]>();
+
+  for (const child of item.children ?? []) {
+    const group = megaGroup(item, child);
+    const current = groups.get(group) ?? [];
+    current.push(child);
+    groups.set(group, current);
+  }
+
+  return html`<section
+    id="admin-mega-${item.key}"
+    class="admin-mega-panel"
+    data-mega-panel="${item.key}"
+    aria-hidden="true"
+    hidden
+  >
+    <div class="admin-mega-panel-inner">
+      <div class="admin-mega-intro">
+        <span class="admin-mega-kicker">Control section</span>
+        <h2 class="admin-mega-title">${item.label}</h2>
+        <p class="admin-mega-description">
+          ${item.description ?? MEGA_SECTION_DESCRIPTIONS[item.key] ?? `Open ${item.label} administration.`}
+        </p>
+        <a href="${item.href}" class="admin-mega-overview-link">Open section overview</a>
+      </div>
+
+      <div class="admin-mega-groups">
+        ${Array.from(groups.entries()).map(
+          ([group, children]) =>
+            html`<section class="admin-mega-group">
+              <h3 class="admin-mega-group-title">${group}</h3>
+              <div class="admin-mega-group-links">
+                ${children.map(
+                (child) =>
+                  html`<a
+                    href="${child.href}"
+                    class="admin-mega-link"
+                    ${child.key === active ? raw('aria-current="page"') : ''}
+                  >
+                    <span class="admin-mega-link-icon">${child.icon}</span>
+                    <span class="admin-mega-link-copy">
+                      <span class="admin-mega-link-label">${child.label}</span>
+                      <span class="admin-mega-link-description">${megaItemDescription(child)}</span>
+                    </span>
+                  </a>`,
+              )}
+              </div>
+            </section>`,
+        )}
+      </div>
+
+      <button type="button" class="admin-mega-close" data-mega-close aria-label="Close menu">
+        ×
+      </button>
+    </div>
+  </section>`;
+}
+
+function megaNavigationPanels(active: string | undefined): SafeHtml {
+  const roots = navItems.filter((item) => item.children && item.children.length > 0);
+
+  return html`<div class="admin-mega-shell" data-mega-shell data-open="false">
+    ${roots.map((item) => megaNavigationPanel(item, active))}
+  </div>`;
 }
 
 function sidebarNavigationItem(item: NavItem, active: string | undefined, depth: number): SafeHtml {
@@ -187,7 +364,7 @@ function mobileNavigation(
     </summary>
     <div class="admin-mobile-menu-panel">
       <nav data-main-navigation-mobile class="admin-mobile-main-nav">
-        ${navItems.map((item) => topNavigationLink(item, active))}
+        ${navItems.map((item) => topNavigationLink(item, active, false))}
       </nav>
 
       ${
@@ -269,6 +446,11 @@ export function page(options: PageOptions): string {
 
           <nav data-main-navigation class="admin-main-navigation">
             ${navItems.map((item) => topNavigationLink(item, options.active))}
+            <span
+              class="admin-main-nav-indicator"
+              data-main-nav-indicator
+              aria-hidden="true"
+            ></span>
           </nav>
 
           <div class="admin-header-right">
@@ -294,6 +476,7 @@ export function page(options: PageOptions): string {
             </div>
           </div>
         </div>
+        ${megaNavigationPanels(options.active)}
       </header>`
     : html``;
 
@@ -330,7 +513,8 @@ export function page(options: PageOptions): string {
         ${
           chrome
             ? html`<script src="/assets/webauthn-browser.js" defer></script>
-                <script src="/assets/auth.js" defer></script>`
+                <script src="/assets/auth.js" defer></script>
+                <script src="/assets/admin-navigation.js" defer></script>`
             : html``
         }
         ${options.head ?? html``}

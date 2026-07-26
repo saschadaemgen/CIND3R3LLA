@@ -26,6 +26,10 @@ copyFileSync(webauthnSrc, join(outDir, 'webauthn-browser.js'));
 
 // Our own auth glue.
 copyFileSync(join(root, 'assets', 'auth.js'), join(outDir, 'auth.js'));
+copyFileSync(
+  join(root, 'assets', 'admin-navigation.js'),
+  join(root, 'public', 'assets', 'admin-navigation.js'),
+);
 
 // Marketing-site static assets (CCB-S3-001): self-hosted webfonts + brand avatar,
 // served same-origin under the site's strict CSP (font-src/img-src 'self').
@@ -41,5 +45,5 @@ for (const f of readdirSync(join(siteSrc, 'fonts'))) {
 }
 
 console.log(
-  `copied htmx.min.js, webauthn-browser.js, auth.js, site avatar + ${fontCount} fonts -> public/assets/`,
+  `copied htmx.min.js, webauthn-browser.js, auth.js, admin-navigation.js, site avatar + ${fontCount} fonts -> public/assets/`,
 );
