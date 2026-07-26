@@ -71,6 +71,55 @@ export interface NavItem {
 }
 
 let navItems: NavItem[] = [];
+const GLOBE_ICON = raw(
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>',
+);
+const BOOK_ICON = raw(
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H11v16H6.5A2.5 2.5 0 0 0 4 21.5z"/><path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H13v16h4.5a2.5 2.5 0 0 1 2.5 2.5z"/></svg>',
+);
+const GITHUB_ICON = raw(
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8a9.2 9.2 0 0 0-2.9 17.9c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1.1 1.6 1.1.9 1.6 2.4 1.1 2.9.8.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-4.9 0-1.1.4-2 1.1-2.7-.1-.3-.5-1.3.1-2.7 0 0 .9-.3 2.8 1.1A9.7 9.7 0 0 1 12 6.1a9.7 9.7 0 0 1 2.1.3c1.9-1.4 2.8-1.1 2.8-1.1.6 1.4.2 2.4.1 2.7.7.7 1.1 1.6 1.1 2.7 0 3.8-2.3 4.6-4.6 4.9.4.3.7 1 .7 1.9v2.7c0 .3.2.6.7.5A9.2 9.2 0 0 0 12 2.8z"/></svg>',
+);
+const LOGOUT_ICON = raw(
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5"/><path d="m16 8 4 4-4 4M20 12H9"/></svg>',
+);
+
+interface ResourceLink {
+  href: string;
+  label: string;
+  icon: SafeHtml;
+  external?: boolean;
+}
+
+const RESOURCE_LINKS: ResourceLink[] = [
+  { href: '/en', label: 'Website', icon: GLOBE_ICON },
+  { href: '/en/docs', label: 'Docs', icon: BOOK_ICON },
+  {
+    href: 'https://github.com/saschadaemgen/cinderella',
+    label: 'Cinderella Git',
+    icon: GITHUB_ICON,
+    external: true,
+  },
+  {
+    href: 'https://github.com/cannatoshi/SimpleGo',
+    label: 'SimpleGo Git',
+    icon: GITHUB_ICON,
+    external: true,
+  },
+];
+
+function resourceLink(link: ResourceLink, compact = false): SafeHtml {
+  return html`<a
+    href="${link.href}"
+    class="${compact ? 'admin-mobile-resource-link' : 'admin-resource-link'}"
+    aria-label="${link.label}"
+    title="${link.label}"
+    ${link.external ? raw('target="_blank" rel="noreferrer"') : ''}
+  >
+    <span class="admin-resource-icon">${link.icon}</span>
+    <span class="admin-resource-label">${link.label}</span>
+  </a>`;
+}
 
 export function setNavItems(items: NavItem[]): void {
   navItems = items;
@@ -152,9 +201,17 @@ function mobileNavigation(
           : null
       }
 
+      <div class="admin-mobile-resources">
+        <div class="admin-mobile-context-title">Project links</div>
+        ${RESOURCE_LINKS.map((link) => resourceLink(link, true))}
+      </div>
+
       <form method="post" action="/logout" class="admin-mobile-signout">
         <input type="hidden" name="_csrf" value="${csrfToken}" />
-        <button type="submit" class="admin-text-button">Sign out</button>
+        <button type="submit" class="admin-mobile-logout">
+          <span class="admin-resource-icon">${LOGOUT_ICON}</span>
+          <span>Sign out</span>
+        </button>
       </form>
     </div>
   </details>`;
@@ -173,6 +230,19 @@ export function reportBarHtml(count: number): string {
   </a>`.value;
 }
 
+function fixedFooter(): SafeHtml {
+  return html`<footer class="admin-footer" data-admin-footer>
+    <div class="admin-footer-version">Version 0.0.1-alpha</div>
+    <a
+      class="admin-footer-copyright"
+      href="https://it-and-more.systems/"
+      target="_blank"
+      rel="noreferrer"
+    >
+      © 1995-2026 Sascha Dämgen IT & MORE Systems
+    </a>
+  </footer>`;
+}
 export function page(options: PageOptions): string {
   const chrome = options.chrome !== false;
   const activeRoot = navItems.find((item) => containsActive(item, options.active));
@@ -180,23 +250,43 @@ export function page(options: PageOptions): string {
 
   const header = chrome
     ? html`<header class="admin-header" data-admin-header>
+        <div class="admin-header-glow" aria-hidden="true"></div>
         <div class="admin-header-inner">
           <a href="/dashboard" class="admin-brand" data-admin-brand>
-            <span class="admin-brand-mark" aria-hidden="true">C</span>
+            <img
+              class="admin-brand-avatar"
+              src="/assets/site/cinderella-avatar.jpg"
+              alt=""
+              aria-hidden="true"
+              width="42"
+              height="42"
+            />
             <span class="admin-brand-copy">
               <span class="admin-brand-name">Cinderella</span>
               <span class="admin-brand-subtitle">Control Center</span>
             </span>
           </a>
 
+          <nav data-main-navigation class="admin-main-navigation">
+            ${navItems.map((item) => topNavigationLink(item, options.active))}
+          </nav>
+
           <div class="admin-header-right">
-            <nav data-main-navigation class="admin-main-navigation">
-              ${navItems.map((item) => topNavigationLink(item, options.active))}
+            <nav class="admin-resource-navigation" aria-label="Project resources">
+              ${RESOURCE_LINKS.map((link) => resourceLink(link))}
             </nav>
 
             <form method="post" action="/logout" class="admin-signout-form">
               <input type="hidden" name="_csrf" value="${csrfToken}" />
-              <button type="submit" class="admin-text-button">Sign out</button>
+              <button
+                type="submit"
+                class="admin-logout-button"
+                aria-label="Sign out"
+                title="Sign out"
+              >
+                <span class="admin-resource-icon">${LOGOUT_ICON}</span>
+                <span class="admin-resource-label">Sign out</span>
+              </button>
             </form>
 
             <div class="admin-mobile-menu-wrap">
@@ -210,13 +300,20 @@ export function page(options: PageOptions): string {
   const contextualSidebar =
     chrome && activeRoot?.children && activeRoot.children.length > 0
       ? html`<aside data-context-sidebar data-section="${activeRoot.key}" class="admin-sidebar">
-          <div class="admin-sidebar-heading">
-            <span class="admin-sidebar-dot" aria-hidden="true"></span>
-            <span>${activeRoot.label}</span>
+          <div class="admin-sidebar-brandline">
+            <span class="admin-sidebar-brand-icon">${activeRoot.icon}</span>
+            <div>
+              <span class="admin-sidebar-kicker">Current section</span>
+              <strong>${activeRoot.label}</strong>
+            </div>
           </div>
           <nav class="admin-sidebar-nav">
             ${activeRoot.children.map((item) => sidebarNavigationItem(item, options.active, 0))}
           </nav>
+          <div class="admin-sidebar-meta">
+            <span class="admin-sidebar-meta-dot" aria-hidden="true"></span>
+            <span>Private control surface</span>
+          </div>
         </aside>`
       : html``;
 
@@ -226,6 +323,7 @@ export function page(options: PageOptions): string {
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="robots" content="noindex, nofollow" />
+        <meta name="theme-color" content="#050A12" />
         <title>${options.title} | Cinderella</title>
         <link rel="stylesheet" href="/assets/app.css" />
         <script src="/assets/htmx.min.js" defer></script>
@@ -244,6 +342,7 @@ export function page(options: PageOptions): string {
         ${csrfToken ? raw(`hx-headers='{"x-csrf-token":"${escapeHtml(csrfToken)}"}'`) : ''}
       >
         <div class="admin-shell" data-admin-shell>
+          <div class="admin-stars" aria-hidden="true"></div>
           ${header}
           <div class="admin-workspace">
             ${contextualSidebar}
@@ -253,6 +352,7 @@ export function page(options: PageOptions): string {
               </div>
             </main>
           </div>
+          ${chrome ? fixedFooter() : null}
         </div>
       </body>
     </html>`;
