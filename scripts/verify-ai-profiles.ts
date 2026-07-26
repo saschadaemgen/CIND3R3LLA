@@ -5,6 +5,8 @@
  * invitation link, message send, consent action, or production database is used.
  */
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import argon2 from 'argon2';
 import type { LocalAiConfig, AdminConfig, Config } from '../src/config.js';
@@ -66,6 +68,14 @@ const fakeFetch: FetchLike = async (input) => {
 
 async function main(): Promise<void> {
   process.env['SESSION_SECRET'] ??= SESSION_SECRET;
+
+  const root = process.cwd();
+  const accessControlClient = await readFile(
+    join(root, 'assets', 'admin-access-control.js'),
+    'utf8',
+  );
+  const accessControlCss = await readFile(join(root, 'assets', 'app.css'), 'utf8');
+  const assetCopier = await readFile(join(root, 'scripts', 'copy-assets.mjs'), 'utf8');
 
   const pg = new PGlite();
   const db: Queryable = {
@@ -303,7 +313,11 @@ async function main(): Promise<void> {
   const session = cookieOf(login.headers['set-cookie'], 'cinderella_session') ?? '';
   const headers = { cookie: session };
 
-  const page = await app.inject({ method: 'GET', url: '/ai/profiles', headers });
+  const page = await app.inject({
+    method: 'GET',
+    url: `/ai/profiles?profile=${profileId}`,
+    headers,
+  });
 
   check('profiles page renders', page.statusCode === 200);
   check(
@@ -312,8 +326,43 @@ async function main(): Promise<void> {
   );
   check(
     'duplicate profile creation is hidden from the normal workflow',
-    !page.body.includes('Create Cinderella profile') &&
-      page.body.includes('Created through AI Bot Setup'),
+    !page.body.includes('name="action" value="create-profile"') &&
+      page.body.includes('Open AI Bot Setup'),
+  );
+  check(
+    'master detail Access Control workspace is visible',
+    page.body.includes('access-control-master-detail') &&
+      page.body.includes('data-access-workspace') &&
+      page.body.includes('Selected AI bot'),
+  );
+  check(
+    'only the selected AI bot detail is rendered',
+    page.body.includes('href="/ai/profiles?profile=') &&
+      page.body.includes('data-access-list-item'),
+  );
+  check(
+    'authorities and groups use compact sections',
+    page.body.includes('data-access-panel="authorities"') &&
+      page.body.includes('data-access-panel="groups"') &&
+      page.body.includes('access-control-group-card'),
+  );
+  check(
+    'mutating forms are presented in dialogs',
+    page.body.includes('data-access-dialog') &&
+      page.body.includes('data-access-open') &&
+      page.body.includes('Assign authority') &&
+      page.body.includes('Add group assignment'),
+  );
+  check(
+    'Access Control client supports dialogs, tabs, and search',
+    accessControlClient.includes('showModal()') &&
+      accessControlClient.includes('data-access-tab') &&
+      accessControlClient.includes('data-access-search'),
+  );
+  check(
+    'Access Control styles and asset publishing exist',
+    accessControlCss.includes('CIND3R3LLA access control workspace') &&
+      assetCopier.includes('admin-access-control.js'),
   );
   check(
     'profile and groups are visible',
@@ -329,9 +378,14 @@ async function main(): Promise<void> {
   );
   check(
     'unsupported connection actions are honest',
-    page.body.includes('Invitation link handling') &&
-      page.body.includes('Not implemented') &&
-      page.body.includes('Remote commands disabled'),
+    page.body.includes('Invitation links') &&
+      page.body.includes('not stored') &&
+      page.body.includes('Join group action') &&
+      page.body.includes('not implemented') &&
+      page.body.includes('Remote commands') &&
+      page.body.includes('disabled') &&
+      page.body.includes('Policy enforcement') &&
+      page.body.includes('foundation only'),
   );
   check('group links are not accepted by a form', !page.body.includes('name="groupLink"'));
 

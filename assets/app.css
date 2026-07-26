@@ -2978,3 +2978,375 @@ input[type='radio'] {
 .setup-step-explanation p:first-child {
   color: var(--text);
 }
+
+/* CIND3R3LLA access control workspace */
+.access-control-page {
+  gap: 22px;
+}
+
+.access-control-master-detail {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.access-control-detail,
+.access-control-section,
+.access-control-group-card {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(69, 189, 209, 0.025), transparent 36%), rgba(9, 16, 29, 0.84);
+}
+
+.access-control-detail {
+  border-radius: 18px;
+  box-shadow: var(--shadow-card);
+  padding: 22px;
+  backdrop-filter: blur(16px);
+}
+
+.access-control-tabs {
+  display: flex;
+  gap: 6px;
+  margin: 20px 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 10px;
+}
+
+.access-control-tab {
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  padding: 7px 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.access-control-tab:hover,
+.access-control-tab[aria-selected='true'] {
+  border-color: rgba(69, 189, 209, 0.25);
+  background: rgba(69, 189, 209, 0.08);
+  color: var(--accent-strong);
+}
+
+.access-control-overview-note {
+  margin-top: 18px;
+  border: 1px solid rgba(69, 189, 209, 0.2);
+  border-radius: 14px;
+  background: rgba(69, 189, 209, 0.05);
+  padding: 16px;
+}
+
+.access-control-overview-note h3 {
+  margin: 5px 0 5px;
+  font-size: 16px;
+}
+
+.access-control-overview-note p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.access-control-profile-action {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+
+.access-control-section {
+  overflow: hidden;
+  border-radius: 14px;
+}
+
+.access-control-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding: 14px 16px;
+}
+
+.access-control-section-header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.access-control-section-header p {
+  margin: 3px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.access-control-table-wrap,
+.access-control-group-table-wrap {
+  overflow-x: auto;
+}
+
+.access-control-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.access-control-table th,
+.access-control-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 11px 14px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.access-control-table th {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.access-control-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.access-control-identity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.access-control-identity strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.access-control-identity small {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.access-control-empty-row,
+.access-control-empty-panel {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.access-control-empty-panel {
+  padding: 24px;
+}
+
+.access-control-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 12px;
+}
+
+.access-control-group-card {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.access-control-group-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px;
+}
+
+.access-control-group-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.access-control-group-header h4 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.access-control-group-header p {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.access-control-group-stats {
+  display: grid;
+  margin: 0;
+  padding: 0 14px 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.access-control-group-stats div,
+.access-control-boundary-grid div {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(5, 10, 18, 0.3);
+  padding: 9px;
+}
+
+.access-control-group-stats dt,
+.access-control-boundary-grid span {
+  display: block;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.access-control-group-stats dd,
+.access-control-boundary-grid strong {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.access-control-group-table {
+  font-size: 11px;
+}
+
+.access-control-group-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding: 12px 14px;
+}
+
+.access-control-boundary-grid {
+  display: grid;
+  margin-top: 18px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.access-control-dialog {
+  width: min(560px, calc(100vw - 32px));
+  border: 1px solid rgba(69, 189, 209, 0.3);
+  border-radius: 18px;
+  background: #09111e;
+  color: var(--text-soft);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.55);
+  padding: 0;
+}
+
+.access-control-dialog::backdrop {
+  background: rgba(2, 6, 12, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.access-control-dialog-header,
+.access-control-dialog-body,
+.access-control-dialog-footer {
+  padding: 18px 20px;
+}
+
+.access-control-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.access-control-dialog-header h2 {
+  margin: 4px 0 2px;
+  font-size: 21px;
+}
+
+.access-control-dialog-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.access-control-dialog-close {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(5, 10, 18, 0.4);
+  color: var(--text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+}
+
+.access-control-dialog-body {
+  display: grid;
+  gap: 14px;
+}
+
+.access-control-field {
+  display: grid;
+  gap: 6px;
+}
+
+.access-control-field span {
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.access-control-field input,
+.access-control-field select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(2, 7, 14, 0.68);
+  padding: 0 12px;
+  color: var(--text);
+  font: inherit;
+}
+
+.access-control-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 1060px) {
+  .access-control-master-detail,
+  .access-control-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .access-control-boundary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .access-control-section-header,
+  .access-control-group-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .access-control-boundary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+/* END CIND3R3LLA access control workspace */
