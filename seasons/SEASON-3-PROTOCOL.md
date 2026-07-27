@@ -104,6 +104,17 @@ had been latent since the code was written**, which is why so much of the work i
 - **No em-dashes in member-facing output**, enforced by `verify:no-dashes` across the whole
   plugins tree, and the help reply reduced to one editable template rather than two texts
   where the editable one was dead. (CCB-S3-021, D-061/D-066)
+- **The marketing site on its own domain**, added late and recorded under CCB-S3-028 because
+  it shipped after the close-out began. `SITE_ORIGIN` was split out from `PUBLIC_ORIGIN`
+  rather than moving the console, because `PUBLIC_ORIGIN` derives the WebAuthn RP ID and
+  moving it would have invalidated every registered passkey. The edge enforces the split
+  with a vhost **allowlist** ending in 404, so an admin route added later is never silently
+  exposed on the marketing domain. (CCB-S4-001, D-080/D-081)
+- **A public demo backend**, with a two-key isolation guard: a `DEMO_INSTANCE` env flag
+  **and** a database marker, both required, failing closed and loudly in every direction.
+  The dangerous case it exists for is a process told it is the demo while pointed at a
+  production database, which would otherwise put a stranger in the real console. The
+  visitor-facing UI is not built. (CCB-S4-001, D-082)
 
 ### Security findings, which are the season's real story
 
@@ -150,15 +161,15 @@ harnesses, and the evidence is given in **Part G §2**.
 
 | Briefing | Subject | As issued | **Verified** |
 |---|---|---|---|
-| CCB-S3-011 Part 2 / **CCB-S3-013** | Hide or delete on revocation, with evidence holds | May never have been received | **Never received.** Not built |
-| CCB-S3-012 | Encrypted originals at rest, CSAM screening seam | Not started | **Never received.** Not built |
+| CCB-S3-011 Part 2 / **CCB-S3-013** | Hide or delete on revocation, with evidence holds | May never have been received | **Reissued and DELIVERED** — `b76aa8f`, plus `bf1f779` for §4 (D-070/071/072/073/074) |
+| CCB-S3-012 | Encrypted originals at rest, CSAM screening seam | Not started | **Reissued and DELIVERED** — `eeae2a2` (D-075, D-076). No provider is connected, by design |
 | CCB-S3-005 Addendum A | Short German instructions answered in English | Not started | **DELIVERED and live** (D-067) |
 | CCB-S3-014 Addendum A | Consent banner with analytics and video categories | Not started | Not started |
 | CCB-S3-021 | Em-dashes forbidden, help formatting, dead admin help field | Not started | **DELIVERED and live**, all three parts (D-061, D-066) |
 | CCB-S3-011 Addendum B | Media error responses not cacheable; one retry on live-inserted images | Not started | **Half delivered.** Retry is live; the cacheability half is **not** built |
 | CCB-S3-017 + Addendum A | Contact address, private channel, direct-chat capture exclusion | Research done, not built | Research done and documented, not built |
 | CCB-S3-018 | The permanent failed-file-receipts alert | Not started | Subject documented, not built |
-| CCB-S3-020 | The SimpleX adapter seam | Filed last, not started | **Never received.** Not built |
+| CCB-S3-020 | The SimpleX adapter seam | Filed last, not started | **Reissued and DELIVERED, Phase A only** — `cea9adf` (D-078). Types, interface, fake, two checks. No production caller; Phases B and C open |
 | CCB-S3-022 phase 2 | Media derivatives onto the queue, backfill, admin queue page | Not started | Not started |
 | CCB-S3-024 slices 2 and 3 | Wire capture to write-ahead, retention, admin counts | Not started | Not started |
 | CCB-S3-015 stage 2 | Two-column tiles, per-tile save, sized inputs, collapsible help | Not started | Not started |
@@ -174,12 +185,33 @@ harnesses, and the evidence is given in **Part G §2**.
   configured.
 - **No backups exist.** `deploy/backup.sh` keeps fourteen copies but has never run: no
   cron, no timer, no dump on the host. The archive has no recovery from disk loss.
-- Three high-severity npm advisories reported on every `npm ci`.
+  **Re-verified on the host under CCB-S3-028 and still true**, and now the season's largest
+  operational risk. Full analysis in [`../docs/feature-backlog.md`](../docs/feature-backlog.md).
+- **Nine** high-severity npm advisories, not three (measured under CCB-S3-028):
+  `@fastify/static`, `brace-expansion`, `fast-uri`, `find-my-way`, and `sharp` with four
+  inherited libvips CVEs. `sharp` sits on the media path.
 
-**Documentation debt:** the legal texts remain unwritten. The German Impressum, the Privacy
-Policy (GDPR, IONOS as processor, retention mechanism, automated screening of received
-media), and Terms of Service covering the commercial Pro tier. All need legal review before
-launch.
+**Documentation debt:** ~~the legal texts remain unwritten~~ — **superseded.** CCB-S3-029
+delivered real legal pages (`db7b83c`, corrected by `2817ebe`): a binding German Impressum
+reproduced verbatim, an English convenience translation, a privacy policy drafted from the
+code that names the hosting processor, the retention mechanism and the screening status,
+with every other locale falling back to English under a visible governing-version notice
+(D-079). What remains is counsel review, and terms of service for the commercial Pro tier.
+
+**Added under CCB-S3-028** (the close-out currency check, re-run after 012, 013, 020 and 027
+landed):
+
+- All six living documents were **out of date** — five seriously. The per-change
+  documentation rule did not hold this season; the failure mode was omission and internal
+  self-contradiction rather than overclaiming.
+- The operator's real admin hostname was committed in three places in a public repository,
+  against the repo's own standing rule. Scrubbed under this briefing; the disclosure has
+  already occurred.
+- The nginx configuration for CCB-S4-001 exists **only on the server** and is recorded in
+  D-081 because that was the only place the topology existed.
+- The multi-profile runtime design, the largest body of unrecorded reasoning in the project,
+  is now recorded as D-083, D-084 and D-085, with the group-identity claim corrected and the
+  conversation-identity question recorded as open.
 
 ## Part D — Season 4
 

@@ -1079,8 +1079,10 @@ must exclude them (`chatInfo.groupChatScope` present) before anything is built, 
 message could reach the public archive. Not yet implemented.
 **Also found:** real moderation/membership tooling is already exposed (accept/reject/remove
 members, role changes, block-for-all, roster with join times and pending status), and reactions
-(send and the unsubscribed `chatItemReaction` event) are a free interaction primitive. Forwarding
-and the command menu are core-only / not-applicable gaps.
+(send and the unsubscribed `chatItemReaction` event) are a low-noise interaction primitive.
+Forwarding and the command menu are core-only / not-applicable gaps. **Corrected under
+CCB-S3-028:** reactions are core-only too, not "free" — the SDK wrapper throws on success in
+both directions. See **D-086**.
 **Evidence.** `docs/wire-format.md` §8 (full table, citations to the SDK sources at the running
 version).
 

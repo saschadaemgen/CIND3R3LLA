@@ -505,7 +505,7 @@ nothing private ever reaches the public archive.
 | Reply / quote | usable | `apiSendTextMessage(…, inReplyTo)` (`a:203`); already used | pairing answers to questions in-chat |
 | Forward | **core-only** | no `apiForward*` in the SDK; the core knows forwarding (error `invalidForward`, `t:890`) — reachable only by a raw `sendChatCmd` string | re-post an archived item; low priority |
 | **Reactions** | | | |
-| Add / remove an emoji reaction | usable | `apiChatItemReaction(chatType,chatId,itemId,add,reaction)` (`a:228`) | 👍 a member's message; a lightweight "seen/heard" ack |
+| Add / remove an emoji reaction | **core-only** | The SDK wrapper is defective in **both** directions — `apiChatItemReaction` (`a:228`) tests the response against `"chatItemsDeleted"` and throws on success, and its declared return type is wrong. Reachable only by a raw `sendChatCmd` accepting `chatItemReaction`. See **D-086** | 👍 a member's message; a lightweight "seen/heard" ack |
 | Read reactions others add | usable, **not subscribed** | `chatItemReaction` event (`e ChatItemReaction{added,reaction}`) — Cinderella does not listen for it | react-to-react; sentiment/among-members signal |
 | Emoji set constrained? | core-enforced | `MsgReaction.Emoji{emoji:string}` (`t`) is an *unvalidated string* in the SDK; the core restricts to its known set and returns `MsgReaction.Unknown` otherwise | must send only known emoji; the SDK will not catch a bad one |
 | **Moderation** | | | |
@@ -581,8 +581,11 @@ The command-menu surprise (§3f) came from exactly this gap, so it is called out
 3. **Real moderation and membership tooling is already exposed** — accept/reject pending members,
    remove, role changes, block-for-all, and reading the roster with join times and pending status.
    The console currently exposes none of it; a moderation queue is a build, not a research problem.
-4. **Reactions are a free, low-noise interaction primitive** she does not use — both sending
+4. **Reactions are a low-noise interaction primitive** she does not use — both sending
    (a lightweight ack) and receiving (a `chatItemReaction` event she doesn't subscribe to).
+   They are **not free**: the SDK wrapper throws on success in both directions, so sending
+   requires a raw `sendChatCmd` workaround, and the core accepts only eight specific emoji
+   by code point. See **D-086**.
 
 **Doc assumptions this audit contradicts:** §4's title and its line "the code has **no private
 per-member channel at all**" — correct about the code, wrong as a statement about what is possible;

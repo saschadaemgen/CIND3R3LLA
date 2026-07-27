@@ -1,7 +1,9 @@
 # Cinderella — Season Index
 
 The unit of work is the **Season**, numbered from **1**. Seasons 1, 2 and 3 are complete
-and in production; Season 4 is next. Each season is authorised by numbered briefings
+and in production; **Season 4 is already underway and has shipped** (CCB-S4-001 landed
+before Season 3 closed — the seasons are a numbering scheme, not a gate). Each season is
+authorised by numbered briefings
 (`CCB-S<season>-<NNN>`) and closes with a protocol document under `seasons/`. The
 earlier zero-based scheme and the "Stages 0–7" framing are deprecated — see
 [`../docs/decisions.md`](../docs/decisions.md) **D-014**.
@@ -16,11 +18,11 @@ earlier zero-based scheme and the "Stages 0–7" framing are deprecated — see
 | 1 | Foundation — consent-based SimpleX→web archive | Content-complete, in production | [SEASON-1-PROTOCOL.md](SEASON-1-PROTOCOL.md) |
 | 2 | Public product — archive front, SEO, stream experience, reporting, website foundation | Content-complete, in production | [SEASON-2-PROTOCOL.md](SEASON-2-PROTOCOL.md) |
 | 3 | Interaction layer, plugin framework, public front polish, queue foundation, latent-fault audit | Content-complete, in production | [SEASON-3-PROTOCOL.md](SEASON-3-PROTOCOL.md) |
-| 4 | Consolidate the local AI work, finish the carried briefings, AI brain, categorization, legal, child safety, multi-tenancy | Next | — |
+| 4 | Consolidate the local AI work, finish the carried briefings, AI brain, categorization, legal, child safety, multi-tenancy, multi-profile runtime | **Underway** — CCB-S4-001 in production | — |
 
 ## Season 1 — Foundation
 
-**Delivered and live** at `cinderella.simplego.dev`, bot active in the "Cyb3rD3sk"
+**Delivered and live** at `<admin-host>`, bot active in the "Cyb3rD3sk"
 group: capture pipeline (text/image/video/voice/link/file → PostgreSQL + on-disk
 media), consent gating (`/publish` / `/unpublish`, forward-only, deletion-aware),
 the responsive admin console (dashboard, Messages + takedown, Consent, Settings,
@@ -37,7 +39,7 @@ to Season 3.)_
 
 ## Season 2 — Public product
 
-**Delivered and live** at `cinderella.simplego.dev`: the consent-gated public archive
+**Delivered and live** at `<admin-host>`: the consent-gated public archive
 front (`/embed/<id>`, SSR, with a separate consent-gated media path); the full SEO &
 marketing suite (schema.org JSON-LD, sitemaps, robots, OG/Twitter + auto social image,
 RSS, analytics hook — all admin-configurable); the stream experience (house-palette
@@ -59,7 +61,7 @@ multi-tenancy moved to Season 4.)_
 
 ## Season 3 — The interaction layer, and the latent-fault audit
 
-**Delivered and live** at `cinderella.simplego.dev`: natural addressing in English and
+**Delivered and live** at `<admin-host>`: natural addressing in English and
 German over a closed intent catalog that the resolver classifies but never executes; the
 plugin framework with the crypto price plugin as its first tenant; archived member
 questions paired with her answers; her own messages as a second publication branch; media
@@ -70,13 +72,22 @@ dark-neon restyle; and the enforced no-em-dash rule. The season's real story is 
 faults found and fixed, and the swallowed-error audit they produced (D-063).
 
 See [SEASON-3-PROTOCOL.md](SEASON-3-PROTOCOL.md) — in particular **Part G**, which records
-the delivery gap per briefing id (CCB-S3-012, 013 and 020 were never received and need
-reissuing), four Part C items that were in fact already delivered, and the inventory of the
-**local AI subsystem that entered the repository outside the briefing scheme** and is
-Season 4's first task.
+the delivery gap per briefing id, four Part C items that were in fact already delivered, and
+the inventory of the **local AI subsystem that entered the repository outside the briefing
+scheme** and is Season 4's first task.
 
-**Season 4 (planned):** consolidate the parallel-chat AI work into the documents and the
-architecture **before anything else**; finish the carried briefings, consent-affecting ones
-first; the AI brain behind one configurable endpoint; categorization + media gallery on the
-queue; legal & compliance; child safety; multi-tenancy & Pro (D-026), where the adapter
-seam (CCB-S3-020) pays off.
+**Delivery gap, corrected under CCB-S3-028.** Part G recorded CCB-S3-012, 013 and 020 as
+never received and needing reissue. All three were reissued and **delivered** on 2026-07-27
+(`eeae2a2`, `b76aa8f` + `bf1f779`, and `cea9adf` for Phase A of the seam). CCB-S3-027 and
+CCB-S3-029 also landed and were absent from the register entirely. The close-out currency
+check itself ran before any of this and was stale; CCB-S3-028 re-ran it and found **all six
+living documents out of date, five seriously**.
+
+**Season 4 (underway):** CCB-S4-001 has shipped the marketing site on its own domain and a
+demo backend (D-080/081/082). Still ahead: consolidate the parallel-chat AI work into the
+documents and the architecture; finish the carried briefings, consent-affecting ones first;
+the AI brain behind one configurable endpoint; categorization + media gallery on the queue;
+counsel review of the legal texts; child safety; multi-tenancy & Pro (D-026), where the
+adapter seam pays off; and the **multi-profile runtime** (D-083/084/085), which is design
+only and needs the conversation-identity question answered before the archive can key
+anything per conversation.

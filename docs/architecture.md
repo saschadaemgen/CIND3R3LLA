@@ -91,7 +91,7 @@ The SimpleX core's state is SQLite at `<simplexDbPrefix>_chat.db` / `<simplexDbP
 
 `client.ts::ensureDirs` creates the SimpleX DB dir, the files folder, `MEDIA_ROOT`, and `<parent-of-files-folder>/xftp-tmp`, then pins `process.env['TMPDIR']` to that temp dir before startup (`client.ts:37-45`). Reason: the core stages/decrypts XFTP downloads in a temp dir then `rename()`s them into the files folder; if temp is on a different device (the default OS temp is `/tmp`, a tmpfs, further isolated by the systemd unit's `PrivateTmp`) the rename fails with `EXDEV` and every receive stalls. Pinning temp to the files-folder filesystem makes it a cheap same-device rename.
 
-`media.ts::storeMedia` moves completed files into `MEDIA_ROOT/YYYY/MM/<fileId>-<sanitized-name>` (UTC date bucket from `msg.sentAt`, name sanitized to `[A-Za-z0-9._-]` and truncated to 120 chars). The DB stores the relative POSIX path, the MIME type (derived from the file extension, default `application/octet-stream` via `mimeForFileName`), and the on-disk size — never the bytes. The admin console serves the tree at `/media/` (`server.ts:119-124`).
+`media.ts::storeMedia` moves completed files into `MEDIA_ROOT/YYYY/MM/<fileId>-<sanitized-name>` (UTC date bucket from `msg.sentAt`, name sanitized to `[A-Za-z0-9._-]` and truncated to 120 chars). The DB stores the relative POSIX path, the MIME type (derived from the file extension, default `application/octet-stream` via `mimeForFileName`), and the on-disk size — never the bytes. The admin console addresses media **by message id** at `/media/msg/:id` (`src/web/views/admin-media.ts`), resolving the path from the row and refusing anything quarantined; the raw static mount over the media tree was **removed** by CCB-S3-013 §4, because any authenticated session could otherwise read quarantined bytes by path. See §25 and **D-074**.
 
 > Note: the outline says the XFTP temp dir must share "the media filesystem." The code pins `TMPDIR` next to the **files folder** — `join(dirname(cfg.simplexFilesFolder), 'xftp-tmp')`, set at `client.ts:44` — not `MEDIA_ROOT`. The constraint solved there is temp-vs-files-folder (the core's internal rename). The separate files-folder → media-store move is a distinct step that tolerates `EXDEV` via copy+unlink (`media.ts::moveFile`, `media.ts:69-81`).
 
@@ -124,8 +124,29 @@ Configuration is env-driven (`config.ts`), from a git-ignored `.env` in developm
 - **007** `sessions` — `admin_sessions` (persisted across restarts).
 - **008** `reports` — public content reports + the admin review queue.
 - **009** `consent_actions` — the consent decision journal (source + prior state) that makes UNDO possible (CCB-S3-002). Provenance only; the publish views still derive from `consent` alone.
+- **010** `asset_mappings` — pinned symbol→asset mappings for the price plugin.
+- **011** `seed_major_assets` — seeded major assets with locked pins.
+- **012** `correct_major_pins` — corrects pins that predate the seed.
+- **013** `bot_messages` — her own messages: bot rows, mentions, the second publication branch.
+- **014** `media_derivatives` — the stripped public derivative alongside the original.
+- **015** `member_instructions` — member instructions and exchange pairing.
+- **016** `video_links` — video link extraction.
+- **017** `jobs` — the durable queue: state machine, `FOR UPDATE SKIP LOCKED` claim, backoff/dead-letter, idempotency.
+- **017** `cinderella_profiles` — profile registry (parallel local-AI work, see D-069).
+- **018** `capture_events` — the capture write-ahead log. **No production writer yet** (§22).
+- **018** `runtime_policy_decisions` — runtime policy (parallel local-AI work).
+- **019** `formatted_text` — formatted text spans.
+- **019** `bot_onboarding` — bot onboarding (parallel local-AI work).
+- **020** `revocation_holds` — revocation hide/delete plus evidence holds, including the BEFORE DELETE hold trigger.
+- **021** `consent_gaps` — a restore never publishes what was said while hidden.
+- **022** `quarantine_withholds` — a hash match or an escalation is served to nobody.
 
-Each migration is applied once, inside a transaction, by `db/migrate.ts`.
+Each migration is applied once, inside a transaction, by `db/migrate.ts`. **Three numbers
+exist twice** (017, 018, 019), because the parallel-chat AI work reused numbers the
+CCB-attributed work had already taken. The runner keys `schema_migrations` on the **full
+filename**, so all six apply exactly once and nothing is broken — but the number is a label
+rather than an ordinal, **no applied migration may be renamed**, and new migrations allocate
+from the highest number on disk plus one (currently **023**). See **D-069** and the appendix.
 
 > Note: `CLAUDE.md`'s migrations list labels 004 the "moderation gate"; the file itself is headed "Cinderella admin views support — Season 0, Stage 5" (`migrations/004_moderation.sql:1`) and its concrete effect is adding `media_error` and folding `rejected` into the publish views. It implements the takedown gate in the views but is not exclusively about moderation.
 
@@ -139,7 +160,7 @@ Per `CLAUDE.md`'s "Parked" section:
   consent-gated live auto-update (CCB-S2-006). Still planned: multiple templates, a
   design editor, the Web Component, an SSE upgrade of the live-update transport, and
   SSR caching with publish-event invalidation.
-- **AI moderation / CSAM scanning** — `moderation_state` is only a hook (every row stays `'none'`); the scanning track is separate and unbuilt.
+- **A detection provider** — the screening seam and quarantine custody are **built** (§26); no provider is connected, the null provider transmits nothing, and the public copy says "in development". `moderation_state` is **not** a dormant hook: admin takedown and the report queue write `'rejected'` (§11).
 - **Self-hosted relay/super-peer capture.**
 
 ## 11. Public archive front (CCB-S2-003)
@@ -1179,6 +1200,62 @@ domain properties and which are SimpleX semantics leaking through. Its §9 recor
 opaque `RawItem` is stored in `messages.raw_json` and SQL reads inside it, in migration 019 (the public
 front's `formatted_text`) and the support-scope diagnostic. That is scheduled for removal, not a
 property a second protocol could honour, and Matrix on the roadmap makes it a prerequisite.
+
+## 29. Two origins, one process (CCB-S4-001)
+
+The marketing site has its own domain. The console and the public archive did not move, and
+could not: `PUBLIC_ORIGIN` derives the WebAuthn Relying Party ID, an RP ID is baked into
+every credential at registration, and moving the origin would have invalidated every
+registered passkey. So `SITE_ORIGIN` was **added** rather than `PUBLIC_ORIGIN` changed. It
+is validated the same way and falls back to `PUBLIC_ORIGIN` when unset, so a deployment
+that does not set it behaves exactly as before. See **D-080**.
+
+`SITE_ORIGIN` feeds only the marketing site's absolute URLs: canonical, `hreflang`, Open
+Graph, JSON-LD and `/sitemap-site.xml`.
+
+**The application has no host-based routing.** One Fastify process on `127.0.0.1:8787`
+serves both origins, and it is the edge that decides what each hostname may reach. Reading
+the application alone would suggest the console is reachable on the marketing domain; it is
+not, but only because of the vhost allowlist. That division of labour is deliberate and is
+the single most important thing to understand before touching either side.
+
+At the edge (see **D-081**): public `:443` is an **SNI stream splitter** shared with
+neighbouring services, mapping `$ssl_preread_server_name` to a backend and defaulting to
+`127.0.0.1:4443` with `proxy_protocol` on, so every HTTPS vhost listens on loopback rather
+than a public interface. The marketing vhost is an **allowlist** ending in
+`location / { return 404; }` — a blocklist was rejected because it fails open, silently
+exposing any admin route added later. Reserved hostnames need an explicit vhost, because
+unknown names fall through to the default; the demo hostname therefore has a deliberate
+`return 404` block, and the certificate already carries its SAN.
+
+**This nginx configuration is not in the repository.** `deploy/nginx-admin.conf` still ships
+a single vhost and knows nothing about any of the above. The topology here was read off the
+running server under CCB-S3-028 because that was the only place it existed. Committing a
+sanitised copy is open work.
+
+## 30. The public demo (CCB-S4-001, Phase 1)
+
+**Built:** the backend, the isolation guard, session handling, a seed script
+(`npm run demo:seed`) and `verify:demo`. **Not built:** the visitor-facing pane, the four
+guided prompts, the disclosure line and the mobile layout. The demo hostname answers 404 at
+the edge, which is correct until the pane exists.
+
+The security-relevant fact: `POST /demo/enter` mints an **ordinary admin session** for an
+anonymous visitor, and `/demo/*` carries a blanket CSRF exemption. The same session
+machinery that protects the real console is handed to strangers by design. That is safe only
+if the process can never be a production process, so the isolation is two independent keys
+that must agree — a `DEMO_INSTANCE` environment flag **and** a database marker row — checked
+in `src/demo/guard.ts`. Every direction fails closed and logs: `env && !marked` is the
+dangerous case (a process told it is the demo, pointed at a production database) and refuses
+at error level; `!env && marked` refuses at warning level; a marker read that throws refuses.
+The seed script will not mark a database that already holds real-looking content. See
+**D-082**.
+
+Usage is bounded per session (a message budget with an hourly reset) so the demo cannot be
+used as free compute.
+
+Note for the seam: the demo is currently the **only production consumer of `src/adapter/`**,
+through `FakeChatAdapter`. Section 28's seam otherwise has no production caller.
 
 ## Appendix: divergences (code wins)
 

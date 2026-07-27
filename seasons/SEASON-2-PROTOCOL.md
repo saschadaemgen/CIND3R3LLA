@@ -36,7 +36,7 @@
 
 Season 2 turned the private, capture-only foundation into a **public, discoverable,
 safe-by-design product with its own marketing surface**. All of the following is live
-in production at `cinderella.simplego.dev`.
+in production at `<admin-host>`.
 
 - **Public presentation** — README + banner + AGPL-3.0 licence in the house style
   (centered header + badge tiles); an honest alpha-status notice; CSAM wording kept

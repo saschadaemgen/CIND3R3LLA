@@ -316,7 +316,7 @@ nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` (configurable),
 
 ## 6. Media is served only behind authentication
 
-- `/media/` is a static mount (`src/web/server.ts:119-124`).
+- `/media/msg/:id` resolves media by message id (`src/web/views/admin-media.ts`); the static mount over the media tree was removed by CCB-S3-013 §4 (D-074).
 - The `onRequest` auth guard's **public allowlist is exactly**: `/login`,
   `/healthz`, `/favicon.ico`, `/assets/*`, and `/webauthn/login/*`
   (`src/web/server.ts:157-162`). **`/media` is not in that set**, so any
@@ -376,7 +376,7 @@ nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` (configurable),
 | Webhook alerting                                                  | Yes (2 events only) | `src/web/security/alert.ts`, `routes.ts:217-222,291`     |
 | Counter-regression auto-lock                                      | Yes                 | `src/web/security/webauthn.ts:246-267`                   |
 | PostgreSQL-backed sessions                                        | Yes                 | `migrations/007_sessions.sql`, `src/web/session.ts`      |
-| Media behind auth (`/media` not public)                           | Yes                 | `src/web/server.ts:119-124,157-162`                      |
+| Media behind auth, addressed by id and never by path              | Yes                 | `src/web/views/admin-media.ts` (`/media/msg/:id`); the static mount is gone, D-074 |
 | Bind-level scoping (no host firewall)                             | Yes                 | `src/web/server.ts:243`, `deploy/RUNBOOK.md:173-177`     |
 | Secrets in on-VPS env (EnvironmentFile)                           | Yes                 | `src/config.ts:141-181`, `deploy/RUNBOOK.md:38-53`       |
 | CSRF (header or `_csrf` body)                                     | Yes                 | `src/web/session.ts:172-190`                             |
@@ -721,9 +721,10 @@ consent:
   deleted item's media returns `404`. Media is never served by a client-supplied raw
   path; the DB-stored path is additionally resolved within `MEDIA_ROOT` with a
   traversal guard (`src/web/front/embed.ts`).
-- **Distinct from the admin media path.** The admin `/media/**` static mount stays
-  behind the auth guard (§6). The public path is a different route with its own
-  consent check — the admin path is not reused.
+- **Distinct from the admin media path.** The admin route `/media/msg/:id` stays behind
+  the auth guard (§6) and resolves media by message id, refusing anything quarantined.
+  The public path is a different route with its own consent check — the admin path is not
+  reused. There is no longer any static mount over the media tree (D-074).
 - **Isolation in the request pipeline.** `/embed/*` is exempt from the admin auth
   guard, the admin IP allow/deny policy, and the admin rate-limit (a public surface
   must reach everyone), and the admin strict headers (`x-frame-options: DENY`,

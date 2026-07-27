@@ -40,7 +40,7 @@
 consent-based SimpleX group archive is her *first capability*, not her definition;
 a team of agents and customer-facing self-service are planned to follow.
 
-Delivered and **live in production** at `cinderella.simplego.dev`, with the bot
+Delivered and **live in production** at `<admin-host>`, with the bot
 active in the real "Cyb3rD3sk" group:
 
 - **Capture pipeline** — text, image, video, voice, link and file messages
