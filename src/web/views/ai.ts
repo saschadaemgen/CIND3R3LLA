@@ -1053,50 +1053,245 @@ function runtimeBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQue
   </section>`;
 }
 
-function routingBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
+function routingBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuery): SafeHtml {
   const availableModels = modelNames(snapshot.catalog.models, snapshot.routing);
+  const intentInfo = snapshot.catalog.models.find(
+    (model) => model.name === snapshot.routing.intentModel,
+  );
+  const replyInfo = snapshot.catalog.models.find(
+    (model) => model.name === snapshot.routing.replyModel,
+  );
+  const routesAligned = snapshot.routing.intentModel === snapshot.routing.replyModel;
+  const catalogState =
+    snapshot.catalog.ok === true
+      ? `${snapshot.catalog.models.length} models available`
+      : snapshot.catalog.ok === false
+        ? 'catalog failed'
+        : 'catalog not loaded';
 
-  return html`<div class="grid gap-4 lg:grid-cols-2">
-    ${card(
-      'Model role routing',
-      html`
-        <form method="post" action="/ai/routing" class="flex flex-col gap-4">
-          <input type="hidden" name="_csrf" value="${csrf}" />
-          <label class="flex flex-col gap-1 text-sm">
-            <span class="font-medium text-slate-700">Intent classification model</span>
+  return html`<section class="ai-routing-page">
+    <header class="setup-page-header">
+      <div>
+        <span class="setup-eyebrow">AI Control</span>
+        <h1>AI Routing</h1>
+        <p>
+          Assign independent local models to intent classification and guarded reply wording while
+          keeping execution inside deterministic application code.
+        </p>
+      </div>
+
+      <form method="post" action="/ai/test">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <button type="submit" class="setup-button setup-button-primary setup-create-button">
+          Test active models
+        </button>
+      </form>
+    </header>
+
+    ${notice(query)}
+
+    <div class="ai-routing-status-grid">
+      <article class="ai-routing-status" data-routing-stored-state>
+        <span>Stored intent route</span>
+        <strong>${snapshot.routing.intentModel}</strong>
+        <small>${intentInfo?.parameterSize ?? 'Model metadata not loaded'}</small>
+      </article>
+      <article class="ai-routing-status">
+        <span>Stored reply route</span>
+        <strong>${snapshot.routing.replyModel}</strong>
+        <small>${replyInfo?.parameterSize ?? 'Model metadata not loaded'}</small>
+      </article>
+      <article class="ai-routing-status" data-routing-effective-state>
+        <span>Effective resolver</span>
+        <strong>${snapshot.activeResolver}</strong>
+        <small>${snapshot.enabled ? 'Local AI active' : 'Deterministic rules active'}</small>
+      </article>
+      <article class="ai-routing-status">
+        <span>Catalog state</span>
+        <strong>${catalogState}</strong>
+        <small
+          >${routesAligned ? 'Both lanes share one model' : 'Independent role models active'}</small
+        >
+      </article>
+    </div>
+
+    <form method="post" action="/ai/routing" class="ai-routing-form">
+      <input type="hidden" name="_csrf" value="${csrf}" />
+
+      <div class="ai-routing-lane-grid">
+        <article class="ai-routing-lane" data-routing-lane="intent">
+          <header>
+            <div class="ai-routing-lane-icon">I</div>
+            <div>
+              <span class="setup-eyebrow">Lane one</span>
+              <h2>Intent classification</h2>
+              <p>
+                Classifies member text into the allowed intent catalog without executing actions.
+              </p>
+            </div>
+          </header>
+
+          <label class="ai-routing-select">
+            <span>Intent model</span>
             ${modelSelect('intentModel', snapshot.routing.intentModel, availableModels)}
-            <span class="text-xs text-slate-500">
-              Classifies member text only. Consent actions still require deterministic agreement.
-            </span>
           </label>
-          <label class="flex flex-col gap-1 text-sm">
-            <span class="font-medium text-slate-700">Reply wording model</span>
+
+          <dl class="ai-routing-facts">
+            <div>
+              <dt>Current model</dt>
+              <dd>${snapshot.routing.intentModel}</dd>
+            </div>
+            <div>
+              <dt>Family</dt>
+              <dd>${intentInfo?.family ?? 'not loaded'}</dd>
+            </div>
+            <div>
+              <dt>Parameters</dt>
+              <dd>${intentInfo?.parameterSize ?? 'not loaded'}</dd>
+            </div>
+            <div>
+              <dt>Quantization</dt>
+              <dd>${intentInfo?.quantizationLevel ?? 'not loaded'}</dd>
+            </div>
+          </dl>
+
+          <div class="ai-routing-boundary-note">
+            <strong>Deterministic guard remains authoritative</strong>
+            <span>Consent decisions and application actions are never delegated to this lane.</span>
+          </div>
+        </article>
+
+        <article class="ai-routing-lane" data-routing-lane="reply">
+          <header>
+            <div class="ai-routing-lane-icon">R</div>
+            <div>
+              <span class="setup-eyebrow">Lane two</span>
+              <h2>Reply wording</h2>
+              <p>
+                Rephrases completed read only answers while preserving required facts and literals.
+              </p>
+            </div>
+          </header>
+
+          <label class="ai-routing-select">
+            <span>Reply model</span>
             ${modelSelect('replyModel', snapshot.routing.replyModel, availableModels)}
-            <span class="text-xs text-slate-500">
-              Rephrases finished read-only replies. It receives no execution or transport access.
-            </span>
           </label>
-          <button
-            type="submit"
-            class="self-start rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700"
-          >
-            Apply model routing
-          </button>
-        </form>
-      `,
-    )}
-    ${card(
-      'Active route summary',
-      definitionList([
-        ['Intent model', snapshot.routing.intentModel],
-        ['Reply model', snapshot.routing.replyModel],
-        ['Environment default', snapshot.routing.defaultModel],
-        ['Resolver state', snapshot.activeResolver],
-        ['Missing model policy', 'Refuse and keep previous route'],
-        ['Cloud route', 'Disabled'],
-      ]),
-    )}
-  </div>`;
+
+          <dl class="ai-routing-facts">
+            <div>
+              <dt>Current model</dt>
+              <dd>${snapshot.routing.replyModel}</dd>
+            </div>
+            <div>
+              <dt>Family</dt>
+              <dd>${replyInfo?.family ?? 'not loaded'}</dd>
+            </div>
+            <div>
+              <dt>Parameters</dt>
+              <dd>${replyInfo?.parameterSize ?? 'not loaded'}</dd>
+            </div>
+            <div>
+              <dt>Quantization</dt>
+              <dd>${replyInfo?.quantizationLevel ?? 'not loaded'}</dd>
+            </div>
+          </dl>
+
+          <div class="ai-routing-boundary-note">
+            <strong>No transport or execution access</strong>
+            <span
+              >This lane receives a finished draft and cannot send messages or perform
+              actions.</span
+            >
+          </div>
+        </article>
+      </div>
+
+      <footer class="ai-routing-actions">
+        <div>
+          <strong>Apply both lanes together</strong>
+          <span>Every selected model must exist in the current Ollama catalog.</span>
+        </div>
+        <button type="submit" class="setup-button setup-button-primary">Apply model routing</button>
+      </footer>
+    </form>
+
+    <section class="ai-routing-path">
+      <header class="runtime-control-section-header">
+        <div>
+          <span class="setup-eyebrow">Processing path</span>
+          <h2>How the two lanes cooperate</h2>
+          <p>
+            The selected models support the application but never replace its deterministic safety
+            layer.
+          </p>
+        </div>
+      </header>
+
+      <ol class="ai-routing-path-steps">
+        <li>
+          <span>1</span><strong>Receive input</strong
+          ><small>SimpleX event enters the assigned bot context.</small>
+        </li>
+        <li>
+          <span>2</span><strong>Apply guard</strong
+          ><small>Application rules define the allowed intent space.</small>
+        </li>
+        <li>
+          <span>3</span><strong>Classify intent</strong
+          ><small>The intent model returns structured classification only.</small>
+        </li>
+        <li>
+          <span>4</span><strong>Build answer</strong
+          ><small>Deterministic code prepares facts and the safe draft.</small>
+        </li>
+        <li>
+          <span>5</span><strong>Phrase reply</strong
+          ><small>The reply model may improve wording without action access.</small>
+        </li>
+      </ol>
+    </section>
+
+    <details class="setup-technical ai-routing-technical">
+      <summary>Technical details</summary>
+      <div class="setup-technical-content">
+        <dl class="setup-technical-grid">
+          <div>
+            <dt>Environment default</dt>
+            <dd>${snapshot.routing.defaultModel}</dd>
+          </div>
+          <div>
+            <dt>Persistence</dt>
+            <dd>settings table</dd>
+          </div>
+          <div>
+            <dt>Validation source</dt>
+            <dd>installed Ollama catalog</dd>
+          </div>
+          <div>
+            <dt>Apply behavior</dt>
+            <dd>immediate after persistence</dd>
+          </div>
+          <div>
+            <dt>Missing model policy</dt>
+            <dd>refuse and keep previous route</dd>
+          </div>
+          <div>
+            <dt>Audit action</dt>
+            <dd>local-ai.routing.update</dd>
+          </div>
+          <div>
+            <dt>Cloud route</dt>
+            <dd>disabled</dd>
+          </div>
+          <div>
+            <dt>Execution access</dt>
+            <dd>none</dd>
+          </div>
+        </dl>
+      </div>
+    </details>
+  </section>`;
 }
 
 function hardwareBody(snapshot: AiRuntimeSnapshot): SafeHtml {
@@ -1486,15 +1681,13 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
     reply.type('text/html');
-    return renderAiPage(
-      'AI Routing',
-      'Independent model lanes for intent classification and guarded reply wording.',
-      'ai:routing',
-      csrf,
-      req.query,
-      snapshot,
-      routingBody(snapshot, csrf),
-    );
+
+    return page({
+      title: 'AI Routing',
+      active: 'ai:routing',
+      csrfToken: csrf,
+      body: routingBody(snapshot, csrf, req.query),
+    });
   });
 
   app.get<{ Querystring: AiPageQuery }>('/ai/hardware', async (req, reply) => {

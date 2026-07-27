@@ -309,6 +309,39 @@ async function main(): Promise<void> {
       assetCopier.includes('admin-model-catalog.js'),
   );
 
+  const routingPage = await app.inject({ method: 'GET', url: '/ai/routing', headers: authed });
+  check('AI Routing page renders', routingPage.statusCode === 200);
+  check(
+    'AI Routing page separates stored and effective state',
+    routingPage.body.includes('data-routing-stored-state') &&
+      routingPage.body.includes('data-routing-effective-state') &&
+      routingPage.body.includes('Stored intent route') &&
+      routingPage.body.includes('Effective resolver'),
+  );
+  check(
+    'AI Routing page exposes both real model lanes',
+    routingPage.body.includes('data-routing-lane="intent"') &&
+      routingPage.body.includes('data-routing-lane="reply"') &&
+      routingPage.body.includes('name="intentModel"') &&
+      routingPage.body.includes('name="replyModel"') &&
+      routingPage.body.includes('action="/ai/routing"'),
+  );
+  check(
+    'AI Routing page exposes safety and persistence boundaries',
+    routingPage.body.includes('Deterministic guard remains authoritative') &&
+      routingPage.body.includes('No transport or execution access') &&
+      routingPage.body.includes('Missing model policy') &&
+      routingPage.body.includes('local-ai.routing.update') &&
+      routingPage.body.includes('Cloud route'),
+  );
+  check(
+    'AI Routing page connects catalog, probe, and technical status',
+    routingPage.body.includes('Catalog state') &&
+      routingPage.body.includes('action="/ai/test"') &&
+      routingPage.body.includes('Technical details') &&
+      routingPage.body.includes('installed Ollama catalog'),
+  );
+
   const routeModels = await app.inject({
     method: 'POST',
     url: '/ai/routing',

@@ -4033,3 +4033,292 @@ input[type='radio'] {
   }
 }
 /* END CIND3R3LLA Model Catalog */
+
+/* CIND3R3LLA AI Routing */
+.ai-routing-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.ai-routing-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-routing-status,
+.ai-routing-lane,
+.ai-routing-path {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(69, 189, 209, 0.025), transparent 38%), rgba(9, 16, 29, 0.84);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+}
+
+.ai-routing-status {
+  min-height: 116px;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.ai-routing-status span {
+  display: block;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.ai-routing-status strong {
+  display: block;
+  margin-top: 10px;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.ai-routing-status small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.ai-routing-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.ai-routing-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.ai-routing-lane {
+  border-radius: 18px;
+  padding: 20px;
+}
+
+.ai-routing-lane > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.ai-routing-lane-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid rgba(69, 189, 209, 0.3);
+  border-radius: 12px;
+  background: rgba(69, 189, 209, 0.08);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ai-routing-lane h2 {
+  margin: 4px 0 5px;
+  font-size: 18px;
+}
+
+.ai-routing-lane p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.ai-routing-select {
+  display: grid;
+  margin-top: 18px;
+  gap: 7px;
+}
+
+.ai-routing-select > span {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-routing-select select {
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(5, 10, 18, 0.65);
+  padding: 0 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-routing-facts {
+  display: grid;
+  margin: 16px 0 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ai-routing-facts div {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(2, 7, 14, 0.28);
+  padding: 10px;
+}
+
+.ai-routing-facts dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-routing-facts dd {
+  margin: 5px 0 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.ai-routing-boundary-note {
+  display: flex;
+  margin-top: 14px;
+  flex-direction: column;
+  gap: 4px;
+  border-left: 2px solid rgba(69, 189, 209, 0.5);
+  padding: 4px 0 4px 12px;
+}
+
+.ai-routing-boundary-note strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.ai-routing-boundary-note span {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.ai-routing-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(5, 10, 18, 0.56);
+  padding: 14px 16px;
+}
+
+.ai-routing-actions div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-routing-actions strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.ai-routing-actions span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.ai-routing-path {
+  border-radius: 18px;
+  padding: 20px;
+}
+
+.ai-routing-path-steps {
+  display: grid;
+  margin: 16px 0 0;
+  padding: 0;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  list-style: none;
+}
+
+.ai-routing-path-steps li {
+  display: flex;
+  min-height: 120px;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: rgba(2, 7, 14, 0.3);
+  padding: 12px;
+}
+
+.ai-routing-path-steps li > span {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgba(69, 189, 209, 0.32);
+  border-radius: 999px;
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.ai-routing-path-steps strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.ai-routing-path-steps small {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.ai-routing-technical {
+  margin-top: 0;
+}
+
+@media (max-width: 1120px) {
+  .ai-routing-status-grid,
+  .ai-routing-path-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 860px) {
+  .ai-routing-lane-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .ai-routing-status-grid,
+  .ai-routing-facts,
+  .ai-routing-path-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-routing-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .ai-routing-actions .setup-button {
+    width: 100%;
+  }
+}
+/* END CIND3R3LLA AI Routing */
