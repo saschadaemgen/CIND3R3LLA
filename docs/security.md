@@ -1,6 +1,6 @@
 # Cinderella — Security Posture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
 
 _Living document. Ground truth is the code; every claim below is anchored to a
 repo-relative `file:line`. Where the project outline and the code diverge, the
@@ -851,6 +851,61 @@ connect-src 'self'; base-uri 'none'; form-action 'self'` — but **non-embeddabl
   is script-free anchors (no vendor widget, no third-party origin). Essential storage —
   the theme (`sg-theme`) and the language cookie (`cin-lang`, HttpOnly, SameSite=Lax) —
   needs no consent. Verified by [`scripts/verify-site.ts`](../scripts/verify-site.ts).
+
+## 11b. Destruction, and the evidence holds that defer it (CCB-S3-013)
+
+The archive gained a genuinely destructive operation. Three properties keep it safe.
+
+**A destructive choice is never inherited.** `recordOptOut` writes `revocation_mode = 'pending'` in the
+same statement that sets `revoked_at` ([`src/db/consent.ts`](../src/db/consent.ts)). Until the member
+answers, the content is hidden and nothing authorises erasure. The interim state is in Postgres, not in
+the dialogue engine's per-member map, which is in-process and would have republished the content on the
+next restart.
+
+**A bare affirmation cannot destroy anything.** The offer carries its own acceptance rule
+(`PendingConfirmation.kind`, [`src/interaction/state.ts`](../src/interaction/state.ts)) and the
+affirmation branch in the engine's pending block is conditional on it. Checking the kind AFTER a generic
+affirmation test would already have destroyed the content, because "yes", "ok", "sure" and "klar" are
+all affirmations. The destructive confirmation accepts only `matchesLiteral`: a single token, exact
+after `fold()` normalisation, with no typo tolerance and no trailing tokens. `delet`, `deleted`,
+`felete` and `yeah delete everything` are each asserted to destroy nothing
+([`scripts/verify-revocation.ts`](../scripts/verify-revocation.ts) §10).
+
+**A held item cannot be destroyed by any path.** Enforced by a `BEFORE DELETE` trigger on `messages`
+(`migrations/020_revocation_holds.sql` §4, D-072) rather than by application code, because this repo
+already ships a script that issues a bare `DELETE FROM messages` against production
+([`scripts/scan-support-scope.ts`](../scripts/scan-support-scope.ts)). The trigger fires for
+CASCADE-removed rows too, so a held reply blocks destruction of the question that would cascade into it.
+The harness tests the guard against a member delete, a raw SQL delete, an operator takedown and the
+reply cascade.
+
+**The abuse surface, and why it is bounded.** `POST /embed/:id/report` is anonymous, unauthenticated and
+CSRF-exempt, reachable at 10/min/IP. It can now create a hold, which is a way to defer someone else's
+erasure. Three things bound it: only `reason = 'illegal'` creates a hold at all; a partial unique index
+allows at most one live hold per message and the hold is placed only when a genuinely new report row
+lands, so repeated reports cannot compound or extend it; and holds are time-boxed (default 30 days) so
+an unreviewed report lapses on its own rather than becoming a permanent block. A source whose illegal
+reports keep being dismissed stops creating holds (D-071), failing toward accepting the report.
+
+**The route stays a non-oracle.** The hold is placed inside the existing neutral-confirmation path and
+`placeEvidenceHold` never throws into the request, so the response is identical whether or not a hold
+was placed. A hold-specific status or error would let anyone probe which items are held.
+
+**Erasure is honest about its limits.** Destruction removes the row, everything that cascades from it
+(including the reporter's free-text note), the generated `search` tsvector, and every file the message
+owns on disk. It does **not** reach backups (fourteen generations), the SimpleX core's own SQLite copy
+under `state/`, content already fetched by feed readers or social scrapers, or media that never had a
+row. Member-facing copy promises removal from the live archive plus backup expiry and avoids the word
+"unrecoverable", which overwriting does not guarantee on modern storage.
+
+**Failures surface rather than masking.** An unlink that fails with `EACCES`/`EPERM` reaches
+`status.error` and rolls back the row deletion, so a permission fault can never be reported as a
+successful erasure over bytes that are still present. A hold that expires unreviewed, and a deletion
+that could not complete, both alert.
+
+**Still open.** The admin `/media/` static mount serves the raw tree by path with no per-message check,
+so an escalated item's bytes remain readable to any admin session; "segregated" is currently a database
+property, not a filesystem one. Recorded in the backlog.
 
 ## 12. The local AI subsystem has not been security-reviewed (D-068)
 

@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -810,6 +810,170 @@ work. Not broken, but constrained; see **D-069** before touching any migration f
 **Not yet done:** reconciliation against these documents and the decision log, a security review
 under the CCB scheme (`security.md` §14), and a decision on how this subsystem relates to the plugin
 framework (§15) as the function count grows.
+
+## 25. Hide or delete on revocation, and evidence holds (CCB-S3-013)
+
+Until this briefing a revocation set `consent.revoked_at`, the publish views stopped selecting that
+member's messages, and **nothing was ever erased**. "Removed from the archive" meant "no longer
+selected by the view". This adds the other half: the member chooses whether that state is permanent
+retention out of sight, or actual destruction.
+
+### The four states, and where each lives
+
+| State | How it is expressed | Public? | Rows/media |
+|---|---|---|---|
+| opted in | `consent.revoked_at IS NULL` | yes | present |
+| revoked, unanswered | `revoked_at` set, `revocation_mode = 'pending'` | **no** | present |
+| hidden | `revoked_at` set, `revocation_mode = 'hide'` | **no** | present |
+| deleted | the row is gone | n/a | erased |
+
+**No view was redefined, and that is the design rather than an omission** (D-070). `revoked_at` already
+unpublishes across all eleven public routes, so HIDE needed no new derived term; a second `hidden`
+column would have re-created the stale-flag failure D-003 exists to prevent, and would have meant
+rebuilding both explicit-column views. `revocation_mode` records the CHOICE and never gates publication.
+
+**There is no default.** `recordOptOut` writes `revocation_mode = 'pending'` in the same statement that
+sets `revoked_at` (`src/db/consent.ts`), so the interim between "she asked" and "they answered" is
+hidden, durable across restarts, and authorises nothing. It could not live in the dialogue engine's
+per-member state, which is in-process and would have republished the content on the next restart.
+
+**Restore** (`restoreHidden`) clears `revoked_at` while keeping the ORIGINAL `opted_in_at`, because
+publication is forward-only and `recordOptIn` would reset it and leave every hidden message behind. It
+matches only `revocation_mode = 'hide'`, so destroyed content can never be resurrected and an
+unanswered choice can never be pre-empted. Reached by the new **RESTORE** intent, first-person only.
+
+### The asymmetric confirmation
+
+`PendingConfirmation` gained a `kind` (`consent` | `revokeChoice` | `deleteConfirm`), so the acceptance
+rule travels with the question that asked it (`src/interaction/state.ts`). In the engine's pending block
+the **affirmation branch itself is conditional**: checking the kind after a generic `matchesList`
+affirmation test would already have destroyed the content, since "yes", "ok", "sure" and "klar" are all
+affirmations.
+
+`matchesLiteral` is a deliberate sibling of `matchesList`, not a reuse of it. `matchesList` is fuzzy
+(one edit at six characters, two at seven or more) and tolerates two extra tokens, which is right for
+"yeah" and fatal for a destructive keyword: it would accept `delet`, `deleted`, `felete`, and
+`yeah delete everything`. `matchesLiteral` requires a single token, compared for exact equality after
+`fold()` normalisation. Folding is not fuzziness: it makes `lösche` and `loesche` the same word rather
+than making near-misses acceptable. All five cases are asserted in the harness.
+
+Both paths ask: `/unpublish` stays immediate (CCB-S3-002 §4.1) and then asks the same question through
+`askRevokeChoiceAfterSlash`, so the slash and spoken paths cannot drift about what a revocation means.
+
+### Destruction (`src/archive/destroy.ts`)
+
+Row deleted FIRST, files unlinked afterwards, both inside one caller-supplied transaction. The order is
+load-bearing (D-072): the hold trigger fires before a byte is unlinked, so a destruction that will be
+refused cannot take the media with it; an unlink failure then throws and rolls the row deletion back.
+The outcome is always everything or nothing, never half. ENOENT is success; `EACCES`/`EPERM` is a fault
+that reaches `status.error` and blocks the row delete, because a permission error swallowed as "already
+gone" would report a successful erasure over bytes still on disk.
+
+The row deletion cascades to `links`, `message_mentions`, `reports` (including the reporter's free-text
+note), `pending_destructions`, resolved `evidence_holds`, and, through `reply_to_id`, Cinderella's
+paired answer. The generated `search` tsvector and its GIN entry go with the row, so **there is no
+separate search index to purge**.
+
+`filesOwnedBy` (`src/media/owned-files.ts`) combines the DB row with a filesystem sweep, because
+neither is sufficient: the original is named `<simplexFileId>-<member filename>` and is findable only
+through `messages.media_path`, while derivatives, video thumbnails and `.tmp` sidecars are id-named and
+can exist with no column pointing at them (overwritten paths, bucket drift when `sent_at` changes,
+extension drift, crashes mid-strip). The id match is exact on the filename stem, so message 9 never
+matches `91.jpg`.
+
+### Evidence holds
+
+**A hold prevents destruction. It never prevents hiding.** A member may always make their content
+non-public immediately, with no delay and no review; only physical erasure is deferred. This keeps
+withdrawal genuinely effective and is the more defensible position: deferring erasure for a documented
+purpose is a recognised exception, continuing to publish against a withdrawal is not.
+
+Enforced by a `BEFORE DELETE` trigger on `messages` (D-072), not by application code, because
+Cinderella already ships a script that issues a bare `DELETE FROM messages` against production. The
+trigger also fires for CASCADE-removed rows, so a held reply blocks destruction of the question that
+would cascade into it.
+
+- **Only `illegal` creates a hold.** Spam, copyright and other never do: a spam report must not
+  interfere with anyone's ability to delete their own data.
+- **Never compounds.** A partial unique index allows at most one live hold per message, and the hold is
+  placed only when `createReport` reports a genuinely new row, so re-reporting cannot extend the clock
+  or stack a second hold. The clock runs from the first qualifying report.
+- **Time-boxed**, default 30 days (`holdDays`), scheduled with `runAt = expires_at` on the durable
+  queue. Evaluated on the Postgres clock, so a process that is down at expiry claims the job on the next
+  poll rather than missing it. On expiry the hold lapses, `status.error` records that a review never
+  happened, and any deferred deletion is enqueued.
+- **Escalation and hash-match quarantine never expire** (`expires_at IS NULL`), and are released only by
+  an explicit operator decision.
+- **Abuse threshold** via a second, month-bucketed reporter token (D-071), failing toward accepting the
+  report.
+
+The report route stays a **non-oracle**: the hold is placed inside the existing neutral-confirmation
+path, `placeEvidenceHold` never throws into the request, and the response is identical whether or not a
+hold was placed. Anything that varied would turn the form into a probe for which items are held.
+
+### How the two parts interact
+
+The hide half runs immediately for everything; the delete half runs for unheld items and queues for
+held ones; the member is told which is which; the queued deletion runs by itself on release or expiry.
+The intent is recorded in `pending_destructions` and in the consent journal, so a dead-lettered job, a
+cancelled job or a restart cannot lose it: **the member must not have to ask twice.** Each message is
+destroyed in its own transaction, so one held item does not roll back the twenty beside it.
+
+The member-facing deferral message says plainly that part is deferred and reveals nothing about who
+reported the item or what the report said.
+
+### Operator review (`src/web/views/holds.ts`)
+
+Release / destroy / escalate, each audited with identifiers only. Two rules are enforced **twice**, in
+the markup and in the handler, following the `group_deleted` precedent: destroy is never offered for a
+hash match (destroying it would remove the evidence) and never for an escalation, and the routes refuse
+both with 409 so a stale page or crafted POST cannot get past the missing button. Holds within seven
+days of expiry are surfaced as a warning so a hold lapses by decision rather than by being forgotten.
+
+### What adversarial review changed before release
+
+A 54-agent review attacked the implementation before it shipped, with every finding independently
+verified by a skeptic. Eight distinct defects survived refutation, all now fixed and regression-tested
+(`scripts/verify-revocation.ts` §14-§15). Recording them because each one was invisible to the
+implementation's own tests, which is the point:
+
+1. **An escalated hold could be RELEASED.** The 409 guards covered `destroy` only; releasing moved the
+   hold to `released`, which satisfies the trigger, and the release branch then enqueued the deferred
+   destruction. Two operators and one stale tab would have destroyed exactly the evidence the
+   escalation preserved. **An escalation is now terminal on this page** for every outcome.
+2. **Restore republished what was said while hidden** (D-073).
+3. **`chooseDelete` destroyed even when the choice was not its to make.** The `recorded` flag was
+   computed and then ignored, so a member whose settled mode was `hide` could have their whole archive
+   destroyed with `revocation_mode` still reading `hide` and no journal entry. It now returns early.
+4. **Choosing hide did not withdraw a destruction already deferred by a hold.** A member who changed
+   their mind was told their words were safe and restorable, and lost them when the hold lapsed.
+   `chooseHide` now cancels pending destructions, unconditionally.
+5. **A failed destruction was never retried.** `enqueueDestructionRun` existed with zero callers, so a
+   transient failure left rows and media in place forever while the member had been told the deletion
+   was in hand.
+6. **Operator destroy resolved the hold on the pool, then destroyed in a separate transaction.** A
+   failed destroy left the item both undestroyed and unprotected, with the hold reading
+   "Released (destroy)". Both steps now share one transaction.
+7. **RESTORE acted on a single fuzzy keyword with no confirmation**, and the AI resolver applied no
+   rule corroboration to it. It now confirms like PUBLISH and is in `isConsentIntent`.
+8. **A failed unlink wrote the member's own filename into `jobs.last_error`**, which nothing prunes,
+   leaving the identifier the destruction was meant to erase sitting in the database. Only the errno is
+   reported now.
+
+**The sweeper** (`src/archive/sweeper.ts`) is the backstop findings 1, 5 and the cascade case exposed:
+`expiredHolds` had no production caller, so a hold whose expiry job was never enqueued, cancelled or
+dead-lettered stayed active forever; and a destruction blocked by a hold on a row it CASCADES into was
+never re-queued, because release enqueues by the held row's id. It runs at boot and every fifteen
+minutes, lapses overdue holds, and re-queues every pending destruction whose blocker is gone. It never
+destroys anything itself.
+
+### What "deleted" honestly means
+
+Removed from the live archive immediately, through every path this application serves. It does **not**
+reach: backups (`deploy/backup.sh` keeps fourteen generations), the SimpleX core's own SQLite copy under
+`state/`, content already fetched by RSS readers or social scrapers, or media files that never had a row.
+The member-facing copy says removal plus backup expiry and deliberately avoids the word
+"unrecoverable", which overwriting does not guarantee on modern storage.
 
 ## Appendix: divergences (code wins)
 

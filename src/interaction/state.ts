@@ -22,8 +22,24 @@
 
 import type { Intent } from './intent.js';
 
-/** A consent change she has proposed and is waiting to hear `yes` about. */
+/**
+ * What kind of answer an open offer is waiting for (CCB-S3-013).
+ *
+ *   `consent`       — the original yes/no on publish or unpublish.
+ *   `revokeChoice`  — hide or delete, after a revocation. There is NO default:
+ *                     a bare affirmation answers nothing here, because "yes" to
+ *                     "hide or delete?" does not name a choice.
+ *   `deleteConfirm` — the destructive confirmation. Accepts ONLY the literal
+ *                     word, never an affirmation.
+ *
+ * The kind is carried on the offer rather than inferred at the answer site, so
+ * the acceptance rule travels with the question that asked it.
+ */
+export type PendingKind = 'consent' | 'revokeChoice' | 'deleteConfirm' | 'restoreConfirm';
+
+/** A consent change she has proposed and is waiting to hear an answer about. */
 export interface PendingConfirmation {
+  kind: PendingKind;
   intent: Extract<Intent, 'PUBLISH' | 'UNPUBLISH'>;
   /** Language the request came in — the answer follows it. */
   lang: string;

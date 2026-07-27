@@ -233,6 +233,34 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Stands in for a member who has not opted in',
     vars: 'Not a reply. When one of her published messages names a member who has not opted in, this replaces the name.',
   },
+  revokeChoice: {
+    label: 'Revocation — hide or delete?',
+    vars: 'Asked straight after a revocation. There is deliberately no default: until the member answers, their content stays hidden.',
+  },
+  hidden: { label: 'Revocation — hidden, and restorable', vars: '{wake}' },
+  deleteConfirm: {
+    label: 'Revocation — confirming destruction',
+    vars: 'Must name the exact word the member has to write. A bare "yes" is refused on purpose.',
+  },
+  deleteNeedsWord: {
+    label: 'Revocation — a "yes" is not enough to destroy',
+    vars: 'Shown when a member answers the destruction question with an affirmation instead of the required word.',
+  },
+  deleted: { label: 'Revocation — destroyed', vars: '{n} = messages destroyed' },
+  deleteDeferred: {
+    label: 'Revocation — destroyed in part, some items held',
+    vars: '{n} = destroyed; {held} = held for review. Must never reveal who reported the item or what the report said.',
+  },
+  deleteNothing: { label: 'Revocation — nothing left to destroy', vars: '' },
+  restored: { label: 'Restore — hidden content is back', vars: '' },
+  restoreNotDeleted: {
+    label: 'Restore — it was destroyed, not hidden',
+    vars: '{wake}',
+  },
+  restoreConfirm: {
+    label: 'Restore — asking for confirmation',
+    vars: 'Restoring puts content back into public view, so it confirms first, like publishing.',
+  },
 };
 
 const REPLY_MODE_LABELS: Record<ReplyMode, string> = {

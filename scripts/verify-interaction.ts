@@ -1547,7 +1547,16 @@ async function main(): Promise<void> {
   const helpText = (await say('Cinderella help')).replies[0] ?? '';
   check('help states forward-only', /forward only/i.test(helpText));
   check('help states public-until-revoked', /public until/i.test(helpText));
-  check('help states revocation is final', /final/i.test(helpText) && /does not bring/i.test(helpText));
+  // CCB-S3-013 replaced "revocation is final" with the truth that superseded it:
+  // taking words back is instant, and the member then chooses hide or delete.
+  check(
+    'help states that taking it back is instant and then the member chooses',
+    /instant/i.test(helpText) && /hide/i.test(helpText) && /delete/i.test(helpText),
+  );
+  check(
+    'help states that the unanswered state is hidden, so there is no destructive default',
+    /until you answer/i.test(helpText) && /hidden/i.test(helpText),
+  );
   check('help lists PRICE while the plugin is enabled here', /price/i.test(helpText));
 
   setActiveIntents([]);
@@ -1577,10 +1586,16 @@ async function main(): Promise<void> {
 
   coolDown();
   const unpubPrompt = (await say('Cinderella unpublish me')).replies[0] ?? '';
-  check('the unpublish prompt warns it cannot be undone', /cannot be undone/i.test(unpubPrompt));
+  // CCB-S3-013 is the "later briefing" the previous version of this check
+  // deferred to. The prompt now says the revocation is immediate and that the
+  // hide-or-delete question follows, which is what actually happens.
   check(
-    'and does NOT mention hide or restore (a later briefing owns that)',
-    !/\bhide\b|\brestore\b/i.test(unpubPrompt),
+    'the unpublish prompt says the revocation takes effect at once',
+    /the moment you say so|sofort|in dem Moment/i.test(unpubPrompt),
+  );
+  check(
+    'and that she will ask whether to hide or destroy',
+    /\bhidden\b|\bhide\b/i.test(unpubPrompt) && /destroy/i.test(unpubPrompt),
   );
 
   settings = normalizeInteraction({ archiveUrl: 'https://example.org/archive' });

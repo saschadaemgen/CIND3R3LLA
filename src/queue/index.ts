@@ -15,6 +15,14 @@ import {
   contentAnalysisKey,
 } from './jobs/analysis.js';
 import { DELETION_APPLY_JOB, deletionApplyHandler, deletionApplyKey } from './jobs/deletion.js';
+import {
+  DESTRUCTION_RUN_JOB,
+  HOLD_EXPIRE_JOB,
+  destructionRunHandler,
+  destructionRunKey,
+  holdExpireHandler,
+  holdExpireKey,
+} from './jobs/destruction.js';
 import { CAPTURE_DRAIN_JOB, captureDrainHandler } from '../capture/events/replay.js';
 
 let worker: QueueWorker | undefined;
@@ -32,6 +40,16 @@ export function registerBuiltinJobs(): void {
   // arrival (CCB-S3-024). Interactive lane — a member's own message is not bulk work.
   if (!getJobHandler(CAPTURE_DRAIN_JOB)) {
     registerJobHandler(CAPTURE_DRAIN_JOB, captureDrainHandler);
+  }
+  // Deferred destruction and hold expiry (CCB-S3-013). Both MUST be registered:
+  // the worker builds its claim list from the registered types, so an unregistered
+  // type is never even selected and its jobs sit `queued` forever with no error.
+  // For a member's erasure request that would be a silent consent breach.
+  if (!getJobHandler(DESTRUCTION_RUN_JOB)) {
+    registerJobHandler(DESTRUCTION_RUN_JOB, destructionRunHandler);
+  }
+  if (!getJobHandler(HOLD_EXPIRE_JOB)) {
+    registerJobHandler(HOLD_EXPIRE_JOB, holdExpireHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }
@@ -113,6 +131,43 @@ export async function enqueueCaptureDrain(db: Queryable): Promise<void> {
   });
 }
 
+/**
+ * Enqueue the destruction of one message the member asked to delete
+ * (CCB-S3-013). Interactive lane on purpose: `bulkPaused` stops the bulk lane
+ * entirely, and an operator shedding load must not silently halt erasure.
+ * Idempotent per message.
+ */
+export async function enqueueDestructionRun(db: Queryable, messageId: number): Promise<void> {
+  await enqueueJob(db, DESTRUCTION_RUN_JOB, {
+    idempotencyKey: destructionRunKey(messageId),
+    lane: 'interactive',
+    payload: { messageId },
+  });
+}
+
+/**
+ * Schedule a hold to lapse at its expiry (CCB-S3-013).
+ *
+ * `runAt` is evaluated against the Postgres clock in the claim predicate, so a
+ * thirty-day delay costs nothing at claim time and survives any number of
+ * restarts. Note that re-enqueuing with the same key does NOT move `run_at` on a
+ * live job, so extending or shortening a hold means cancelling this job and
+ * enqueuing again rather than calling this twice.
+ */
+export async function enqueueHoldExpiry(
+  db: Queryable,
+  holdId: number,
+  expiresAt: Date,
+): Promise<void> {
+  await enqueueJob(db, HOLD_EXPIRE_JOB, {
+    idempotencyKey: holdExpireKey(holdId),
+    lane: 'interactive',
+    runAt: expiresAt,
+    payload: { holdId },
+  });
+}
+
 export { CONTENT_ANALYSIS_JOB } from './jobs/analysis.js';
 export { DELETION_APPLY_JOB } from './jobs/deletion.js';
+export { DESTRUCTION_RUN_JOB, HOLD_EXPIRE_JOB } from './jobs/destruction.js';
 export { CAPTURE_DRAIN_JOB } from '../capture/events/replay.js';

@@ -47,7 +47,8 @@ const UNPUBLISH_REPLY =
   "You're opted out. Your messages will not appear on the public web archive, and " +
   'any of your messages that were published have been removed from it. You can opt ' +
   'in again at any time by sending /publish (only messages you send after opting ' +
-  'in will be published).';
+  'in will be published). I will ask next whether to keep your messages hidden or ' +
+  'destroy them for good.';
 
 const FAILURE_REPLY =
   'Sorry - I could not process your command right now due to a temporary error. ' +
@@ -73,7 +74,7 @@ If you want your words to step into the light and join the public record, that i
 Three things worth knowing before you decide.
 Forward only: I only ever publish what you say after you opt in, never anything from before.
 Public until you take it back: it stays on the web, and searchable, for as long as you leave it there.
-Taking it back is final: /unpublish removes everything at once, and opting in again later starts fresh from that moment, it does not bring the old words back.
+Taking it back is instant, and then you choose: /unpublish removes everything from public view at once. I then ask whether to hide your words, which keeps them safe and lets you bring them back whenever you like, or delete them, which destroys them for good. Until you answer, they stay hidden.
 
 To let me publish for you, send /publish
 To take it all back, send /unpublish
@@ -148,7 +149,14 @@ export function makeConsentHandler(
    * connect script can still build a handler with nothing behind it; when it is
    * absent the confirmation is sent exactly as before and simply not archived.
    */
-  opts?: { send?: ConsentSender },
+  opts?: {
+    send?: ConsentSender;
+    /**
+     * Asks the hide-or-delete question after a `/unpublish` (CCB-S3-013), so the
+     * slash path and the spoken path mean the same thing by a revocation.
+     */
+    askRevokeChoice?: (msg: CapturedMessage) => Promise<void>;
+  },
 ): (msg: CapturedMessage, command: ConsentCommand) => Promise<void> {
   return async (msg, command) => {
     const db = getPool();
@@ -191,6 +199,23 @@ export function makeConsentHandler(
         );
         await reply(botHandle, msg, UNPUBLISH_REPLY, presentation, opts?.send);
         onReplied?.(msg.groupId, msg.senderMemberId);
+        // Hide or delete (CCB-S3-013). Asked after the confirmation so the member
+        // sees the revocation land first, and the content is already hidden either
+        // way. A failure here must not report the revocation itself as failed: it
+        // succeeded, and the choice can be asked again.
+        try {
+          await opts?.askRevokeChoice?.(msg);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          log.error(
+            `Consent: /unpublish succeeded for member ${msg.senderMemberId} but the hide-or-delete ` +
+              `question could not be asked: ${message}`,
+          );
+          status.error(
+            `A member revoked with /unpublish but was not asked whether to hide or delete. Their ` +
+              `content is hidden; the choice is unanswered: ${message}`,
+          );
+        }
       }
     } catch (err) {
       // Fail loudly toward the member and the operator — never silently drop a

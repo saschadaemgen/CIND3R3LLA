@@ -11,9 +11,22 @@
  * by `message_publish_state`. This is provenance, not a second source of truth.
  */
 
+import type { RevocationMode } from './consent.js';
 import type { Queryable } from './pool.js';
 
-export type ConsentAction = 'opt_in' | 'opt_out';
+/**
+ * A decision recorded in the journal.
+ *
+ * `hide` / `delete` are the member's answer to the revocation choice, and
+ * `restore` brings hidden content back (CCB-S3-013). Each is its own append-only
+ * entry rather than a mutation of the `opt_out` that preceded it, so the journal
+ * still reads as a list of decisions with their own timestamps.
+ *
+ * Adding values here is safe by construction: `undoReducesExposure` returns true
+ * only for `opt_in`, so every new action is non-undoable unless someone
+ * deliberately says otherwise.
+ */
+export type ConsentAction = 'opt_in' | 'opt_out' | 'hide' | 'delete' | 'restore';
 /** How the decision reached us. `natural` is the wake-word path (CCB-S3-002). */
 export type ConsentSource = 'slash' | 'natural' | 'admin';
 
@@ -26,6 +39,7 @@ export interface ConsentActionRow {
   prevExisted: boolean;
   prevOptedInAt: string | null;
   prevRevokedAt: string | null;
+  prevRevocationMode: RevocationMode | null;
   undoneAt: string | null;
 }
 
@@ -38,6 +52,7 @@ interface RawRow {
   prev_existed: boolean;
   prev_opted_in_at: string | null;
   prev_revoked_at: string | null;
+  prev_revocation_mode: string | null;
   undone_at: string | null;
 }
 
@@ -51,6 +66,7 @@ function mapRow(r: RawRow): ConsentActionRow {
     prevExisted: r.prev_existed,
     prevOptedInAt: r.prev_opted_in_at,
     prevRevokedAt: r.prev_revoked_at,
+    prevRevocationMode: (r.prev_revocation_mode as RevocationMode | null) ?? null,
     undoneAt: r.undone_at,
   };
 }
@@ -59,6 +75,8 @@ export interface PriorConsentState {
   existed: boolean;
   optedInAt: string | null;
   revokedAt: string | null;
+  /** The revocation choice as it stood, so an undo can put that back too. */
+  revocationMode: RevocationMode | null;
 }
 
 /** Reads the consent row as it stands right now, for journalling as "previous". */
@@ -66,13 +84,21 @@ export async function readConsentState(
   db: Queryable,
   memberId: string,
 ): Promise<PriorConsentState> {
-  const { rows } = await db.query<{ opted_in_at: string; revoked_at: string | null }>(
-    'SELECT opted_in_at, revoked_at FROM consent WHERE member_id = $1',
-    [memberId],
-  );
+  const { rows } = await db.query<{
+    opted_in_at: string;
+    revoked_at: string | null;
+    revocation_mode: string | null;
+  }>('SELECT opted_in_at, revoked_at, revocation_mode FROM consent WHERE member_id = $1', [
+    memberId,
+  ]);
   const r = rows[0];
-  if (!r) return { existed: false, optedInAt: null, revokedAt: null };
-  return { existed: true, optedInAt: r.opted_in_at, revokedAt: r.revoked_at };
+  if (!r) return { existed: false, optedInAt: null, revokedAt: null, revocationMode: null };
+  return {
+    existed: true,
+    optedInAt: r.opted_in_at,
+    revokedAt: r.revoked_at,
+    revocationMode: (r.revocation_mode as RevocationMode | null) ?? null,
+  };
 }
 
 /** Appends one decision to the journal. */
@@ -88,8 +114,9 @@ export async function journalConsentAction(
 ): Promise<void> {
   await db.query(
     `INSERT INTO consent_actions
-       (member_id, action, source, at, prev_existed, prev_opted_in_at, prev_revoked_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       (member_id, action, source, at, prev_existed, prev_opted_in_at, prev_revoked_at,
+        prev_revocation_mode)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
     [
       entry.memberId,
       entry.action,
@@ -98,6 +125,7 @@ export async function journalConsentAction(
       entry.prior.existed,
       entry.prior.optedInAt,
       entry.prior.revokedAt,
+      entry.prior.revocationMode,
     ],
   );
 }
@@ -144,7 +172,7 @@ export async function lastUndoableAction(
 ): Promise<ConsentActionRow | null> {
   const { rows } = await db.query<RawRow>(
     `SELECT id, member_id, action, source, at, prev_existed, prev_opted_in_at,
-            prev_revoked_at, undone_at
+            prev_revoked_at, prev_revocation_mode, undone_at
      FROM consent_actions
      WHERE member_id = $1
        AND undone_at IS NULL
@@ -180,11 +208,14 @@ export async function undoLastConsentAction(
   if (!undoReducesExposure(action.action)) return null;
 
   if (action.prevExisted) {
-    await db.query(`UPDATE consent SET opted_in_at = $2, revoked_at = $3 WHERE member_id = $1`, [
-      memberId,
-      action.prevOptedInAt,
-      action.prevRevokedAt,
-    ]);
+    // `revocation_mode` is restored alongside `revoked_at` because the two are one
+    // state: putting back a revocation without its mode would leave a revoked row
+    // the rest of the system has no name for (CCB-S3-013).
+    await db.query(
+      `UPDATE consent SET opted_in_at = $2, revoked_at = $3, revocation_mode = $4
+       WHERE member_id = $1`,
+      [memberId, action.prevOptedInAt, action.prevRevokedAt, action.prevRevocationMode],
+    );
   } else {
     // There was no consent row before this action, so putting things back means
     // there is no consent row now either.
@@ -203,7 +234,7 @@ export async function memberConsentHistory(
 ): Promise<ConsentActionRow[]> {
   const { rows } = await db.query<RawRow>(
     `SELECT id, member_id, action, source, at, prev_existed, prev_opted_in_at,
-            prev_revoked_at, undone_at
+            prev_revoked_at, prev_revocation_mode, undone_at
      FROM consent_actions
      WHERE member_id = $1
      ORDER BY at DESC, id DESC

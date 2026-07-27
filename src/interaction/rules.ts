@@ -148,6 +148,44 @@ const LEXICON: LexEntry[] = [
       'verbergen',
     ],
   },
+  // RESTORE (CCB-S3-013): bringing HIDDEN content back into the public archive.
+  // Only ever reaches content the member chose to hide; a destruction has nothing
+  // to restore, and the engine says so rather than pretending.
+  //
+  // These phrases are kept clear of the UNPUBLISH set above on purpose. "hide me"
+  // and "verberge mich" mean take it down; "bring my words back" means put it up.
+  // A collision here would be a consent bug, not a wording bug.
+  {
+    intent: 'RESTORE',
+    lang: 'en',
+    phrases: [
+      'restore my words',
+      'restore me',
+      'bring my words back',
+      'bring them back',
+      'bring it back',
+      'put my words back',
+      'unhide me',
+      'show my words again',
+      'publish them again',
+    ],
+    keywords: ['restore', 'unhide'],
+  },
+  {
+    intent: 'RESTORE',
+    lang: 'de',
+    phrases: [
+      'hole meine worte zurück',
+      'hol meine worte zurück',
+      'stelle meine worte wieder her',
+      'stell meine worte wieder her',
+      'zeig meine worte wieder',
+      'mach sie wieder sichtbar',
+      'bring sie zurück',
+      'wieder veröffentlichen',
+    ],
+    keywords: ['wiederherstellen', 'zurückholen'],
+  },
   {
     intent: 'STATUS',
     lang: 'en',

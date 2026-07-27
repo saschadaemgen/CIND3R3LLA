@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -283,18 +283,38 @@ The history below records the pre-CCB-S2-003 state.
       container/stream tags and a PDF library for document metadata. Today those formats are
       served unstripped and flagged as such. The audit found no metadata in them, so this is a
       gap in the guarantee rather than a live leak.
-- [ ] **CCB-S3-011 Part 2 / CCB-S3-013 — revocation: hide or delete. NOT BUILT.** Needs: a
-      hide/delete choice with no default and a safe interim (hidden) state; both states derived;
-      restore after hide only, by that member only; the choice recorded in the consent journal;
-      row and media deletion including every derivative; cache and search purge; an audit entry
-      that records the event without retaining the content.
-      > **The blocking briefing is CCB-S3-013, and it never reached this repository** (an earlier
-      > revision of this entry named CCB-S3-010, which is wrong: S3-010 was delivered). Verified
-      > at the Season 3 close-out: no commit, no document reference and no code reference to
-      > CCB-S3-013 exists anywhere in the repo, which is why this work has only ever been called
-      > "CCB-S3-011 Part 2". **It must be reissued for Season 4**, and it is the first of the
-      > consent-affecting carry-overs ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md)
-      > Part G §2).
+- [x] **CCB-S3-011 Part 2 / CCB-S3-013 — revocation: hide or delete, with evidence holds. BUILT.**
+      The briefing was reissued after the Season 3 close-out reported it missing, and delivered as one
+      piece with the hold rules. Hide/delete choice with **no default** and a safe interim (`pending`,
+      which reads as hidden and authorises nothing); both states derived, with **no view rewrite needed**
+      because `revoked_at` already unpublishes (D-070); restore after hide only, by that member only,
+      preserving the ORIGINAL `opted_in_at` so forward-only publication does not strand the content;
+      the choice recorded in the consent journal as its own append-only decision; row, media and every
+      derivative erased, including id-named orphans and `.tmp` sidecars no column references
+      ([`src/media/owned-files.ts`](../src/media/owned-files.ts)); no separate search index to purge
+      (the tsvector is generated and goes with the row); audit entries carry identifiers only.
+      Asymmetric confirmation: hide accepts an affirmation, delete requires the literal word and
+      `matchesLiteral` refuses fuzzy neighbours (D-072, architecture §25).
+      Evidence holds: only `illegal` creates one, they never compound, they are time-boxed
+      (`holdDays`, default 30) on the durable queue, escalations and hash-match quarantines never
+      expire, and the guard is a **DB trigger** so no path gets past it. Operator review offers
+      release / destroy / escalate, with destroy structurally impossible for a hash match.
+      Verified by [`scripts/verify-revocation.ts`](../scripts/verify-revocation.ts) (60 checks).
+- [ ] **Escalated media is segregated in the database, not on the filesystem (CCB-S3-013 follow-up).**
+      The admin `/media/` mount ([`src/web/server.ts`](../src/web/server.ts)) is `@fastify/static` over
+      the whole `MEDIA_ROOT` with no per-message check, so an escalated item's bytes stay readable to any
+      admin session by path. "Segregated, not deletable by any path" holds for deletion but not yet for
+      access. Needs either an id-resolving route or a quarantine directory outside the static root.
+- [ ] **The CSAM hold source has no producer (CCB-S3-013 Part B, by design).** `evidence_holds.source`
+      accepts `'csam'`, the never-expiring behaviour is implemented and tested, and the operator UI
+      already refuses to offer destroy for it. Nothing creates one until hash screening exists
+      (CCB-S3-012). The hook is deliberate: the mechanism is built and proven before the screening that
+      needs it.
+- [ ] **Backups still outlive a destruction.** `deploy/backup.sh` keeps fourteen generations and has
+      never run, so today a destruction persists nowhere. Once backups are scheduled, destroyed content
+      survives in them until it ages out, which is exactly what the member-facing copy now promises
+      (removal from the live archive, copies fading as backups expire). If the retention policy changes,
+      that copy has to change with it.
 - [ ] **Media error responses on the public front are cacheable (CCB-S3-011 Addendum B, the half
       that was not built).** [`src/web/server.ts:188`](../src/web/server.ts) deliberately exempts
       the public front from the global `no-store` hook (it must stay embeddable and indexable),

@@ -44,7 +44,16 @@ import {
   type CursorDir,
   type PublicFilters,
 } from '../../db/public-archive.js';
-import { createReport, reporterHash, REPORT_REASONS, type ReportReason } from '../../db/reports.js';
+import {
+  createReport,
+  reporterHash,
+  reporterSourceToken,
+  REPORT_REASONS,
+  type ReportReason,
+} from '../../db/reports.js';
+import { placeHold, sourceIsSuppressed } from '../../db/holds.js';
+import { enqueueHoldExpiry } from '../../queue/index.js';
+import { status } from '../status.js';
 import {
   renderCards,
   renderEmbedPage,
@@ -459,17 +468,69 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
 
       const noteRaw = typeof body.note === 'string' ? body.note.trim().slice(0, 1000) : '';
       const note = noteRaw.length > 0 ? noteRaw : null;
-      const utcDate = new Date().toISOString().slice(0, 10);
+      const nowIso = new Date().toISOString();
+      const utcDate = nowIso.slice(0, 10);
       const hash = reporterHash(ctx.adminCfg.sessionSecret, req.ip, msgId, utcDate);
-      await createReport(ctx.db, {
+      const source = reporterSourceToken(ctx.adminCfg.sessionSecret, req.ip, nowIso.slice(0, 7));
+      const created = await createReport(ctx.db, {
         messageId: msgId,
         reason: reason as ReportReason,
         note,
         reporterHash: hash,
+        reporterSource: source,
       });
+      // An illegal-content report places an EVIDENCE HOLD: the item must survive
+      // long enough to be reviewed, even if its author asks for deletion meanwhile
+      // (CCB-S3-013 Part B). Spam, copyright and other never do - a spam report
+      // must not interfere with anyone's ability to delete their own data.
+      //
+      // A hold defers DESTRUCTION only. It does not change publication (this route's
+      // standing invariant) and it does not stop the author hiding the item, which
+      // stays instant.
+      //
+      // `created` is the do-not-compound signal: a repeat from the same client and
+      // day is absorbed by the dedup constraint and returns false, so re-reporting
+      // cannot extend a hold or stack another behind it. The one-live-hold index
+      // makes that structural even across different reporters.
+      if (created && reason === 'illegal') {
+        await placeEvidenceHold(ctx, msgId, source);
+      }
+      // Unconditional and identical either way. Anything that varied with whether a
+      // hold was placed would turn this form into a probe for which items are held.
       return confirm();
     },
   );
+
+  /**
+   * Places an evidence hold for an illegal-content report (CCB-S3-013 Part B).
+   *
+   * Never throws into the request. The reporter must get the same neutral
+   * confirmation whatever happens here, and a failure to place a hold must not
+   * turn into a 500 that reveals the item exists. It is surfaced instead: a hold
+   * that silently failed to attach would let content be destroyed that the
+   * operator was supposed to review, which is a real loss, not a display bug.
+   */
+  async function placeEvidenceHold(
+    c: ViewContext,
+    messageId: number,
+    reporterSource: string,
+  ): Promise<void> {
+    try {
+      const live = c.settings.get();
+      if (await sourceIsSuppressed(c.db, reporterSource, live.holdAbuseThreshold)) return;
+      const expiresAt = new Date(Date.now() + live.holdDays * 24 * 60 * 60 * 1000);
+      const { hold, created } = await placeHold(c.db, messageId, 'report', expiresAt);
+      // Only the FIRST qualifying report schedules the lapse. A repeat finds the
+      // incumbent hold and leaves its clock exactly where it was.
+      if (created) await enqueueHoldExpiry(c.db, hold.id, expiresAt);
+    } catch (err) {
+      status.error(
+        `An illegal-content report did not place an evidence hold (message ${messageId}). The report ` +
+          `was recorded, but that item is not protected from deletion: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
 
   // --- Media (consent-gated per request) ---
   app.get<{ Params: { id: string; msgId: string } }>(

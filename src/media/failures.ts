@@ -51,3 +51,16 @@ export function recentMediaFailures(limit = LIMIT): MediaFailure[] {
 export function clearMediaFailures(): void {
   buffer.length = 0;
 }
+
+/**
+ * Drops every recorded failure for one message (CCB-S3-013).
+ *
+ * Called from the destruction path. Without it a destroyed message keeps its id
+ * listed on the dashboard until the next restart, which reads as an outstanding
+ * fault about content that no longer exists.
+ */
+export function forgetMediaFailures(messageId: number): void {
+  for (let i = buffer.length - 1; i >= 0; i -= 1) {
+    if (buffer[i]?.messageId === messageId) buffer.splice(i, 1);
+  }
+}

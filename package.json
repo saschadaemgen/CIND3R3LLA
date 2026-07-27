@@ -48,6 +48,7 @@
     "verify:price": "tsx scripts/verify-price.ts",
     "verify:archive": "tsx scripts/verify-archive.ts",
     "verify:support-scope": "tsx scripts/verify-support-scope.ts",
+    "verify:revocation": "tsx scripts/verify-revocation.ts",
     "verify:no-dashes": "tsx scripts/verify-no-dashes.ts",
     "verify:queue": "tsx scripts/verify-queue.ts",
     "verify:capture-events": "tsx scripts/verify-capture-events.ts",

@@ -36,6 +36,14 @@ import {
   undoReducesExposure,
 } from '../db/consent-actions.js';
 import { applyConsentChange } from '../consent/apply.js';
+import {
+  chooseDelete,
+  chooseHide,
+  restoreHiddenContent,
+  type TxRunner,
+} from '../consent/revocation.js';
+import { getConsent } from '../db/consent.js';
+import { loadConfig } from '../config.js';
 import type { CapturedMessage } from '../capture/message.js';
 import { detectAddress } from './addressing.js';
 import { carryOverSlots, resolveIntent } from './resolver.js';
@@ -69,6 +77,18 @@ export interface InteractionDeps {
   db: Queryable;
   /** Live settings — read per message, never cached across edits. */
   settings: () => InteractionSettings;
+  /**
+   * Where media lives, so a confirmed destruction can erase the files a member's
+   * messages own (CCB-S3-013). Defaults to the configured root; the harness
+   * points it at a temporary tree.
+   */
+  mediaRoot?: string;
+  /**
+   * Transaction boundary for a destruction (CCB-S3-013). Defaults to the real
+   * pool; the harness supplies its own so the whole delete path can be exercised
+   * against PGlite instead of a live server.
+   */
+  runTx?: TxRunner;
   /**
    * Sends a reply in the chat the message came from. `opts.quote` decides
    * whether it appears as a quoting reply (CCB-S3-003); the rest describes the
@@ -203,6 +223,7 @@ const MEMBER_CATEGORY_FOR_INTENT: Record<string, MemberCategory | null> = {
   PUBLISH: 'consent',
   UNPUBLISH: 'consent',
   UNDO: 'consent',
+  RESTORE: 'consent',
   UNKNOWN: null,
 };
 
@@ -409,16 +430,69 @@ export class InteractionEngine {
     let lang = this.replyLanguage(msg, s, instruction, pending, now);
 
     // An outstanding offer is answered before anything else is considered.
+    //
+    // The acceptance rule comes from the OFFER, not from this site (CCB-S3-013).
+    // Putting a destructive offer into the same slot and then checking its kind
+    // afterwards would not be enough: the affirmation branch has to be the thing
+    // that is conditional, or "yes", "ok", "sure", "klar" would each complete a
+    // destruction before any later check ran.
     if (pending) {
-      if (this.matchesList(instruction, s.affirmations)) {
-        this.handledCategory = 'confirmation';
-        return this.performConsentChange(msg, s, pending);
-      }
+      // A decline always cancels, whatever the offer is. Nothing destructive may
+      // ever be harder to stop than to start.
       if (this.matchesList(instruction, s.declines)) {
         this.handledCategory = 'confirmation';
         this.state.clearPending(msg.groupId, msg.senderMemberId);
+        // Declining the destruction leaves the content hidden, which is where the
+        // revocation already put it. Saying so is the honest answer: "cancelled"
+        // alone would leave the member unsure what state they are in.
+        if (pending.kind === 'deleteConfirm' || pending.kind === 'revokeChoice') {
+          return this.chooseHideNow(msg, s, pending);
+        }
         await this.reply(msg, s, pending.lang, 'cancelled', {});
         return true;
+      }
+
+      if (pending.kind === 'deleteConfirm') {
+        // ONLY the literal word. Checked before resolution, so a member writing
+        // "delete" cannot have it swallowed by the UNPUBLISH lexicon instead.
+        if (this.matchesLiteral(instruction, s.deleteWords)) {
+          this.handledCategory = 'confirmation';
+          return this.performDelete(msg, s, pending);
+        }
+        if (this.matchesList(instruction, s.affirmations)) {
+          // The failure this whole mechanism exists to prevent. Re-ask rather than
+          // act, and keep the offer open so the member can simply write the word.
+          this.handledCategory = 'confirmation';
+          await this.reply(msg, s, pending.lang, 'deleteNeedsWord', {}, { neverQuote: true });
+          return true;
+        }
+        // Anything else falls through to ordinary handling, so a member is never
+        // trapped in the offer. It lapses on its own if they walk away.
+      } else if (pending.kind === 'revokeChoice') {
+        if (this.matchesLiteral(instruction, s.deleteWords)) {
+          this.handledCategory = 'confirmation';
+          return this.askDeleteConfirmation(msg, s, pending);
+        }
+        if (this.matchesList(instruction, s.hideWords)) {
+          this.handledCategory = 'confirmation';
+          return this.chooseHideNow(msg, s, pending);
+        }
+        // A bare "yes" names neither option, so it answers nothing. Re-asking is
+        // the only safe reading of it: there is no default (§A.1).
+        if (this.matchesList(instruction, s.affirmations)) {
+          this.handledCategory = 'confirmation';
+          await this.reply(msg, s, pending.lang, 'revokeChoice', {}, { neverQuote: true });
+          return true;
+        }
+      } else if (pending.kind === 'restoreConfirm') {
+        if (this.matchesList(instruction, s.affirmations)) {
+          this.handledCategory = 'confirmation';
+          this.state.clearPending(msg.groupId, msg.senderMemberId);
+          return this.performRestore(msg, s, pending.lang);
+        }
+      } else if (this.matchesList(instruction, s.affirmations)) {
+        this.handledCategory = 'confirmation';
+        return this.performConsentChange(msg, s, pending);
       }
     }
 
@@ -575,6 +649,7 @@ export class InteractionEngine {
         }
         const followUpMs = s.followUpSeconds * 1000;
         this.state.setPending(msg.groupId, msg.senderMemberId, {
+          kind: 'consent',
           intent: result.intent,
           lang,
           // The offer lives exactly as long as the conversation does.
@@ -621,6 +696,27 @@ export class InteractionEngine {
 
       case 'UNDO':
         return this.performUndo(msg, s, lang);
+
+      case 'RESTORE': {
+        // RESTORE INCREASES PUBLIC EXPOSURE, so it confirms like PUBLISH rather
+        // than acting on one word. The rule resolver reaches it from a single
+        // typo-tolerant keyword, and acting immediately would let an ordinary
+        // sentence republish a member's whole hidden archive without them ever
+        // asking for it. Same handshake, same 'consent' pending kind.
+        if (result.slots.targetName !== undefined) {
+          await this.reply(msg, s, lang, 'refuseThirdParty', { name: result.slots.targetName });
+          return true;
+        }
+        const followUpMs = s.followUpSeconds * 1000;
+        this.state.setPending(msg.groupId, msg.senderMemberId, {
+          kind: 'restoreConfirm',
+          intent: 'PUBLISH',
+          lang,
+          expiresAt: now + Math.max(followUpMs, 15_000),
+        });
+        await this.reply(msg, s, lang, 'restoreConfirm', {}, { neverQuote: true });
+        return true;
+      }
 
       case 'PRICE':
         return this.answerPrice(msg, s, lang, result.slots, now, carried);
@@ -1061,12 +1157,219 @@ export class InteractionEngine {
     log.info(
       `Interaction: ${action} recorded for member ${msg.senderMemberId} via natural language.`,
     );
+
+    // A revocation does not end here any more (CCB-S3-013). The outcome is
+    // confirmed first, exactly as before, and THEN the choice is asked: the
+    // content is already hidden by derivation, and what remains is whether it is
+    // kept or destroyed. Keeping the two as separate messages keeps the
+    // `unpublished` string a live, editable piece of copy rather than turning it
+    // into a field the operator can edit and never see (the CCB-S3-021 lesson).
     await this.reply(
       msg,
       s,
       pending.lang,
-      pending.intent === 'PUBLISH' ? 'published' : 'unpublished',
+      action === 'opt_in' ? 'published' : 'unpublished',
       {},
+      { bypassLimit: true },
+    );
+    if (action === 'opt_out') return this.askRevokeChoice(msg, s, pending.lang);
+    return true;
+  }
+
+  /**
+   * Asks hide or delete, and opens the offer that will accept the answer.
+   *
+   * Called after any revocation, on both the natural-language and slash paths, so
+   * the two cannot drift about what a revocation means. Safe to reach twice: the
+   * question is idempotent and the underlying state is already 'pending'.
+   */
+  async askRevokeChoice(msg: CapturedMessage, s: InteractionSettings, lang: string): Promise<boolean> {
+    const followUpMs = s.followUpSeconds * 1000;
+    this.state.setPending(msg.groupId, msg.senderMemberId, {
+      kind: 'revokeChoice',
+      intent: 'UNPUBLISH',
+      lang,
+      expiresAt: Date.now() + Math.max(followUpMs, 15_000),
+    });
+    // bypassLimit, because a dropped prompt here would leave the member believing
+    // they had answered a question they never saw.
+    await this.reply(msg, s, lang, 'revokeChoice', {}, { neverQuote: true, bypassLimit: true });
+    return true;
+  }
+
+  /**
+   * The revocation choice, asked after a `/unpublish` (CCB-S3-013).
+   *
+   * The slash path stays IMMEDIATE, as CCB-S3-002 §4.1 requires: the opt-out is
+   * already applied and the content is already hidden by the time this runs. What
+   * it adds is the question about what happens next, so `/unpublish` and
+   * "Cinderella, unpublish me" mean the same thing. Without it the two paths would
+   * disagree about what a revocation is, which is exactly the drift the shared
+   * write path exists to prevent.
+   */
+  async askRevokeChoiceAfterSlash(msg: CapturedMessage): Promise<void> {
+    const s = this.deps.settings();
+    const remembered = this.state.rememberedLanguage(msg.groupId, msg.senderMemberId, this.now());
+    const lang = remembered ?? s.defaultLanguage;
+    await this.askRevokeChoice(msg, s, lang);
+  }
+
+  /**
+   * Brings back content the member chose to HIDE (CCB-S3-013).
+   *
+   * Restoring is available only after a hide, never after a delete, and only to
+   * the member themselves. All three are structural rather than checked here:
+   * `restoreHidden` matches only a row whose mode is 'hide', and the member id
+   * comes from the sender of this message, so there is no shape of this call that
+   * restores somebody else's archive or resurrects destroyed content.
+   *
+   * It deliberately does NOT go through the undo path. Undo may only ever reduce
+   * exposure; this increases it, which is legitimate precisely because it is the
+   * member's own first-person request rather than the reversal of one.
+   */
+  private async performRestore(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+  ): Promise<boolean> {
+    let restored = false;
+    try {
+      const result = await restoreHiddenContent(this.deps.db, {
+        memberId: msg.senderMemberId,
+        at: msg.sentAt,
+        source: 'natural',
+      });
+      restored = result.restored;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Interaction: restore failed for member ${msg.senderMemberId}: ${message}`);
+      status.error(`Consent (natural language) restore failed: ${message}`);
+      await this.reply(msg, s, lang, 'notUnderstood', {});
+      return true;
+    }
+
+    if (restored) {
+      log.info(`Interaction: restore recorded for member ${msg.senderMemberId}.`);
+      await this.reply(msg, s, lang, 'restored', {}, { bypassLimit: true });
+      return true;
+    }
+
+    // Nothing matched. Either they never hid anything, or they destroyed it. The
+    // second reading is the one worth saying out loud, because a member who asks
+    // for words back after a deletion needs to be told plainly that they are gone.
+    const consent = await getConsent(this.deps.db, msg.senderMemberId);
+    const key = consent?.revocationMode === 'delete' ? 'restoreNotDeleted' : 'undoNothing';
+    await this.reply(msg, s, lang, key, { wake: s.wakeWord }, { bypassLimit: true });
+    return true;
+  }
+
+  /** Records HIDE and says so. Also the landing point for declining a destruction. */
+  private async chooseHideNow(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    pending: PendingConfirmation,
+  ): Promise<boolean> {
+    this.state.clearPending(msg.groupId, msg.senderMemberId);
+    try {
+      // The result is deliberately not branched on. `recorded: false` means the
+      // choice was already settled as hide, which is the state this reply
+      // describes, and `chooseHide` cancels any pending destruction either way.
+      // A THROW is the only outcome that makes the reply untrue, and that is
+      // handled below.
+      await chooseHide(this.deps.db, {
+        memberId: msg.senderMemberId,
+        at: msg.sentAt,
+        source: 'natural',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Interaction: recording hide for member ${msg.senderMemberId} failed: ${message}`);
+      status.error(`Consent (natural language) hide failed: ${message}`);
+      // The content is hidden either way: the revocation did that. Only the
+      // record of the CHOICE failed, so she must not claim it succeeded.
+      await this.reply(msg, s, pending.lang, 'notUnderstood', {});
+      return true;
+    }
+    await this.reply(msg, s, pending.lang, 'hidden', { wake: s.wakeWord }, { bypassLimit: true });
+    return true;
+  }
+
+  /** Moves to the destructive confirmation, which only the literal word answers. */
+  private async askDeleteConfirmation(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    pending: PendingConfirmation,
+  ): Promise<boolean> {
+    const followUpMs = s.followUpSeconds * 1000;
+    this.state.setPending(msg.groupId, msg.senderMemberId, {
+      kind: 'deleteConfirm',
+      intent: 'UNPUBLISH',
+      lang: pending.lang,
+      expiresAt: Date.now() + Math.max(followUpMs, 15_000),
+    });
+    await this.reply(
+      msg,
+      s,
+      pending.lang,
+      'deleteConfirm',
+      {},
+      { neverQuote: true, bypassLimit: true },
+    );
+    return true;
+  }
+
+  /**
+   * Carries out the destruction the member just confirmed with the literal word.
+   *
+   * Tells them honestly when part of it is deferred by an evidence hold: silently
+   * not deleting is worse than openly deferring, and the deferral message reveals
+   * nothing about who reported the item or what the report said.
+   */
+  private async performDelete(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    pending: PendingConfirmation,
+  ): Promise<boolean> {
+    this.state.clearPending(msg.groupId, msg.senderMemberId);
+    let outcome;
+    try {
+      outcome = await chooseDelete(
+        this.deps.db,
+        { memberId: msg.senderMemberId, at: msg.sentAt, source: 'natural' },
+        this.deps.mediaRoot ?? loadConfig().mediaRoot,
+        this.deps.runTx,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      log.error(`Interaction: delete for member ${msg.senderMemberId} failed: ${message}`);
+      status.error(`Consent (natural language) delete failed: ${message}`);
+      await this.reply(msg, s, pending.lang, 'notUnderstood', {});
+      return true;
+    }
+
+    log.info(
+      `Interaction: delete recorded for member ${msg.senderMemberId} via natural language ` +
+        `(${outcome.destroyed} destroyed, ${outcome.deferred} deferred, ${outcome.failed} failed).`,
+    );
+
+    // A failure is counted with the deferrals for the member's benefit: in both
+    // cases the honest statement is "not yet gone, and I will keep at it". The
+    // operator sees the difference through status.error and the log.
+    const waiting = outcome.deferred + outcome.failed;
+    if (outcome.failed > 0) {
+      status.error(
+        `A member asked for their content to be destroyed and ${outcome.failed} message(s) could ` +
+          `not be destroyed. They are hidden and the deletion will be retried.`,
+      );
+    }
+    const key =
+      waiting > 0 ? 'deleteDeferred' : outcome.destroyed > 0 ? 'deleted' : 'deleteNothing';
+    await this.reply(
+      msg,
+      s,
+      pending.lang,
+      key,
+      { n: String(outcome.destroyed), held: String(waiting) },
       { bypassLimit: true },
     );
     return true;
@@ -1363,6 +1666,36 @@ export class InteractionEngine {
    * (`jup`, `yeah`, `klar`) but anchored at the start and length-bounded, so a
    * long sentence that happens to contain "ok" is not read as consent.
    */
+  /**
+   * Does the message consist of exactly one of these words, and nothing else?
+   * (CCB-S3-013)
+   *
+   * Deliberately NOT `matchesList`. That helper is fuzzy and length-bounded, both
+   * of which are right for "yeah" and fatal for a destructive keyword:
+   *
+   *   - `fuzzyEquals` allows one edit at six characters and two at seven or more,
+   *     so "delete" would accept "delet", "deleted" and "felete", and the folded
+   *     German "loeschen" would accept two edits. A word that can be arrived at by
+   *     mistyping is not a safety mechanism.
+   *   - `matchesList` skips its length guard until the message is more than two
+   *     tokens longer than the pattern, so "yeah delete everything" matches on its
+   *     first token alone.
+   *
+   * So this requires a single token, compared for exact equality after `fold()`
+   * normalisation. Folding is not fuzziness: it makes "lösche" and "loesche" the
+   * same word rather than making near-misses acceptable.
+   */
+  private matchesLiteral(instruction: string, words: string[]): boolean {
+    const tokens = normTokens(instruction);
+    if (tokens.length !== 1) return false;
+    const token = tokens[0] as string;
+    for (const word of words) {
+      const pat = normTokens(word);
+      if (pat.length === 1 && pat[0] === token) return true;
+    }
+    return false;
+  }
+
   private matchesList(instruction: string, list: string[]): boolean {
     const tokens = normTokens(instruction);
     if (tokens.length === 0) return false;

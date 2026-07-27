@@ -17,8 +17,11 @@ in** — by sending `/publish`, or by asking her in plain language and confirmin
 when she asks back (CCB-S3-002; both routes share one write path, and consent is
 always first-person). This is the product's legal backbone. Publication is _derived_
 (never a stale flag) from the `consent` table, `sent_at` (forward-only from
-opt-in), `deleted`/`group_deleted`, and `moderation_state` — see the
-`message_publish_state` / `published_messages` views.
+opt-in), `deleted`/`group_deleted`, `moderation_state`, and the `consent_gaps` a
+hide/restore cycle leaves behind — see the `message_publish_state` /
+`published_messages` views. A revocation hides everything at once; the member then
+chooses **hide** (retained, restorable by them alone) or **delete** (erased, and an
+evidence hold can defer that but never the hiding) — CCB-S3-013.
 
 ## Non-negotiables (base briefing §1)
 
@@ -68,7 +71,8 @@ opt-in), `deleted`/`group_deleted`, and `moderation_state` — see the
 
 - `src/` — `config.ts`, `log.ts`, `bot/` (core wiring, files, connect, avatar),
   `capture/` (parse, media, links, persist, her own sends), `consent/`,
-  `archive/` (whether her own messages publish, and name redaction),
+  `archive/` (whether her own messages publish, name redaction, destruction and the
+  deferred-destruction sweeper),
   `media/` (metadata detection and stripping, video matchers),
   `interaction/`
   (wake word, intent resolver, dialogue engine, persona, help), `plugins/` (plugin
@@ -86,7 +90,9 @@ opt-in), `deleted`/`group_deleted`, and `moderation_state` — see the
   her own messages (bot rows, mentions, the second publication branch) · 014
   stripped media derivatives · 015 member instructions + exchange pairing · 016 video links · 017 durable job queue
   (state machine, `FOR UPDATE SKIP LOCKED` claim, backoff/dead-letter, idempotency) ·
-  018 capture write-ahead events · 019 formatted text.
+  018 capture write-ahead events · 019 formatted text · 020 revocation hide/delete +
+  evidence holds (incl. the BEFORE DELETE hold trigger) · 021 consent gaps (a restore
+  never publishes what was said while hidden).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -105,7 +111,9 @@ harnesses (real Postgres-in-WASM, no server needed): `verify:db`,
 `verify:consent`, `verify:admin`, `verify:admin-views`, `verify:interaction`
 (natural addressing), `verify:price` (market data; `-- --live` hits the real
 provider), `verify:archive` (her own messages + the consent leak guard), plus
-`verify:security`, `verify:public`, `verify:site`.
+`verify:security`, `verify:public`, `verify:site`, `verify:revocation`
+(hide/delete on revocation + the evidence holds; proves no path destroys a held item),
+`verify:queue`, `verify:capture-events`, `verify:no-dashes`.
 `scripts/admin-preview.ts` boots a seeded local admin console for browser checks.
 
 ## Documentation maintenance (binding on every briefing)

@@ -14,10 +14,12 @@
  * long, structured, and bilingual as a block. It uses only the single-delimiter
  * markup SimpleX actually renders (`*bold*`, `_italic_`), verified in CCB-S3-003.
  *
- * TODAY'S TRUTH on revocation (CCB-S3-010 Addendum A): it is final. There is no
- * hide, and undoing a revocation is refused. A later briefing introduces
- * hide/delete and will revise the consent block; until then this says what is
- * true, not what is planned.
+ * REVOCATION, as of CCB-S3-013. Taking words back is instant and always removes
+ * them from public view. What follows is the member's choice: HIDE keeps them,
+ * out of sight and restorable by that member alone, and DELETE destroys them.
+ * Undoing a revocation is still refused (CCB-S3-010 Addendum A), because undo may
+ * only ever reduce exposure; restoring after a hide is a separate, first-person
+ * request rather than a reversal.
  */
 
 import type { Intent } from './intent.js';
@@ -77,6 +79,11 @@ const CAPABILITIES: Partial<Record<Intent, Capability>> = {
     keyword: 'undo',
     en: '*undo* - take back your last request, if it was only a moment ago',
     de: '*undo* - deine letzte Bitte zurücknehmen, wenn sie eben erst war',
+  },
+  RESTORE: {
+    keyword: 'restore',
+    en: '*restore my words* - bring back what you chose to hide',
+    de: '*hole meine worte zurück* - zurückholen, was du verborgen hast',
   },
 };
 
@@ -145,14 +152,18 @@ const CONSENT_BLOCK: Record<HelpLang, string> = {
     '*Forward only.* Only what you say after you opt in is ever published, nothing from before.\n' +
     '*Public until you take it back.* Published words stay on the web, searchable, for as long ' +
     'as you leave them there.\n' +
-    '*Taking them back is final.* _unpublish_ removes everything at once, and opting in again ' +
-    'starts fresh; it does not bring the old words back.',
+    '*Taking them back is instant, and then you choose.* _unpublish_ removes everything from ' +
+    'public view at once. I then ask whether to *hide* your words, which keeps them safe and ' +
+    'lets you bring them back whenever you like, or *delete* them, which destroys them for ' +
+    'good. Until you answer, they stay hidden.',
   de:
     '*Nur vorwärts.* Veröffentlicht wird nur, was du nach dem Opt-in sagst, nichts von vorher.\n' +
     '*Öffentlich, bis du es zurücknimmst.* Veröffentlichte Worte bleiben im Netz, durchsuchbar, ' +
     'solange du sie dort lässt.\n' +
-    '*Das Zurücknehmen ist endgültig.* _unpublish_ entfernt alles auf einmal, und ein erneutes ' +
-    'Opt-in beginnt von diesem Moment an neu; es holt die alten Worte nicht zurück.',
+    '*Das Zurücknehmen wirkt sofort, danach entscheidest du.* _unpublish_ nimmt alles auf einmal ' +
+    'aus der Öffentlichkeit. Dann frage ich, ob ich deine Worte *verbergen* soll, sicher ' +
+    'aufbewahrt und jederzeit zurückholbar, oder *löschen*, also endgültig vernichten. Bis du ' +
+    'antwortest, bleiben sie verborgen.',
 };
 
 /**
@@ -200,7 +211,18 @@ export function missingHelpPlaceholders(template: string): string[] {
 }
 
 /** The order capabilities are listed in, so the reply reads sensibly. */
-const ORDER: Intent[] = ['PUBLISH', 'UNPUBLISH', 'STATUS', 'SEARCH', 'PRICE', 'HELP', 'UNDO'];
+// RESTORE sits next to UNPUBLISH because it is the other half of the same
+// decision: take it back, then choose whether that was hiding or destroying.
+const ORDER: Intent[] = [
+  'PUBLISH',
+  'UNPUBLISH',
+  'RESTORE',
+  'STATUS',
+  'SEARCH',
+  'PRICE',
+  'HELP',
+  'UNDO',
+];
 
 function fillWake(text: string, wake: string): string {
   // Function replacer: the operator-set wake word is inserted LITERALLY, never

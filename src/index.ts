@@ -31,6 +31,7 @@ import { makePersistenceHooks } from './capture/persist.js';
 import { withBotCapture, type BotReplyMeta } from './capture/bot-message.js';
 import { checkPublishedMedia } from './media/pipeline.js';
 import { makeConsentHandler } from './consent/commands.js';
+import type { CapturedMessage } from './capture/message.js';
 import { assertDbReachable, closePool, getPool } from './db/pool.js';
 import { markInterruptedMediaReceipts, setMemberCategory } from './db/messages.js';
 import { SettingsService } from './settings/service.js';
@@ -50,6 +51,7 @@ import { startAdminServer } from './web/server.js';
 import { status } from './web/status.js';
 import { registerAdminViews } from './web/views/index.js';
 import { startQueue, stopQueue } from './queue/index.js';
+import { startDestructionSweeper } from './archive/sweeper.js';
 
 function runConfigCheck(cfg: Config, localAi: LocalAiConfig): void {
   log.info('Configuration loaded:', redactConfig(cfg));
@@ -142,8 +144,12 @@ async function startCaptureWorker(
     // The engine is created below; the callback is late-bound so the slash path
     // can refresh the same follow-up window the engine owns.
     let noteReply: (g: number, m: string) => void = () => undefined;
+    // Late-bound like noteReply, for the same reason: the engine is built below,
+    // and the slash path needs it to ask the hide-or-delete question (CCB-S3-013).
+    let askRevokeChoice: (msg: CapturedMessage) => Promise<void> = () => Promise.resolve();
     hooks.onCommand = makeConsentHandler(botHandle, interaction, (g, m) => noteReply(g, m), {
       send: sendAndArchive,
+      askRevokeChoice: (msg) => askRevokeChoice(msg),
     });
 
     // Natural addressing (CCB-S3-002). The engine only ever decides and replies;
@@ -173,6 +179,7 @@ async function startCaptureWorker(
       send: sendAndArchive,
     });
     noteReply = (g, m) => engine.noteExternalReply(g, m);
+    askRevokeChoice = (msg) => engine.askRevokeChoiceAfterSlash(msg);
     const runtimePolicy = new RuntimePolicyService(getPool());
     hooks.onInteraction = (msg) =>
       runtimePolicy.handleInteraction(msg, async () => engine.handle(msg));
@@ -366,6 +373,18 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     status.error(`Job queue failed to start: ${message}`);
     log.error(`Job queue failed to start: ${message}`);
+  }
+
+  // The backstop under deferred destruction (CCB-S3-013): lapses holds whose
+  // expiry job never ran, and re-queues any deletion whose blocker is gone. Runs
+  // once now, so a process that was down when a hold expired resolves it on the
+  // way back up, then every quarter hour.
+  try {
+    startDestructionSweeper(getPool());
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    status.error(`Deferred-destruction sweeper failed to start: ${message}`);
+    log.error(`Deferred-destruction sweeper failed to start: ${message}`);
   }
 
   log.info('Cinderella is capturing to PostgreSQL (consent-gated). Press Ctrl+C to stop.');

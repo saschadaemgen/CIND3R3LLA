@@ -64,6 +64,10 @@ const INTENT_DEFINITIONS: Record<Intent, string> = {
   SEARCH: 'A request to search the archive. Put the search text in slots.query.',
   HELP: 'A request for help, commands, capabilities, identity, or usage instructions.',
   UNDO: 'A request to undo or revert the most recent eligible action.',
+  RESTORE:
+    'A clear first-person request to bring the sender own HIDDEN messages back into the public ' +
+    'archive: restore, unhide, put them back, show them again. A request to TAKE CONTENT DOWN is ' +
+    'UNPUBLISH, never RESTORE.',
   PRICE:
     'A price, value, exchange-rate, or asset-conversion question. Put the asset in slots.base, ' +
     'the requested quote in slots.quote, and the amount in slots.amount when present.',
@@ -257,8 +261,17 @@ function parseCompletion(value: unknown): IntentResult {
   };
 }
 
-function isConsentIntent(intent: Intent): intent is 'PUBLISH' | 'UNPUBLISH' {
-  return intent === 'PUBLISH' || intent === 'UNPUBLISH';
+/**
+ * Intents the model may only ever CORROBORATE, never assert on its own.
+ *
+ * RESTORE is here for the same reason PUBLISH is: it puts a member's content back
+ * into public view. It reaches that outcome through a confirmation handshake, but
+ * the handshake only asks about whatever intent was resolved, so a model that
+ * invents RESTORE would put the question in front of a member who never raised it.
+ * The deterministic rules must independently agree first (CCB-S3-013).
+ */
+function isConsentIntent(intent: Intent): intent is 'PUBLISH' | 'UNPUBLISH' | 'RESTORE' {
+  return intent === 'PUBLISH' || intent === 'UNPUBLISH' || intent === 'RESTORE';
 }
 
 function mergeMatching(model: IntentResult, rules: IntentResult): IntentResult {

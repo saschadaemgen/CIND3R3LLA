@@ -28,19 +28,43 @@ export function reporterHash(
 }
 
 /**
+ * A COARSER token, used for one thing only: the evidence-hold abuse threshold
+ * (CCB-S3-013).
+ *
+ * `reporterHash` above deliberately cannot answer "has this source had many
+ * illegal reports dismissed", because the message id is inside it and
+ * `UNIQUE (message_id, reporter_hash)` exists, so the count is always 0 or 1.
+ * That property is a feature, not an oversight, so this does NOT relax it: it
+ * adds a second, separately-scoped token.
+ *
+ * HMAC-SHA256(secret, `ip|YYYY-MM`). It links one source's reports within a
+ * single calendar month and cannot link across months at all. It is read by one
+ * query (`sourceIsSuppressed`) and by nothing else. See D-071 for the trade.
+ */
+export function reporterSourceToken(secret: string, ip: string, utcMonth: string): string {
+  return createHmac('sha256', secret).update(`${ip}|${utcMonth}`).digest('hex');
+}
+
+/**
  * Inserts a report, absorbing a repeat from the same client+item+day via the
  * `reports_dedup` unique constraint (DB-level debounce). Returns true iff a NEW row
  * landed — but the caller returns an identical response either way (no probing).
  */
 export async function createReport(
   db: Queryable,
-  r: { messageId: number; reason: ReportReason; note: string | null; reporterHash: string },
+  r: {
+    messageId: number;
+    reason: ReportReason;
+    note: string | null;
+    reporterHash: string;
+    reporterSource?: string | null;
+  },
 ): Promise<boolean> {
   const { rowCount } = await db.query(
-    `INSERT INTO reports (message_id, reason, note, reporter_hash)
-     VALUES ($1, $2::report_reason, $3, $4)
+    `INSERT INTO reports (message_id, reason, note, reporter_hash, reporter_source)
+     VALUES ($1, $2::report_reason, $3, $4, $5)
      ON CONFLICT (message_id, reporter_hash) DO NOTHING`,
-    [r.messageId, r.reason, r.note, r.reporterHash],
+    [r.messageId, r.reason, r.note, r.reporterHash, r.reporterSource ?? null],
   );
   return (rowCount ?? 0) > 0;
 }

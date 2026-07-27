@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,122 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-073 — Restoring hidden content must not publish what was said while hidden
+
+**Status: IMPLEMENTED (CCB-S3-013, found by adversarial review before release).**
+**The leak.** `restoreHidden` clears `revoked_at` while deliberately keeping the ORIGINAL
+`opted_in_at`, because publication is forward-only and resetting it would strand every hidden message.
+That part is right. But **capture never stops**: a member who revokes and keeps talking has new
+messages stored the whole time, and those also satisfy `sent_at >= opted_in_at`. Clearing `revoked_at`
+therefore published content the member posted while **opted out**, which they had never consented to
+publish. Latent rather than live, and only on the path this briefing introduced.
+**Why a table and not two columns.** A member may hide and restore any number of times, and every gap
+has to keep excluding its own messages forever. A single `hidden_from`/`hidden_until` pair would
+silently republish every earlier gap on the next restore. `consent_gaps` holds one row per interval and
+the derivation excludes a message whose `sent_at` falls in any of them.
+**Still derived.** Nothing is stamped on a message; the exclusion is evaluated on every read like the
+rest of the model (D-003). `CREATE OR REPLACE VIEW` was possible because only a predicate changed and
+the column list did not, so the long explicit `published_messages` projection did not have to be
+rebuilt.
+**Fail-safe ordering.** The gap row is written FIRST, while `revoked_at` still says when the hiding
+began, and only then is the revocation cleared. A crash between the two leaves a gap on a member who is
+still revoked: their content stays hidden and the restore can be asked for again. The other order would
+lose the gap and publish everything said while hidden.
+**Evidence.** `migrations/021_consent_gaps.sql`, `src/db/consent.ts` (`restoreHidden`),
+`scripts/verify-revocation.ts` §14.
+
+---
+
+### D-072 — A hold is enforced by a database trigger, because application discipline is not a guarantee
+
+**Status: IMPLEMENTED (CCB-S3-013 Part B).**
+**The requirement.** "A held item cannot be destroyed by member deletion, by operator takedown, or by
+any other path." The last clause is the hard one: *any other path* includes paths that do not exist yet.
+**Why not application code.** Cinderella already ships a script that issues a bare
+`DELETE FROM messages` against production (`scripts/scan-support-scope.ts:86`, the CCB-S3-019
+remediation). A check in `destroyMessage` would not have been in that script's way, and would not be in
+the way of the next remediation either. An evidence hold that a future one-off script can step over is
+not an evidence hold.
+**The decision.** `migrations/020_revocation_holds.sql` installs a row-level `BEFORE DELETE` trigger on
+`messages` that raises `restrict_violation` when a live hold exists. Every path meets it: the member
+delete path, the operator destroy, the queue handler, a psql session, a future script.
+**The property that made a trigger the right shape rather than an FK.** A row-level trigger also fires
+for rows removed by a CASCADE. `messages.reply_to_id` cascades, so destroying a member's question
+would otherwise silently destroy Cinderella's paired answer to it; if that answer is held, the guard
+aborts the entire delete. An `ON DELETE RESTRICT` foreign key could not express this, because released
+holds must stop blocking while their rows are kept for the audit trail.
+**Consequence the code has to live with.** `destroyMessage` deletes the ROW FIRST and unlinks files
+afterwards, both inside one caller-supplied transaction. That ordering is deliberate: the trigger fires
+before a single byte is unlinked, so a destruction that was going to be refused cannot take the media
+with it on the way out. An unlink failure then throws and rolls the row deletion back, so the outcome is
+always "everything destroyed" or "nothing destroyed", never half.
+**Evidence.** `migrations/020_revocation_holds.sql` §4, `src/archive/destroy.ts`,
+`scripts/verify-revocation.ts` §5 (member delete, raw SQL, operator takedown and the reply cascade each
+tested against the guard) and §8 (escalation).
+
+---
+
+### D-071 — A second, coarser reporter token, scoped to the hold abuse threshold alone
+
+**Status: IMPLEMENTED (CCB-S3-013 Part B).**
+**The problem.** Reports are anonymous and unauthenticated, and a hold is free to create. Without a
+brake, any stranger could make a member's content permanently undeletable by reporting it repeatedly.
+The briefing asks that a source whose illegal reports the operator keeps dismissing should stop
+creating holds.
+**Why the existing token cannot answer it.** `reporter_hash` is HMAC over `ip|messageId|utcDate`
+(D-016), deliberately per-item-per-day so reporters cannot be profiled across the archive. Because the
+message id is inside the hash AND `UNIQUE (message_id, reporter_hash)` exists, "how many of this
+source's reports were dismissed" can only ever return 0 or 1. That is a feature of D-016, not a bug to
+fix.
+**The decision.** Add `reports.reporter_source`, HMAC over `ip|YYYY-MM`, and read it from exactly one
+query (`sourceIsSuppressed`). It links a source's reports within one calendar month and cannot link
+across months at all. D-016's per-item-per-day token is unchanged and still does the dedup.
+**The trade, stated rather than hidden.** This does re-introduce a limited profiling capability: within
+a month, reports from one address are now linkable to each other. The month bucket is the narrowest
+window that still lets a threshold of a few dismissals accumulate. The alternative was to accept that
+holds cannot be rate-limited by source at all.
+**It fails toward ACCEPTING the report.** A missing token, a rotated `SESSION_SECRET` (which silently
+invalidates every historical token), or a threshold of 0 all mean "not suppressed". Behind CGNAT, a VPN
+or Tor, many unrelated people share one address and one person can rotate freely, so an IP-derived
+source is a heuristic. Wrongly suppressing a genuine illegal-content notice is a far worse outcome than
+one more reviewable hold. A suppression is logged, so it never looks like "nobody reported it".
+**Evidence.** `migrations/020_revocation_holds.sql` §6, `src/db/reports.ts` (`reporterSourceToken`),
+`src/db/holds.ts` (`sourceIsSuppressed`), `scripts/verify-revocation.ts` §9.
+
+---
+
+### D-070 — Hide needed no new derived state; delete is the only thing that erases
+
+**Status: IMPLEMENTED (CCB-S3-013 Part A).**
+**The finding.** The briefing asks that hidden and deleted both be "derived, consistent with the
+existing publication model, never a stale flag". Working from the code, HIDE turned out to need no new
+term in the derivation at all: `message_publish_state` already tests `c.revoked_at IS NULL`, so the
+moment a member revokes, every one of their messages leaves the published set across all eleven public
+routes. "Hidden" is what a revocation has always meant; what was missing was the member's say in
+whether the content is also destroyed.
+**The decision.** `message_publish_state` and `published_messages` are NOT redefined. The new state
+lives in `consent.revocation_mode` (`pending` | `hide` | `delete`), which records the CHOICE and never
+gates publication.
+**Why that is the safer answer, not the lazy one.** Both views enumerate their columns explicitly, and
+every migration since 013 has had to re-declare them; migration 014 records that forgetting a column
+silently drops it from the public projection. A second `hidden` column would have meant rebuilding both
+views to express a fact the model already expressed, and would have created exactly the stale-flag
+failure mode D-003 exists to prevent.
+**No default, expressed in data.** `recordOptOut` sets `revocation_mode = 'pending'` in the same
+statement that sets `revoked_at`. The interim between "she asked" and "they answered" is therefore
+hidden, durable across restarts, and authorises nothing. Handshake state lives in process memory and
+would have republished the content on the next restart, so the interim could not live there.
+**Restore is not undo.** `restoreHidden` clears `revoked_at` while KEEPING the original `opted_in_at`,
+because publication is forward-only and `recordOptIn` would reset that timestamp and leave every hidden
+message behind. It matches only `revocation_mode = 'hide'`, so it can never resurrect destroyed content
+or pre-empt an unanswered choice. It deliberately does not route through `undoLastConsentAction`: undo
+may only ever reduce exposure (D-054/D-055), and this increases it, which is legitimate only because it
+is the member's own first-person request rather than the reversal of one.
+**Evidence.** `migrations/020_revocation_holds.sql` §1, `src/db/consent.ts`,
+`src/consent/revocation.ts`, `scripts/verify-revocation.ts` §1-§3.
 
 ---
 

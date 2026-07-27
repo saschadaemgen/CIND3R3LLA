@@ -357,6 +357,12 @@ export function registerNav(): void {
           label: 'Reports',
           icon: icon('alert'),
         },
+        {
+          key: 'holds',
+          href: '/holds',
+          label: 'Evidence holds',
+          icon: icon('shield'),
+        },
       ],
     },
     {

@@ -56,6 +56,17 @@ export const PERSONA_KEYS = [
   'priceUnavailable', // PRICE — provider unreachable
   'priceThrottled', // PRICE — rate-limited; worth saying "try again shortly"
   'redactedMember', // CCB-S3-007 §2 — stands in for a member who has not opted in
+  // CCB-S3-013 — hide or delete on revocation, and the evidence holds.
+  'revokeChoice', // the question itself, offering both, defaulting to neither
+  'hidden', // hide chosen: retained, restorable
+  'deleteConfirm', // the destructive confirmation — needs the literal word
+  'deleteNeedsWord', // a bare "yes" is not enough for a destruction
+  'deleted', // delete done, nothing held — {n}
+  'deleteDeferred', // delete done in part, some items held — {n} {held}
+  'deleteNothing', // nothing of theirs was left to delete
+  'restored', // hidden content brought back
+  'restoreNotDeleted', // restore asked for after a delete: cannot be done
+  'restoreConfirm', // restore puts content back in public view, so it confirms first
 ] as const;
 export type PersonaKey = (typeof PERSONA_KEYS)[number];
 export type PersonaStrings = Record<PersonaKey, string>;
@@ -96,6 +107,18 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // Never sent through the persona reply path (it is not a reply to anything),
   // but the map is total, and 'consent' is the category it would belong to.
   redactedMember: 'consent',
+  // CCB-S3-013 — every one of these is part of a consent decision, so they follow
+  // the same archive rule as the rest of the consent copy.
+  revokeChoice: 'consent',
+  hidden: 'consent',
+  deleteConfirm: 'consent',
+  deleteNeedsWord: 'consent',
+  deleted: 'consent',
+  deleteDeferred: 'consent',
+  deleteNothing: 'consent',
+  restored: 'consent',
+  restoreNotDeleted: 'consent',
+  restoreConfirm: 'consent',
 };
 
 export interface NicknameSettings {
@@ -230,6 +253,23 @@ export interface InteractionSettings {
   affirmations: string[];
   /** Words that cancel a pending consent change. */
   declines: string[];
+  /**
+   * Words that choose HIDE at the revocation question (CCB-S3-013). Matched like
+   * the affirmations: fuzzy and length-bounded. Hiding is the safe direction, so
+   * a generous match here costs nothing.
+   */
+  hideWords: string[];
+  /**
+   * Words that choose, and then confirm, DESTRUCTION (CCB-S3-013).
+   *
+   * These are NOT matched like the lists above. The confirmation requires the
+   * member to write one of these words and nothing else: exact after folding, no
+   * typo tolerance, no trailing tokens. "delete" tolerating an edit would accept
+   * "delet" or "felete", and a length-bounded match would accept
+   * "yeah delete everything" on the strength of its first token. The whole point
+   * of requiring the word is that it cannot be arrived at accidentally.
+   */
+  deleteWords: string[];
   /** Max replies to one member per minute. */
   replyLimitPerMember: number;
   /** Max replies in one chat per minute. */
@@ -256,12 +296,12 @@ const PERSONA_EN: PersonaStrings = {
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
   unpublishConfirm:
-    '🌙 This takes back everything you have published, all at once, and it cannot be undone. ' +
-    'Opting in again later starts fresh from that moment, and it will not bring the old words back. ' +
-    'Say *yes* to confirm.',
+    '🌙 This takes back everything you have published, all at once, and it happens the moment ' +
+    'you say so. Nothing new will follow it. Afterwards I shall ask whether you want me to keep ' +
+    'your words hidden or destroy them for good. Say *yes* to confirm.',
   unpublished:
-    '🌙 Back into the dark they go. Your words are out of the archive, and nothing new will ' +
-    'follow them there.',
+    '🌙 Back into the dark they go. Your words are out of the public archive, and nothing new ' +
+    'will follow them there.',
   refuseThirdParty:
     '🔒 That spell is not mine to cast. Only {name} can open that door, and only for themselves. ' +
     'Ask them to tell me directly.',
@@ -298,6 +338,45 @@ const PERSONA_EN: PersonaStrings = {
   // Not a reply — the name she puts in place of a member who has not opted in,
   // so a published sentence of hers still reads as a sentence (CCB-S3-007 §2).
   redactedMember: 'that member',
+  // CCB-S3-013. Two properties these strings must keep: they never call erasure
+  // permanent in a way the backups make untrue, and the destructive one names the
+  // exact word required, because that word is the safety mechanism.
+  revokeChoice:
+    '🌙 Your words are hidden now, and no one can see them. What shall I do with them?\n\n' +
+    'Say *hide* and I keep them safely out of sight; you can ask me to bring them back whenever ' +
+    'you like.\n' +
+    'Say *delete* and I destroy them instead, and then they are gone from my archive for good.\n\n' +
+    'Until you tell me, they stay hidden.',
+  hidden:
+    '🌙 Hidden it is. Your words rest quietly with me, out of the public archive and out of ' +
+    'search. Say *{wake}, restore my words* whenever you want them back in the light.',
+  deleteConfirm:
+    '🔥 Then I shall destroy them. This is the one thing I cannot put back for you: your ' +
+    'messages and everything you sent with them leave my archive at once, and asking me later ' +
+    'will not return them. Copies inside my keeper’s backups fade as those backups age out.\n\n' +
+    'If you are certain, write the word *delete*. Nothing else will do it.',
+  deleteNeedsWord:
+    '🔥 I need the word itself for this one. Write *delete* if you truly mean it, or *no* to ' +
+    'leave your words hidden instead.',
+  deleted:
+    '🔥 It is done. {n} of your messages are gone from my archive, and everything you sent with ' +
+    'them is gone too.',
+  // The exact shape the briefing asked for: say plainly that part is deferred,
+  // and reveal nothing about who reported it or what they said.
+  deleteDeferred:
+    '🌙 Your words are out of the public archive now, and no one can see them. {held} of them ' +
+    'are held while I check a report about them. I cannot destroy those yet. They stay hidden ' +
+    'the whole time, and they will be deleted as soon as the check is done.',
+  deleteNothing: '🌙 There is nothing of yours left in my archive to destroy.',
+  restored:
+    '✨ Welcome back to the light. Your words are in the public archive again, exactly as they ' +
+    'were.',
+  restoreNotDeleted:
+    '🔥 Those words were destroyed, not hidden, so there is nothing left for me to bring back. ' +
+    'Say *{wake}, publish me* whenever you want to begin again, from that moment on.',
+  restoreConfirm:
+    '✨ Shall I carry your hidden words back into the light? They return to the public archive ' +
+    'exactly as they were, and anyone can read them again. Say *yes* and it is done.',
 };
 
 const PERSONA_DE: PersonaStrings = {
@@ -309,12 +388,12 @@ const PERSONA_DE: PersonaStrings = {
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',
   unpublishConfirm:
-    '🌙 Das nimmt alles zurück, was du veröffentlicht hast, auf einmal, und es lässt sich nicht ' +
-    'rückgängig machen. Ein späteres erneutes Opt-in beginnt von diesem Moment an neu, es holt ' +
-    'die alten Worte nicht zurück. Sag *ja* zum Bestätigen.',
+    '🌙 Das nimmt alles zurück, was du veröffentlicht hast, auf einmal, und zwar in dem Moment, ' +
+    'in dem du es sagst. Nichts Neues folgt mehr. Danach frage ich dich, ob ich deine Worte ' +
+    'verborgen halten oder endgültig vernichten soll. Sag *ja* zum Bestätigen.',
   unpublished:
-    '🌙 Zurück ins Dunkel damit. Deine Worte sind aus dem Archiv, und nichts Neues folgt ihnen ' +
-    'dorthin.',
+    '🌙 Zurück ins Dunkel damit. Deine Worte sind aus dem öffentlichen Archiv, und nichts Neues ' +
+    'folgt ihnen dorthin.',
   refuseThirdParty:
     '🔒 Diesen Zauber darf ich nicht wirken. Nur {name} kann diese Tür öffnen, und nur für sich ' +
     'selbst. Bitte ihn, es mir selbst zu sagen.',
@@ -344,6 +423,48 @@ const PERSONA_DE: PersonaStrings = {
   priceUnavailable: '🌙 Die Märkte sind gerade außer Hörweite. Versuch es gleich noch einmal.',
   priceThrottled: '🌙 Ich habe die Märkte zu oft gefragt. Gib mir eine Minute und frag noch einmal.',
   redactedMember: 'dieses Mitglied',
+  // CCB-S3-013. Das verlangte Wort ist im Deutschen *löschen*; der Resolver faltet
+  // Umlaute, also wird auch *loeschen* erkannt (siehe `deleteWords`).
+  revokeChoice:
+    '🌙 Deine Worte sind jetzt verborgen, niemand kann sie sehen. Was soll ich mit ihnen tun?\n\n' +
+    'Sag *verbergen*, dann bewahre ich sie sicher außer Sicht; du kannst sie jederzeit ' +
+    'zurückholen lassen.\n' +
+    'Sag *löschen*, dann vernichte ich sie, und danach sind sie endgültig aus meinem Archiv ' +
+    'verschwunden.\n\n' +
+    'Bis du es mir sagst, bleiben sie verborgen.',
+  hidden:
+    '🌙 Verborgen also. Deine Worte ruhen still bei mir, außerhalb des öffentlichen Archivs und ' +
+    'außerhalb der Suche. Sag *{wake}, hole meine Worte zurück*, wann immer du sie wieder im ' +
+    'Licht haben möchtest.',
+  deleteConfirm:
+    '🔥 Dann vernichte ich sie. Das ist das Einzige, was ich nicht für dich zurückholen kann: ' +
+    'deine Nachrichten und alles, was du mitgeschickt hast, verlassen sofort mein Archiv, und ' +
+    'späteres Fragen bringt sie nicht wieder. Kopien in den Sicherungen meines Hausherrn ' +
+    'verblassen, sobald diese Sicherungen auslaufen.\n\n' +
+    'Wenn du sicher bist, schreibe das Wort *löschen*. Nichts anderes tut es.',
+  deleteNeedsWord:
+    '🔥 Hierfür brauche ich das Wort selbst. Schreibe *löschen*, wenn du es wirklich meinst, ' +
+    'oder *nein*, dann bleiben deine Worte verborgen.',
+  deleted:
+    '🔥 Es ist vollbracht. {n} deiner Nachrichten sind aus meinem Archiv verschwunden, und alles, ' +
+    'was du mitgeschickt hast, ebenso.',
+  deleteDeferred:
+    '🌙 Deine Worte sind jetzt aus dem öffentlichen Archiv, niemand kann sie sehen. {held} davon ' +
+    'sind zurückgehalten, während ich eine Meldung dazu prüfe. Die kann ich noch nicht ' +
+    'vernichten. Sie bleiben die ganze Zeit verborgen und werden gelöscht, sobald die Prüfung ' +
+    'abgeschlossen ist.',
+  deleteNothing: '🌙 In meinem Archiv ist nichts mehr von dir, was ich vernichten könnte.',
+  restored:
+    '✨ Willkommen zurück im Licht. Deine Worte stehen wieder im öffentlichen Archiv, genau so, ' +
+    'wie sie waren.',
+  restoreNotDeleted:
+    '🔥 Diese Worte wurden vernichtet, nicht verborgen, es ist also nichts mehr da, was ich ' +
+    'zurückholen könnte. Sag *{wake}, veröffentliche mich*, wenn du neu beginnen willst, ab ' +
+    'diesem Moment an.',
+  restoreConfirm:
+    '✨ Soll ich deine verborgenen Worte zurück ans Licht tragen? Sie kehren genau so ins ' +
+    'öffentliche Archiv zurück, wie sie waren, und jeder kann sie wieder lesen. Sag *ja*, und ' +
+    'es ist getan.',
 };
 
 const RETORTS_EN = [
@@ -483,6 +604,11 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
     'abbrechen',
     'lass es',
   ],
+  hideWords: ['hide', 'hidden', 'keep', 'keep them', 'verbergen', 'verstecken', 'behalten'],
+  // `fold()` collapses umlauts before matching, so 'löschen' also covers
+  // 'loeschen' without listing it. Both spellings are listed anyway, because this
+  // list is operator-editable and the German word is the safety mechanism.
+  deleteWords: ['delete', 'destroy', 'löschen', 'loeschen', 'lösche', 'loesche', 'vernichten'],
   replyLimitPerMember: 6,
   replyLimitPerChat: 20,
   undoWindowSeconds: 300,
@@ -566,6 +692,14 @@ export function parseList(
     if (out.length >= opts.max) break;
   }
   return out;
+}
+
+/**
+ * Falls back to the shipped list when the operator empties a field whose emptiness
+ * would remove a capability rather than disable one (CCB-S3-013).
+ */
+function orDefault(parsed: string[], fallback: string[]): string[] {
+  return parsed.length > 0 ? parsed : [...fallback];
 }
 
 /** A language code we are willing to store as a persona/retort key. */
@@ -748,6 +882,14 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
         ? parseList(o['affirmations'], { max: 60, maxLen: 40 })
         : [...d.affirmations],
     declines: 'declines' in o ? parseList(o['declines'], { max: 60, maxLen: 40 }) : [...d.declines],
+    hideWords:
+      'hideWords' in o ? parseList(o['hideWords'], { max: 60, maxLen: 40 }) : [...d.hideWords],
+    // Emptying this list would leave no way to confirm a destruction at all, which
+    // is a safe failure but a confusing one, so it falls back to the shipped words.
+    deleteWords:
+      'deleteWords' in o
+        ? orDefault(parseList(o['deleteWords'], { max: 60, maxLen: 40 }), d.deleteWords)
+        : [...d.deleteWords],
     replyLimitPerMember: int(o['replyLimitPerMember'], 1, 120, d.replyLimitPerMember),
     replyLimitPerChat: int(o['replyLimitPerChat'], 1, 600, d.replyLimitPerChat),
     undoWindowSeconds: int(o['undoWindowSeconds'], 0, 86400, d.undoWindowSeconds),

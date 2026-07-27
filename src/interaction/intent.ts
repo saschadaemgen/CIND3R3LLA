@@ -25,6 +25,7 @@ export const INTENTS = [
   'HELP', // what can you do
   'UNDO', // revert the last action
   'PRICE', // what is an asset worth (CCB-S3-004)
+  'RESTORE', // bring hidden content back (CCB-S3-013)
   'UNKNOWN', // not understood
 ] as const;
 
@@ -41,6 +42,7 @@ export const CORE_INTENTS: readonly Intent[] = [
   'SEARCH',
   'HELP',
   'UNDO',
+  'RESTORE',
   'UNKNOWN',
 ];
 
