@@ -85,7 +85,7 @@ export interface AdminConfig {
    * Defaults to `publicOrigin`, so an instance that never sets it behaves exactly
    * as before.
    */
-  siteOrigin: string;
+  siteOrigin?: string;
   /** WebAuthn Relying Party ID — the console's registrable domain (A4.3). */
   rpId: string;
   /** WebAuthn expected origin (scheme + host), i.e. the public origin. */

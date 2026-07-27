@@ -103,7 +103,9 @@ export function registerSiteRoutes(
   // The MARKETING origin, not the console's (CCB-S4-001 infrastructure). These
   // are different hostnames now, and the console's must not move because passkeys
   // are bound to it. Feeds canonical, hreflang, the site sitemap, OG and JSON-LD.
-  const origin = ctx.adminCfg.siteOrigin.replace(/\/+$/, '');
+  // Falls back to the console origin when unset, so an instance that never
+  // configures a separate marketing domain behaves exactly as it always did.
+  const origin = (ctx.adminCfg.siteOrigin || ctx.adminCfg.publicOrigin).replace(/\/+$/, '');
 
   const renderPage = (reply: FastifyReply, locale: string, slug: string): string => {
     const page = slug ? (pageBySlug(slug) ?? HOME) : HOME;
