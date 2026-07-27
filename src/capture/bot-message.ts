@@ -168,7 +168,7 @@ export function withBotCapture(
       await withTransaction((tx) => recordBotReply(tx, sent, text, opts, placeholder(opts.lang)));
     } catch (err) {
       log.warn(
-        `Could not archive Cinderella's own message: ${
+        `Could not archive CIND3R3LLA's own message: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

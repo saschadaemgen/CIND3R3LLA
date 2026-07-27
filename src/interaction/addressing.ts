@@ -26,7 +26,7 @@
  * interjection in a busy group is not.
  */
 
-import type { InteractionSettings } from './settings.js';
+import { DEFAULT_INTERACTION, DEFAULT_WAKE_ALIASES, type InteractionSettings } from './settings.js';
 import { fold, levenshtein, maxDistanceFor, normTokens, tokenize, type Token } from './text.js';
 
 export type AddressKind = 'wake' | 'nickname' | 'none';
@@ -136,7 +136,17 @@ export function detectAddress(text: string, s: InteractionSettings): AddressResu
     .join(' ');
   const greeted = skip > 0 && greetingSets.includes(consumedText);
 
-  if (matchesWakeWord(head.norm, fold(s.wakeWord).trim())) {
+  // Her name, plus the alternate spellings of it (DEFAULT_WAKE_ALIASES) but ONLY
+  // while she still carries the shipped name. An operator who renamed her gets the
+  // rename: no stale spelling of a different bot's name keeps answering. Checked
+  // before nicknames, so an accepted spelling can never be taken for a diminutive
+  // and answered with a retort instead of the instruction it carried.
+  const wake = fold(s.wakeWord).trim();
+  const wakeForms =
+    s.wakeWord === DEFAULT_INTERACTION.wakeWord
+      ? [wake, ...DEFAULT_WAKE_ALIASES.map((a) => fold(a).trim())]
+      : [wake];
+  if (wakeForms.filter((w) => w).some((w) => matchesWakeWord(head.norm, w))) {
     // Strict mode (CCB-S3-005 §4): the name alone is not an address, a greeting
     // must precede it. Direct replies, the follow-up window and slash commands
     // bypass this entirely — they are handled by the caller, not here.

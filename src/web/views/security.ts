@@ -683,7 +683,7 @@ ${s.headers.csp}</textarea>
   app.post('/security/totp/enroll', async (req, reply) => {
     const secret = newTotpSecret();
     await setTotpSecret(db, secret);
-    const uri = totpKeyUri(secret, ctx.adminCfg.adminUsername, 'Cinderella');
+    const uri = totpKeyUri(secret, ctx.adminCfg.adminUsername, 'CIND3R3LLA');
     const dataUrl = await qrcode.toDataURL(uri, { margin: 1, width: 200 });
     await writeAudit(db, req.session?.username ?? 'unknown', 'security.totp_enroll', 'totp', null);
     return reply.redirect('/security?totp=' + encodeURIComponent(dataUrl));

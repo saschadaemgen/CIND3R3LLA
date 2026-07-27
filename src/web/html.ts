@@ -141,7 +141,7 @@ function containsActive(item: NavItem, active: string | undefined): boolean {
 
 const MEGA_SECTION_DESCRIPTIONS: Record<string, string> = {
   content: 'Manage captured messages, publication consent, and review queues.',
-  interaction: 'Control how Cinderella addresses people, responds, follows up, and archives.',
+  interaction: 'Control how CIND3R3LLA addresses people, responds, follows up, and archives.',
   ai: 'Configure models, profiles, runtime policy, knowledge, safety, and operational testing.',
   plugins: 'Review installed extensions and open each plugin control surface.',
   system: 'Manage core settings, security, embeds, and website delivery.',

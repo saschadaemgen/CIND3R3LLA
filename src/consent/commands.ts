@@ -65,7 +65,7 @@ const FAILURE_REPLY =
  * `_italic_`, `~strike~`, backtick code, `#secret#`. This message contains none,
  * so it is unaffected, but any copy added here must respect that.
  */
-export const WELCOME_MESSAGE = `I'm Cinderella, and yes, I run this place.
+export const WELCOME_MESSAGE = `I'm CIND3R3LLA, and yes, I run this place.
 
 Before you settle in, one thing you should know. By default, whatever you say here stays here, between us. I publish nothing of yours to the outside world unless you tell me to.
 
@@ -82,7 +82,7 @@ To see everything I can do, send /help
 
 No /publish, and you simply talk freely. Nothing leaves this room. Your choice, always, and yours to change whenever you like.
 
-Cinderella`;
+CIND3R3LLA`;
 
 /**
  * Sends a consent confirmation. These NEVER quote (CCB-S3-003): a `/publish` is

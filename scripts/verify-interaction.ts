@@ -550,7 +550,7 @@ async function main(): Promise<void> {
   const help = await say('Cinderella what can you do');
   check(
     'help names her and lists a capability',
-    help.replies[0]?.includes('Cinderella') === true && /publish/i.test(help.replies[0] ?? ''),
+    help.replies[0]?.includes('CIND3R3LLA') === true && /publish/i.test(help.replies[0] ?? ''),
   );
 
   coolDown();
@@ -716,6 +716,28 @@ async function main(): Promise<void> {
   check('the old name no longer addresses her', !oldName.handled && oldName.replies.length === 0);
   settings = normalizeInteraction({});
 
+  // Her name is stylised (CIND3R3LLA), and members type the plain spelling. Both
+  // must reach her, because addressing her IS the consent path: a member sending
+  // "Cinderella unpublish me" who is silently not heard has been denied the one
+  // route the privacy policy calls the fastest and most complete.
+  coolDown();
+  await clearConsent(ALICE);
+  const stylised = await say('CIND3R3LLA publish me');
+  check('her stylised name addresses her', stylised.handled);
+  coolDown();
+  await clearConsent(ALICE);
+  const plain = await say('Cinderella publish me');
+  check('the plain spelling addresses her just as well', plain.handled);
+  coolDown();
+  await clearConsent(ALICE);
+  // The suffix rule still applies to the alias, or "Cinderellas Archiv ist gut"
+  // would become an address and she would interrupt a conversation about her.
+  check(
+    'the alias does NOT loosen the possessive/compound rule',
+    detectAddress('Cinderellas Archiv ist gut', settings).kind === 'none' &&
+      detectAddress("Cinderella's archive is nice", settings).kind === 'none',
+  );
+
   settings = normalizeInteraction({ ...settings, naturalAddressing: false });
   coolDown();
   const naturalOff = await say('Cinderella publish me');
@@ -764,7 +786,7 @@ async function main(): Promise<void> {
   );
   check(
     'an empty wake word falls back to the default',
-    normalizeInteraction({ wakeWord: '   ' }).wakeWord === 'Cinderella',
+    normalizeInteraction({ wakeWord: '   ' }).wakeWord === 'CIND3R3LLA',
   );
   check(
     'an emptied retort list falls back to the shipped twelve',
@@ -837,8 +859,8 @@ async function main(): Promise<void> {
   );
   check(
     'the first retort uses single-asterisk bold in both languages',
-    shipped.retorts['en']?.[0]?.includes('*Cinderella*') === true &&
-      shipped.retorts['de']?.[0]?.includes('*Cinderella*') === true,
+    shipped.retorts['en']?.[0]?.includes('*CIND3R3LLA*') === true &&
+      shipped.retorts['de']?.[0]?.includes('*CIND3R3LLA*') === true,
   );
 
   // Presentation defaults.
@@ -1618,7 +1640,7 @@ async function main(): Promise<void> {
   });
   coolDown();
   const customHelp = (await say('Cinderella help')).replies[0] ?? '';
-  check('editing the help template changes the reply', /CUSTOM HEADER for Cinderella\./.test(customHelp));
+  check('editing the help template changes the reply', /CUSTOM HEADER for CIND3R3LLA\./.test(customHelp));
   check('the generated command list still fills the {commands} slot', /\*publish\*/i.test(customHelp));
   check('the publishing properties still fill the {consent} slot', /forward only/i.test(customHelp));
 
@@ -1628,7 +1650,7 @@ async function main(): Promise<void> {
   const blankHelp = (await say('Cinderella help')).replies[0] ?? '';
   check(
     'blanking the help field restores the default',
-    /I am \*Cinderella\*/.test(blankHelp) && /What you can ask me/i.test(blankHelp),
+    /I am \*CIND3R3LLA\*/.test(blankHelp) && /What you can ask me/i.test(blankHelp),
   );
 
   // A pre-CCB-S3-021 stored one-liner (no {commands}/{consent}) must not render a
@@ -1652,8 +1674,8 @@ async function main(): Promise<void> {
   /* -- 21. CCB-S3-005 Addendum A -- a matched keyword set decides the language -- */
   section('21. CCB-S3-005 Addendum A -- short instructions answered in the language written');
   settings = normalizeInteraction({});
-  const isGerman = (r: string): boolean => /Ich bin \*Cinderella\*/.test(r);
-  const isEnglish = (r: string): boolean => /I am \*Cinderella\*/.test(r);
+  const isGerman = (r: string): boolean => /Ich bin \*CIND3R3LLA\*/.test(r);
+  const isEnglish = (r: string): boolean => /I am \*CIND3R3LLA\*/.test(r);
 
   coolDown();
   const helpDe = (await say('Cinderella Hilfe')).replies[0] ?? '';

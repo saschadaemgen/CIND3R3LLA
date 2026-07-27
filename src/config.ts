@@ -218,7 +218,7 @@ export function loadConfig(): Config {
 
   const filesFolder = resolve(optional('SIMPLEX_FILES_FOLDER', './state/files'));
   const cfg: Config = {
-    botDisplayName: optional('BOT_DISPLAY_NAME', 'Cinderella'),
+    botDisplayName: optional('BOT_DISPLAY_NAME', 'CIND3R3LLA'),
     simplexDbPrefix: resolve(optional('SIMPLEX_DB_PREFIX', './state/simplex/cinderella')),
     simplexFilesFolder: filesFolder,
     groupName: optional('GROUP_NAME', ''),
@@ -369,7 +369,7 @@ export function loadAdminConfig(): AdminConfig {
     siteOrigin: normalizeSiteOrigin(optional('SITE_ORIGIN', publicOrigin)),
     rpId: finalRpId,
     webauthnOrigin: finalOrigin,
-    rpName: optional('WEBAUTHN_RP_NAME', 'Cinderella Admin'),
+    rpName: optional('WEBAUTHN_RP_NAME', 'CIND3R3LLA Admin'),
   };
   cachedAdmin = cfg;
   return cfg;

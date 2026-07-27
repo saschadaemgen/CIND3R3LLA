@@ -591,7 +591,7 @@ async function main(): Promise<void> {
   );
   check(
     'addressing holds ONLY its own settings',
-    iaPage.body.includes('value="Cinderella"') &&
+    iaPage.body.includes('value="CIND3R3LLA"') &&
       iaPage.body.includes('name="wakeWord"') &&
       !iaPage.body.includes('name="followUpSeconds"') &&
       !iaPage.body.includes('name="confidenceThreshold"'),
@@ -846,7 +846,7 @@ async function main(): Promise<void> {
     String(resetRes.headers['location'] ?? '').includes('/interaction/diagnostics?saved=1'),
   );
   const iaReset = await getPage('/interaction/addressing');
-  check('reset restores the shipped wake word', iaReset.body.includes('value="Cinderella"'));
+  check('reset restores the shipped wake word', iaReset.body.includes('value="CIND3R3LLA"'));
   check(
     'interaction edits are audited',
     ((

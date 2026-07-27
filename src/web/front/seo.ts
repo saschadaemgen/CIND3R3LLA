@@ -337,7 +337,7 @@ export function buildJsonLd(c: SeoContext, title: string, description: string): 
     const org: Record<string, unknown> = {
       '@type': 'Organization',
       '@id': `${c.origin}/#org`,
-      name: c.seo.org.name || 'Cinderella',
+      name: c.seo.org.name || 'CIND3R3LLA',
       url: c.seo.org.url || c.origin,
     };
     if (c.seo.org.logoUrl) org['logo'] = c.seo.org.logoUrl;
@@ -532,7 +532,7 @@ export function buildOgSvg(title: string, siteName: string, accent: string): str
     `<rect width="1200" height="10" fill="${xml(accent)}"/>` +
     `<text x="80" y="300" font-family="Segoe UI, Roboto, sans-serif" font-size="64" font-weight="700" fill="#f8fafc">${xml(t)}</text>` +
     `<text x="80" y="380" font-family="Segoe UI, Roboto, sans-serif" font-size="32" fill="#94a3b8">${xml(siteName)}</text>` +
-    `<text x="80" y="560" font-family="Segoe UI, Roboto, sans-serif" font-size="26" fill="${xml(accent)}">Published with consent · Cinderella</text>` +
+    `<text x="80" y="560" font-family="Segoe UI, Roboto, sans-serif" font-size="26" fill="${xml(accent)}">Published with consent · CIND3R3LLA</text>` +
     `</svg>`
   );
 }

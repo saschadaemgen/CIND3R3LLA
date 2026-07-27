@@ -296,6 +296,40 @@ knows nothing about the second origin, the allowlist or the splitter. The topolo
 was read off the running server and is recorded here because that was the only place it
 existed. Committing a sanitised copy is open work.
 
+### D-081 — Her name is CIND3R3LLA, and the plain spelling still addresses her
+
+**Status: IMPLEMENTED** (operator decision, CCB-S3-029 follow-up)
+
+The product is called **CIND3R3LLA**, and the name is now stylised everywhere it is
+displayed: the marketing site (880 strings across 40 locales, including `brand.name`,
+which feeds the wordmark and the JSON-LD Organization/WebSite/SoftwareApplication
+names), the public archive, the admin console, her own persona copy and the welcome
+and help text. `BOT_DISPLAY_NAME` and the WebAuthn RP **name** follow; the WebAuthn RP
+**ID** does not, because that binds existing passkeys and is derived from the hostname.
+
+**The wake word follows too, and that is the part that needed care.** Addressing her
+IS the consent path: `/unpublish` and "CIND3R3LLA, stop publishing me" are the route
+the privacy policy calls the fastest and most complete way a member can exercise their
+rights (D-080). A member who typed the plain spelling and was silently not heard would
+have been denied that route with no error and no reply.
+
+So `DEFAULT_WAKE_ALIASES` declares the plain spelling as an accepted form of address.
+Three properties of that decision are deliberate:
+
+- **Declared, not inherited from fuzziness.** `matchesWakeWord` forgives an edit
+  distance of two, and `cinderella` happens to sit exactly two substitutions from
+  `cind3r3lla`. That is luck. The consent path does not rest on luck.
+- **A constant, not a setting.** It is not in `InteractionSettings` and has no admin
+  field. A settings field could not keep its promise: the admin form round-trips the
+  whole object, so renaming her would carry the old alias along and a rename would
+  never fully take effect. As a constant gated on `wakeWord === DEFAULT_INTERACTION.
+  wakeWord`, an operator who renames her gets the rename, cleanly.
+- **Checked before nicknames**, so an accepted spelling can never be taken for a
+  diminutive and answered with a retort instead of the instruction it carried.
+
+The suffix rule is untouched: `Cinderellas Archiv ist gut` is still not an address, for
+the alias exactly as for the name. `verify:interaction` pins all four properties.
+
 ### D-080 — `SITE_ORIGIN` is split from `PUBLIC_ORIGIN` because passkeys are bound to the console origin
 
 **Status: IMPLEMENTED** (CCB-S4-001)

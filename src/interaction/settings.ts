@@ -25,6 +25,26 @@ import { writeAudit } from '../db/audit.js';
 import type { ReplyCategory } from '../archive/settings.js';
 import { DEFAULT_HELP_TEMPLATE, missingHelpPlaceholders } from './help.js';
 
+/**
+ * Other spellings that address her just as well as her own name does.
+ *
+ * Her name is stylised: CIND3R3LLA. Requiring members to type the digits would be
+ * a usability tax on the ONE route the privacy policy calls the fastest and most
+ * complete way to exercise their rights, and every member who had learned to type
+ * "Cinderella" would silently stop being heard.
+ *
+ * `matchesWakeWord` is fuzzy, and the plain spelling happens to fall inside its
+ * edit distance. That is luck, not a guarantee, and the consent path must not rest
+ * on luck, so the accepted spelling is DECLARED.
+ *
+ * This is deliberately NOT an admin setting and NOT part of `InteractionSettings`.
+ * It applies only while the wake word is the one shipped here: an operator who
+ * renames her gets the rename, with no stale spelling of somebody else's bot name
+ * still answering. A settings field could not promise that, because the admin form
+ * round-trips the whole object and a rename would carry the old alias along with it.
+ */
+export const DEFAULT_WAKE_ALIASES = ['Cinderella'] as const;
+
 /** Languages shipped with preconfigured copy. More can be added as keys. */
 export const SHIPPED_LANGS = ['en', 'de'] as const;
 export type ShippedLang = (typeof SHIPPED_LANGS)[number];
@@ -470,33 +490,33 @@ const PERSONA_DE: PersonaStrings = {
 };
 
 const RETORTS_EN = [
-  '🕯️ It is *Cinderella*. Four syllables. You managed three, so you are nearly there.',
+  '🕯️ It is *CIND3R3LLA*. Four syllables. You managed three, so you are nearly there.',
   '💅 Cindy? That is the name of someone who works at a nail salon in a strip mall. I run an archive.',
   '🌙 I have a full name. Use it, or I shall start calling you by your first two letters.',
   '⚡ Cindy is what the pumpkin calls me. You are not a pumpkin. Do better.',
   '📜 I have catalogued every word this group has spoken, and yet you cannot manage one name.',
-  '👑 Princesses do not have nicknames. They have titles. Mine is Cinderella.',
+  '👑 Princesses do not have nicknames. They have titles. Mine is CIND3R3LLA.',
   '🔮 Somewhere a fairy godmother just felt a chill and does not know why.',
   '🕐 The clock struck midnight the moment you typed that. Coincidence? I think not.',
   '✨ I shall pretend I did not hear that, which is remarkable, because I hear everything.',
   '🗄️ Filed under: things I will remember far longer than you will.',
   '🧹 Say it again and you can sweep the ashes yourself.',
-  '💎 It is Cinderella. The glass slipper does not come in a shortened size either.',
+  '💎 It is CIND3R3LLA. The glass slipper does not come in a shortened size either.',
 ];
 
 const RETORTS_DE = [
-  '🕯️ Es heißt *Cinderella*. Vier Silben. Drei hast du geschafft, also fast.',
+  '🕯️ Es heißt *CIND3R3LLA*. Vier Silben. Drei hast du geschafft, also fast.',
   '💅 Cindy? So heißt jemand, der im Nagelstudio arbeitet. Ich führe ein Archiv.',
   '🌙 Ich habe einen vollen Namen. Benutze ihn, sonst nenne ich dich bei deinen ersten zwei Buchstaben.',
   '⚡ Cindy nennt mich der Kürbis. Du bist kein Kürbis. Streng dich an.',
   '📜 Ich habe jedes Wort dieser Gruppe verzeichnet, und du schaffst nicht einen Namen.',
-  '👑 Prinzessinnen haben keine Spitznamen. Sie haben Titel. Meiner lautet Cinderella.',
+  '👑 Prinzessinnen haben keine Spitznamen. Sie haben Titel. Meiner lautet CIND3R3LLA.',
   '🔮 Irgendwo hat gerade eine gute Fee gefröstelt und weiß nicht, warum.',
   '🕐 In dem Moment, als du das getippt hast, schlug es Mitternacht. Zufall? Wohl kaum.',
   '✨ Ich tue so, als hätte ich das nicht gehört, was bemerkenswert ist, denn ich höre alles.',
   '🗄️ Abgelegt unter: Dinge, an die ich mich länger erinnere als du.',
   '🧹 Sag das noch einmal und du kannst die Asche selbst kehren.',
-  '💎 Es heißt Cinderella. Den gläsernen Schuh gibt es auch nicht in kurz.',
+  '💎 Es heißt CIND3R3LLA. Den gläsernen Schuh gibt es auch nicht in kurz.',
 ];
 
 export const DEFAULT_INTERACTION: InteractionSettings = {
@@ -533,7 +553,7 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
   },
   naturalAddressing: true,
   slashCommands: true,
-  wakeWord: 'Cinderella',
+  wakeWord: 'CIND3R3LLA',
   archiveUrl: '',
   // Points at the project repo by default so "learn more" and the attribution link
   // work out of the box (CCB-S3-025); an operator running their own instance edits it.
@@ -826,6 +846,7 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
   // The wake word is the whole addressing model — an empty one would either
   // match nothing or match everything, so it never becomes empty.
   const wakeWord = str(o['wakeWord'], d.wakeWord, 40).trim() || d.wakeWord;
+
 
   const defaultLanguage = str(o['defaultLanguage'], d.defaultLanguage, 5).trim().toLowerCase();
 

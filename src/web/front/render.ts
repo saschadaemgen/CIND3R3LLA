@@ -538,7 +538,7 @@ export function renderCards(items: PublicItem[], basePath: string, opts: CardOpt
       html`<li class="item${it.isBot ? ' from-bot' : ''}" id="msg-${it.id}" data-cursor="${it.cursor}">
         <div class="meta">
           ${whoBlock(it, opts.attribution)}
-          ${it.isBot ? html`<span class="badge-bot" title="Written by Cinderella">✦</span>` : html``}
+          ${it.isBot ? html`<span class="badge-bot" title="Written by CIND3R3LLA">✦</span>` : html``}
           ${
             it.replyToId !== null
               ? html`<a class="reply-to" href="#msg-${it.replyToId}" title="In reply to"
@@ -852,7 +852,7 @@ export function renderEmbedPage(ctx: RenderContext): string {
           <footer class="arch">
             Published with consent · powered by
             <a href="https://github.com/saschadaemgen/cinderella" target="_blank" rel="noopener"
-              >Cinderella</a
+              >CIND3R3LLA</a
             >
           </footer>
         </div>
@@ -931,7 +931,7 @@ export function renderItemPage(ctx: ItemPageContext): string {
           <footer class="arch">
             Published with consent · powered by
             <a href="https://github.com/saschadaemgen/cinderella" target="_blank" rel="noopener"
-              >Cinderella</a
+              >CIND3R3LLA</a
             >
           </footer>
         </div>

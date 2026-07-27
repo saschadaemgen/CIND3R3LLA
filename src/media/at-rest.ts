@@ -137,7 +137,7 @@ export function decryptBytes(stored: Buffer): Buffer {
       'An encrypted media file was read but MEDIA_SECRET is unset. The file cannot be decrypted.',
     );
   }
-  if (!looksEncrypted(stored)) throw new Error('not a Cinderella media envelope');
+  if (!looksEncrypted(stored)) throw new Error('not a CIND3R3LLA media envelope');
   const iv = stored.subarray(MAGIC.length, MAGIC.length + IV_LEN);
   const tag = stored.subarray(MAGIC.length + IV_LEN, HEADER_LEN);
   const decipher = createDecipheriv(ALGO, k, iv);

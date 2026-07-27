@@ -134,7 +134,7 @@ export async function httpJson(
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs);
   try {
     const res = await (opts.fetchImpl ?? fetch)(url, {
-      headers: { accept: 'application/json', 'user-agent': 'Cinderella/1.0', ...opts.headers },
+      headers: { accept: 'application/json', 'user-agent': 'CIND3R3LLA/1.0', ...opts.headers },
       signal: controller.signal,
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

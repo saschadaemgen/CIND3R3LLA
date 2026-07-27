@@ -156,14 +156,14 @@ export const DEFAULT_EMBED_SETTINGS: EmbedSettings = {
     robots: 'index, follow',
     canonicalBase: '',
     og: {
-      siteName: 'Cinderella Archive',
+      siteName: 'CIND3R3LLA Archive',
       locale: 'en_US',
       type: 'website',
       imageUrl: '',
       autoImage: false,
       twitterSite: '',
     },
-    org: { name: 'Cinderella', url: '', logoUrl: '', sameAs: '' },
+    org: { name: 'CIND3R3LLA', url: '', logoUrl: '', sameAs: '' },
     jsonld: {
       website: true,
       organization: true,

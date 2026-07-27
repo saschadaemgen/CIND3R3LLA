@@ -203,6 +203,6 @@ export function parseSentGroupItem(item: RawItem): SentGroupItem | null {
     sharedMsgId: chatItem.meta.itemSharedMsgId ?? null,
     sentAt: chatItem.meta.itemTs,
     memberId: me.memberId,
-    displayName: me.memberProfile?.displayName || me.localDisplayName || 'Cinderella',
+    displayName: me.memberProfile?.displayName || me.localDisplayName || 'CIND3R3LLA',
   };
 }

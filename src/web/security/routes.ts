@@ -68,7 +68,7 @@ function loginPage(ctx: AdminContext, csrfToken: string, error?: string): string
   const body: SafeHtml = html`
     <div class="mx-auto mt-12 w-full max-w-sm sm:mt-24">
       <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <h1 class="mb-1 text-xl font-semibold tracking-tight">🕯️ Cinderella</h1>
+        <h1 class="mb-1 text-xl font-semibold tracking-tight">🕯️ CIND3R3LLA</h1>
         <p class="mb-6 text-sm text-slate-500">Operator console — sign in</p>
         ${
           error

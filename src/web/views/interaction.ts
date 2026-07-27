@@ -271,7 +271,7 @@ const REPLY_MODE_LABELS: Record<ReplyMode, string> = {
 
 const ADDRESSING_MODE_LABELS: Record<string, string> = {
   relaxed: 'Relaxed — a message starting with her name counts as an address',
-  strict: 'Strict — a greeting must come first (Hey Cinderella ...)',
+  strict: 'Strict — a greeting must come first (Hey CIND3R3LLA ...)',
 };
 
 const REPLY_LANGUAGE_MODE_LABELS: Record<string, string> = {
@@ -392,7 +392,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${labelled('Addressing mode', selectField('addressingMode', s.addressing.mode, ADDRESSING_MODES.map((m) => [m, ADDRESSING_MODE_LABELS[m] ?? m] as [string, string])), 'Strict mode still allows direct replies, the follow-up window and slash commands.')}
                   ${checkbox('ignoreForwarded', 'Ignore forwarded messages', s.addressing.ignoreForwarded)}
                   ${checkbox('silenceOnUnknown', 'Stay silent on a weak, not-understood signal', s.addressing.silenceOnUnknown)}
-                  ${checkbox('strongSignalGreeting', 'A greeting is a strong signal (Hey Cinderella ...)', s.addressing.strongSignalGreeting)}
+                  ${checkbox('strongSignalGreeting', 'A greeting is a strong signal (Hey CIND3R3LLA ...)', s.addressing.strongSignalGreeting)}
                   ${checkbox('strongSignalReply', 'A direct reply is a strong signal', s.addressing.strongSignalReply)}
                   ${checkbox('strongSignalWindow', 'Being mid-conversation is a strong signal', s.addressing.strongSignalWindow)}
                   ${labelled('Confidence threshold', numberField('confidenceThreshold', s.confidenceThreshold, 0, 1, '0.05'), 'Below this she asks instead of acting. Higher is more cautious.')}
@@ -622,7 +622,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           )}
           ${card(
             'Reset',
-            html`<p class="mb-3 text-sm text-slate-500">Restores every interaction setting to the values Cinderella ships with. Consent data is untouched.</p>
+            html`<p class="mb-3 text-sm text-slate-500">Restores every interaction setting to the values CIND3R3LLA ships with. Consent data is untouched.</p>
               ${form('reset', html`<button type="submit" class="self-start rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-700 hover:bg-red-100">Restore defaults</button>`)}`,
           )}`;
         },

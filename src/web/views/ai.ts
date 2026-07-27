@@ -661,7 +661,7 @@ function privateDataPath(): SafeHtml {
       <div class="rounded-lg border border-slate-200 p-3">
         <strong class="block text-slate-900">1. SimpleX input</strong>
         <span class="text-slate-600"
-          >Message enters Cinderella through the existing private bot path.</span
+          >Message enters CIND3R3LLA through the existing private bot path.</span
         >
       </div>
       <div class="rounded-lg border border-slate-200 p-3">
@@ -677,7 +677,7 @@ function privateDataPath(): SafeHtml {
       <div class="rounded-lg border border-slate-200 p-3">
         <strong class="block text-slate-900">4. Guarded result</strong>
         <span class="text-slate-600"
-          >Structured output is checked before Cinderella accepts it.</span
+          >Structured output is checked before CIND3R3LLA accepts it.</span
         >
       </div>
       <div class="rounded-lg border border-slate-200 p-3">
@@ -1773,7 +1773,7 @@ function knowledgeBody(snapshot: AiRuntimeSnapshot): SafeHtml {
       html`<ul class="space-y-2 text-sm text-slate-700">
         <li>More than 50 SimpleX analysis and reverse-engineering protocols.</li>
         <li>Approved session and workflow documentation.</li>
-        <li>Cinderella behavior, personality, and response policy documents.</li>
+        <li>CIND3R3LLA behavior, personality, and response policy documents.</li>
         <li>Project architecture, security boundaries, and operational procedures.</li>
         <li>Explicit source permissions before any document enters the index.</li>
         <li>Local retrieval by default with visible source attribution.</li>
@@ -1846,7 +1846,7 @@ function auditBody(): SafeHtml {
       ${card(
         'Audit design boundary',
         html`<p class="text-sm text-slate-700">
-          Operator changes are already written to the central Cinderella audit log. This page shows
+          Operator changes are already written to the central CIND3R3LLA audit log. This page shows
           the covered action types without duplicating sensitive data. A filtered AI audit table
           with search, time range, actor, and action filters will be added as its own controlled
           phase.

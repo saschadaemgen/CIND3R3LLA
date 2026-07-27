@@ -177,7 +177,7 @@ const CONSENT_BLOCK: Record<HelpLang, string> = {
  * heading, none per command line; no em-dashes; single-delimiter markup only.
  */
 export const DEFAULT_HELP_TEMPLATE: Record<HelpLang, string> = {
-  en: `🕯️ I am *Cinderella*{label}. This is a public group, and I keep a public web archive of what its members choose to publish.
+  en: `🕯️ I am *CIND3R3LLA*{label}. This is a public group, and I keep a public web archive of what its members choose to publish.
 
 💬 *Talking to me*
 Say my name: "*{wake}*, ...". A greeting is optional, and once we are talking you can follow up for a moment without repeating my name. Slash commands like */publish* work as shorthand.
@@ -187,7 +187,7 @@ Say my name: "*{wake}*, ...". A greeting is optional, and once we are talking yo
 
 ✨ *What you can ask me*
 {commands}`,
-  de: `🕯️ Ich bin *Cinderella*{label}. Dies ist eine öffentliche Gruppe, und ich führe ein öffentliches Web-Archiv dessen, was ihre Mitglieder veröffentlichen möchten.
+  de: `🕯️ Ich bin *CIND3R3LLA*{label}. Dies ist eine öffentliche Gruppe, und ich führe ein öffentliches Web-Archiv dessen, was ihre Mitglieder veröffentlichen möchten.
 
 💬 *So sprichst du mit mir*
 Sprich mich beim Namen an: "*{wake}*, ...". Eine Begrüßung ist freiwillig, und wenn wir einmal im Gespräch sind, kannst du kurz nachfassen, ohne meinen Namen zu wiederholen. Slash-Befehle wie */publish* gehen als Kurzform.

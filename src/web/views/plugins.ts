@@ -97,7 +97,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
         <p class="font-semibold">A disabled plugin is not merely idle.</p>
         <p class="mt-1">
           Switching a plugin off removes the intents it contributes from the catalog entirely.
-          Cinderella stops understanding those questions rather than understanding them and
+          CIND3R3LLA stops understanding those questions rather than understanding them and
           declining, so nothing half-wired can run behind a switch that is off.
         </p>
       </div>
@@ -227,7 +227,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
             </p>
             <p class="mt-1">
               <strong>CoinGecko</strong> requires the credit "Powered by CoinGecko" wherever its
-              data is shown; Cinderella appends it to replies it served. Its terms also require
+              data is shown; CIND3R3LLA appends it to replies it served. Its terms also require
               cached data to be refreshed at least daily, which the cache enforces.
               <strong>CoinMarketCap</strong> requires "Data provided by CoinMarketCap.com", and its
               free tier is licensed for personal use — showing its data to a group may need a paid

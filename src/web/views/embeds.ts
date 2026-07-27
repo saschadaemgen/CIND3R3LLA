@@ -342,7 +342,7 @@ export function registerEmbeds(app: FastifyInstance, ctx: ViewContext): void {
             'Bot attribution',
             html`<div class="flex flex-col gap-3 sm:max-w-2xl">
               <p class="text-xs text-slate-500">
-                On Cinderella's own messages in the archive, show what she is. Her name and this label
+                On CIND3R3LLA's own messages in the archive, show what she is. Her name and this label
                 together link to the URL below, opening in a new tab. Blank the label to show nothing;
                 blank the URL to show the label without a link. If you run your own instance, point this
                 at your own project rather than ours.

@@ -424,7 +424,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
     log.error(`Deferred-destruction sweeper failed to start: ${message}`);
   }
 
-  log.info('Cinderella is capturing to PostgreSQL (consent-gated). Press Ctrl+C to stop.');
+  log.info('CIND3R3LLA is capturing to PostgreSQL (consent-gated). Press Ctrl+C to stop.');
 
   await new Promise<void>((resolve) => {
     let shuttingDown = false;
@@ -449,7 +449,7 @@ async function main(): Promise<void> {
   const cfg = loadConfig();
   const localAi = loadLocalAiConfig();
   setLogLevel(cfg.logLevel);
-  log.info('Cinderella booting…');
+  log.info('CIND3R3LLA booting…');
 
   if (process.argv.includes('--check')) {
     runConfigCheck(cfg, localAi);
