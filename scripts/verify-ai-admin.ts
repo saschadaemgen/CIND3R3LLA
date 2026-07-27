@@ -342,6 +342,41 @@ async function main(): Promise<void> {
       routingPage.body.includes('installed Ollama catalog'),
   );
 
+  const hardwarePage = await app.inject({ method: 'GET', url: '/ai/hardware', headers: authed });
+  check('AI Hardware page renders', hardwarePage.statusCode === 200);
+  check(
+    'AI Hardware page exposes real catalog and runtime status',
+    hardwarePage.body.includes('data-hardware-catalog-state') &&
+      hardwarePage.body.includes('Catalog state') &&
+      hardwarePage.body.includes('Runtime mode') &&
+      hardwarePage.body.includes('Provider boundary'),
+  );
+  check(
+    'AI Hardware page exposes active model lanes and inventory',
+    hardwarePage.body.includes('data-hardware-lane="intent"') &&
+      hardwarePage.body.includes('data-hardware-lane="reply"') &&
+      hardwarePage.body.includes('Model hardware metadata') &&
+      hardwarePage.body.includes('href="/ai/routing"') &&
+      hardwarePage.body.includes('href="/ai/models"'),
+  );
+  check(
+    'AI Hardware page exposes honest telemetry boundaries',
+    hardwarePage.body.includes('data-hardware-telemetry-state') &&
+      hardwarePage.body.includes('GPU telemetry') &&
+      hardwarePage.body.includes('VRAM allocation') &&
+      hardwarePage.body.includes('Inference queue depth') &&
+      hardwarePage.body.includes('not integrated'),
+  );
+  check(
+    'AI Hardware page connects refresh and technical boundaries',
+    hardwarePage.body.includes('action="/ai/models/refresh"') &&
+      hardwarePage.body.includes('Hardware observability without invented values') &&
+      hardwarePage.body.includes('Catalog persistence') &&
+      hardwarePage.body.includes('process memory') &&
+      hardwarePage.body.includes('Cloud telemetry') &&
+      hardwarePage.body.includes('disabled'),
+  );
+
   const routeModels = await app.inject({
     method: 'POST',
     url: '/ai/routing',

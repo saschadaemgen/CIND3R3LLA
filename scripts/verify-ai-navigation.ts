@@ -214,6 +214,16 @@ async function main(): Promise<void> {
       routing.body.includes('name="replyModel"'),
   );
 
+  const hardware = await app.inject({ method: 'GET', url: '/ai/hardware', headers });
+  check(
+    'hardware page keeps honest visibility controls',
+    hardware.body.includes('action="/ai/models/refresh"') &&
+      hardware.body.includes('data-hardware-catalog-state') &&
+      hardware.body.includes('data-hardware-telemetry-state') &&
+      hardware.body.includes('Model hardware metadata') &&
+      hardware.body.includes('not integrated'),
+  );
+
   const telemetry = await app.inject({ method: 'GET', url: '/ai/telemetry', headers });
   check(
     'telemetry page keeps reset control',

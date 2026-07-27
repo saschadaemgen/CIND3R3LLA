@@ -1294,53 +1294,276 @@ function routingBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQue
   </section>`;
 }
 
-function hardwareBody(snapshot: AiRuntimeSnapshot): SafeHtml {
-  return html`
-    ${card(
-      'Current hardware visibility',
-      definitionList([
-        ['Installed models', String(snapshot.catalog.models.length)],
-        ['Configured model', snapshot.routing.defaultModel || 'Not configured'],
-        ['Model family', snapshot.catalog.models[0]?.family ?? 'Not recorded'],
-        ['Parameter size', snapshot.catalog.models[0]?.parameterSize ?? 'Not recorded'],
-        ['Quantization', snapshot.catalog.models[0]?.quantizationLevel ?? 'Not recorded'],
-        ['Model file size', displayBytes(snapshot.catalog.models[0]?.sizeBytes ?? null)],
-        ['Runtime residency', 'Not integrated yet'],
-        ['GPU utilization', 'Not integrated yet'],
-      ]),
-    )}
-    <div class="mt-4">
-      ${card(
-        'Hardware control roadmap',
-        html`<div class="grid gap-3 text-sm md:grid-cols-2 xl:grid-cols-4">
-          <div class="rounded-lg border border-slate-200 p-3">
-            <strong class="block text-slate-900">Runtime residency</strong>
-            <span class="text-slate-600"
-              >Loaded model, VRAM residency, allocated context, and unload time.</span
-            >
-          </div>
-          <div class="rounded-lg border border-slate-200 p-3">
-            <strong class="block text-slate-900">GPU telemetry</strong>
-            <span class="text-slate-600"
-              >Utilization, temperature, memory pressure, and inference load.</span
-            >
-          </div>
-          <div class="rounded-lg border border-slate-200 p-3">
-            <strong class="block text-slate-900">Safe model lifecycle</strong>
-            <span class="text-slate-600"
-              >Explicit load, unload, warm state, and confirmation protected changes.</span
-            >
-          </div>
-          <div class="rounded-lg border border-slate-200 p-3">
-            <strong class="block text-slate-900">Queue visibility</strong>
-            <span class="text-slate-600"
-              >Active requests, waiting jobs, context pressure, and model availability.</span
-            >
-          </div>
-        </div>`,
-      )}
+function hardwareBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuery): SafeHtml {
+  const intentModel = snapshot.catalog.models.find(
+    (model) => model.name === snapshot.routing.intentModel,
+  );
+  const replyModel = snapshot.catalog.models.find(
+    (model) => model.name === snapshot.routing.replyModel,
+  );
+  const catalogState =
+    snapshot.catalog.ok === true
+      ? 'healthy'
+      : snapshot.catalog.ok === false
+        ? 'failed'
+        : 'not loaded';
+
+  return html`<section class="ai-hardware-page">
+    <header class="setup-page-header">
+      <div>
+        <span class="setup-eyebrow">AI Control</span>
+        <h1>AI Hardware</h1>
+        <p>
+          Inspect the hardware facts currently available through Ollama and keep every missing
+          telemetry source clearly marked as not integrated.
+        </p>
+      </div>
+
+      <form method="post" action="/ai/models/refresh">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <button type="submit" class="setup-button setup-button-primary setup-create-button">
+          Refresh hardware facts
+        </button>
+      </form>
+    </header>
+
+    ${notice(query)}
+
+    <div class="ai-hardware-status-grid">
+      <article class="ai-hardware-status" data-hardware-catalog-state>
+        <span>Catalog state</span>
+        <strong>${catalogState}</strong>
+        <small>${snapshot.catalog.models.length} installed models visible</small>
+      </article>
+      <article class="ai-hardware-status">
+        <span>Runtime mode</span>
+        <strong>${snapshot.enabled ? 'Local AI' : 'Deterministic rules'}</strong>
+        <small>${snapshot.activeResolver}</small>
+      </article>
+      <article class="ai-hardware-status">
+        <span>Provider boundary</span>
+        <strong>Ollama</strong>
+        <small>${endpointScope(snapshot.baseUrl)}</small>
+      </article>
+      <article class="ai-hardware-status" data-hardware-telemetry-state>
+        <span>GPU telemetry</span>
+        <strong>not integrated</strong>
+        <small>No utilization, temperature, or VRAM values are claimed</small>
+      </article>
     </div>
-  `;
+
+    <div class="ai-hardware-main-grid">
+      <section class="ai-hardware-panel">
+        <header class="ai-hardware-panel-header">
+          <div>
+            <span class="setup-eyebrow">Active lanes</span>
+            <h2>Selected model footprint</h2>
+          </div>
+          <a href="/ai/routing" class="setup-button setup-button-secondary">Open routing</a>
+        </header>
+
+        <div class="ai-hardware-lane-list">
+          <article data-hardware-lane="intent">
+            <div class="ai-hardware-lane-icon">I</div>
+            <div>
+              <span>Intent classification</span>
+              <strong>${snapshot.routing.intentModel}</strong>
+              <small>
+                ${intentModel?.parameterSize ?? 'Unknown parameters'} ·
+                ${intentModel?.quantizationLevel ?? 'Unknown quantization'} ·
+                ${displayBytes(intentModel?.sizeBytes ?? null)}
+              </small>
+            </div>
+          </article>
+
+          <article data-hardware-lane="reply">
+            <div class="ai-hardware-lane-icon">R</div>
+            <div>
+              <span>Reply wording</span>
+              <strong>${snapshot.routing.replyModel}</strong>
+              <small>
+                ${replyModel?.parameterSize ?? 'Unknown parameters'} ·
+                ${replyModel?.quantizationLevel ?? 'Unknown quantization'} ·
+                ${displayBytes(replyModel?.sizeBytes ?? null)}
+              </small>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="ai-hardware-panel">
+        <header class="ai-hardware-panel-header">
+          <div>
+            <span class="setup-eyebrow">Visibility boundary</span>
+            <h2>What the runtime can actually report</h2>
+          </div>
+        </header>
+
+        <dl class="ai-hardware-visibility-list">
+          <div>
+            <dt>Installed model inventory</dt>
+            <dd>available</dd>
+          </div>
+          <div>
+            <dt>Model family and parameters</dt>
+            <dd>available when Ollama reports them</dd>
+          </div>
+          <div>
+            <dt>Model file size</dt>
+            <dd>available when Ollama reports it</dd>
+          </div>
+          <div>
+            <dt>Runtime residency</dt>
+            <dd>not integrated</dd>
+          </div>
+          <div>
+            <dt>GPU utilization</dt>
+            <dd>not integrated</dd>
+          </div>
+          <div>
+            <dt>VRAM allocation</dt>
+            <dd>not integrated</dd>
+          </div>
+          <div>
+            <dt>GPU temperature</dt>
+            <dd>not integrated</dd>
+          </div>
+          <div>
+            <dt>Inference queue depth</dt>
+            <dd>not integrated</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <section class="ai-hardware-inventory">
+      <header class="runtime-control-section-header">
+        <div>
+          <span class="setup-eyebrow">Installed inventory</span>
+          <h2>Model hardware metadata</h2>
+          <p>
+            Every row comes from the current Ollama catalog snapshot. No synthetic GPU values are
+            added.
+          </p>
+        </div>
+        <a href="/ai/models" class="setup-button setup-button-quiet">Open AI Models</a>
+      </header>
+
+      ${
+        snapshot.catalog.models.length > 0
+          ? html`<div class="ai-hardware-table-wrap">
+              <table class="ai-hardware-table">
+                <thead>
+                  <tr>
+                    <th>Model</th>
+                    <th>Role</th>
+                    <th>Family</th>
+                    <th>Parameters</th>
+                    <th>Quantization</th>
+                    <th>File size</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${snapshot.catalog.models.map((model) => {
+                    const roles = modelRoleNames(model, snapshot.routing);
+                    return html`<tr>
+                      <td><strong>${model.name}</strong></td>
+                      <td>${roles.length > 0 ? roles.join(', ') : 'unassigned'}</td>
+                      <td>${model.family ?? 'unknown'}</td>
+                      <td>${model.parameterSize ?? 'unknown'}</td>
+                      <td>${model.quantizationLevel ?? 'unknown'}</td>
+                      <td>${displayBytes(model.sizeBytes)}</td>
+                    </tr>`;
+                  })}
+                </tbody>
+              </table>
+            </div>`
+          : html`<div class="setup-empty">
+              <span class="setup-eyebrow">Inventory unavailable</span>
+              <h2>No model hardware metadata loaded</h2>
+              <p>Refresh the private Ollama catalog to populate the installed model inventory.</p>
+              <form method="post" action="/ai/models/refresh">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <button type="submit" class="setup-button setup-button-primary">
+                  Refresh hardware facts
+                </button>
+              </form>
+            </div>`
+      }
+    </section>
+
+    <section class="ai-hardware-integration">
+      <header class="runtime-control-section-header">
+        <div>
+          <span class="setup-eyebrow">Integration plan</span>
+          <h2>Hardware observability without invented values</h2>
+          <p>
+            Each future source must be implemented, status checked, and tested before its metrics
+            appear as active.
+          </p>
+        </div>
+      </header>
+
+      <ol class="ai-hardware-integration-steps">
+        <li>
+          <span>1</span><strong>Read source</strong
+          ><small>Connect a local GPU or runtime telemetry source.</small>
+        </li>
+        <li>
+          <span>2</span><strong>Validate schema</strong
+          ><small>Reject missing, malformed, or stale measurements.</small>
+        </li>
+        <li>
+          <span>3</span><strong>Expose status</strong
+          ><small>Show source health separately from reported values.</small>
+        </li>
+        <li>
+          <span>4</span><strong>Audit controls</strong
+          ><small>Any future lifecycle action requires explicit audit coverage.</small>
+        </li>
+      </ol>
+    </section>
+
+    <details class="setup-technical ai-hardware-technical">
+      <summary>Technical details</summary>
+      <div class="setup-technical-content">
+        <dl class="setup-technical-grid">
+          <div>
+            <dt>Provider</dt>
+            <dd>Ollama</dd>
+          </div>
+          <div>
+            <dt>Catalog source</dt>
+            <dd>/api/tags</dd>
+          </div>
+          <div>
+            <dt>Catalog persistence</dt>
+            <dd>process memory</dd>
+          </div>
+          <div>
+            <dt>Endpoint scope</dt>
+            <dd>${endpointScope(snapshot.baseUrl)}</dd>
+          </div>
+          <div>
+            <dt>Browser hardware control</dt>
+            <dd>not implemented</dd>
+          </div>
+          <div>
+            <dt>Model lifecycle control</dt>
+            <dd>not implemented</dd>
+          </div>
+          <div>
+            <dt>Cloud telemetry</dt>
+            <dd>disabled</dd>
+          </div>
+          <div>
+            <dt>Member content collected</dt>
+            <dd>none</dd>
+          </div>
+        </dl>
+      </div>
+    </details>
+  </section>`;
 }
 
 function telemetryBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
@@ -1692,16 +1915,15 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
 
   app.get<{ Querystring: AiPageQuery }>('/ai/hardware', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();
+    const csrf = req.session?.csrfToken ?? '';
     reply.type('text/html');
-    return renderAiPage(
-      'AI Hardware',
-      'Current model metadata and the planned read-only GPU and runtime residency control deck.',
-      'ai:hardware',
-      req.session?.csrfToken ?? '',
-      req.query,
-      snapshot,
-      hardwareBody(snapshot),
-    );
+
+    return page({
+      title: 'AI Hardware',
+      active: 'ai:hardware',
+      csrfToken: csrf,
+      body: hardwareBody(snapshot, csrf, req.query),
+    });
   });
 
   app.get<{ Querystring: AiPageQuery }>('/ai/telemetry', async (req, reply) => {
