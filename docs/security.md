@@ -1,6 +1,6 @@
 # Cinderella — Security Posture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-014**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
 
 _Living document. Ground truth is the code; every claim below is anchored to a
 repo-relative `file:line`. Where the project outline and the code diverge, the
@@ -851,3 +851,49 @@ connect-src 'self'; base-uri 'none'; form-action 'self'` — but **non-embeddabl
   is script-free anchors (no vendor widget, no third-party origin). Essential storage —
   the theme (`sg-theme`) and the language cookie (`cin-lang`, HttpOnly, SameSite=Lax) —
   needs no consent. Verified by [`scripts/verify-site.ts`](../scripts/verify-site.ts).
+
+## 12. The local AI subsystem has not been security-reviewed (D-068)
+
+**Stated plainly because absence of review is itself a security fact.** The local AI
+subsystem and the admin expansion around it (23 commits, 2026-07-25 to 2026-07-27,
+`b308201`..`e236ccf`) entered the repository outside the briefing scheme and have **not been
+security-reviewed under the CCB scheme**. They are on `main` and deployed. The inventory is
+in [`architecture.md`](architecture.md) §24; the provenance is **D-068**.
+
+**What the code already does right**, from reading it (not from a review):
+
+- **The model classifies, it never executes.** `src/interaction/ollama-resolver.ts` sits behind
+  the existing `IntentResolver` seam. It cannot perform an action, write consent, call a tool,
+  or decide whether a confirmation is accepted; the seam re-validates its result and the
+  dialogue engine keeps the consent handshake. This preserves the CCB-S3-002 containment
+  property (§9c) against a model rather than against rules.
+- **Consent intents carry a second, deterministic gate.** The model may confirm **PUBLISH or
+  UNPUBLISH only when the rule resolver independently found the same intent**, so a
+  misclassification cannot invent a consent request. This is the property that matters most
+  for the one rule, and it is enforced in code rather than in a prompt.
+- **Enabling and routing are fail-closed.** `src/interaction/ai-runtime.ts` verifies the
+  selected models before the active resolver is swapped, and audits the change.
+- **Model output is treated as untrusted before it reaches a member.**
+  `src/interaction/ollama-reply.ts` strips code fences, rewrites em/en dashes and horizontal
+  bars to `-` (D-061), removes C0/C1 control characters, bounds length via a JSON response
+  schema, and refuses to emit `blockedLiterals` such as a sender's display name.
+- **The policy services do not act.** `src/profiles/service.ts`, `runtime-policy.ts` and
+  `bot-onboarding.ts` all state, and appear to honour, that they store configuration and
+  resolve policy without connecting to SimpleX, joining a group, processing an invitation
+  link, invoking the SDK, or calling an external provider.
+
+**What a Season 4 review still has to establish**, none of which is answered today:
+
+- Where the Ollama endpoint is configured, whether it can be pointed at a non-local host, and
+  what the admin surface allows an authenticated operator to reach (**SSRF**).
+- Whether member content sent to the model is subject to the same consent and scope gates as
+  capture (§9h), and what leaves the process.
+- Whether prompt content can be influenced by a member such that `blockedLiterals` or the
+  consent gate can be worked around (**prompt injection**), given that the member's own text
+  is the input.
+- Whether the new admin routes carry the CSRF, step-up, session and rate-limit controls of §4
+  and §6, and whether `runtime_policy_decisions` retains anything content-bearing.
+- Whether the telemetry described as content-free is in fact content-free.
+
+Until that review happens, treat this subsystem as **unreviewed attack surface on a
+hostile-facing console**.

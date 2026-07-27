@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-015**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -167,8 +167,9 @@ The history below records the pre-CCB-S2-003 state.
 
 ### 3. Local AI brain over a tunnel
 
-- [ ] Integrate the operator's local model over a secure tunnel, decoupled behind a single "AI endpoint" address; the bot forwards free-form private messages and returns replies, while commands stay deterministic. No AI exists in code today (source: [`seasons/SEASON-1-PROTOCOL.md`](../seasons/SEASON-1-PROTOCOL.md) Part D §3).
-  > **The seam is now built (CCB-S3-002).** `resolveIntent` in [`src/interaction/resolver.ts`](../src/interaction/resolver.ts) is the single entry point every caller uses; swapping in the AI is a `setIntentResolver()` registration, with the deterministic rule engine kept as the automatic fallback when the endpoint is unreachable and as the validator of the closed intent catalog. No caller imports the rule engine directly, so the swap touches no call site.
+- [~] Integrate the operator's local model over a secure tunnel, decoupled behind a single "AI endpoint" address; the bot forwards free-form private messages and returns replies, while commands stay deterministic (source: [`seasons/SEASON-1-PROTOCOL.md`](../seasons/SEASON-1-PROTOCOL.md) Part D §3).
+  > **The seam was built first (CCB-S3-002).** `resolveIntent` in [`src/interaction/resolver.ts`](../src/interaction/resolver.ts) is the single entry point every caller uses; swapping in the AI is a `setIntentResolver()` registration, with the deterministic rule engine kept as the automatic fallback when the endpoint is unreachable and as the validator of the closed intent catalog. No caller imports the rule engine directly, so the swap touches no call site.
+  > **A local Ollama resolver is now IN THE REPOSITORY and deployed, but unconsolidated (D-068).** The claim "no AI exists in code today" is **no longer true** as of 2026-07-25. [`src/interaction/ollama-resolver.ts`](../src/interaction/ollama-resolver.ts) registers through exactly that seam, with the rule engine as fallback; [`ollama-reply.ts`](../src/interaction/ollama-reply.ts) and [`ai-runtime.ts`](../src/interaction/ai-runtime.ts) add reply wording, runtime control, role routing and telemetry. It arrived from the operator's parallel planning chats with **no briefing id**, so it is not in the register and its design reasoning is recorded nowhere in this repository. **Season 4's first task is consolidation, not construction** ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md) Part D and Part G §3, [`architecture.md`](architecture.md) §24). Not security-reviewed ([`security.md`](security.md) §12).
 
 ### 4. Multi-tenancy & Pro (customer self-service)
 
@@ -282,12 +283,28 @@ The history below records the pre-CCB-S2-003 state.
       container/stream tags and a PDF library for document metadata. Today those formats are
       served unstripped and flagged as such. The audit found no metadata in them, so this is a
       gap in the guarantee rather than a live leak.
-- [ ] **CCB-S3-011 Part 2 — revocation: hide or delete. NOT BUILT.** Needs: a hide/delete choice
-      with no default and a safe interim (hidden) state; both states derived; restore after hide
-      only, by that member only; the choice recorded in the consent journal; row and media
-      deletion including every derivative; cache and search purge; an audit entry that records
-      the event without retaining the content. Blocked in part on CCB-S3-010, which never
-      reached this repository — see the report.
+- [ ] **CCB-S3-011 Part 2 / CCB-S3-013 — revocation: hide or delete. NOT BUILT.** Needs: a
+      hide/delete choice with no default and a safe interim (hidden) state; both states derived;
+      restore after hide only, by that member only; the choice recorded in the consent journal;
+      row and media deletion including every derivative; cache and search purge; an audit entry
+      that records the event without retaining the content.
+      > **The blocking briefing is CCB-S3-013, and it never reached this repository** (an earlier
+      > revision of this entry named CCB-S3-010, which is wrong: S3-010 was delivered). Verified
+      > at the Season 3 close-out: no commit, no document reference and no code reference to
+      > CCB-S3-013 exists anywhere in the repo, which is why this work has only ever been called
+      > "CCB-S3-011 Part 2". **It must be reissued for Season 4**, and it is the first of the
+      > consent-affecting carry-overs ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md)
+      > Part G §2).
+- [ ] **Media error responses on the public front are cacheable (CCB-S3-011 Addendum B, the half
+      that was not built).** [`src/web/server.ts:188`](../src/web/server.ts) deliberately exempts
+      the public front from the global `no-store` hook (it must stay embeddable and indexable),
+      and the 404 paths in the media route
+      ([`src/web/front/embed.ts:479-528`](../src/web/front/embed.ts)) set no `cache-control` at
+      all. A shared cache may therefore apply heuristic freshness to a 404 for an item that is
+      merely not yet derived, and keep serving "missing" after it exists. The success path
+      (`:533`) does set `no-store`. **The retry half of the same addendum IS live** (`7a22aa3`):
+      the route calls `ensureDerivative` and serves the healed file rather than failing. Fix is
+      one `cache-control: no-store` on the error paths.
 - [ ] **Backups are not scheduled.** `deploy/backup.sh` keeps the last 14 copies but no cron or
       timer invokes it, and no dump exists on the host. Until it runs there is no recovery from
       a disk loss; once it runs, deleted content persists for 14 backup cycles, which is what
@@ -429,6 +446,41 @@ operator login remains a discreet header button to the unchanged, `noindex`, har
       direction so the docs and the site stay in sync.
 
 ---
+
+## Unconsolidated — the local AI subsystem already in `main` (D-068)
+
+**Season 4's first task, and it blocks everything else** ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md)
+Part D). 23 commits between 2026-07-25 and 2026-07-27 (`b308201`..`e236ccf`), roughly 17,700
+inserted lines across 46 files, **none carrying a `Briefing:` trailer**. It is deployed and its
+harnesses pass; what is missing is the reasoning, the reconciliation and the review. Inventory in
+[`architecture.md`](architecture.md) §24.
+
+- [x] **Built and deployed** — local Ollama intent resolver behind the existing seam, individualized
+      reply wording, runtime control / role routing / model discovery / content-free telemetry; a
+      profile, group and authority control plane; deterministic per-group runtime policy; persistent
+      bot onboarding configuration; the AI admin workspaces, mega navigation and brand layer;
+      migrations 017/018/019; and 19 `verify:*` harnesses, all passing.
+- [ ] **Reconcile against these five documents and the decision log.** A decision taken in a parallel
+      chat must not silently contradict one recorded here. Two of Season 3's worst faults came from
+      work whose reasoning lived outside the documents; this is the third instance of the pattern,
+      caught at close-out rather than in production.
+- [ ] **Security review under the CCB scheme.** Not done. The open questions are listed in
+      [`security.md`](security.md) §12: SSRF reach of the configurable endpoint, whether member
+      content sent to the model passes the same consent and scope gates as capture, prompt injection
+      against `blockedLiterals` and the consent gate, whether the new admin routes carry the CSRF /
+      step-up / session / rate-limit controls, and whether the telemetry is in fact content-free.
+- [ ] **Decide how this subsystem relates to the plugin framework** as the function count grows
+      toward the projected ~300. Two extension mechanisms now exist side by side.
+- [ ] **Migration numbering.** Numbers 017, 018 and 019 each exist twice. Not broken (the runner keys
+      on filename) but constrained: **no applied migration may be renamed**, and the number is not an
+      ordinal. Allocate from 020. See **D-069** and [`architecture.md`](architecture.md) Appendix §5.
+- [x] **Lint failure on `main` repaired at close-out (CCB-S3-026).**
+      `src/interaction/ollama-reply.ts` tripped `no-control-regex` on a deliberate C0/C1 sanitizer
+      for untrusted model output; an `eslint-disable-next-line` now carries that reason. No behaviour
+      changed.
+- [ ] **Attribute future work.** Every commit carries its `Briefing:` trailer. The absence of one on
+      all 23 commits is exactly why this work was invisible to the register and to the per-change
+      documentation rule.
 
 ## Operator-owned open items (carried into Season 2)
 

@@ -1,6 +1,6 @@
 # Cinderella — SimpleX Wire-Format Findings
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-014**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
 
 This document records the SimpleX protocol and SDK behaviours that materially affect Cinderella's implementation. Everything below is verified against the code in this repo; where the working outline and the code disagree, the code wins and the divergence is called out inline and collected at the end.
 
@@ -648,6 +648,35 @@ no contact-lifecycle subscriptions, no `directRcv` parser (or its exclusion from
 direct reply transport, and `applyConsentChange` is keyed by group `memberId` with no way to name a
 target from a contact identity (`src/consent/apply.ts`, `src/consent/commands.ts`). CCB-S3-017
 itself is not in this repo. The audit answers the design question; the build waits on section 3.
+
+## 9. The local AI subsystem adds no wire behaviour (D-068)
+
+Recorded because the commit subjects suggest otherwise. "Persistent SimpleX bot onboarding
+settings", "profile and group control plane" and "enforce runtime profile and group policy"
+(the parallel-chat AI work, `b308201`..`e236ccf`, see [`architecture.md`](architecture.md)
+§24) read as if they drive the SimpleX core. **They do not.** Each service states, and the
+code bears out, that it stores configuration and resolves policy only:
+
+- `src/profiles/bot-onboarding.ts` stores desired `BotOptions`, address settings, workflow
+  policy and safety controls as a state machine, and **does not invoke the SimpleX SDK**. The
+  workflow states (`waiting_contact_request`, `group_invitation_pending`, `role_verified`, …)
+  describe intent the operator has recorded, not connections the process has made.
+- `src/profiles/service.ts` stores profile, group and authority assignments against technical
+  SimpleX identifiers, and **does not connect to SimpleX, join a group, process an invitation
+  link, or execute a remote command**.
+- `src/profiles/runtime-policy.ts` maps an already-received group message onto a configured
+  profile/group/role, and never joins, accepts, or sends anything.
+
+So the wire contracts recorded in §1–§8 are unchanged by that work: the same
+`bot.run`-carried profile (§1), the same group-message event shape and support-scope
+distinction (§8), the same file-transfer behaviour below. The one place where local AI
+touches an external wire at all is the **Ollama HTTP endpoint**, which is not a SimpleX
+surface; its configuration and reachability are an open Season 4 security question
+([`security.md`](security.md) §12).
+
+If a future briefing makes any of these services actually drive the SDK, this section must be
+rewritten from the code, because the containment property it records is what keeps onboarding
+configuration from becoming an unreviewed remote-command path.
 
 ## Appendix: related file-transfer wire behaviour (context)
 

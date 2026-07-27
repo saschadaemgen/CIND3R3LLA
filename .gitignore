@@ -40,5 +40,12 @@ Thumbs.db
 # Operator-supplied working files (website template drops etc.)
 tmp/
 
+# Parallel-chat AI working directory (PowerShell deploy drivers + HTML previews).
+# NEVER COMMIT. These scripts carry the production VPS root SSH target and
+# WireGuard tunnel addresses in cleartext; the repo is public. Added at the
+# Season 3 close-out (CCB-S3-026) after the pre-push grep found them sitting
+# untracked and un-ignored, one `git add -A` away from publication.
+local_ai/
+
 # Local Claude Code launcher config
 .claude/

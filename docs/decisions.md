@@ -1,15 +1,80 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-010**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
 
 Standing record of the architectural and operational decisions taken across
-Seasons 1–2, newest first. Each entry states the decision, a one-line rationale, and
+Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
 whether it is **IMPLEMENTED** (present in the code / config today) or **PLANNED**
 (committed direction, not yet in code). Where a decision differs from how the code
 actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-069 — Duplicate-numbered migrations are kept as they are; the filename is the key, and the number is only a label
+
+**Status: IMPLEMENTED (recorded under CCB-S3-026).**
+**The situation.** Three migration numbers exist twice. The CCB-attributed Season 3 work added
+`017_jobs.sql` (queue, CCB-S3-022), `018_capture_events.sql` (write-ahead, CCB-S3-024) and
+`019_formatted_text.sql` (CCB-S3-025); the parallel-chat AI work then reused the same three numbers
+for `017_cinderella_profiles.sql`, `018_runtime_policy_decisions.sql` and `019_bot_onboarding.sql`
+(D-068).
+**Why nothing is broken.** `src/db/migrate.ts` records applied migrations in `schema_migrations`
+keyed on the **full filename**, and applies `migrations/*.sql` in **filename order**. Both members of
+each pair therefore apply exactly once, alphabetically within the number
+(`017_cinderella_profiles` before `017_jobs`, `018_capture_events` before
+`018_runtime_policy_decisions`, `019_bot_onboarding` before `019_formatted_text`). All six are
+present in production.
+**The decision, and the two constraints it carries.** The files are **not renamed**.
+(1) Renaming an applied migration makes the runner treat it as new and re-apply it against a schema
+that already contains it, which is a live hazard for a fix that looks like tidying.
+(2) The number is no longer a reliable ordinal: a fresh rebuild applies each pair alphabetically,
+which is not necessarily the order production received them. The six are mutually independent today,
+so this is latent rather than active; a future migration that depended on a same-numbered sibling
+would make it real.
+**Forward rule.** Season 4 allocates from **020** and treats the number as a label, not a sequence.
+**Evidence.** `src/db/migrate.ts` (`loadMigrationFiles` sorts by name; `schema_migrations.name` is
+the primary key), `migrations/`.
+
+---
+
+### D-068 — The local AI subsystem entered the repository outside the briefing scheme, and is not yet consolidated
+
+**Status: RECORDED (CCB-S3-026). Consolidation is the first task of Season 4.**
+**What happened.** Between 2026-07-25 and 2026-07-27, **23 commits** (`b308201`..`e236ccf`, roughly
+17,700 inserted lines across 46 files) introduced a local AI subsystem and a large admin expansion.
+**None carries a `Briefing:` trailer.** The work originated in the operator's two parallel planning
+chats, so it never entered the briefing register and never triggered the standing per-change
+documentation rule. It is nonetheless on `main` and **deployed**.
+**What it contains.** A local Ollama intent resolver (`src/interaction/ollama-resolver.ts`),
+individualized reply wording (`ollama-reply.ts`), runtime control / role routing / model discovery /
+content-free telemetry (`ai-runtime.ts`); a profile, group and authority control plane
+(`src/profiles/service.ts`), deterministic per-group/per-member runtime policy
+(`runtime-policy.ts`), and persistent SimpleX bot onboarding configuration (`bot-onboarding.ts`);
+the AI admin workspaces (`src/web/views/ai.ts` at 2084 lines, `ai-profiles.ts`, `ai-onboarding.ts`),
+a global mega navigation and the brand/effects layer; migrations 017/018/019 (D-069); and 19 new
+`verify:*` harnesses, all passing.
+**Why it is recorded rather than documented in full.** The close-out directive (CCB-S3-026 Part D)
+makes consolidation the first task of Season 4: reconcile what was designed and decided there
+against these documents so a decision taken in another chat does not silently contradict one
+recorded here. Writing the architecture up now, from the code alone, would invent the reasoning
+rather than recover it. This entry exists so the work is **not invisible** in the meantime.
+**The safety posture, as the code states it.** The resolver classifies only: it never executes an
+action, writes consent, calls a tool, or decides whether a confirmation is accepted, and the
+existing resolver seam re-validates its result. Consent intents carry an additional deterministic
+gate, where the model may confirm PUBLISH or UNPUBLISH **only** when the rule resolver independently
+found the same intent. Enabling and routing changes are fail-closed, verifying the selected models
+before the active resolver is swapped. This matches the direction planned for Season 4 (the model
+classifies but never executes), so Season 4 faces **review work, not construction work**. It has
+**not** been security-reviewed under the CCB scheme.
+**Two defects it brought with it**, both found at close-out: duplicate migration numbers (D-069),
+and a lint failure on `main` at `src/interaction/ollama-reply.ts` (`no-control-regex` firing on a
+deliberate control-character sanitizer for untrusted model output), repaired under CCB-S3-026 with
+an `eslint-disable-next-line` carrying the reason. No behaviour changed.
+**Evidence.** `git log b308201..e236ccf`; `seasons/SEASON-3-PROTOCOL.md` Part G §3;
+`seasons/CCB-REGISTER.md` ("Work in `main` that carries no briefing id").
 
 ---
 

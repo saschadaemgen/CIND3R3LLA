@@ -75,6 +75,8 @@ opt-in), `deleted`/`group_deleted`, and `moderation_state` — see the
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
+  `profiles/` (profile/group/authority config, runtime policy, bot onboarding —
+  configuration and policy only, they never drive the SDK; unconsolidated, D-068),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
 - `migrations/` — 001 messages/links · 002 consent+views · 003 admin · 004
   moderation gate · 005 deletion provenance · 006 webauthn + TOTP · 007 admin
@@ -83,8 +85,15 @@ opt-in), `deleted`/`group_deleted`, and `moderation_state` — see the
   seeded major assets (locked pins) · 012 correct pins that predate the seed · 013
   her own messages (bot rows, mentions, the second publication branch) · 014
   stripped media derivatives · 015 member instructions + exchange pairing · 016 video links · 017 durable job queue
-  (state machine, `FOR UPDATE SKIP LOCKED` claim, backoff/dead-letter, idempotency).
+  (state machine, `FOR UPDATE SKIP LOCKED` claim, backoff/dead-letter, idempotency) ·
+  018 capture write-ahead events · 019 formatted text.
   Runner: `node dist/db/migrate.js`.
+  **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
+  added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
+  alongside the three above. Nothing is broken: the runner keys `schema_migrations` on the
+  **full filename** and applies files in filename order, so all six apply exactly once. But
+  **never rename an applied migration** (it would re-apply), the number is a label rather
+  than an ordinal, and new migrations allocate from **020**. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
 - `deploy/` — `cinderella.service`, `nginx-admin.conf`, `RUNBOOK.md`, `backup.sh`.
 - Git-ignored: `.env`, `state/`, `media/`, `public/` (built assets), `dist/`.

@@ -1,9 +1,16 @@
-# Cinderella — Claude Code Briefing Register (Season 1)
+# Cinderella — Claude Code Briefing Register (Seasons 1–3)
 
 *Supersedes the earlier "Season 0" register. Internal and public season numbering
-are now aligned: the first completed block is **Season 1**; the next is **Season 2**.
-The previous zero-based scheme is retired (see [`../docs/decisions.md`](../docs/decisions.md)
-**D-014**, superseding D-011).*
+are now aligned: the first completed block is **Season 1**. Seasons 1, 2 and 3 are
+complete and in production; the next is **Season 4**. The previous zero-based scheme is
+retired (see [`../docs/decisions.md`](../docs/decisions.md) **D-014**, superseding D-011).*
+
+> **Status vocabulary.** *Delivered* = the work is in `main` and deployed, evidenced by at
+> least one commit carrying the briefing's `Briefing:` trailer. *Never received* = no
+> commit, no document reference and no code reference anywhere in the repository. *Not
+> built* = the briefing is held (or its subject is documented) but no implementation
+> exists. Season 3 statuses were re-verified against commits, code and harnesses under
+> CCB-S3-026; see [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md) **Part G §2**.
 
 ## Numbering convention
 
@@ -50,6 +57,78 @@ The previous zero-based scheme is retired (see [`../docs/decisions.md`](../docs/
 | CCB-S1-017 | Season close-out: protocol & handover | Briefing | Delivered | CCB-S0-017-season-0-closeout.md |
 | CCB-S1-018 | Read-only VPS deploy key (replace git-bundle deploys) | Briefing | Issued — awaiting operator's GitHub deploy-key step | CCB-S0-018-vps-deploy-key.md |
 | CCB-S1-019 | Numbering alignment, doc relabel, and standing documentation-maintenance rule | Briefing | Delivered | CCB-S1-019-renumber-docrule.md |
+
+## Register — Season 2
+
+Season 2 was closed by CCB-S2-016 ([`SEASON-2-PROTOCOL.md`](SEASON-2-PROTOCOL.md)); the
+register block was never written at the time and is reconstructed here from the commit
+trailers under CCB-S3-026.
+
+| ID | Title | Type | Status |
+|----|-------|------|--------|
+| CCB-S2-001 | README relaunch as a SimpleX AI Bot Suite; banner + AGPL-3.0 licence | Briefing | Delivered |
+| CCB-S2-002 | README restyle to the SimpleGo house style | Briefing | Delivered |
+| CCB-S2-003 | Public archive front: SSR `/embed/<id>`, consent-gated media, core SEO | Briefing | Delivered |
+| CCB-S2-004 | Full SEO & marketing suite: structured data, sitemap, feed, robots, OG, analytics | Briefing | Delivered |
+| CCB-S2-005 | House-palette dark mode + persisting light/dark toggle | Briefing | Delivered |
+| CCB-S2-006 | Live consent-gated auto-update on the public stream | Briefing | Delivered |
+| CCB-S2-007 | Cursor-paged infinite scroll with DOM windowing and live reconcile | Briefing | Delivered |
+| CCB-S2-008 | Inline video player: controls, fullscreen, byte-range, download toggle | Briefing | Delivered |
+| CCB-S2-009 | Public content reporting + admin review queue + notification bar | Briefing | Delivered |
+| CCB-S2-010 | Stream loading polish; embedded-overflow fallback | Briefing | Delivered |
+| CCB-S2-011 | WebAuthn RP-ID/origin mismatch guard (passkey-lockout footgun) | Fix | Delivered |
+| CCB-S2-012 | Public marketing website: landing page, i18n (EN/DE), app-authoritative robots | Briefing | Delivered |
+| CCB-S2-013 | CSAM claim tightened to not-yet-built; docs currency check (S2-003..012) | Briefing | Delivered |
+| CCB-S2-014 | Honest CSAM wording + alpha status notice | Briefing | Delivered |
+| CCB-S2-015 | *(unknown)* | — | **No evidence in the repository.** No commit, document or code reference. Either never issued or never received |
+| CCB-S2-016 | Season 2 close-out: protocol & handover; D-026/027/028 | Briefing | Delivered |
+
+## Register — Season 3
+
+| ID | Title | Type | Status |
+|----|-------|------|--------|
+| CCB-S3-001 | Season 3 website: the operator's dark-neon template as the real SSR site, i18n, legal page stubs | Briefing | Delivered |
+| CCB-S3-002 | Natural addressing: wake word, deterministic intent resolver, Cinderella's voice | Briefing | Delivered |
+| CCB-S3-003 | Reply presentation: plain messages, and the markup SimpleX actually renders | Briefing | Delivered |
+| CCB-S3-004 | Plugin framework, and crypto prices rebuilt on it; canonical pinned asset ids | Briefing | Delivered |
+| CCB-S3-005 | Addressing guards: being named is not being addressed; answer in the sender's language | Briefing | Delivered |
+| CCB-S3-005 A | Short German instructions answered in English (a matched keyword set is authoritative) | Addendum | **Delivered** (D-067) — Part C listed this as not started |
+| CCB-S3-006 | Conversions, precision, state questions, elliptical follow-ups; corrected major pins | Briefing | Delivered |
+| CCB-S3-007 | Her own messages, published on the operator's decision; name redaction | Briefing | **Delivered** — absent from the close-out narrative as issued |
+| CCB-S3-008 | Plugin API keys re-encrypted on every boot; provider failures say why | Fix | Delivered |
+| CCB-S3-009 | A member's question is that member's message (archived as a derived pair) | Briefing | Delivered |
+| CCB-S3-010 | A real help command, and consent copy that tells the truth | Briefing | Delivered |
+| CCB-S3-010 A | The undo principle: undo may only reduce exposure, never increase it | Addendum | Delivered (D-054/D-055) |
+| CCB-S3-011 P1 | Media metadata stripping: publish a stripped derivative, never the file as sent | Briefing | Delivered |
+| CCB-S3-011 A | A withheld image is never silent (fail-closed gate could not write derivatives) | Addendum | Delivered |
+| CCB-S3-011 B | Media error responses must not be cacheable; one retry on live-inserted images | Addendum | **Half delivered.** The retry is live; the cacheability half is not built |
+| CCB-S3-012 | Encrypted originals at rest, CSAM screening seam | Briefing | **Never received.** Reissue for Season 4 |
+| CCB-S3-013 | Hide or delete on revocation, with evidence holds | Briefing | **Never received.** Tracked only as "CCB-S3-011 Part 2 — NOT BUILT". Reissue for Season 4 |
+| CCB-S3-014 | Video links play as click-to-play cards with locally served thumbnails | Briefing | Delivered |
+| CCB-S3-014 A | Consent banner with analytics and video categories | Addendum | Not built |
+| CCB-S3-015 | Admin restructure and dark-neon restyle | Briefing | **Partially delivered.** Stage 1 (sub-sections + submenu) and stage 3 (restyle) live; **stage 2 not built** |
+| CCB-S3-016 | SDK capability inventory, and the support-scope answer | Briefing | Delivered (documentation) |
+| CCB-S3-017 | Contact address, private channel, direct-chat capture exclusion | Briefing | **Research done and documented, not built** |
+| CCB-S3-017 A | The contact↔member link exists but is conditional | Addendum | Delivered (documentation, D-058) |
+| CCB-S3-018 | The permanent failed-file-receipts alert | Briefing | **Subject documented, not built.** Referenced by id in four documents and in `src/queue/types.ts`; arrival of the briefing itself is not evidenced |
+| CCB-S3-019 | A private support-scope message is never a public one (capture whitelist) | Fix | Delivered (D-059) |
+| CCB-S3-020 | The SimpleX adapter seam | Briefing | **Never received.** Reissue for Season 4 |
+| CCB-S3-021 | Em-dashes forbidden, help formatting, dead admin help field | Briefing | **Delivered**, all three parts (D-061, D-066) — Part C listed this as not started |
+| CCB-S3-022 | Durable Postgres-backed job queue | Briefing | **Partially delivered.** Phase 1 (foundation + crash-recovery hardening) live; **phase 2 not built** |
+| CCB-S3-023 | Swallowed-error audit; a failed in-group deletion is retried durably | Briefing | Delivered (D-063) |
+| CCB-S3-023 f/u | Follow-ups: atomic consent categorisation, generalised plugin self-check, unbounded ids | Follow-up | **Partly delivered.** Unbounded ids in the media and report routes are fixed and live; the other two remain open |
+| CCB-S3-024 | Capture write-ahead log | Briefing | **Partially delivered.** Slice 1 (durable substrate) live; **slices 2 and 3 not built** |
+| CCB-S3-025 | Stream polish: formatting, soft report control, share bar, permalinks, attribution | Briefing | Delivered |
+| CCB-S3-026 | Season 3 close-out: protocol & handover to Season 4 | Briefing | Delivered (this entry) |
+
+### Work in `main` that carries no briefing id
+
+Between 2026-07-25 and 2026-07-27, **23 commits** (`b308201`..`e236ccf`, roughly 17,700
+inserted lines across 46 files) introduced the **local AI subsystem** and a large admin
+expansion. None carries a `Briefing:` trailer, so none is registrable here. The work
+originated in the operator's parallel planning chats and is **deployed but not
+consolidated**; the inventory is in [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md)
+**Part G §3**, and consolidating it is the first task of Season 4.
 
 ## Planning documents (not Claude Code Briefings — they inform Season 2)
 

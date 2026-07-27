@@ -47,6 +47,10 @@ function cleanReply(value: string, preserveLines: boolean): string {
   const withoutFences = value
     .replace(/```/g, '')
     .replace(/[\u2013\u2014\u2015]/g, ' - ')
+    // Control characters are stripped ON PURPOSE: this is untrusted model output on its way to
+    // a member, and a stray C0/C1 byte would ride into the chat. The rule fires on the intent,
+    // not on a fault.
+    // eslint-disable-next-line no-control-regex
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '');
 
   if (!preserveLines) return withoutFences.replace(/\s+/g, ' ').trim();

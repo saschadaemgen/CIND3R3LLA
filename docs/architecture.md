@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-015**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-026** (Season 3 close-out)._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -747,6 +747,70 @@ quiet until hover; blanking the label or url removes them. Chat-side (help reply
 `updateProfile`-only-on-avatar reconcile gate + unverified core handling of parens make it risky, and a
 per-message suffix would be noise). See D-065.
 
+## 24. The local AI subsystem — in the repository, not yet consolidated (D-068)
+
+> **This section is an inventory, not an architecture.** The subsystem below entered the
+> repository outside the briefing scheme, from the operator's two parallel planning chats, so the
+> reasoning behind its design is not recorded anywhere in this repository. Consolidating it is the
+> **first task of Season 4** (`seasons/SEASON-3-PROTOCOL.md` Part D). Describing it as settled
+> architecture now would invent that reasoning rather than recover it. What follows is what the code
+> is, so the work is not invisible in the meantime.
+
+**Provenance.** 23 commits, 2026-07-25 to 2026-07-27 (`b308201`..`e236ccf`), roughly 17,700 inserted
+lines across 46 files, **none carrying a `Briefing:` trailer**. On `main` and deployed. See D-068.
+
+**Interaction (`src/interaction/`).**
+
+- `ollama-resolver.ts` — a local Ollama intent resolver behind the existing `IntentResolver` seam.
+  Its header states the constraint the whole design rests on: the model **classifies text only**. It
+  never executes an action, writes consent, calls a tool, or decides whether a confirmation is
+  accepted; the existing resolver seam re-validates the result and the dialogue engine keeps the
+  consent handshake. Consent intents carry an extra deterministic gate: the model may confirm
+  **PUBLISH or UNPUBLISH only when the rule resolver independently found the same intent**, so a
+  model mistake cannot invent a consent request. This is the same containment principle as
+  CCB-S3-002 (§16), applied to a model rather than to rules.
+- `ollama-reply.ts` — individualized reply wording. Model output is cleaned before it reaches a
+  member: code fences stripped, em/en dashes and horizontal bars rewritten to `-` (the standing rule,
+  D-061), and C0/C1 control characters removed. A JSON response schema bounds the reply length, and
+  `blockedLiterals` keeps values such as a sender's display name out of generated text.
+- `ai-runtime.ts` — runtime control, role routing, model discovery, and content-free operations
+  telemetry. Environment configuration decides whether local AI is available at all; persisted
+  settings decide whether this process uses it and which installed model serves each role. Enabling
+  and routing changes are **fail-closed**: the selected models are verified before the active
+  resolver is swapped. Changes are audited (`writeAudit`).
+
+**Profiles and policy (`src/profiles/`).**
+
+- `service.ts` — persistent profile, group and authority configuration, keyed on technical SimpleX
+  identifiers. It explicitly **does not** connect to SimpleX, join a group, process invitation links,
+  or execute remote commands.
+- `runtime-policy.ts` — deterministic policy resolution for an incoming group message, mapping one
+  SimpleX group and member identity onto a configured profile, group, role and privacy baseline.
+  Outcomes are `allow` / `deny` / `unassigned`, with a `compatibility` source so an unconfigured
+  deployment keeps working. It never executes a command, changes personality, joins a group, accepts
+  an invitation, or calls an external provider.
+- `bot-onboarding.ts` — persistent SimpleX bot onboarding configuration (desired `BotOptions`,
+  address settings, workflow policy, safety controls) as an explicit state machine
+  (`configured` → … → `ready` / `error`). It stores intent only; it **does not invoke the SDK**.
+
+**Admin (`src/web/views/`).** `ai.ts` (2084 lines), `ai-profiles.ts`, `ai-onboarding.ts`, a global
+mega navigation (`assets/admin-navigation.js`), the brand/effects layer (`admin-effects.js`), and the
+setup, access-control and model-catalog clients. Five workspaces were subsequently redesigned:
+access control, runtime control, models catalog, routing, hardware.
+
+**Schema.** `migrations/017_cinderella_profiles.sql`, `018_runtime_policy_decisions.sql`,
+`019_bot_onboarding.sql` — three numbers that were **already taken** by the CCB-attributed Season 3
+work. Not broken, but constrained; see **D-069** before touching any migration filename.
+
+**Verification.** 19 new `verify:*` harnesses (`ai`, `ai-runtime`, `ai-admin`, `ai-models`,
+`ai-routing`, `ai-telemetry`, `ai-navigation`, `ai-profiles`, `ai-replies`, `ai-live`,
+`bot-onboarding`, `runtime-policy`, `admin-navigation-shell`, `admin-mega-navigation`,
+`admin-brand-fx`, `admin-setup-workflow`, and the extended `admin-views`), all passing at close-out.
+
+**Not yet done:** reconciliation against these documents and the decision log, a security review
+under the CCB scheme (`security.md` §14), and a decision on how this subsystem relates to the plugin
+framework (§15) as the function count grows.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.
@@ -758,3 +822,5 @@ Each divergence below is also noted inline at the relevant section. In every cas
 3. **Migration 004 label.** `CLAUDE.md` calls 004 the "moderation gate." The file (`migrations/004_moderation.sql:1`) is headed "admin views support — Stage 5"; its concrete changes are `messages.media_error` and folding `moderation_state='rejected'` into the publish views.
 
 4. **Migration runner invocation.** `CLAUDE.md` gives `node dist/db/migrate.js`; `package.json:23` and `src/index.ts:49` point operators at `npm run migrate` (`tsx src/db/migrate.ts`). Same runner, different invocation (compiled vs `tsx`).
+
+5. **Migration numbers are not unique.** Three numbers exist twice — `017_jobs.sql` / `017_cinderella_profiles.sql`, `018_capture_events.sql` / `018_runtime_policy_decisions.sql`, `019_formatted_text.sql` / `019_bot_onboarding.sql` — because the parallel-chat AI work reused numbers the CCB-attributed work had already taken. The runner keys on the **full filename**, so all six apply exactly once and nothing is broken, but the number cannot be read as an ordinal and **no applied migration file may be renamed**. See **D-069**.
