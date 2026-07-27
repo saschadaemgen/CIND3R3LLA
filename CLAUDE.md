@@ -31,6 +31,13 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
 - **No secrets in source or logs.** Everything sensitive is env (git-ignored
   `.env` in dev; systemd `EnvironmentFile` 0600 in prod). Redact before logging.
 - **English** everywhere. Proof-of-concept before integration.
+- **Stages define order, not checkpoints.** A briefing split into stages is worked
+  through continuously, deploying as you go; do not stop between stages waiting for
+  approval unless a stage explicitly says otherwise.
+- **A briefing is not delivered until it is confirmed delivered.** Three briefings were
+  never received in Season 3 and this was only discovered at close-out. Confirm receipt
+  against the register when a briefing arrives, and record the delivering commit against
+  its CCB id when it lands.
 - **Surface failures, never swallow them** (standing rule, CCB-S3-023). A caught error
   must not be converted into a value that reads as a legitimate result (masking), and a
   degraded/absent function must not run silently. Log with actionable context (operation,

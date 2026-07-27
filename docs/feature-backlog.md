@@ -321,9 +321,12 @@ The history below records the pre-CCB-S2-003 state.
 - [ ] **Perceptual hashing is not implemented.** The fixture provider uses SHA-256, which proves the
       plumbing but would not survive a re-encode. A real adapter implements the same interface with
       perceptual hashing; the interface does not need to change.
-- [ ] **`MEDIA_SECRET` is not in the backup set.** `deploy/backup.sh` copies the database and the media
-      tree but not `/etc/cinderella`. Media backups are unreadable without the key, and there is no key
-      history. Either add the env file to the backup, or record the key somewhere the operator controls.
+- [x] **`MEDIA_SECRET` is in the backup set.** ~~`deploy/backup.sh` copies the database and the media
+      tree but not `/etc/cinderella`.~~ **Corrected under CCB-S3-028: this was wrong.** `backup.sh` does
+      copy the env file, and its restore instructions install it back at mode 600. The residual concern is
+      different and is tracked under "Backups and disaster recovery" below: the key is copied to sit
+      **beside** the encrypted media it unlocks, which is not a backup of a secret so much as a way to
+      lose both at once.
 - [ ] **The CSAM hold source has no producer (CCB-S3-013 Part B, by design).** `evidence_holds.source`
       accepts `'csam'`, the never-expiring behaviour is implemented and tested, and the operator UI
       already refuses to offer destroy for it. Nothing creates one until hash screening exists
@@ -560,6 +563,97 @@ These are not code tasks — they are actions only the operator can take. Source
   > **Note:** [`seasons/SEASON-1-PROTOCOL.md:94`](../seasons/SEASON-1-PROTOCOL.md) (Part C §2) describes the repo as **private** ("deploying via `git bundle` … the repo is private"). This contradicts [`CLAUDE.md`](../CLAUDE.md), which states once, at [`CLAUDE.md:25`](../CLAUDE.md), that "The repo is **public**." (CLAUDE.md's other uses of "public" — the admin console, the SimpleX group, the web archive, the `/embed` widget — do not refer to the repository.) The two standing documents disagree on repository visibility; this backlog reports the discrepancy rather than resolving it. Either way, the pre-push secret-grep discipline applies.
 
 ---
+
+## Backups and disaster recovery (CCB-S3-028) — the largest single operational risk
+
+Verified against the production host on 2026-07-27, not inferred.
+
+- [ ] **No backups exist.** `/var/backups/cinderella/` does not exist on the host, there is no cron entry
+      and no systemd timer. `deploy/backup.sh` is committed, is well written, and **has never run.** The
+      archive has no recovery from disk loss of any kind. Everything else in this section is secondary to
+      scheduling it.
+- [ ] **The key is backed up beside what it unlocks.** `backup.sh` does copy the env file carrying
+      `MEDIA_SECRET` (correcting an earlier note above), but into the same backup directory as the
+      encrypted media. A single lost or stolen backup is then either a total loss or a total disclosure.
+      The key belongs somewhere the operator controls separately. There is no key history: rotating
+      `MEDIA_SECRET` destroys the archive.
+- [ ] **Quarantine bytes fall out of backups entirely.** `QUARANTINE_ROOT` is deliberately outside
+      `MEDIA_ROOT` (D-074) and `backup.sh` covers only the media tree. Evidence surviving a disk failure
+      matters for the custody obligation.
+- [ ] **Restoring a backup resurrects deleted content.** Any restore must re-apply the deletions that
+      happened since the dump, or the deletion promise breaks on every restore. This belongs in the runbook
+      **and** in the privacy policy. Whether it is even implementable today depends on whether the consent
+      action journal (migration 009) and deletion provenance (005) retain enough to replay a deletion
+      against a restored row — that needs checking before the procedure is written.
+- [ ] **Backup encryption is unresolved.** `backup.sh` does not encrypt. Open decision, with the tradeoff:
+      encrypting under a key separate from `MEDIA_SECRET` protects the dump but adds a second key whose
+      loss is equally fatal; a pull model (the backup host reaches in) means a compromised server cannot
+      reach or destroy its own backups, but requires standing credentials on the backup side.
+
+**Open question the operator owes:** is the SimpleX core database backed up, and what does losing it cost?
+It holds unencrypted content, which is a privacy argument *against* backing it up, but it also holds
+Cinderella's SimpleX identity and group membership. If losing it means she cannot be restored and must be
+re-invited to the group as a **new identity**, every member's consent record survives while the identity
+they consented to does not. That answer changes the urgency and has not been established.
+
+**Standing constraint (not an open question):** quarantine material must never reach a private machine.
+Suspect material on a personal computer is a materially different legal position from the same material
+under a documented custody process on a server. No restore or debugging procedure may pull it locally.
+
+## Carried into Season 4 (recorded under CCB-S3-028)
+
+Findings that existed only in the planning chat. Verified against code first; several turned out to be
+wrong or already handled and are recorded here with the correction rather than the claim.
+
+- [ ] **Terms of service cover no commercial Pro tier.** CCB-S3-029 replaced the placeholders and the page
+      now says plainly that no terms are in force. A public Pro pricing page already advertises tariffs, so
+      the marketing surface is ahead of the terms. Needs counsel.
+- [ ] **Retention auto-delete is decided but unbuilt.** Already recorded as **D-027 (PLANNED)** — abo
+      dependent, admin configurable, default ten years. Do **not** allocate a new decision number. The
+      legal texts describe it as a mechanism rather than a fixed number so a tariff can change it without
+      a rewrite, which CCB-S3-029 implemented. The deferred-destruction sweeper and evidence holds in
+      `src/archive/` are **not** the retention mechanism and should not be mistaken for it.
+- [ ] **Nine high-severity npm advisories, not three.** `@fastify/static`, `brace-expansion`, `fast-uri`,
+      `find-my-way`, and `sharp` (inheriting four libvips CVEs). `sharp` is on the media path, which makes
+      it the one to look at first.
+- [ ] **The demo UI is not built.** Backend, isolation guard (D-082) and session handling are. The
+      visitor-facing pane, the four guided prompts, the disclosure line and the mobile layout are not. The
+      demo hostname answers 404 by deliberate nginx configuration (D-081), which is correct until the pane
+      exists.
+- [ ] **Thirty-nine locales carry no translated child-safety copy** and fall back to English after the
+      correction. Forty locale files ship; the English source is one of them.
+- [ ] **Integer overflow to 500 on the public route.** The bounded-id fix applied to the admin media and
+      report routes was not applied everywhere; an out-of-range id still reaches Postgres and surfaces as a
+      500 rather than a clean 404. Same pattern, one route short.
+- [ ] **`capture_events` is unreachable in production and unerasable.** `recordEvent` has no production
+      caller, so the write-ahead subsystem is not merely unwritten but entirely unreachable. Two
+      consequences that must be settled *before* CCB-S3-024 slice 2 writes the first row: no erasure path
+      touches `capture_events`, so a payload carrying member content would **survive a member's deletion**;
+      and the `capture_event_kind` enum cannot express file receipts although the migration names them.
+- [ ] **`capture_events.payload` shape is still free, and this is the only place the choice still exists.**
+      Define it in domain terms, not the SDK shape. Open question with a real tradeoff: carrying the opaque
+      raw item buys replay fidelity but creates a second retained copy of member content, which collides
+      with the erasure point above.
+- [ ] **Phase C is a Matrix prerequisite, not housekeeping.** A Matrix event has a different JSON shape, so
+      any SQL reading the SimpleX shape breaks the moment a second protocol exists. Open question: do it
+      now, or defer until a second protocol is actually being built. Deferring is cheaper today and more
+      expensive exactly once.
+- [ ] **The core database is a screening blind spot.** 291 of 1380 core chat items carry embedded base64
+      image data (measured on the host 2026-07-27; the figure grows). That is image data outside
+      `MEDIA_ROOT`, unencrypted, invisible to quarantine, and invisible to screening, which only ever sees
+      received **files**. The architectural point is the durable one and it is verifiable from the code:
+      connecting a detection provider would not cover these.
+- [ ] **Why do we keep our own row for in-group-deleted items?** Exactly 11 messages are marked
+      `group_deleted` rather than erased (measured on the host; the claim was accurate). Open question: if
+      retaining our copy serves neither the publication derivation nor consent gaps, both copies should go.
+      Read `message_publish_state` before deciding — the answer is mostly in the SQL.
+- [ ] **The nginx configuration is not in the repository.** See D-081. A sanitised copy of the marketing
+      vhost and the SNI splitter should be committed so the topology is not server-only.
+- [ ] **Two untracked, un-ignored inventory files sit in the working tree** (`local_ai_manifest_*.csv/.txt`).
+      Either ignore them or remove them; an un-ignored artefact is one `git add -A` away from being public.
+
+**Operator-owned, still open since Season 1:** register a second passkey on the YubiKey; rotate the
+break-glass password; disable break-glass once the second passkey exists.
 
 ## Verification note
 

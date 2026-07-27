@@ -71,7 +71,7 @@ export const IMPRESSUM_DE: { title: string; sections: LegalSection[] } = {
     {
       h: 'Kontakt',
       body: [
-        'Telefon: +49 2361 9702434\nE-Mail: info@it-and-more.systems\nFür CIND3R3LLA: cinderella@simplego.dev',
+        'Telefon: +49 2361 9702434\nE-Mail: info@it-and-more.systems\nFür CIND3R3LLA: info@cind3r3lla.com',
         'Erreichbarkeit: Montag bis Freitag, 9:00 bis 17:00 Uhr, ausgenommen gesetzliche Feiertage in Nordrhein-Westfalen. Außerhalb dieser Zeiten erreichen Sie uns per E-Mail.',
       ],
     },
@@ -145,7 +145,7 @@ export const IMPRESSUM_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Contact',
       body: [
-        'Telephone: +49 2361 9702434\nEmail: info@it-and-more.systems\nFor CIND3R3LLA: cinderella@simplego.dev',
+        'Telephone: +49 2361 9702434\nEmail: info@it-and-more.systems\nFor CIND3R3LLA: info@cind3r3lla.com',
         'Availability: Monday to Friday, 9:00 to 17:00, excluding public holidays in North Rhine-Westphalia. Outside those hours, please contact us by email.',
       ],
     },
@@ -222,7 +222,7 @@ export const PRIVACY_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Controller',
       body: [
-        'Sascha Dämgen IT and More Systems\nInhaber: Sascha Dämgen\nAm Neumarkt 22\n45663 Recklinghausen\nGermany\nEmail: info@it-and-more.systems\nFor CIND3R3LLA: cinderella@simplego.dev',
+        'Sascha Dämgen IT and More Systems\nInhaber: Sascha Dämgen\nAm Neumarkt 22\n45663 Recklinghausen\nGermany\nEmail: info@it-and-more.systems\nFor CIND3R3LLA: info@cind3r3lla.com',
         'No data protection officer has been appointed. We are not required to appoint one, and we state this rather than leaving the question open.',
       ],
     },
@@ -329,7 +329,7 @@ export const PRIVACY_DE: { title: string; sections: LegalSection[] } = {
     {
       h: 'Verantwortlicher',
       body: [
-        'Sascha Dämgen IT and More Systems\nInhaber: Sascha Dämgen\nAm Neumarkt 22\n45663 Recklinghausen\nDeutschland\nE-Mail: info@it-and-more.systems\nFür CIND3R3LLA: cinderella@simplego.dev',
+        'Sascha Dämgen IT and More Systems\nInhaber: Sascha Dämgen\nAm Neumarkt 22\n45663 Recklinghausen\nDeutschland\nE-Mail: info@it-and-more.systems\nFür CIND3R3LLA: info@cind3r3lla.com',
         'Ein Datenschutzbeauftragter ist nicht bestellt. Wir sind dazu nicht verpflichtet und sagen dies ausdrücklich, anstatt die Frage offenzulassen.',
       ],
     },

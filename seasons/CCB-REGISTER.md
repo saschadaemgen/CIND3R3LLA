@@ -1,16 +1,20 @@
-# Cinderella — Claude Code Briefing Register (Seasons 1–3)
+# Cinderella — Claude Code Briefing Register (Seasons 1–4)
 
 *Supersedes the earlier "Season 0" register. Internal and public season numbering
-are now aligned: the first completed block is **Season 1**. Seasons 1, 2 and 3 are
-complete and in production; the next is **Season 4**. The previous zero-based scheme is
-retired (see [`../docs/decisions.md`](../docs/decisions.md) **D-014**, superseding D-011).*
+are now aligned: the first completed block is **Season 1**. Seasons 1 and 2 are complete;
+Season 3 closes with CCB-S3-028; **Season 4 is already underway and has shipped to
+production** (CCB-S4-001). The previous zero-based scheme is retired (see
+[`../docs/decisions.md`](../docs/decisions.md) **D-014**, superseding D-011).*
 
 > **Status vocabulary.** *Delivered* = the work is in `main` and deployed, evidenced by at
 > least one commit carrying the briefing's `Briefing:` trailer. *Never received* = no
 > commit, no document reference and no code reference anywhere in the repository. *Not
 > built* = the briefing is held (or its subject is documented) but no implementation
-> exists. Season 3 statuses were re-verified against commits, code and harnesses under
-> CCB-S3-026; see [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md) **Part G §2**.
+> exists. *Reissued and delivered* = recorded as never received, then reissued and landed.
+> Season 3 statuses were re-verified against commits, code and harnesses under CCB-S3-026;
+> see [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md) **Part G §2**. **That check is
+> superseded by CCB-S3-028**, which re-ran it after CCB-S3-012, 013, 020 and 027 had
+> landed and found three "never received" rows to be stale.
 
 ## Numbering convention
 
@@ -102,8 +106,8 @@ trailers under CCB-S3-026.
 | CCB-S3-011 P1 | Media metadata stripping: publish a stripped derivative, never the file as sent | Briefing | Delivered |
 | CCB-S3-011 A | A withheld image is never silent (fail-closed gate could not write derivatives) | Addendum | Delivered |
 | CCB-S3-011 B | Media error responses must not be cacheable; one retry on live-inserted images | Addendum | **Half delivered.** The retry is live; the cacheability half is not built |
-| CCB-S3-012 | Encrypted originals at rest, CSAM screening seam | Briefing | **Never received.** Reissue for Season 4 |
-| CCB-S3-013 | Hide or delete on revocation, with evidence holds | Briefing | **Never received.** Tracked only as "CCB-S3-011 Part 2 — NOT BUILT". Reissue for Season 4 |
+| CCB-S3-012 | Encrypted originals at rest, CSAM screening seam | Briefing | **Reissued and delivered** 2026-07-27 as `eeae2a2`. (Was recorded as never received; the reissue landed.) |
+| CCB-S3-013 | Hide or delete on revocation, with evidence holds | Briefing | **Reissued and delivered** 2026-07-27 as `b76aa8f` (revocation, holds) and `bf1f779` (§4, quarantine segregated on disk). (Was recorded as never received.) |
 | CCB-S3-014 | Video links play as click-to-play cards with locally served thumbnails | Briefing | Delivered |
 | CCB-S3-014 A | Consent banner with analytics and video categories | Addendum | Not built |
 | CCB-S3-015 | Admin restructure and dark-neon restyle | Briefing | **Partially delivered.** Stage 1 (sub-sections + submenu) and stage 3 (restyle) live; **stage 2 not built** |
@@ -112,14 +116,26 @@ trailers under CCB-S3-026.
 | CCB-S3-017 A | The contact↔member link exists but is conditional | Addendum | Delivered (documentation, D-058) |
 | CCB-S3-018 | The permanent failed-file-receipts alert | Briefing | **Subject documented, not built.** Referenced by id in four documents and in `src/queue/types.ts`; arrival of the briefing itself is not evidenced |
 | CCB-S3-019 | A private support-scope message is never a public one (capture whitelist) | Fix | Delivered (D-059) |
-| CCB-S3-020 | The SimpleX adapter seam | Briefing | **Never received.** Reissue for Season 4 |
+| CCB-S3-020 | The SimpleX adapter seam | Briefing | **Reissued and delivered** 2026-07-27 as `cea9adf` — **Phase A only** (domain types, `ChatAdapter`, a fake, and two checks). Phases B and C remain open. (Was recorded as never received.) |
 | CCB-S3-021 | Em-dashes forbidden, help formatting, dead admin help field | Briefing | **Delivered**, all three parts (D-061, D-066) — Part C listed this as not started |
 | CCB-S3-022 | Durable Postgres-backed job queue | Briefing | **Partially delivered.** Phase 1 (foundation + crash-recovery hardening) live; **phase 2 not built** |
 | CCB-S3-023 | Swallowed-error audit; a failed in-group deletion is retried durably | Briefing | Delivered (D-063) |
 | CCB-S3-023 f/u | Follow-ups: atomic consent categorisation, generalised plugin self-check, unbounded ids | Follow-up | **Partly delivered.** Unbounded ids in the media and report routes are fixed and live; the other two remain open |
 | CCB-S3-024 | Capture write-ahead log | Briefing | **Partially delivered.** Slice 1 (durable substrate) live; **slices 2 and 3 not built** |
 | CCB-S3-025 | Stream polish: formatting, soft report control, share bar, permalinks, attribution | Briefing | Delivered |
-| CCB-S3-026 | Season 3 close-out: protocol & handover to Season 4 | Briefing | Delivered (this entry) |
+| CCB-S3-026 | Season 3 close-out: protocol & handover to Season 4 | Briefing | Delivered 2026-07-27 as `972f789`. Its currency check is **superseded by CCB-S3-028**, having run before 012, 013, 020 and 027 landed |
+| CCB-S3-027 | Erasure covers the SimpleX core's own copy | Briefing | Delivered 2026-07-27 as `cc06cf2` (D-077) |
+| CCB-S3-028 | Final documentation pass; what must survive the planning chat | Briefing | Delivered (this entry) |
+| CCB-S3-029 | Real legal pages, German binding | Briefing | Delivered 2026-07-27 as `db7b83c`, corrected by `2817ebe` (D-079) |
+
+## Season 4
+
+Season 4 began before Season 3 closed: CCB-S4-001 shipped to production while the Season 3
+close-out was still in progress. The seasons are a numbering scheme, not a gate.
+
+| Id | Subject | Kind | Status |
+|---|---|---|---|
+| CCB-S4-001 | The marketing site on its own domain; demo backend | Briefing | **Phase 1 delivered** 2026-07-27 as `3e60c96` and `6769281` (D-080, D-081, D-082). The visitor-facing demo UI is not built; the nginx configuration is not in the repository |
 
 ### Work in `main` that carries no briefing id
 
