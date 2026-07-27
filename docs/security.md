@@ -1,6 +1,6 @@
 # Cinderella — Security Posture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
 
 _Living document. Ground truth is the code; every claim below is anchored to a
 repo-relative `file:line`. Where the project outline and the code diverge, the
@@ -891,12 +891,45 @@ reports keep being dismissed stops creating holds (D-071), failing toward accept
 `placeEvidenceHold` never throws into the request, so the response is identical whether or not a hold
 was placed. A hold-specific status or error would let anyone probe which items are held.
 
-**Erasure is honest about its limits.** Destruction removes the row, everything that cascades from it
-(including the reporter's free-text note), the generated `search` tsvector, and every file the message
-owns on disk. It does **not** reach backups (fourteen generations), the SimpleX core's own SQLite copy
-under `state/`, content already fetched by feed readers or social scrapers, or media that never had a
-row. Member-facing copy promises removal from the live archive plus backup expiry and avoids the word
-"unrecoverable", which overwriting does not guarantee on modern storage.
+**Erasure now covers the core's own copy (CCB-S3-027).** Destruction removes the archive row,
+everything that cascades from it (including the reporter's free-text note), the generated `search`
+tsvector, every file the message owns on disk, AND the SimpleX core's own record of the item.
+
+That last part was missing until CCB-S3-027, and the earlier version of this section described it as a
+limit of erasure rather than an omission. It was an omission: `apiDeleteChatItems` was in the SDK the
+whole time with zero call sites. Every message a member had "destroyed" still existed on the host.
+
+**Why `internal` and not `broadcast`.** Established from the core sources at 6.5.4 before anything was
+built on it. `internal` runs `deleteGroupChatItem`, which deletes the raw wire messages, the edit
+versions, the reactions and the `chat_items` row itself, and `deleteFilesLocally`, which removes the
+file from the core's files folder. `internalMark` only runs
+`UPDATE chat_items SET item_deleted = ...` and leaves the content in place: production confirmed this
+directly, since the eleven rows already carrying `item_deleted = 1` each still held 12 to 14 KB of
+content. `broadcast` would additionally send an `XMsgDel` to every member, announcing the member's
+deletion to the whole group, which is a privacy harm in its own right. Only `internal` is used.
+
+**The core deletion is queued, not inline.** The archive row is destroyed in a transaction; the core
+copy cannot be, because it is an SDK call to an in-process core that may be down or restarting. A
+failure retries durably and surfaces on every attempt. Until that job succeeds the erasure is partial,
+and the operator is told so rather than the destruction reporting success.
+
+**Not for a quarantined item.** For an escalated or hash-matched item the core copy is evidence, and
+erasing it is the opposite of the obligation. That is an explicit branch in `destroyMessage`, not a
+consequence of ordering, so a later refactor meets the reason where the decision is made.
+
+**What this means now that originals are encrypted.** CCB-S3-012 encrypted every original at rest, so
+after that change **the core's SQLite database became the only unencrypted copy of member content on
+this host**: message text, and the base64 link-preview images that ride inside link messages. It is
+`0600`, owned by the service user, and served by nothing, but it is plaintext on disk. Two consequences
+follow. Erasing from it is now the difference between a member's content being gone and being readable
+by anyone with filesystem access. And a host backup that includes `state/` carries member content in
+clear even though the media tree beside it does not.
+
+**What still survives an erasure, stated plainly.** Backups (fourteen generations, and `backup.sh` does
+not currently copy `state/`), content already fetched by feed readers or social scrapers, and media
+files that never had a row. Member-facing copy promises removal from the live archive and from her own
+memory of the chat, plus backup expiry, and avoids the word "unrecoverable", which overwriting does not
+guarantee on modern storage.
 
 **Failures surface rather than masking.** An unlink that fails with `EACCES`/`EPERM` reaches
 `status.error` and rolls back the row deletion, so a permission fault can never be reported as a

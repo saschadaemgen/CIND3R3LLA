@@ -30,10 +30,13 @@ import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import { enqueueDestructionRun } from '../queue/index.js';
 import { status } from '../web/status.js';
+import { sweepFileStubs } from '../bot/file-stubs.js';
 
 export interface SweepResult {
   holdsExpired: number;
   destructionsQueued: number;
+  /** Abandoned receipt placeholders removed from the files folder (CCB-S3-027 §4). */
+  stubsRemoved: number;
 }
 
 /**
@@ -42,9 +45,13 @@ export interface SweepResult {
  * Escalations and hash-match quarantines are structurally excluded from the
  * expiry half (`expires_at IS NULL`), so nothing here can lift one.
  */
-export async function sweepDestructions(db: Queryable): Promise<SweepResult> {
+export async function sweepDestructions(
+  db: Queryable,
+  filesFolder?: string,
+): Promise<SweepResult> {
   let holdsExpired = 0;
   let destructionsQueued = 0;
+  let stubsRemoved = 0;
 
   for (const hold of await expiredHolds(db)) {
     const resolved = await resolveHold(db, hold.id, 'expired', 'system');
@@ -74,12 +81,28 @@ export async function sweepDestructions(db: Queryable): Promise<SweepResult> {
     destructionsQueued += 1;
   }
 
-  if (holdsExpired > 0 || destructionsQueued > 0) {
+  // Abandoned receipt placeholders (CCB-S3-027 §4). A failed receipt leaves a
+  // zero-byte file named after the member's own device filename; that name is
+  // member metadata and outlives any erasure request. Swept here because a
+  // destroyed message's placeholder is already removed by the core deletion, and
+  // everything else has no per-message handle to hang an unlink on.
+  if (filesFolder) {
+    try {
+      stubsRemoved = (await sweepFileStubs(filesFolder)).removed;
+    } catch (err) {
+      log.error(
+        `Sweep: could not sweep receipt placeholders: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  if (holdsExpired > 0 || destructionsQueued > 0 || stubsRemoved > 0) {
     log.info(
-      `Sweep: ${holdsExpired} hold(s) expired, ${destructionsQueued} pending destruction(s) queued.`,
+      `Sweep: ${holdsExpired} hold(s) expired, ${destructionsQueued} pending destruction(s) queued, ` +
+        `${stubsRemoved} receipt placeholder(s) removed.`,
     );
   }
-  return { holdsExpired, destructionsQueued };
+  return { holdsExpired, destructionsQueued, stubsRemoved };
 }
 
 /** How often the sweep runs. Deliberately unhurried: it is a backstop, not the path. */
@@ -91,9 +114,9 @@ export const SWEEP_INTERVAL_MS = 15 * 60 * 1000;
  * The boot run matters as much as the interval: a process that was down when a
  * hold expired, or that died mid-destruction, resolves it on the way back up.
  */
-export function startDestructionSweeper(db: Queryable): NodeJS.Timeout {
+export function startDestructionSweeper(db: Queryable, filesFolder?: string): NodeJS.Timeout {
   const run = (): void => {
-    void sweepDestructions(db).catch((err: unknown) => {
+    void sweepDestructions(db, filesFolder).catch((err: unknown) => {
       // The sweep is the backstop for a consent guarantee, so its own failure has
       // to be visible rather than leaving everything quietly unswept.
       const message = err instanceof Error ? err.message : String(err);

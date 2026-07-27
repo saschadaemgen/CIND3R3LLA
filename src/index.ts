@@ -24,6 +24,7 @@ import {
 } from './config.js';
 import { log, setLogLevel } from './log.js';
 import { startBot, type BotHandle } from './bot/client.js';
+import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat } from './bot/send.js';
 import { registerCapture } from './capture/handler.js';
@@ -114,6 +115,10 @@ async function startCaptureWorker(
 ): Promise<BotHandle | null> {
   try {
     const botHandle = await startBot(cfg, { getFileTimeoutMs: () => settings.fileTimeoutMs });
+    // The core-erasure path needs a live chat client (CCB-S3-027). Registered here
+    // rather than passed down, because the queue handler that uses it runs outside
+    // the capture wiring entirely.
+    setCoreDeleteHandle(botHandle);
     const hooks = makePersistenceHooks(cfg);
 
     /**
@@ -412,7 +417,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   // once now, so a process that was down when a hold expired resolves it on the
   // way back up, then every quarter hour.
   try {
-    startDestructionSweeper(getPool());
+    startDestructionSweeper(getPool(), cfg.simplexFilesFolder);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     status.error(`Deferred-destruction sweeper failed to start: ${message}`);

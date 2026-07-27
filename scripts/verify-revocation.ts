@@ -737,6 +737,92 @@ async function main(): Promise<void> {
   check('destroying sweeps the quarantine store too', !(await quarantineHas(oFiles.original)));
   check('and the row is gone', !(await rowExists(o1)));
 
+  /* ── 17. The core's own copy is erased too (CCB-S3-027) ────────────────── */
+  section('17. Destroying a message queues erasure of the SimpleX core copy');
+
+  const { sweepFileStubs } = await import('../src/bot/file-stubs.js');
+
+  const PIA = 'member-pia';
+  await recordOptIn(db, PIA, '2026-07-19T09:00:00Z');
+  const p1 = await insert(PIA, { sentAt: '2026-07-19T10:00:00Z', text: 'pia one' });
+  const coreRef = await pg.query<{ group_id: string; group_msg_id: string }>(
+    'SELECT group_id, group_msg_id FROM messages WHERE id = $1',
+    [p1],
+  );
+  const gid = Number(coreRef.rows[0]?.group_id);
+  const iid = Number(coreRef.rows[0]?.group_msg_id);
+
+  await runTx((tx) => destroyMessage(tx, mediaRoot, p1, quarantineRoot));
+  // Scoped to THIS message: earlier sections destroyed messages too, and each of
+  // those legitimately queued its own core erasure.
+  const eraseJob = await pg.query<{ payload: unknown }>(
+    "SELECT payload FROM jobs WHERE type = 'core.erase' AND idempotency_key = $1",
+    [`core.erase:${String(gid)}:${String(iid)}`],
+  );
+  check('destroying a message queues a core erasure', eraseJob.rows.length === 1);
+  const payload = JSON.stringify(eraseJob.rows[0]?.payload ?? {});
+  check(
+    'and the job carries the CORE identifiers read before the row was deleted',
+    payload.includes(`"groupId":${String(gid)}`) && payload.includes(`"itemId":${String(iid)}`),
+    payload,
+  );
+  check(
+    'and it carries identifiers ONLY, never content or a filename',
+    !payload.includes('pia one') && !payload.includes('photo'),
+    payload,
+  );
+
+  // A quarantined item must NOT have its core copy erased: that copy is evidence.
+  const QUINN = 'member-quinn';
+  await recordOptIn(db, QUINN, '2026-07-19T09:00:00Z');
+  const q2 = await insert(QUINN, { sentAt: '2026-07-19T10:00:00Z', text: 'evidence' });
+  await placeHold(db, q2, 'csam', null);
+  const beforeN = (
+    await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM jobs WHERE type = 'core.erase'")
+  ).rows[0];
+  let quarantineBlocked = false;
+  try {
+    await runTx((tx) => destroyMessage(tx, mediaRoot, q2, quarantineRoot));
+  } catch (err) {
+    quarantineBlocked = isHoldViolation(err);
+  }
+  const afterN = (
+    await pg.query<{ n: number }>("SELECT count(*)::int AS n FROM jobs WHERE type = 'core.erase'")
+  ).rows[0];
+  check('a quarantined item cannot be destroyed at all', quarantineBlocked);
+  check(
+    'and NO core erasure is queued for it, because that copy is evidence',
+    (afterN?.n ?? 0) === (beforeN?.n ?? 0),
+  );
+
+  /* ── 18. Abandoned receipt placeholders ────────────────────────────────── */
+  section('18. Abandoned receipt placeholders are swept, live transfers are not');
+
+  const filesFolder = await mkdtemp(join(tmpdir(), 'cinderella-files-'));
+  const oldStub = join(filesFolder, 'EXAMPLE_00000000_000000.jpg');
+  const freshStub = join(filesFolder, 'EXAMPLE_11111111_111111.jpg');
+  const realFile = join(filesFolder, 'actual-photo.jpg');
+  await writeFile(oldStub, '');
+  await writeFile(freshStub, '');
+  await writeFile(realFile, 'real bytes');
+  const aged = new Date(Date.now() - 96 * 60 * 60 * 1000);
+  const { utimes } = await import('node:fs/promises');
+  await utimes(oldStub, aged, aged);
+
+  const stubSweep = await sweepFileStubs(filesFolder);
+  check('an aged zero-byte placeholder is removed', stubSweep.removed === 1, JSON.stringify(stubSweep));
+  check('a fresh one is left alone (a transfer may be in flight)', await stubExists(freshStub));
+  check('and a real file is never touched', await stubExists(realFile));
+
+  async function stubExists(p: string): Promise<boolean> {
+    try {
+      await stat(p);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${failures} FAILURE(S)`} — hide/delete on revocation with evidence holds.`,
   );

@@ -16,6 +16,7 @@ import {
 } from './jobs/analysis.js';
 import { DELETION_APPLY_JOB, deletionApplyHandler, deletionApplyKey } from './jobs/deletion.js';
 import { SCREENING_SCAN_JOB, screeningScanHandler, screeningScanKey } from './jobs/screening.js';
+import { CORE_ERASE_JOB, coreEraseHandler, coreEraseKey } from './jobs/core-erase.js';
 import {
   DESTRUCTION_RUN_JOB,
   HOLD_EXPIRE_JOB,
@@ -57,6 +58,12 @@ export function registerBuiltinJobs(): void {
   // which is what keeps the whole pipeline exercised in the shipped configuration.
   if (!getJobHandler(SCREENING_SCAN_JOB)) {
     registerJobHandler(SCREENING_SCAN_JOB, screeningScanHandler);
+  }
+  // Erasure of the SimpleX core's own copy (CCB-S3-027). MUST be registered: an
+  // unregistered type is never claimed, and these jobs carry the half of a
+  // member's erasure that lives outside our own database.
+  if (!getJobHandler(CORE_ERASE_JOB)) {
+    registerJobHandler(CORE_ERASE_JOB, coreEraseHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }
@@ -189,6 +196,28 @@ export async function enqueueScreeningScan(db: Queryable, messageId: number): Pr
   });
 }
 
+/**
+ * Enqueue erasure of the core's own copy of one chat item (CCB-S3-027).
+ *
+ * Interactive lane: `bulkPaused` stops the bulk lane entirely, and an operator
+ * shedding load must never silently halt a member's erasure. More attempts than
+ * the default, because the core being down is an ordinary transient state and the
+ * alternative to retrying is leaving destroyed content on the host.
+ */
+export async function enqueueCoreErase(
+  db: Queryable,
+  groupId: number,
+  itemId: number,
+): Promise<void> {
+  await enqueueJob(db, CORE_ERASE_JOB, {
+    idempotencyKey: coreEraseKey(groupId, itemId),
+    lane: 'interactive',
+    maxAttempts: 20,
+    payload: { groupId, itemId },
+  });
+}
+
+export { CORE_ERASE_JOB } from './jobs/core-erase.js';
 export { SCREENING_SCAN_JOB } from './jobs/screening.js';
 export { CONTENT_ANALYSIS_JOB } from './jobs/analysis.js';
 export { DELETION_APPLY_JOB } from './jobs/deletion.js';

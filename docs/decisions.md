@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,40 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-077 — Erasure covers the SimpleX core's own copy, using `internal` and never `broadcast`
+
+**Status: IMPLEMENTED (CCB-S3-027).**
+**The omission.** The core keeps its own SQLite copy of every chat item, and nothing had ever deleted
+from it. Every message a member had "destroyed" still existed on the host, with the base64 link-preview
+images that ride inside link messages. `security.md` had described this as a LIMIT of erasure, framed as
+out of reach. It was not: `apiDeleteChatItems` was in the SDK the whole time with zero call sites.
+**Established before building, as the briefing required.** From the core sources at 6.5.4:
+`CIDMInternal` reaches `deleteGroupCIs` -> `deleteGroupChatItem`, which runs `deleteChatItemMessages_`,
+`deleteChatItemVersions_`, `deleteGroupCIReactions_` and `DELETE FROM chat_items WHERE ...`, plus
+`deleteCIFiles` -> `deleteFilesLocally` (`removeFile`). `CIDMInternalMark` runs
+`UPDATE chat_items SET item_deleted = ?, item_deleted_ts = ?` and keeps the content. Production
+confirmed the contrast independently: the eleven rows already carrying `item_deleted = 1`, from members
+who deleted their own messages in the group, each still held 12 to 14 KB of `item_content`.
+**`internal`, never `broadcast`.** `broadcast` sends an `XMsgDel` to every member, announcing the
+member's deletion to the whole group. They asked us to erase our copy, not to publish the fact that
+they changed their mind.
+**Queued, not inline.** The archive row is destroyed in a transaction; the core copy is an SDK call to
+an in-process core that may be down or restarting. A failure retries durably and surfaces on every
+attempt, because "a partial erasure that reports success" is the pattern the CCB-S3-023 audit exists to
+prevent. The core identifiers are read BEFORE the archive row is deleted, since afterwards there is
+nothing left to read them from.
+**Explicitly not for a quarantined item.** For an escalated or hash-matched item the core copy is
+evidence. That is a named branch in `destroyMessage` with the reason at the branch, not an emergent
+consequence of the trigger happening to refuse the delete first.
+**What this changed about the threat model.** CCB-S3-012 encrypted every original at rest, which made
+the core's SQLite database **the only unencrypted copy of member content on the host**. Erasing from it
+is therefore now the difference between a member's content being gone and being readable by anyone with
+filesystem access.
+**Evidence.** `src/bot/core-delete.ts`, `src/queue/jobs/core-erase.ts`, `src/archive/destroy.ts`,
+`scripts/verify-revocation.ts` §17.
 
 ---
 

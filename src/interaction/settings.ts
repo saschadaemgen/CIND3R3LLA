@@ -352,8 +352,9 @@ const PERSONA_EN: PersonaStrings = {
     'search. Say *{wake}, restore my words* whenever you want them back in the light.',
   deleteConfirm:
     '🔥 Then I shall destroy them. This is the one thing I cannot put back for you: your ' +
-    'messages and everything you sent with them leave my archive at once, and asking me later ' +
-    'will not return them. Copies inside my keeper’s backups fade as those backups age out.\n\n' +
+    'messages and everything you sent with them leave my archive and my own memory of this chat ' +
+    'at once, and asking me later will not return them. Copies inside my keeper’s backups fade ' +
+    'as those backups age out.\n\n' +
     'If you are certain, write the word *delete*. Nothing else will do it.',
   deleteNeedsWord:
     '🔥 I need the word itself for this one. Write *delete* if you truly mean it, or *no* to ' +
@@ -438,8 +439,9 @@ const PERSONA_DE: PersonaStrings = {
     'Licht haben möchtest.',
   deleteConfirm:
     '🔥 Dann vernichte ich sie. Das ist das Einzige, was ich nicht für dich zurückholen kann: ' +
-    'deine Nachrichten und alles, was du mitgeschickt hast, verlassen sofort mein Archiv, und ' +
-    'späteres Fragen bringt sie nicht wieder. Kopien in den Sicherungen meines Hausherrn ' +
+    'deine Nachrichten und alles, was du mitgeschickt hast, verlassen sofort mein Archiv und ' +
+    'meine eigene Erinnerung an diesen Chat, und späteres Fragen bringt sie nicht wieder. ' +
+    'Kopien in den Sicherungen meines Hausherrn ' +
     'verblassen, sobald diese Sicherungen auslaufen.\n\n' +
     'Wenn du sicher bist, schreibe das Wort *löschen*. Nichts anderes tut es.',
   deleteNeedsWord:

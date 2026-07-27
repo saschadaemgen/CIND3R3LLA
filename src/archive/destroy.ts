@@ -33,6 +33,7 @@
 import { unlink } from 'node:fs/promises';
 
 import { liveHold } from '../db/holds.js';
+import { enqueueCoreErase } from '../queue/index.js';
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import { forgetMediaFailures } from '../media/failures.js';
@@ -107,6 +108,15 @@ export async function destroyMessage(
   messageId: number,
   quarantineRoot?: string,
 ): Promise<DestroyResult> {
+  // The CORE's identifiers, read before the row goes (CCB-S3-027). `group_id` and
+  // `group_msg_id` ARE the core's own chat id and chat-item id; once this row is
+  // deleted there is nothing left to look them up from, so the core copy would be
+  // unreachable forever. Read here, acted on after the archive delete commits.
+  const { rows: coreRef } = await db.query<{ group_id: string; group_msg_id: string }>(
+    'SELECT group_id, group_msg_id FROM messages WHERE id = $1',
+    [messageId],
+  );
+
   // Enumerated first: `media_path` and `media_derived_path` exist only on the row
   // that is about to be deleted.
   //
@@ -144,6 +154,25 @@ export async function destroyMessage(
   // The dashboard's media-failure list is keyed by message id and is in memory,
   // so a destroyed message would otherwise keep appearing there until restart.
   forgetMediaFailures(messageId);
+
+  // ERASE THE CORE'S COPY TOO (CCB-S3-027). Queued rather than called inline: the
+  // core may be down or restarting, and a failure here must retry rather than
+  // silently leave a full copy of destroyed content on the host.
+  //
+  // NOT FOR A QUARANTINED ITEM, and this branch is explicit on purpose rather than
+  // an emergent consequence of ordering. For an escalated or hash-matched item the
+  // core copy is EVIDENCE, and erasing it is the opposite of the obligation:
+  // quarantine preserves, it does not destroy. In practice the DB trigger already
+  // refuses to delete such a row so this is unreachable for them, but someone will
+  // refactor this path later and the reason has to be visible where the decision is.
+  const ref = coreRef[0];
+  if (ref) {
+    const groupId = Number(ref.group_id);
+    const itemId = Number(ref.group_msg_id);
+    if (Number.isFinite(groupId) && Number.isFinite(itemId)) {
+      await enqueueCoreErase(db, groupId, itemId);
+    }
+  }
 
   log.info(
     `Archive: destroyed message ${messageId} (${removed} file(s) removed from the media store).`,

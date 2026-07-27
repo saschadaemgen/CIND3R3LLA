@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -1104,6 +1104,43 @@ anything ever goes live" while no screening code existed at all. Corrected to "i
 corrected English rather than repeating a false claim in 39 languages. The admin console states the
 limit plainly: hash matching detects known material only, and a no-match result is not a statement that
 anything is safe. **The screening result is never shown to members.**
+
+## 27. Erasing the core's own copy (CCB-S3-027)
+
+Destruction used to stop at our own database. The SimpleX core keeps its own SQLite copy of every chat
+item, and nothing ever deleted from it, so every "destroyed" message still existed on the host.
+
+**What `internal` does**, established from the core sources at 6.5.4 before any of this was built:
+
+| mode | store call | effect |
+|---|---|---|
+| `internal` | `deleteGroupChatItem` | `DELETE FROM chat_items` + raw `messages` + versions + reactions, and `deleteFilesLocally` removes the file from the files folder |
+| `internalMark` | `markGroupChatItemDeleted` | `UPDATE chat_items SET item_deleted = ...`; content and files kept |
+| `broadcast` | sends `XMsgDel` first | announces the deletion to every member |
+
+Production confirmed the `internalMark` behaviour independently: the eleven rows already flagged
+`item_deleted = 1` each still held 12 to 14 KB of content. **We use `internal`.**
+
+**The flow.** `destroyMessage` reads the core's `(group_id, group_msg_id)` BEFORE deleting the archive
+row (afterwards there is nothing to read them from), and enqueues `core.erase`. The job calls
+`apiDeleteChatItems(..., Internal)` through a module-registered bot handle, retries on the interactive
+lane with a raised attempt budget, and surfaces on every failed attempt: until it succeeds the erasure
+is partial and the operator is told so.
+
+**Quarantine is an explicit exception.** For an escalated or hash-matched item the core copy is
+evidence, so no erasure is queued. The branch is named and commented at the decision point rather than
+relying on the DB trigger refusing the delete first, because that ordering is exactly what a later
+refactor would change.
+
+**Receipt placeholders.** The core creates the destination file when a receipt starts and `storeMedia`
+renames it away on success, so a zero-byte file named after the member's own device filename survives
+every FAILED receipt. Production: 109 core file rows, 100 moved out, 9 left, and those 9 are precisely
+the incomplete receipts. `sweepFileStubs` removes aged zero-byte files from the files folder on the
+existing sweeper's schedule; a destroyed message's placeholder is already removed by the core deletion
+itself. The age bound is well past the XFTP relay expiry so a live transfer is never interrupted.
+
+**The consequence for the threat model.** Since CCB-S3-012 encrypted the originals, the core's database
+is the only unencrypted copy of member content on the host. See `security.md` §11b.
 
 ## Appendix: divergences (code wins)
 
