@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -1141,6 +1141,37 @@ itself. The age bound is well past the XFTP relay expiry so a live transfer is n
 
 **The consequence for the threat model.** Since CCB-S3-012 encrypted the originals, the core's database
 is the only unencrypted copy of member content on the host. See `security.md` §11b.
+
+## 28. The chat adapter seam (CCB-S3-020, Phase A)
+
+Cinderella talked to `simplex-chat` throughout. That bound the product to AGPL, blocking a closed
+commercial edition, and let SDK types spread into application code where a later swap would have to
+undo them. `src/adapter/` is the seam; `src/bot/` is the SimpleX implementation of it.
+
+**Layout.** `src/adapter/types.ts` (domain types), `chat-adapter.ts` (the interface), `fake.ts` (an
+in-memory implementation with no SDK). `src/bot/` holds the SimpleX adapter, including `parse.ts`, which
+is the SDK-to-domain translation that used to sit in `src/capture/message.ts`.
+
+**The dependency was one field.** `CapturedMessage.raw` was `T.AChatItem`, and `CapturedMessage` flows
+through capture, persist, consent and the interaction layer, so that single field made nearly the whole
+application transitively SDK-typed. It is now `RawItem = unknown`: application code carries it and hands
+it back, and only the adapter narrows it.
+
+**Enforcement, not discipline.** `verify:adapter-seam` fails the harness if anything outside `src/bot/`
+imports the SDK, and proves itself by synthesising a violation and asserting it is caught. This is the
+durable part of the work: a refactor is a state, a check is a property.
+
+**Interface surface.** Only operations with callers: start/stop, event subscription, send to
+group/support/direct, receive file, get/update profile, list groups and members, erase our own copy.
+Moderation, reactions and member contact are intended but have no caller, and are deferred rather than
+guessed (Phase B).
+
+**Contract.** `docs/adapter-contract.md` states what a compliant implementation must do, tagging each
+clause `[neutral]` or `[SimpleX-shaped]` so a Matrix adapter author can see immediately which parts are
+domain properties and which are SimpleX semantics leaking through. Its §9 records the known leak: the
+opaque `RawItem` is stored in `messages.raw_json` and SQL reads inside it, in migration 019 (the public
+front's `formatted_text`) and the support-scope diagnostic. That is scheduled for removal, not a
+property a second protocol could honour, and Matrix on the roadmap makes it a prerequisite.
 
 ## Appendix: divergences (code wins)
 

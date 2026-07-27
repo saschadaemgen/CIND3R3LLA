@@ -19,8 +19,7 @@
  * what belongs in a job that is meant to erase something.
  */
 
-import { T } from '@simplex-chat/types';
-
+import type { ChatKind } from '../../adapter/types.js';
 import { CoreDeleteUnavailableError, coreDeleteAvailable, deleteFromCore } from '../../bot/core-delete.js';
 import { log } from '../../log.js';
 import { status } from '../../web/status.js';
@@ -56,11 +55,11 @@ export const coreEraseHandler: JobHandler = async (payload) => {
     throw new CoreDeleteUnavailableError();
   }
 
-  const chatType =
-    payload['chatType'] === 'direct' ? T.ChatType.Direct : T.ChatType.Group;
+  // Cinderella's own vocabulary, not the protocol's: the adapter maps it.
+  const chatKind: ChatKind = payload['chatType'] === 'direct' ? 'direct' : 'group';
 
   try {
-    await deleteFromCore(groupId, itemId, chatType);
+    await deleteFromCore(groupId, itemId, chatKind);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     log.error(`Queue: core erasure of item ${itemId} in group ${groupId} failed: ${message}`);

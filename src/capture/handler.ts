@@ -14,7 +14,8 @@ import { status } from '../web/status.js';
 import type { BotHandle } from '../bot/client.js';
 import type { ReceivedFile } from '../bot/files.js';
 import { parseConsentCommand, type ConsentCommand } from '../consent/commands.js';
-import { isPublicGroupChat, parseGroupMessage, type CapturedMessage } from './message.js';
+import type { CapturedMessage } from './message.js';
+import { isPublicGroupChat, parseGroupMessage } from '../bot/parse.js';
 
 export interface CaptureHooks {
   /** Called for every captured group message (before any file is received). */

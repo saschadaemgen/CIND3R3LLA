@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,43 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-078 — A chat adapter seam, enforced by a check rather than by discipline
+
+**Status: IMPLEMENTED (CCB-S3-020, Phase A). Phases B and C deferred.**
+**Why now.** Linking the AGPL `simplex-chat` library binds Cinderella to AGPL, which blocks a closed
+commercial edition for as long as the dependency is structural, and the operator intends to move to
+their own Rust implementation. Separately, SDK types were spreading: every week more call sites were
+work a later swap would have to redo. Insurance, bought while it was cheap.
+**The inventory was small, the coupling was not.** 12 files imported the SDK, but only three outside
+`src/bot/`. The real dependency was ONE field: `CapturedMessage.raw: T.AChatItem`. `CapturedMessage`
+flows through capture, persist, consent and the whole interaction layer, so that field made almost the
+entire application transitively SDK-typed. It is now `RawItem = unknown`: carry it, hand it back to the
+adapter, never inspect it.
+**Domain types, not pass-through.** If callers still received `T.ChatInfo` and `T.ChatItem`, nothing
+would be decoupled, because the type SHAPES are the dependency. `src/adapter/types.ts` defines message,
+member, group, scope, file and event in Cinderella's terms. The clearest case is `ChatScope`: SimpleX
+carries an OPTIONAL `groupChatScope` discriminator, and absent-means-public is exactly what captured two
+private messages (CCB-S3-019). Here it is required and closed, so a scope cannot be missed by omission.
+**The enforcement is the durable part.** `verify:adapter-seam` fails if anything outside `src/bot/`
+imports the SDK, and it also synthesises a violation in a temp directory and asserts it is caught,
+because a guard nobody has seen fail is a guard nobody knows works. A refactor is a state; a check is a
+property. Without it the seam erodes within a month, as the send path diverged before CCB-S3-003.
+**No speculative methods.** Moderation, reactions and member-contact creation were all found available
+by the CCB-S3-016 audit and are all intended, but none has a caller, and the briefing is explicit that a
+method with no caller is a guess about a future implementation. They arrive with their first caller.
+**Known leak, recorded rather than papered over.** `RawItem` is stored in `messages.raw_json` and SQL
+reads inside it: `migrations/019` builds the public front's `formatted_text` from
+`raw_json -> 'chatItem' -> 'formattedText'`, and the support-scope diagnostic reads
+`raw_json -> 'chatInfo' -> 'groupChatScope'`. "A compliant implementation must emit AChatItem-shaped
+JSON" would be a SimpleX requirement wearing a neutral name, and no Matrix adapter could honestly
+satisfy it. `docs/adapter-contract.md` §9 says so plainly and tags every clause `[neutral]` or
+`[SimpleX-shaped]`, which is the list a second adapter has to satisfy. Removing it is its own briefing,
+and Matrix on the roadmap makes it a prerequisite rather than housekeeping.
+**Evidence.** `src/adapter/`, `src/bot/parse.ts`, `scripts/verify-adapter-seam.ts`,
+`scripts/verify-adapter-fake.ts`, `docs/adapter-contract.md`.
 
 ---
 

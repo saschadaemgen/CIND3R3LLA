@@ -77,7 +77,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
 
 ## Layout
 
-- `src/` — `config.ts`, `log.ts`, `bot/` (core wiring, files, connect, avatar),
+- `src/` — `config.ts`, `log.ts`, `adapter/` (the chat seam: Cinderella's own domain
+  types, the `ChatAdapter` interface, and an in-memory fake; D-078),
+  `bot/` (**the SimpleX adapter, and the ONLY place that may import `simplex-chat`** -
+  enforced by `verify:adapter-seam`; core wiring, files, connect, avatar, parsing),
   `capture/` (parse, media, links, persist, her own sends), `consent/`,
   `archive/` (whether her own messages publish, name redaction, destruction and the
   deferred-destruction sweeper),
@@ -123,6 +126,8 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:site`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
+`verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
+proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture
 provider proves the quarantine path with no real material).
 `scripts/admin-preview.ts` boots a seeded local admin console for browser checks.

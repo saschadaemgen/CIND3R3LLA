@@ -17,7 +17,8 @@
  * confirmation to arrive, because a bookkeeping insert went wrong.
  */
 
-import type { T } from '@simplex-chat/types';
+import type { RawItem } from '../adapter/types.js';
+import { parseSentGroupItem } from '../bot/parse.js';
 import { log } from '../log.js';
 import { withTransaction, type Queryable } from '../db/pool.js';
 import { insertBotMessage, resolveMemberByDisplayName, type BotMention } from '../db/bot-messages.js';
@@ -63,7 +64,7 @@ export interface BotReplyMeta {
 }
 
 /** The one field of a sent group item we need beyond ids. */
-interface SentGroupItem {
+export interface SentGroupItem {
   groupId: number;
   itemId: number;
   sharedMsgId: string | null;
@@ -73,25 +74,6 @@ interface SentGroupItem {
   displayName: string;
 }
 
-/**
- * Narrows a sent chat item to the group send we archive. Anything else — a direct
- * message, a received item, a group event — is not hers to archive here.
- */
-function parseSentGroupItem(aChatItem: T.AChatItem): SentGroupItem | null {
-  const { chatInfo, chatItem } = aChatItem;
-  if (chatInfo.type !== 'group') return null;
-  if (chatItem.chatDir.type !== 'groupSnd') return null;
-  const me = chatInfo.groupInfo.membership;
-  if (!me?.memberId) return null;
-  return {
-    groupId: chatInfo.groupInfo.groupId,
-    itemId: chatItem.meta.itemId,
-    sharedMsgId: chatItem.meta.itemSharedMsgId ?? null,
-    sentAt: chatItem.meta.itemTs,
-    memberId: me.memberId,
-    displayName: me.memberProfile?.displayName || me.localDisplayName || 'Cinderella',
-  };
-}
 
 /**
  * Records the messages a send produced.
@@ -104,7 +86,7 @@ function parseSentGroupItem(aChatItem: T.AChatItem): SentGroupItem | null {
  */
 export async function recordBotReply(
   db: Queryable,
-  sent: readonly T.AChatItem[],
+  sent: readonly RawItem[],
   text: string,
   meta: BotReplyMeta,
   redactedPlaceholder: string,
@@ -174,7 +156,7 @@ export async function recordBotReply(
  */
 export function withBotCapture(
   placeholder: (lang: string) => string,
-  send: (text: string, opts: { quote: boolean }) => Promise<readonly T.AChatItem[]>,
+  send: (text: string, opts: { quote: boolean }) => Promise<readonly RawItem[]>,
 ): (text: string, opts: { quote: boolean } & BotReplyMeta) => Promise<void> {
   return async (text, opts) => {
     // The send comes first and is NOT in the try: a message that failed to go out

@@ -38,7 +38,11 @@ export async function sendToChat(
   opts: SendOptions,
 ): Promise<T.AChatItem[]> {
   if (!opts.quote) {
-    const chatInfo = msg.raw.chatInfo;
+    // Narrowing the opaque handle back to the SDK item. Legitimate HERE and
+    // nowhere else: this file is inside the adapter, which is the one place that
+    // knows what `RawItem` actually is (CCB-S3-020 §2).
+    const raw = msg.raw as T.AChatItem;
+    const chatInfo = raw.chatInfo;
     if (chatInfo) {
       return await chat.apiSendTextMessage(chatInfo, text);
     }
@@ -46,5 +50,5 @@ export async function sendToChat(
       `Outbound reply for item ${msg.itemId} has no chat reference; falling back to a quoting reply.`,
     );
   }
-  return await chat.apiSendTextReply(msg.raw, text);
+  return await chat.apiSendTextReply(msg.raw as T.AChatItem, text);
 }

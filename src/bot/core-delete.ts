@@ -39,6 +39,7 @@
 
 import { T } from '@simplex-chat/types';
 
+import type { ChatKind } from '../adapter/types.js';
 import { log } from '../log.js';
 import type { BotHandle } from './client.js';
 
@@ -74,9 +75,11 @@ export class CoreDeleteUnavailableError extends Error {
 export async function deleteFromCore(
   chatId: number,
   itemId: number,
-  chatType: T.ChatType = T.ChatType.Group,
+  chatKind: ChatKind = 'group',
 ): Promise<void> {
   if (!handle) throw new CoreDeleteUnavailableError();
+  // The SDK enum lives HERE, inside the adapter, and nowhere else.
+  const chatType = chatKind === 'direct' ? T.ChatType.Direct : T.ChatType.Group;
   await handle.chat.apiDeleteChatItems(
     // Group for archived member messages; Direct for the private support-scope
     // items CCB-S3-019 removed from the archive but never from the core.
@@ -87,5 +90,5 @@ export async function deleteFromCore(
     // member's deletion to the entire group.
     T.CIDeleteMode.Internal,
   );
-  log.info(`Core: erased chat item ${itemId} in ${chatType} chat ${chatId} from the core database.`);
+  log.info(`Core: erased chat item ${itemId} in ${chatKind} chat ${chatId} from the core database.`);
 }

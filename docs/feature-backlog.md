@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-027**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -520,6 +520,25 @@ harnesses pass; what is missing is the reasoning, the reconciliation and the rev
 - [ ] **Attribute future work.** Every commit carries its `Briefing:` trailer. The absence of one on
       all 23 commits is exactly why this work was invisible to the register and to the per-change
       documentation rule.
+
+## Adapter seam follow-ups (CCB-S3-020 Phases B and C)
+
+- [x] **Phase A: the seam exists and is enforced.** Domain types, opaque `RawItem`, `ChatAdapter` over
+      the operations that have callers, one adapter (`src/bot/`), an in-memory fake, and
+      `verify:adapter-seam` which proves it fails on a violation (D-078).
+- [ ] **Phase B: the audit-found operations.** Moderation (delete another member's message, remove a
+      member, change a role), reactions, and creating a contact from a member. All available and all
+      intended, none with a caller. They arrive WITH their first caller so the shape is verified against
+      live behaviour rather than guessed.
+- [ ] **Phase C: remove the `raw_json` leak. Prerequisite for Matrix, not housekeeping.** SQL reads the
+      SimpleX item shape in two live places: `migrations/019_formatted_text.sql` builds the public
+      front's `formatted_text` from `raw_json -> 'chatItem' -> 'formattedText'`, and
+      `scripts/scan-support-scope.ts` reads `raw_json -> 'chatInfo' -> 'groupChatScope'`. A Matrix event
+      has an entirely different shape, so any SQL reading the SimpleX shape is wrong the moment a second
+      protocol exists. Needs a Cinderella-defined formatted-runs shape, a rewrite of 019, and a backfill
+      over existing rows: a schema change on the path serving every public page, so its own briefing.
+      Note `capture_events.payload` (migration 018) has **no production writer yet**, so its shape can
+      still be defined in domain terms for free.
 
 ## Operator-owned open items (carried into Season 2)
 

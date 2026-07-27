@@ -27,7 +27,7 @@
 import { PGlite } from '@electric-sql/pglite';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { registerCapture, type CaptureHooks } from '../src/capture/handler.js';
-import { isPublicGroupChat, parseGroupMessage, unrecognisedScopeType } from '../src/capture/message.js';
+import { isPublicGroupChat, parseGroupMessage, unrecognisedScopeType } from '../src/bot/parse.js';
 import {
   clearUnknownScopes,
   recentUnknownScopes,
