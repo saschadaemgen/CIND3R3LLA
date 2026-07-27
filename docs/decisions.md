@@ -13,6 +13,49 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-079 — Legal texts live in code, with the German version binding and the rest labelled
+
+**Status: IMPLEMENTED** (CCB-S3-029)
+
+The site ships 40 locales, all but two machine translated. A legally binding
+Impressum cannot be machine translated, and a privacy policy that drifts per
+language is worse than one language done properly. So the legal texts do NOT live
+in `locales/*.json` with the rest of the copy. They live in
+[`src/web/site/legal.ts`](../src/web/site/legal.ts) as two authored pairs: the
+German, which is binding, and an English convenience translation. Every other
+locale falls back to the English and carries a visible notice naming the German as
+the governing version and linking to it. Nothing here is translated automatically.
+
+Two consequences worth stating:
+
+- The Impressum is reproduced **verbatim** from the operator's supplied text. It is
+  not paraphrased, reflowed or "improved" and must not be.
+- The privacy policy is drafted **from the code**, not from a generator, because
+  this product does something a template does not anticipate: it publishes personal
+  data to the open web deliberately, on the basis of consent. Where a comfortable
+  wording and the implementation disagreed, the implementation won. The screening
+  section says "in development" and "no such screening runs today" for the same
+  reason the public site does (D-076), and the erasure section refuses the word
+  "unrecoverable".
+
+Deliberate omissions are as load-bearing as the content. There is no tax or economic
+identification number in either language, at the operator's explicit instruction, and
+`verify:site` asserts its **absence** so a later completeness edit cannot add one back.
+The Youth Protection Officer is worded as the voluntary appointment it is.
+
+Terms of service remain a draft, and the page now says plainly that none are in
+force rather than carrying bracketed placeholders. Inventing plausible terms a
+visitor could rely on would be worse than publishing none.
+
+The privacy policy is now indexable. A policy nobody can find is not a policy.
+Making it so exposed a latent bug: `buildSiteSitemapXml` filtered on `NAV_PAGES`,
+which drops every nested slug because the top nav has no room for them, so an
+indexable nested page was silently absent from the sitemap. The sitemap's question
+is "is it built and indexable", not "does it fit the nav", and it now filters on
+`SITE_PAGES`.
+
+None of this is legal advice. It needs review by a lawyer before commercial launch.
+
 ### D-078 — A chat adapter seam, enforced by a check rather than by discipline
 
 **Status: IMPLEMENTED (CCB-S3-020, Phase A). Phases B and C deferred.**

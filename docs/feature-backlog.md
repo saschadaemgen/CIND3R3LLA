@@ -474,9 +474,19 @@ operator login remains a discreet header button to the unchanged, `noindex`, har
 - [x] **Legal pages wired** — footer-linked on every page; the Legal Notice includes the
       voluntarily appointed Youth Protection Officer; Privacy/Terms render as drafts
       (badged, `noindex`, out of the sitemap). **(CCB-S3-001)**
-- [ ] **Final legal texts** — the German Impressum operator fields, the full Privacy
-      Policy and Terms (planning chat + counsel); replacing them is a locale-file edit
-      plus removing the `noindex` flags in [`src/web/site/pages.ts`](../src/web/site/pages.ts).
+- [x] **Real Impressum + Privacy Policy** — the operator's actual details, the German
+      Impressum verbatim and binding, the privacy policy drafted from the code, both
+      indexable and in the sitemap; every placeholder gone from every legal page in all
+      40 locales. Texts live in [`src/web/site/legal.ts`](../src/web/site/legal.ts), not
+      in the locale files, because a binding legal text cannot be machine translated.
+      **(CCB-S3-029, D-079)**
+- [ ] **Terms of service** — still outstanding, and the page says so rather than
+      carrying invented terms. Needs the commercial Pro tier to be settled, then counsel.
+      Publishing them = an entry in `legal.ts` plus dropping `noindex` from `legal-terms`
+      in [`src/web/site/pages.ts`](../src/web/site/pages.ts).
+- [ ] **Counsel review** — nothing on the legal pages has been reviewed by a lawyer. The
+      privacy policy in particular makes claims about preservation, deferred destruction
+      and the limits of erasure that are accurate to the code but untested legally.
 - [ ] **Docs page** — real documentation content (currently a stub).
 - [ ] **Matrix support** — operator decision (CCB-S3-001 follow-up): the site now
       positions Cinderella as the bot suite **for SimpleX and Matrix** and lists

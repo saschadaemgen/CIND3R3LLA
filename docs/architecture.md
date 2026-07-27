@@ -288,11 +288,18 @@ nonce'd CSS/JS, `html`/`raw` escaping), NOT the Tailwind admin shell. Code lives
   screening card with consent→screen→publish flow, marked "In development"), Open
   Source (repo/AGPL rationale + self-host steps), and Legal. Docs remains a clean
   `noindex` "coming soon" stub (never a 404). The **legal pages** are footer-linked on
-  every page: `/{lang}/legal` (Legal Notice/Impressum, indexable, includes the
-  **voluntarily appointed Youth Protection Officer**), `/{lang}/legal/privacy` and
-  `/{lang}/legal/terms` (rendered drafts, badged "Draft — pending", `noindex`, excluded
-  from the sitemap until the final texts land). Placeholder fields (operator address,
-  dates, legal-basis cites) render as accent-mono `[...]` marks.
+  every page. Since CCB-S3-029 they carry **real operator data, not template copy**,
+  and the texts live in [`src/web/site/legal.ts`](../src/web/site/legal.ts) rather than
+  in the locale files: German is the binding version, English is a labelled convenience
+  translation, and every other locale falls back to the English with a visible notice
+  naming the German as governing. `/{lang}/legal` is the Impressum (indexable, verbatim
+  from the operator, includes the **voluntarily appointed Youth Protection Officer**,
+  and deliberately carries **no tax or economic identification number** — `verify:site`
+  asserts its absence). `/{lang}/legal/privacy` is drafted from the code and is now
+  **indexable and in the sitemap**. `/{lang}/legal/terms` is the one remaining draft
+  (badged, `noindex`, out of the sitemap) and states plainly that no terms are in force
+  rather than inventing any. No bracketed placeholder survives on any legal page in any
+  locale, which `verify:site` sweeps for across all 40. See D-079.
 
 - **Routing + i18n (D-024, expanded by D-030).** Copy comes from `locales/<code>.json`
   (EN master + DE + 38 machine-translated locales = **40 languages**, each translation

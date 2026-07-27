@@ -36,6 +36,7 @@ import {
 import type { LocaleSet } from './i18n.js';
 import { NAV_PAGES, pagePath, HOME, type SitePage } from './pages.js';
 import { CONTACT_EMAIL, GITHUB_URL, type SiteSeoHead } from './seo.js';
+import { impressumFor, isBindingLocale, privacyFor, type LegalSection } from './legal.js';
 import { shouldLoadAnalytics, type SiteSettings } from '../../site/settings.js';
 import { shareUrl, SHARE_LABELS } from '../share.js';
 
@@ -904,9 +905,34 @@ function openSourceBody(v: SitePageView): SafeHtml {
 
 // ---------- legal ----------
 
-/** An accent-mono placeholder field: `[label]`. */
-function ph(label: string): SafeHtml {
-  return html`<span class="ph">[${label}]</span>`;
+/** Splits an address paragraph on its newlines, so a postal address stays one. */
+const NEWLINE = String.fromCharCode(10);
+function splitLines(text: string): string[] {
+  return text.split(NEWLINE).map((s) => s.trim());
+}
+
+/**
+ * Renders one legal document (CCB-S3-029).
+ *
+ * The text is real operator data from `legal.ts`, not template copy. Paragraphs
+ * may carry newlines for postal addresses, which become <br> rather than being
+ * collapsed, because an address that runs together is not an address.
+ */
+function legalDoc(doc: { title: string; sections: LegalSection[] }): SafeHtml {
+  return html`<div class="doc">
+    <h2>${doc.title}</h2>
+    ${doc.sections.map(
+      (sec) => html`
+        <h3>${sec.h}</h3>
+        ${sec.body.map(
+          (para) =>
+            html`<p>
+              ${splitLines(para).map((line, i) => (i === 0 ? html`${line}` : html`<br />${line}`))}
+            </p>`,
+        )}
+      `,
+    )}
+  </div>`;
 }
 
 function legalTabs(v: SitePageView): SafeHtml {
@@ -929,79 +955,49 @@ function legalTabs(v: SitePageView): SafeHtml {
   </nav>`;
 }
 
-function impressumDoc(v: SitePageView): SafeHtml {
-  return html`<div class="doc">
-    <h3>${v.t('impressum.title')}</h3>
-    <p>${v.t('impressum.intro')}</p>
-    <h3>${v.t('impressum.operator.h')}</h3>
-    <p>
-      Sascha Dämgen IT and More Systems<br />${ph(v.t('impressum.operator.street'))}<br />${ph(
-        v.t('impressum.operator.city'),
-      )}<br />${ph(v.t('impressum.operator.country'))}
-    </p>
-    <h3>${v.t('impressum.contact.h')}</h3>
-    <p>
-      ${v.t('impressum.contact.email')}
-      <a href="mailto:${CONTACT_EMAIL}">${CONTACT_EMAIL}</a><br />${v.t('impressum.contact.phone')}
-      ${ph('+49 …')}
-    </p>
-    <h3>${v.t('impressum.responsible.h')}</h3>
-    <p>Sascha Dämgen${ph(v.t('impressum.responsible.suffix'))}</p>
-    <h3>${v.t('impressum.ypo.h')}</h3>
-    <p>${v.t('impressum.ypo.intro')}</p>
-    <p>
-      Dipl.-Kaufmann Eike Keller<br />Münsterstraße 34, 44145 Dortmund<br /><a
-        href="mailto:e.keller@simplego.dev"
-        >e.keller@simplego.dev</a
-      >
-    </p>
-    <h3>${v.t('impressum.dispute.h')}</h3>
-    <p>${v.t('impressum.dispute.body')}</p>
-  </div>`;
-}
-
-function privacyDoc(v: SitePageView): SafeHtml {
-  return html`<div class="doc">
-    <h3>${v.t('privacy.title')}</h3>
-    <p>${v.t('privacy.effective')} ${ph(v.t('privacy.effective.ph'))}. ${v.t('privacy.intro')}</p>
-    <h3>${v.t('privacy.s1.h')}</h3>
-    <p>${ph(v.t('privacy.s1.ph'))}</p>
-    <h3>${v.t('privacy.s2.h')}</h3>
-    <p>${v.t('privacy.s2.a')} ${ph('Art. 6(1) GDPR')}. ${v.t('privacy.s2.b')}</p>
-    <h3>${v.t('privacy.s3.h')}</h3>
-    <p>${v.t('privacy.s3.body')}</p>
-    <h3>${v.t('privacy.s4.h')}</h3>
-    <p>${ph(v.t('privacy.s4.ph'))}</p>
-    <h3>${v.t('privacy.s5.h')}</h3>
-    <p>${v.t('privacy.s5.body')}</p>
-  </div>`;
-}
-
+/**
+ * Terms of service: deliberately NOT invented (CCB-S3-029 Part E).
+ *
+ * The commercial Pro tier is not settled, and shipping plausible-sounding terms
+ * would be worse than shipping none: a visitor could rely on them. So this states
+ * plainly that no terms are in force yet, which is both true and useful, and it
+ * carries no bracketed placeholder.
+ */
 function termsDoc(v: SitePageView): SafeHtml {
+  const de = v.locale === 'de';
   return html`<div class="doc">
-    <h3>${v.t('terms.title')}</h3>
-    <p>${v.t('terms.effective')} ${ph(v.t('terms.effective.ph'))}</p>
-    <h3>${v.t('terms.s1.h')}</h3>
-    <p>${v.t('terms.s1.body')}</p>
-    <h3>${v.t('terms.s2.h')}</h3>
-    <p>${v.t('terms.s2.body')}</p>
-    <h3>${v.t('terms.s3.h')}</h3>
-    <p>${v.t('terms.s3.body')}</p>
-    <h3>${v.t('terms.s4.h')}</h3>
-    <p>${v.t('terms.s4.body')}</p>
-    <h3>${v.t('terms.s5.h')}</h3>
-    <p>${ph(v.t('terms.s5.ph'))}</p>
+    <h2>${de ? 'Allgemeine Geschäftsbedingungen' : 'Terms of service'}</h2>
+    <p>
+      ${de
+        ? 'Für CIND3R3LLA gelten derzeit keine eigenen Allgemeinen Geschäftsbedingungen. Der Dienst befindet sich in einer Alpha-Phase und wird ohne kostenpflichtigen Tarif angeboten.'
+        : 'No terms of service are currently in force for CIND3R3LLA. The service is in an alpha phase and is offered without any paid tier.'}
+    </p>
+    <p>
+      ${de
+        ? 'Sobald der kommerzielle Pro-Tarif eingeführt wird, werden hier Allgemeine Geschäftsbedingungen veröffentlicht, die diesen abdecken. Bis dahin gelten die gesetzlichen Bestimmungen sowie die Angaben im Impressum und in der Datenschutzerklärung.'
+        : 'Terms covering the commercial Pro tier will be published here when that tier is introduced. Until then, the statutory provisions apply, together with the legal notice and the privacy policy.'}
+    </p>
+    <p>
+      ${de
+        ? 'Der Quellcode steht gesondert unter der GNU Affero General Public License v3.0 (AGPL-3.0); für ihn gelten deren Bedingungen.'
+        : 'The source code is published separately under the GNU Affero General Public License v3.0 (AGPL-3.0), and its terms apply to the code.'}
+    </p>
   </div>`;
 }
 
 function legalBody(v: SitePageView): SafeHtml {
   const doc =
     v.page.key === 'legal-privacy'
-      ? privacyDoc(v)
+      ? legalDoc(privacyFor(v.locale))
       : v.page.key === 'legal-terms'
         ? termsDoc(v)
-        : impressumDoc(v);
-  const draft = v.page.key !== 'legal';
+        : legalDoc(impressumFor(v.locale));
+  // Only the Terms remain a draft; the Impressum and the privacy policy are real.
+  const draft = v.page.key === 'legal-terms';
+  // The German versions of the Impressum and the privacy policy are the binding
+  // ones. Every other language is a convenience translation and says so, because
+  // a reader relying on a translation needs to know which text governs.
+  const translated = v.page.key !== 'legal-terms' && !isBindingLocale(v.locale);
   return html`
     ${pageHero({
       eyebrow: v.t('legal.eyebrow'),
@@ -1012,9 +1008,14 @@ function legalBody(v: SitePageView): SafeHtml {
       ${legalTabs(v)}
       <div class="cn-card cn-card-quiet cn-card-pad-lg legal-card">
         <div class="chip-row">
-          ${badge('outline', v.t('legal.badge.template'))}
           ${draft ? badge('warning', v.t('legal.badge.draft')) : null}
         </div>
+        ${translated
+          ? html`<p class="legal-binding-note">
+              This is a convenience translation. The legally binding version is the German one:
+              <a href="/de/${v.page.slug}">Deutsch</a>.
+            </p>`
+          : null}
         ${doc}
       </div>
     </section>

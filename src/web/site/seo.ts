@@ -9,7 +9,7 @@
  */
 
 import type { LocaleSet } from './i18n.js';
-import { HOME, NAV_PAGES, pagePath, type SitePage } from './pages.js';
+import { HOME, SITE_PAGES, pagePath, type SitePage } from './pages.js';
 
 /** Canonical project links (not translatable). */
 export const GITHUB_URL = 'https://github.com/saschadaemgen/cinderella';
@@ -137,7 +137,11 @@ function buildSiteJsonLd(c: SiteSeoContext): string {
  * each with xhtml:link hreflang alternates. Referenced from the origin sitemap index.
  */
 export function buildSiteSitemapXml(origin: string, locales: LocaleSet): string {
-  const built = NAV_PAGES.filter((p) => p.built && !p.noindex);
+  // SITE_PAGES, not NAV_PAGES. NAV_PAGES drops every nested slug because the top
+  // nav has no room for them, and reusing that filter here silently kept an
+  // indexable page out of the sitemap (CCB-S3-029: the privacy policy). The
+  // sitemap's question is "is it built and indexable", not "does it fit the nav".
+  const built = [HOME, ...SITE_PAGES].filter((p) => p.built && !p.noindex);
   const urls: string[] = [];
   for (const page of built) {
     for (const code of locales.codes) {

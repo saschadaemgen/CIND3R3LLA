@@ -150,9 +150,10 @@ section.band{padding:120px 0 0}
 .nav-link:hover{color:var(--text-bright);background:var(--surface-hover);text-decoration:none}
 .nav-link.active{color:var(--text-accent)}
 .doc{max-width:760px}
+.legal-binding-note{color:var(--text-muted);font-size:14px;border-left:2px solid var(--border);padding-left:12px;margin:0 0 20px}
+.doc h2{font-size:22px;font-weight:600;margin:0 0 18px;color:var(--text)}
 .doc h3{font-size:18px;margin:28px 0 8px}
 .doc p,.doc li{font-size:14px;line-height:1.7;color:var(--text-muted)}
-.doc .ph{color:var(--text-accent);font-family:var(--font-mono);font-size:13px}
 .mono-block{background:var(--surface-field);border:1px solid var(--border-neutral);border-radius:var(--radius-sm);padding:14px 16px;font-family:var(--font-mono);font-size:13px;line-height:1.8;color:var(--text-body);overflow-x:auto}
 .nav-desktop{display:flex;align-items:center}
 .burger{display:none}
@@ -226,7 +227,6 @@ footer a:hover{color:var(--text-accent);text-decoration:none}
 .cn-ftile-icon{color:var(--text-neon)!important;background:var(--neon-weak)!important;border-color:rgba(232,56,159,.2)!important}
 .cn-card-accent{border-color:rgba(232,56,159,.42)!important;box-shadow:var(--edge-lit),var(--glow-neon),var(--shadow-1)!important}
 .cn-card-hover:hover{box-shadow:var(--edge-lit),var(--glow-neon),var(--shadow-2)!important;border-color:rgba(232,56,159,.32)!important}
-.doc .ph{color:var(--text-neon)}
 footer a:hover,footer .fcol a:hover{color:var(--text-neon)!important}
 body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background:radial-gradient(40% 40% at 12% 4%,rgba(232,56,159,.14),transparent 60%),radial-gradient(44% 42% at 88% 24%,rgba(69,189,209,.10),transparent 62%),radial-gradient(46% 40% at 20% 58%,rgba(232,56,159,.09),transparent 60%),radial-gradient(52% 44% at 82% 90%,rgba(69,189,209,.09),transparent 60%);animation:ambient 28s var(--ease-in-out) infinite alternate}
 body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.045;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E")}

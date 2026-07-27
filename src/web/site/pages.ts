@@ -32,9 +32,12 @@ export const SITE_PAGES: SitePage[] = [
   { key: 'open-source', slug: 'open-source', navKey: 'nav.opensource', built: true },
   { key: 'docs', slug: 'docs', navKey: 'nav.docs', built: false },
   { key: 'legal', slug: 'legal', navKey: 'nav.legal', built: true },
-  // Draft legal texts (CCB-S3-001): reachable + rendered, but noindex until the
-  // planning chat delivers the final Privacy/Terms texts.
-  { key: 'legal-privacy', slug: 'legal/privacy', navKey: 'nav.legal', built: true, noindex: true },
+  // The privacy policy carries real, code-derived text (CCB-S3-029) and is
+  // therefore indexable: a policy nobody can find is not a policy.
+  { key: 'legal-privacy', slug: 'legal/privacy', navKey: 'nav.legal', built: true },
+  // Terms alone remain a draft. The commercial tier is not settled, and the page
+  // says so rather than inventing terms a visitor could rely on, so it stays out
+  // of the index until real ones are published.
   { key: 'legal-terms', slug: 'legal/terms', navKey: 'nav.legal', built: true, noindex: true },
 ];
 

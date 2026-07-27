@@ -201,36 +201,118 @@ async function main(): Promise<void> {
   );
 
   // --- Legal pages (CCB-S3-001): impressum + YPO, privacy/terms drafts ---
+  // ── The legal pages carry REAL operator data (CCB-S3-029) ──────────────────
+  //
+  // These assertions are deliberately blunt: they name the operator's actual
+  // details and they sweep every legal page in every locale for the bracketed
+  // placeholder syntax the site used to ship. A German site with a wrong
+  // Impressum is directly actionable, so "no placeholder survived" is checked
+  // mechanically rather than by eye.
   const legal = await app.inject({ method: 'GET', url: '/en/legal' });
   check(
-    'legal: 200 + indexable + Legal Notice content',
+    'legal: 200 + indexable + real operator identity',
     legal.statusCode === 200 &&
       legal.body.includes('name="robots" content="index') &&
-      legal.body.includes(locales.t('en', 'impressum.intro')),
+      legal.body.includes('Sascha D') &&
+      legal.body.includes('Am Neumarkt 22') &&
+      legal.body.includes('45663') &&
+      legal.body.includes('Recklinghausen'),
+  );
+  check(
+    'legal: real telephone number and business email',
+    legal.body.includes('+49 2361 9702434') && legal.body.includes('info@it-and-more.systems'),
   );
   check(
     'legal: Youth Protection Officer present (voluntary wording)',
     legal.body.includes('Eike Keller') &&
       legal.body.includes('e.keller@simplego.dev') &&
-      legal.body.includes(locales.t('en', 'impressum.ypo.intro')),
+      legal.body.includes('voluntarily'),
   );
   check(
-    'legal: real contact email (no placeholder)',
-    legal.body.includes('mailto:cinderella@simplego.dev') &&
-      !legal.body.includes('contact@example.org'),
+    'legal: the archive contact address is present',
+    legal.body.includes('cinderella@simplego.dev'),
   );
+  // The operator asked twice that no tax or economic id appear. Assert its absence
+  // so a later "completeness" edit cannot quietly add one back.
+  check(
+    'legal: NO tax / VAT / economic identification number',
+    !/USt-IdNr|Umsatzsteuer|VAT ID|Wirtschafts-Identifikationsnummer/i.test(legal.body),
+  );
+
+  const legalDe = await app.inject({ method: 'GET', url: '/de/legal' });
+  check(
+    'legal: the binding German Impressum renders, with its statutory headings',
+    legalDe.statusCode === 200 &&
+      legalDe.body.includes('Angaben gem') &&
+      legalDe.body.includes('5 DDG') &&
+      legalDe.body.includes('18 Abs. 2 MStV') &&
+      legalDe.body.includes('Jugendschutzbeauftragter'),
+  );
+  check(
+    'legal: German carries NO convenience-translation notice (it IS the binding text)',
+    !legalDe.body.includes('convenience translation'),
+  );
+  check(
+    'legal: a non-German locale says which version binds, and links to it',
+    legal.body.includes('convenience translation') && legal.body.includes('/de/legal'),
+  );
+
   const privacy = await app.inject({ method: 'GET', url: '/en/legal/privacy' });
   check(
-    'legal: privacy draft is 200 + noindex + marked draft',
-    privacy.statusCode === 200 &&
-      privacy.body.includes('name="robots" content="noindex') &&
-      privacy.body.includes(locales.t('en', 'legal.badge.draft')),
+    'legal: privacy is 200 and now INDEXABLE (no longer a draft)',
+    privacy.statusCode === 200 && privacy.body.includes('name="robots" content="index'),
   );
+  check(
+    'legal: privacy states the open-web consequence and the forward-only rule',
+    /open web/i.test(privacy.body) && /forward-only/i.test(privacy.body),
+  );
+  check(
+    'legal: privacy tells the truth about screening (in development, not active)',
+    /in development/i.test(privacy.body) &&
+      /no such screening runs today|No detection provider is connected/i.test(privacy.body),
+  );
+  check(
+    'legal: privacy states hiding is never deferred by a hold',
+    /never deferred/i.test(privacy.body),
+  );
+  check(
+    'legal: privacy does not overclaim erasure',
+    !/unrecoverable/i.test(privacy.body.replace(/We do not use the word[^<]*/g, '')),
+  );
+
   const terms = await app.inject({ method: 'GET', url: '/de/legal/terms' });
   check(
-    'legal: German terms draft is 200',
-    terms.statusCode === 200 && terms.body.includes(locales.t('de', 'terms.s2.body')),
+    'legal: German terms page is 200 and still marked a draft',
+    terms.statusCode === 200 && terms.body.includes(locales.t('de', 'legal.badge.draft')),
   );
+  check(
+    'legal: terms says plainly that none are in force, rather than inventing any',
+    /keine eigenen Allgemeinen Gesch/i.test(terms.body),
+  );
+
+  // The sweep. Every legal page, in every locale the site ships, must be free of
+  // the `[bracketed]` placeholder the pages used to carry.
+  const placeholderPages: string[] = [];
+  for (const loc of locales.codes) {
+    for (const slug of ['legal', 'legal/privacy', 'legal/terms']) {
+      const res = await app.inject({ method: 'GET', url: `/${loc}/${slug}` });
+      const body = res.body;
+      if (
+        body.includes('class="ph"') ||
+        /\[(?:date|Street|Postal|Country|Operator|Liability|Hosting)[^\]]*\]/i.test(body) ||
+        body.includes('example.org') ||
+        body.includes('example.com')
+      ) {
+        placeholderPages.push(`/${loc}/${slug}`);
+      }
+    }
+  }
+  check(
+    'legal: NOT ONE placeholder or demo value on any legal page, in any language',
+    placeholderPages.length === 0,
+    placeholderPages.slice(0, 5).join(', '),
+  );
+
   const legalNope = await app.inject({ method: 'GET', url: '/en/legal/nope' });
   check('legal: unknown legal sub-page is 404', legalNope.statusCode === 404);
 
@@ -413,10 +495,11 @@ async function main(): Promise<void> {
       smSite.body.includes('xhtml:link'),
   );
   check(
-    'sitemap: built pages in, draft legal pages out',
+    'sitemap: built + indexable legal pages in, the terms draft out',
     smSite.body.includes(`${ORIGIN}/en/features`) &&
       smSite.body.includes(`${ORIGIN}/en/legal</loc>`) &&
-      !smSite.body.includes('/legal/privacy'),
+      smSite.body.includes(`${ORIGIN}/en/legal/privacy</loc>`) &&
+      !smSite.body.includes('/legal/terms'),
   );
   const smIndex = await app.inject({ method: 'GET', url: '/sitemap.xml' });
   check('sitemap: index references the site sitemap', smIndex.body.includes('/sitemap-site.xml'));
