@@ -46,6 +46,8 @@ import { registerPublicEmbed, isPublicFront } from './front/embed.js';
 import { loadLocales } from './site/i18n.js';
 import { registerSiteRoutes, isPublicSitePath } from './site/routes.js';
 import { countOpenReports } from '../db/reports.js';
+import { demoEnabled } from '../demo/guard.js';
+import { registerDemo } from '../demo/routes.js';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -252,6 +254,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     const isPublic =
       isPublicSurface ||
       path === '/login' ||
+      // The demo's front door (CCB-S4-001). It MINTS an ordinary session rather
+      // than exempting anything, so only this one path is public; /demo/chat and
+      // /demo/reset stay behind the same session check as every admin route.
+      // Registered only on a demo instance, so on production this matches nothing.
+      path === '/demo/enter' ||
       path === '/healthz' ||
       path === '/favicon.ico' ||
       path.startsWith('/assets/') ||
@@ -267,6 +274,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // CSRF + step-up guard on state-changing requests.
   app.addHook('preHandler', async (req, reply) => {
     if (!isMutating(req.method)) return;
+    // The demo endpoints (CCB-S4-001). They are served from the marketing page,
+    // which carries no admin CSRF token, and they can only ever read or reset a
+    // database that holds nothing but synthetic data. They are registered only on
+    // a demo instance; on production this prefix has no routes behind it.
+    if (req.url.split('?')[0]?.startsWith('/demo/')) return;
     const path = req.url.split('?')[0] ?? req.url;
     // The public front is a deliberately-public surface with no session/cookie to
     // defend; its one mutating route (POST /embed/:id/report, CCB-S2-009) is
@@ -312,6 +324,14 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   // Public marketing site (CCB-S2-012) — no auth; owns the domain root '/'.
   registerSiteRoutes(app, viewCtx, locales);
+
+  // The public demo (CCB-S4-001). Registered ONLY when the environment flag and
+  // the database marker agree; see `src/demo/guard.ts` for why one flag is not
+  // enough. `void` because route registration must not block startup, and the
+  // guard logs loudly on any disagreement.
+  void demoEnabled(db).then((on) => {
+    if (on) registerDemo(app, viewCtx);
+  });
 
   if (deps.registerViews) {
     deps.registerViews(app, viewCtx);

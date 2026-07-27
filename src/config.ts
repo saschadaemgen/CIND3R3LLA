@@ -70,6 +70,22 @@ export interface AdminConfig {
   sessionSecret: string;
   /** Public origin of the admin/embed host, used by the embed snippet generator. */
   publicOrigin: string;
+  /**
+   * Public origin of the MARKETING SITE, for canonical URLs, hreflang, the site
+   * sitemap, Open Graph and JSON-LD.
+   *
+   * Separate from `publicOrigin` on purpose, and the reason is load-bearing:
+   * `publicOrigin` derives the WebAuthn RP ID, and a passkey is bound by the
+   * authenticator to the RP ID it was created under. Moving `publicOrigin` to a
+   * new marketing domain would invalidate every registered passkey and leave the
+   * operator on break-glass. So the console keeps its hostname and the marketing
+   * site gets its own, and a page on the new domain stops emitting the old one as
+   * its canonical (which would hand the new domain's search value to the old).
+   *
+   * Defaults to `publicOrigin`, so an instance that never sets it behaves exactly
+   * as before.
+   */
+  siteOrigin: string;
   /** WebAuthn Relying Party ID — the console's registrable domain (A4.3). */
   rpId: string;
   /** WebAuthn expected origin (scheme + host), i.e. the public origin. */
@@ -230,6 +246,20 @@ export function loadConfig(): Config {
  * containment check below is not paranoia: putting it under `MEDIA_ROOT` would
  * silently reduce quarantine to a rename, leaving the bytes fetchable by path.
  */
+/** Validates SITE_ORIGIN the same way PUBLIC_ORIGIN is validated. */
+function normalizeSiteOrigin(raw: string): string {
+  try {
+    const u = new URL(raw);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+      throw new ConfigError(`SITE_ORIGIN must use http or https (got "${raw}").`);
+    }
+    return `${u.protocol}//${u.host}`;
+  } catch (err) {
+    if (err instanceof ConfigError) throw err;
+    throw new ConfigError(`SITE_ORIGIN must be a valid URL (got "${raw}").`);
+  }
+}
+
 export function resolveQuarantineRoot(): string {
   const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
   const configured = process.env['QUARANTINE_ROOT'];
@@ -336,6 +366,7 @@ export function loadAdminConfig(): AdminConfig {
     adminPasswordHash,
     sessionSecret,
     publicOrigin,
+    siteOrigin: normalizeSiteOrigin(optional('SITE_ORIGIN', publicOrigin)),
     rpId: finalRpId,
     webauthnOrigin: finalOrigin,
     rpName: optional('WEBAUTHN_RP_NAME', 'Cinderella Admin'),

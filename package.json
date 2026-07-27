@@ -52,6 +52,8 @@
     "verify:screening": "tsx scripts/verify-screening.ts",
     "verify:adapter-seam": "tsx scripts/verify-adapter-seam.ts",
     "verify:adapter-fake": "tsx scripts/verify-adapter-fake.ts",
+    "verify:demo": "tsx scripts/verify-demo.ts",
+    "demo:seed": "tsx scripts/demo-seed.ts",
     "encrypt-media": "tsx scripts/encrypt-media.ts",
     "verify:no-dashes": "tsx scripts/verify-no-dashes.ts",
     "verify:queue": "tsx scripts/verify-queue.ts",
