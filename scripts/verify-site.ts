@@ -230,7 +230,7 @@ async function main(): Promise<void> {
   );
   check(
     'legal: the archive contact address is present',
-    legal.body.includes('info@cind3r3lla.com'),
+    legal.body.includes('cind3rella@cind3r3lla.com'),
   );
   // The operator asked twice that no tax or economic id appear. Assert its absence
   // so a later "completeness" edit cannot quietly add one back.

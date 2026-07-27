@@ -14,7 +14,7 @@ import { HOME, SITE_PAGES, pagePath, type SitePage } from './pages.js';
 /** Canonical project links (not translatable). */
 export const GITHUB_URL = 'https://github.com/saschadaemgen/cinderella';
 export const LICENSE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html';
-export const CONTACT_EMAIL = 'info@cind3r3lla.com';
+export const CONTACT_EMAIL = 'cind3rella@cind3r3lla.com';
 
 /** JSON for a <script type="application/ld+json"> — escape `<` so text can't break out. */
 function ldJson(v: unknown): string {
