@@ -106,6 +106,11 @@ const backstopFiles = [
   join(ROOT, 'src/interaction/help.ts'),
   join(ROOT, 'src/interaction/settings.ts'),
   join(ROOT, 'src/consent/commands.ts'),
+  // The legal texts (CCB-S3-029) are the largest body of member-facing copy that
+  // does NOT live in locales/, because a binding legal text cannot be machine
+  // translated. Without this line the whole Impressum and privacy policy sat
+  // outside the check.
+  join(ROOT, 'src/web/site/legal.ts'),
 ];
 walk(join(ROOT, 'src/plugins'), backstopFiles);
 

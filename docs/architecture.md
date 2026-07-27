@@ -322,6 +322,19 @@ nonce'd CSS/JS, `html`/`raw` escaping), NOT the Tailwind admin shell. Code lives
   rather than inventing any. No bracketed placeholder survives on any legal page in any
   locale, which `verify:site` sweeps for across all 40. See D-079.
 
+  The **rights section** of the privacy policy (CCB-S3-029 Addendum A) is written
+  around the identity model rather than around article numbers, because this service
+  cannot identify its members and a standard list would fail at the first real
+  request. It names the in-chat route first, states the anonymity cost of the email
+  route in the member's interest, describes verification as in-band, and covers the
+  two identity-loss cases separately. Its factual backbone was established by a
+  50-agent read of the chat surface: only **withdrawal of consent** has a full
+  in-chat route, the bot has **no private channel** (so the one-time recovery code is
+  named as planned), and the operator **cannot destroy content on request** (only the
+  member's own in-chat path and the evidence-hold workflow destroy), which is why an
+  unverifiable erasure request is answered with an Art. 18 restriction. `verify:site`
+  pins fourteen of these sentences. See D-080.
+
 - **Routing + i18n (D-024, expanded by D-030).** Copy comes from `locales/<code>.json`
   (EN master + DE + 38 machine-translated locales = **40 languages**, each translation
   marked "pending native-speaker review" in `_meta.status`; ar/he/fa are RTL via

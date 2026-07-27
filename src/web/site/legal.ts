@@ -32,17 +32,57 @@
  * Two claims in the drafted outline did not survive a read of the implementation,
  * and were changed rather than shipped:
  *
- *  1. A ten-year default retention period. NO archive retention period exists in
- *     this codebase. `retention` appears only for SimpleX contact-request and
- *     group-invitation hours (`src/profiles/bot-onboarding.ts`) and for capture
- *     event pruning; neither expires archived content. Publishing a retention
- *     promise the system cannot keep is the exact failure this policy is written
- *     to avoid, so the text now says there is no automatic expiry.
+ *  1. A ten-year default retention period. SUPERSEDED by Addendum A, and the
+ *     operator is right: a retention period is a statement of POLICY, and manual
+ *     enforcement is lawful. It is only a false claim if the text implies the
+ *     system enforces it, so the text states the ceiling and then says, in its own
+ *     sentence, that the limit is applied manually and automated expiry is planned.
+ *     What remains true and must not be quietly dropped: NO archive retention
+ *     mechanism exists in this codebase. Nothing selects content by age, no period
+ *     is stored or read anywhere, and no interface lets the operator set a shorter
+ *     one. `retention` appears only for SimpleX contact-request and group-invitation
+ *     hours (`src/profiles/bot-onboarding.ts`) and for capture-event pruning;
+ *     neither expires archived content. The deferred-destruction sweeper and the
+ *     hold-expiry job expire HOLDS, not content. So "the operator may set a shorter
+ *     period" is discretion exercised by hand, not a feature.
  *
  *  2. A theme preference in local storage. Dark is the only theme (operator
  *     decision, CCB-S3-001), so no such preference is stored. The one local
  *     storage entry is `cin-consent`, the visitor's answer to the cookie banner,
  *     which is now named for what it is.
+ *
+ * THE RIGHTS SECTION (Addendum A Part 2) was written against a 50-agent read of
+ * the chat surface, and several comfortable sentences did not survive it. Recorded
+ * here because each one is a trap a future editor would fall into again:
+ *
+ *  - "confirm by returning a one-time token through the bot" was CUT. No token
+ *    mechanism exists, and more fundamentally the bot has no private channel at
+ *    all: it boots with `createAddress: false` (`src/bot/client.ts`), subscribes to
+ *    no contact events, and `SendTarget {to:'direct'}` has no production
+ *    implementation. It is named as planned, never as available.
+ *
+ *  - "a direct contact may survive leaving the group, which turns a hard case into
+ *    an easy one" was CUT. A member contact is not created by joining a group; it
+ *    must be minted explicitly and is gated on the group's `directMessages`
+ *    preference, which is off for a public archive group. Whether it would survive
+ *    a departure is unsettled (the cascade lives in the compiled Haskell core), and
+ *    moot, because no contact exists to survive.
+ *
+ *  - Only ONE right has a full in-chat route: withdrawal of consent. Erasure and
+ *    restriction are reachable only through a revocation the member drives, and
+ *    access, rectification, portability and objection have no in-chat route at all
+ *    (STATUS returns two counts, never content). The text says which is which
+ *    rather than implying the chat can do everything.
+ *
+ *  - An operator CANNOT destroy content on request. `/messages/:id/delete` sets a
+ *    reversible flag; the only hard-destruction paths are the member's own in-chat
+ *    delete and the evidence-hold workflow. That is why the unverifiable-erasure
+ *    passage promises restriction and says plainly that destruction is not ours to
+ *    perform.
+ *
+ *  - Rejoining yields a new member id, so the in-chat route cannot reach content
+ *    posted under the old one. Stated, because a member would otherwise assume
+ *    /unpublish covers everything they ever wrote.
  */
 
 /** True for the one locale whose legal text is binding. */
@@ -247,8 +287,8 @@ export const PRIVACY_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Retention',
       body: [
-        'Content remains for as long as your consent stands. There is NO automatic expiry: nothing is deleted after a fixed period, and we do not claim one, because the archive does not implement one. Storage ends when you withdraw, when the operator removes the content, or when the archive is discontinued.',
-        'Withdrawal takes effect immediately. It is the only mechanism that ends storage on your initiative, which is why it is available at any time and needs no reason.',
+        'Archived content is processed on the basis of the member’s consent and is retained while that consent and the purpose persist. Consent can be withdrawn at any time, and withdrawal takes effect immediately. Independently of this, published content is retained for a maximum of ten years. The operator may set a shorter period.',
+        'This retention limit is currently applied manually. Automated expiry is planned.',
       ],
     },
     {
@@ -315,8 +355,53 @@ export const PRIVACY_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Your rights',
       body: [
-        'You have the right of access (Art. 15), rectification (Art. 16), erasure (Art. 17), restriction of processing (Art. 18), data portability (Art. 20) and objection (Art. 21), and the right to withdraw consent at any time (Art. 7(3)) without affecting the lawfulness of processing before withdrawal.',
-        'You also have the right to complain to a supervisory authority:',
+        'You have the right of access (Art. 15), rectification (Art. 16), erasure (Art. 17), restriction of processing (Art. 18), data portability (Art. 20) and objection (Art. 21), and the right to withdraw your consent at any time (Art. 7(3)) without affecting the lawfulness of processing before withdrawal.',
+        'How you exercise them here is unusual, and worth reading before you write to us. This service has no accounts. It knows you only as a member of a group chat, and the messaging protocol is built so that we cannot learn who you are. That protects you. It also means we cannot simply look you up.',
+      ],
+    },
+    {
+      h: 'The chat is the fastest route, and it costs you nothing',
+      body: [
+        'The strongest proof of identity available to us is your own connection. When you send /unpublish in the group, or ask her in plain language to stop publishing you, the protocol has already established that the message came from the member whose content it is. Nothing further is needed, you disclose nothing to us, and the effect is immediate: your content leaves every public surface at once.',
+        'Use this route wherever you can. It is faster than writing to us, the proof is stronger than anything an email can offer, and it costs you nothing.',
+        'What the chat can do today: withdraw your consent, immediately and without giving reasons, which is the fastest and most complete route and needs no correspondence at all; let you choose afterwards whether your content is hidden or destroyed, where hiding stays reversible by you and destruction deliberately asks you to type the word "delete" rather than accepting a simple yes; restore what you hid, by yourself, at any time; and tell you how many of your messages she holds and how many are public.',
+        'What the chat cannot do today, so these have to reach us by email: a copy of your data, correction of something recorded wrongly, a machine-readable export, and objection. If you chose to hide your content and later want it destroyed, that also has to come by email, because the chat offers no route from hidden to destroyed.',
+      ],
+    },
+    {
+      h: 'Email, and what it costs you',
+      body: [
+        'You can always contact the controller by other means, and the address is in the legal notice. You should know the price before you pay it.',
+        'If you contact us by email, we necessarily learn a connection between your email address and your identity in the community. The messaging protocol is designed to prevent exactly that link. Wherever possible, use the in-chat route instead, where your own connection proves who you are and you disclose nothing.',
+        'We do not store email addresses in the archive. There is no field for one anywhere in it. The connection exists only in our correspondence, and we delete that correspondence once your request is closed, which makes the disclosure a temporary cost rather than a permanent one. That is a commitment we keep by hand. It is not a control the system enforces.',
+      ],
+    },
+    {
+      h: 'How we check that a request is yours',
+      body: [
+        'An email alone cannot show that the sender is the member whose content is at stake. Acting on an unverified request would let anyone erase another member’s words, which is the same harm the first-person consent rule exists to prevent, arriving through a different door.',
+        'So we verify in-band. When a request reaches us by email, we ask you to confirm from inside the group chat, by sending the command yourself. The email is the prompt; your own connection is the proof. We record the decision we reach, whether we grant the request or refuse it.',
+        'A private confirmation code sent to you directly, rather than in the group, would be better. She has no private channel today: she cannot send you a direct message, and she would not read one. Adding that channel and a one-time code is planned, not available.',
+      ],
+    },
+    {
+      h: 'If you can no longer reach the identity you used',
+      body: [
+        'Two situations, and they are not equally hard.',
+        'You still hold your SimpleX identity but have left the group. Rejoin and use the in-chat route. Be aware that rejoining gives you a new member identity, and the archive cannot connect it to the old one: content you posted before stays published under the identity you had then, and the in-chat route will not reach it. For that content, write to us and we will handle it as set out below.',
+        'You have lost your SimpleX identity altogether. SimpleX has no account recovery: no password reset, no email, no central record. If your device is gone and your chat database was not backed up, you cannot prove you were that member, and no amount of correspondence reopens that door. We would rather tell you plainly than let you discover it.',
+        'Knowing what was published proves nothing. The archive is public, so anything you can describe about it a stranger can describe equally well. We cannot treat familiarity with published content as evidence that you wrote it.',
+        'Content that was never published is different. Messages we captured but never published are known to you and to us alone, so accurate knowledge of them is genuine evidence. It is the only such evidence available, and it will often not exist.',
+        'Where we cannot verify, what we do depends on what you ask for, because the risks are not symmetric. Wrongly granting access would disclose another member’s data to a stranger, which is a breach; without verification, the answer to an access request is no, and it stays no. Wrongly granting erasure would destroy another member’s words permanently.',
+        'So we do not treat an unverifiable erasure request as a refusal. We treat it as a request for restriction under Art. 18 GDPR, which is the right to have processing stopped rather than data destroyed. We take the content out of public view. That achieves what you actually want, which is that your words stop being public, and it is reversible if the request turns out to have been mistaken or malicious. If verification becomes possible later, destruction can follow.',
+        'Two limits, stated rather than implied. Restriction on this route is applied by us message by message, from the operator console, and it is reversible by us. Destruction is not something we can carry out for you from that console at all: the only route in this system that actually destroys content is the one you drive yourself in the chat.',
+        'A better answer is planned. The moment you opt in is the moment you are provably yourself, and therefore the moment to establish proof for later. We intend to have her issue a one-time recovery code then, privately, which you keep and can present afterwards from any channel to prove authorship without revealing any identity, with only a hash of it stored. This is planned and does not exist yet. If you opt in today, no such code is issued.',
+      ],
+    },
+    {
+      h: 'Complaints',
+      body: [
+        'You have the right to complain to a supervisory authority:',
         'Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen\nKavalleriestraße 2-4\n40213 Düsseldorf\nTelephone: +49 211 38424-0\nEmail: poststelle@ldi.nrw.de',
       ],
     },
@@ -354,8 +439,8 @@ export const PRIVACY_DE: { title: string; sections: LegalSection[] } = {
     {
       h: 'Speicherdauer',
       body: [
-        'Inhalte bleiben gespeichert, solange Ihre Einwilligung besteht. Es gibt KEINE automatische Löschfrist: nichts wird nach einer festen Dauer entfernt, und wir behaupten das auch nicht, weil das Archiv keine solche Frist umsetzt. Die Speicherung endet mit Ihrem Widerruf, mit einer Entfernung durch den Betreiber oder mit der Einstellung des Archivs.',
-        'Der Widerruf wirkt sofort. Er ist der einzige Weg, die Speicherung auf Ihre Initiative hin zu beenden, und ist deshalb jederzeit und ohne Angabe von Gründen möglich.',
+        'Archivierte Inhalte werden auf Grundlage der Einwilligung des Mitglieds verarbeitet und so lange gespeichert, wie diese Einwilligung und der Zweck fortbestehen. Die Einwilligung kann jederzeit widerrufen werden, und der Widerruf wirkt sofort. Unabhängig davon werden veröffentlichte Inhalte höchstens zehn Jahre gespeichert. Der Betreiber kann eine kürzere Frist festlegen.',
+        'Diese Speicherfrist wird derzeit manuell durchgesetzt. Eine automatische Löschung ist geplant.',
       ],
     },
     {
@@ -423,7 +508,52 @@ export const PRIVACY_DE: { title: string; sections: LegalSection[] } = {
       h: 'Ihre Rechte',
       body: [
         'Sie haben das Recht auf Auskunft (Art. 15), Berichtigung (Art. 16), Löschung (Art. 17), Einschränkung der Verarbeitung (Art. 18), Datenübertragbarkeit (Art. 20) und Widerspruch (Art. 21) sowie das Recht, Ihre Einwilligung jederzeit zu widerrufen (Art. 7 Abs. 3), ohne dass die Rechtmäßigkeit der bis dahin erfolgten Verarbeitung berührt wird.',
-        'Ihnen steht zudem ein Beschwerderecht bei einer Aufsichtsbehörde zu:',
+        'Wie Sie diese Rechte hier ausüben, ist ungewöhnlich, und es lohnt sich, das zu lesen, bevor Sie uns schreiben. Dieser Dienst kennt keine Benutzerkonten. Er kennt Sie nur als Mitglied einer Gruppe, und das Messaging-Protokoll ist so gebaut, dass wir nicht erfahren können, wer Sie sind. Das schützt Sie. Es bedeutet zugleich, dass wir Sie nicht einfach nachschlagen können.',
+      ],
+    },
+    {
+      h: 'Der schnellste Weg ist der Chat, und er kostet Sie nichts',
+      body: [
+        'Der stärkste Identitätsnachweis, der uns zur Verfügung steht, ist Ihre eigene Verbindung. Wenn Sie /unpublish in die Gruppe senden oder sie in normaler Sprache bitten, Sie nicht mehr zu veröffentlichen, hat das Protokoll bereits festgestellt, dass die Nachricht von genau dem Mitglied stammt, dem die Inhalte gehören. Mehr ist nicht nötig, Sie geben uns gegenüber nichts preis, und die Wirkung tritt sofort ein: Ihre Inhalte verlassen alle öffentlichen Oberflächen auf einmal.',
+        'Nutzen Sie diesen Weg, wo immer es geht. Er ist schneller, als uns zu schreiben, der Nachweis ist stärker als alles, was eine E-Mail bieten kann, und er kostet Sie nichts.',
+        'Was der Chat heute kann: Ihre Einwilligung widerrufen, sofort und ohne Angabe von Gründen, was der schnellste und vollständigste Weg ist und überhaupt keinen Schriftwechsel braucht; Sie anschließend wählen lassen, ob Ihre Inhalte verborgen oder vernichtet werden, wobei das Verbergen für Sie umkehrbar bleibt und die Vernichtung bewusst verlangt, dass Sie das Wort "delete" schreiben, statt ein einfaches Ja zu akzeptieren; das Verborgene jederzeit selbst wiederherstellen; und Ihnen sagen, wie viele Ihrer Nachrichten sie hält und wie viele davon öffentlich sind.',
+        'Was der Chat heute nicht kann, was also per E-Mail an uns gehen muss: eine Kopie Ihrer Daten, die Berichtigung einer falsch erfassten Angabe, ein maschinenlesbarer Export und der Widerspruch. Wenn Sie sich für das Verbergen entschieden haben und später die Vernichtung wünschen, muss auch das per E-Mail kommen, denn der Chat bietet keinen Weg vom Verborgenen zur Vernichtung.',
+      ],
+    },
+    {
+      h: 'Die E-Mail, und was sie Sie kostet',
+      body: [
+        'Sie können den Verantwortlichen jederzeit auch auf anderem Weg erreichen; die Anschrift steht im Impressum. Sie sollten den Preis kennen, bevor Sie ihn zahlen.',
+        'Wenn Sie uns per E-Mail kontaktieren, erfahren wir zwangsläufig eine Verbindung zwischen Ihrer E-Mail-Adresse und Ihrer Identität in der Gemeinschaft. Das Messaging-Protokoll ist gerade dafür gebaut, diese Verbindung zu verhindern. Nutzen Sie deshalb nach Möglichkeit den Weg über den Chat, wo Ihre eigene Verbindung beweist, wer Sie sind, und Sie nichts preisgeben.',
+        'Wir speichern keine E-Mail-Adressen im Archiv. Es gibt dort nirgends ein Feld dafür. Die Verbindung besteht allein in unserem Schriftwechsel, und wir löschen diesen Schriftwechsel, sobald Ihr Anliegen abgeschlossen ist; damit bleibt die Preisgabe ein vorübergehender und kein dauerhafter Preis. Das ist eine Zusage, die wir von Hand einhalten. Es ist keine technische Kontrolle, die das System erzwingt.',
+      ],
+    },
+    {
+      h: 'Wie wir prüfen, dass ein Anliegen von Ihnen stammt',
+      body: [
+        'Eine E-Mail allein kann nicht belegen, dass die absendende Person das Mitglied ist, um dessen Inhalte es geht. Einem ungeprüften Anliegen zu folgen hieße, dass jede beliebige Person die Worte eines anderen Mitglieds löschen lassen könnte, also genau der Schaden, den die Regel der höchstpersönlichen Einwilligung verhindern soll, nur durch eine andere Tür.',
+        'Deshalb prüfen wir im selben Kanal. Erreicht uns ein Anliegen per E-Mail, bitten wir Sie, es aus der Gruppe heraus zu bestätigen, indem Sie den Befehl selbst senden. Die E-Mail ist der Anstoß; Ihre eigene Verbindung ist der Beweis. Die Entscheidung, die wir treffen, halten wir fest, gleich ob wir dem Anliegen entsprechen oder es ablehnen.',
+        'Ein privater Bestätigungscode, direkt an Sie statt in die Gruppe, wäre besser. Sie hat heute keinen privaten Kanal: sie kann Ihnen keine Direktnachricht senden, und sie würde eine solche auch nicht lesen. Dieser Kanal und ein Einmalcode sind geplant, aber nicht verfügbar.',
+      ],
+    },
+    {
+      h: 'Wenn Sie die genutzte Identität nicht mehr erreichen',
+      body: [
+        'Zwei Fälle, und sie sind unterschiedlich schwer.',
+        'Sie haben Ihre SimpleX-Identität noch, aber die Gruppe verlassen. Treten Sie wieder bei und nutzen Sie den Weg über den Chat. Beachten Sie: mit dem erneuten Beitritt erhalten Sie eine neue Mitgliedskennung, und das Archiv kann sie nicht mit der alten verbinden. Inhalte von früher bleiben unter der damaligen Kennung veröffentlicht, und der Weg über den Chat erreicht sie nicht. Schreiben Sie uns dazu; wir behandeln es dann wie unten beschrieben.',
+        'Sie haben Ihre SimpleX-Identität vollständig verloren. SimpleX kennt keine Kontowiederherstellung: kein Passwort-Zurücksetzen, keine E-Mail, kein zentrales Verzeichnis. Ist Ihr Gerät fort und wurde Ihre Chat-Datenbank nicht gesichert, können Sie nicht mehr belegen, dass Sie dieses Mitglied waren, und kein Schriftwechsel öffnet diese Tür wieder. Wir sagen Ihnen das lieber klar, als Sie es herausfinden zu lassen.',
+        'Zu wissen, was veröffentlicht wurde, beweist nichts. Das Archiv ist öffentlich; alles, was Sie darüber beschreiben können, kann eine fremde Person genauso gut beschreiben. Vertrautheit mit veröffentlichten Inhalten können wir daher nicht als Beleg für die Urheberschaft werten.',
+        'Nie veröffentlichte Inhalte sind etwas anderes. Nachrichten, die wir erfasst, aber nie veröffentlicht haben, kennen nur Sie und wir. Zutreffende Kenntnis davon ist ein echter Beleg. Sie ist der einzige verfügbare, und oft wird es sie nicht geben.',
+        'Wo wir nicht prüfen können, hängt unser Vorgehen davon ab, worum Sie bitten, denn die Risiken sind nicht gleich verteilt. Eine zu Unrecht erteilte Auskunft würde die Daten eines anderen Mitglieds an eine fremde Person offenlegen; das wäre eine Datenschutzverletzung. Ohne Prüfung lautet die Antwort auf ein Auskunftsersuchen deshalb Nein, und sie bleibt Nein. Eine zu Unrecht ausgeführte Löschung würde die Worte eines anderen Mitglieds dauerhaft vernichten.',
+        'Ein nicht überprüfbares Löschersuchen behandeln wir deshalb nicht als Ablehnung. Wir behandeln es als Antrag auf Einschränkung der Verarbeitung nach Art. 18 DSGVO, also auf das Recht, die Verarbeitung zu stoppen, statt Daten zu vernichten. Wir nehmen die Inhalte aus der Öffentlichkeit. Das erreicht, worum es Ihnen tatsächlich geht, nämlich dass Ihre Worte nicht mehr öffentlich sind, und es ist umkehrbar, falls das Ersuchen irrtümlich oder böswillig war. Wird eine Prüfung später möglich, kann die Vernichtung folgen.',
+        'Zwei Grenzen, ausgesprochen statt angedeutet. Die Einschränkung auf diesem Weg nehmen wir Nachricht für Nachricht in der Betreiberkonsole vor, und sie ist von uns umkehrbar. Die Vernichtung können wir über diese Konsole gar nicht für Sie ausführen: der einzige Weg in diesem System, der Inhalte tatsächlich vernichtet, ist der, den Sie selbst im Chat gehen.',
+        'Eine bessere Antwort ist geplant. Der Moment des Opt-ins ist der Moment, in dem Sie nachweislich Sie selbst sind, und damit der Moment, einen Nachweis für später zu schaffen. Wir wollen sie dann privat einen Einmal-Wiederherstellungscode ausgeben lassen, den Sie aufbewahren und später über jeden Kanal vorlegen können, um die Urheberschaft zu belegen, ohne eine Identität preiszugeben; gespeichert würde nur dessen Hashwert. Das ist geplant und existiert noch nicht. Wer heute ein Opt-in erklärt, erhält keinen solchen Code.',
+      ],
+    },
+    {
+      h: 'Beschwerde',
+      body: [
+        'Ihnen steht ein Beschwerderecht bei einer Aufsichtsbehörde zu:',
         'Landesbeauftragte für Datenschutz und Informationsfreiheit Nordrhein-Westfalen\nKavalleriestraße 2-4\n40213 Düsseldorf\nTelefon: +49 211 38424-0\nE-Mail: poststelle@ldi.nrw.de',
       ],
     },

@@ -490,6 +490,61 @@ operator login remains a discreet header button to the unchanged, `noindex`, har
 - [ ] **Counsel review** — nothing on the legal pages has been reviewed by a lawyer. The
       privacy policy in particular makes claims about preservation, deferred destruction
       and the limits of erasure that are accurate to the code but untested legally.
+
+### Promises the published privacy policy now makes that the code does not yet keep
+
+These are not ordinary features. Each one is the gap between a sentence a member can
+read on [cind3r3lla.com](https://cind3r3lla.com/en/legal/privacy) and what the archive
+can actually do, so each is dated by publication rather than by convenience.
+**(CCB-S3-029 Addendum A)**
+
+- [ ] **Automated retention expiry** — admin-configurable, ten years by default. The
+      policy states a ten-year ceiling and admits, in its own sentence, that the limit
+      is currently applied **by hand**. Today no retention mechanism exists at all:
+      nothing selects content by age, no period is stored or read anywhere, and no
+      interface lets the operator set a shorter one. The deferred-destruction sweeper
+      and the hold-expiry job expire *holds*, not content. The hook is the durable job
+      queue (`src/queue/`), which already has `runAt` scheduling. A manual process
+      nobody has written down is a policy that will not be executed, and the first
+      deletion falls due in 2036, which is exactly long enough to forget.
+- [ ] **One-time recovery code at opt-in** — the proactive fix for identity loss.
+      Verification after the fact is hard only because nothing was established
+      beforehand; opt-in is the one moment a member is provably themselves. Issue a
+      code then, privately, store only its hash, and authorship becomes provable
+      afterwards from any channel with no personal data and no identity disclosed.
+      Blocked on a private channel: the bot boots with `createAddress: false`
+      (`src/bot/client.ts`), subscribes to no contact events, and `SendTarget
+      {to:'direct'}` has no production implementation, so there is nowhere to send a
+      code privately today. See D-058 and CCB-S3-017 §3. The policy names this as
+      **planned**, and `verify:site` asserts it is never offered as available.
+- [ ] **Operator route to action a verified erasure request** — the policy tells
+      members that erasure by email ends in *restriction*, not destruction, because
+      that is the truth: `/messages/:id/delete` sets a reversible flag, and the only
+      hard-destruction paths are the member's own in-chat delete and the evidence-hold
+      workflow. An operator cannot destroy on request even when the request is fully
+      verified. That is a defensible default, but it should be a decision rather than
+      an accident.
+- [ ] **Per-member scope in the admin console** — restriction is applied message by
+      message, and `MessageFilters` has no sender filter, so restricting one member's
+      content means paging the whole archive 25 rows at a time. This makes the Art. 18
+      route the policy promises impractical at any real archive size.
+- [ ] **No route from hidden to destroyed** — a member who revokes and chooses *hide*
+      has no in-chat way to escalate to destruction later, and she answers such a
+      request with "There is nothing of yours left in my archive to destroy", which is
+      **false**: the content is retained and restorable. The policy currently routes
+      these members to email as the honest workaround. The reply is a standing-rule
+      violation (CCB-S3-023: a degraded function must not run silently) and should be
+      fixed before the workaround becomes load-bearing.
+- [ ] **`/unpublish` is a silent no-op when slash commands are disabled** — with the
+      slash-command setting off, `/unpublish` neither acts nor replies. A member
+      exercising the one right the policy calls "the fastest and most complete route"
+      gets no acknowledgement and no effect. It should refuse audibly.
+- [ ] **A member who never opted in has no in-chat route to anything** — capture is
+      unconditional (`src/capture/persist.ts` has no consent lookup; consent is applied
+      at read time), so their messages, media and display name are stored exactly like
+      anyone else's, while every in-chat right is reachable only through a revocation
+      of a consent they never gave. Nothing they can say in the group reaches their own
+      stored data.
 - [ ] **Docs page** — real documentation content (currently a stub).
 - [ ] **Matrix support** — operator decision (CCB-S3-001 follow-up): the site now
       positions Cinderella as the bot suite **for SimpleX and Matrix** and lists

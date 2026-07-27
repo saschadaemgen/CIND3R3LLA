@@ -275,15 +275,106 @@ async function main(): Promise<void> {
     'legal: privacy states hiding is never deferred by a hold',
     /never deferred/i.test(privacy.body),
   );
-  // The two claims that a comfortable draft got wrong. Asserted so a later tidy-up
-  // cannot reintroduce a promise the system does not keep.
+  // Retention (CCB-S3-029 Addendum A): the ten-year ceiling is operator POLICY, and
+  // stating it is fine. What must never be dropped is the sentence admitting the
+  // limit is enforced by hand, because the code implements no expiry whatsoever.
   check(
-    'legal: privacy promises NO retention period, because the code implements none',
-    /no automatic expiry/i.test(privacy.body) && !/ten years|10 years/i.test(privacy.body),
+    'legal: privacy states the ten-year ceiling',
+    /maximum of ten years/i.test(privacy.body),
+  );
+  check(
+    'legal: and admits in its own sentence that the limit is applied MANUALLY',
+    /applied manually/i.test(privacy.body) && /[Aa]utomated expiry is planned/.test(privacy.body),
   );
   check(
     'legal: privacy claims no theme preference (dark is the only theme)',
     !/theme preference/i.test(privacy.body),
+  );
+
+  // ── The rights section (Addendum A Part 2) ─────────────────────────────────
+  //
+  // These assertions exist because the honest version of this section is longer
+  // and less flattering than the comfortable one, and every deleted sentence
+  // below was a real temptation. Each check pins a fact a 50-agent code read
+  // established, so a later edit toward brevity cannot quietly restore a promise
+  // the system does not keep.
+  check(
+    'rights: the in-chat route comes FIRST and is named as costing the member nothing',
+    privacy.body.indexOf('costs you nothing') > 0 &&
+      privacy.body.indexOf('costs you nothing') < privacy.body.indexOf('what it costs you'),
+  );
+  check(
+    'rights: the anonymity cost of email is stated in the member’s interest',
+    /necessarily learn a connection between your email address/i.test(privacy.body) &&
+      /designed to prevent exactly that link/i.test(privacy.body),
+  );
+  check(
+    'rights: verification is in-band, and the email linkage is deleted after processing',
+    /confirm from inside the group chat/i.test(privacy.body) &&
+      /delete that correspondence once your request is closed/i.test(privacy.body),
+  );
+  check(
+    'rights: the linkage deletion is NOT dressed up as a system control',
+    /commitment we keep by hand/i.test(privacy.body) &&
+      /not a control the system enforces/i.test(privacy.body),
+  );
+  // The bot has no private channel: no contact address, no direct send target with
+  // a production implementation, no token. The token route must read as planned.
+  check(
+    'rights: the one-time code is PLANNED, never offered as available',
+    /planned, not available/i.test(privacy.body) &&
+      /does not exist yet/i.test(privacy.body) &&
+      !/we will send you a (one-time )?code|use the code we sent/i.test(privacy.body),
+  );
+  check(
+    'rights: both identity-loss cases are covered separately',
+    /still hold your SimpleX identity/i.test(privacy.body) &&
+      /lost your SimpleX identity altogether/i.test(privacy.body),
+  );
+  check(
+    'rights: rejoining yields a NEW identity, and the policy says the old content is out of reach',
+    /rejoining gives you a new member identity/i.test(privacy.body),
+  );
+  check(
+    'rights: knowledge of PUBLISHED content is explicitly not proof of authorship',
+    /Knowing what was published proves nothing/i.test(privacy.body),
+  );
+  check(
+    'rights: unpublished content is named as the only meaningful evidence',
+    /never published are known to you and to us alone/i.test(privacy.body),
+  );
+  check(
+    'rights: an unverifiable ERASURE request leads to restriction, not refusal',
+    /request for restriction under Art\. 18/i.test(privacy.body) &&
+      /do not treat an unverifiable erasure request as a refusal/i.test(privacy.body),
+  );
+  check(
+    'rights: an unverifiable ACCESS request is refused, and the asymmetry is explained',
+    /the answer to an access request is no, and it stays no/i.test(privacy.body),
+  );
+  // The operator console has no hard-destruction route: /messages/:id/delete sets a
+  // reversible flag. The policy must not imply the operator can erase on request.
+  check(
+    'rights: the policy admits destruction is NOT something the operator can perform',
+    /only route in this system that actually destroys content is the one you drive yourself/i.test(
+      privacy.body,
+    ),
+  );
+  check(
+    'rights: the chat’s actual limits are listed, not glossed',
+    /cannot do today/i.test(privacy.body) && /no route from hidden to destroyed/i.test(privacy.body),
+  );
+
+  const privacyDe = await app.inject({ method: 'GET', url: '/de/legal/privacy' });
+  check(
+    'rights: the BINDING German version carries the same substance',
+    privacyDe.statusCode === 200 &&
+      /höchstens zehn Jahre/i.test(privacyDe.body) &&
+      /manuell durchgesetzt/i.test(privacyDe.body) &&
+      /geplant, aber nicht verfügbar/i.test(privacyDe.body) &&
+      /Einschränkung der Verarbeitung nach Art\. 18 DSGVO/i.test(privacyDe.body) &&
+      /beweist nichts/i.test(privacyDe.body) &&
+      /neue Mitgliedskennung/i.test(privacyDe.body),
   );
   check(
     'legal: privacy does not overclaim erasure',

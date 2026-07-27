@@ -323,6 +323,58 @@ console is reachable on the marketing domain. It is not — but only because of 
 
 This amends D-022, which predates the split and assumes a single public origin.
 
+### D-080 — The privacy policy describes rights as this protocol actually permits them
+
+**Status: IMPLEMENTED** (CCB-S3-029 Addendum A)
+
+A standard rights list assumes the controller can identify the data subject. This one
+cannot, by design, and pretending otherwise would produce a policy that fails at the
+first real request. So the section is written around the identity model instead of
+around the article numbers.
+
+**The in-chat route is named first**, because it is better for the member on every
+axis: the protocol has already authenticated them, the effect is immediate, and they
+disclose nothing. **The email route is offered with its price stated** in the member's
+interest rather than as a disclaimer: writing to us creates exactly the link between
+address and pseudonym that the protocol exists to prevent. **Verification is in-band** -
+the email is the prompt, the member's own connection is the proof.
+
+Fifty agents read the chat surface before a word was written, and several comfortable
+sentences did not survive:
+
+- **The one-time token route was cut to "planned".** No token mechanism exists, and
+  the bot has no private channel at all: `createAddress: false`, no contact-event
+  subscriptions, and `SendTarget {to:'direct'}` with no production implementation.
+- **The "direct contact may survive leaving the group" easy case was cut entirely.**
+  A member contact is not created by joining; it must be minted explicitly and is
+  gated on the group's `directMessages` preference, off for a public archive group.
+  Whether it survives a departure is unsettled (the cascade is in the compiled
+  Haskell core) and moot, because no contact exists to survive.
+- **Only withdrawal of consent has a full in-chat route.** Erasure and restriction
+  are reachable only through a member-driven revocation; access, rectification,
+  portability and objection have none. The policy says which is which.
+- **The operator cannot destroy content on request.** `/messages/:id/delete` sets a
+  reversible flag; hard destruction exists only on the member's own in-chat path and
+  in the evidence-hold workflow. This is why an unverifiable erasure request is
+  answered with Art. 18 restriction rather than refusal, and why the text says
+  plainly that destruction is not ours to perform.
+- **Rejoining yields a new member id**, so the in-chat route cannot reach content
+  posted under the old one. Stated, because a member would otherwise assume
+  `/unpublish` covers everything they ever wrote.
+
+The asymmetry of risk drives the outcomes: a wrongly granted **access** request is a
+disclosure of someone else's data, so without verification the answer is no; a wrongly
+granted **erasure** is permanent vandalism, so it becomes a restriction, which is
+reversible and achieves what the member actually wants. Every gap the policy admits is
+in [`docs/feature-backlog.md`](feature-backlog.md) with its blocker named, and
+`verify:site` pins fourteen of these sentences so an edit toward brevity cannot restore
+a promise the system does not keep.
+
+Retention is stated as **consent plus a ten-year ceiling**, with a separate sentence
+admitting the ceiling is enforced by hand. A retention period is a statement of policy;
+manual enforcement is lawful. It becomes a false claim only if the text implies the
+system enforces it, and it does not.
+
 ### D-079 — Legal texts live in code, with the German version binding and the rest labelled
 
 **Status: IMPLEMENTED** (CCB-S3-029)
