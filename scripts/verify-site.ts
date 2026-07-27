@@ -275,6 +275,16 @@ async function main(): Promise<void> {
     'legal: privacy states hiding is never deferred by a hold',
     /never deferred/i.test(privacy.body),
   );
+  // The two claims that a comfortable draft got wrong. Asserted so a later tidy-up
+  // cannot reintroduce a promise the system does not keep.
+  check(
+    'legal: privacy promises NO retention period, because the code implements none',
+    /no automatic expiry/i.test(privacy.body) && !/ten years|10 years/i.test(privacy.body),
+  );
+  check(
+    'legal: privacy claims no theme preference (dark is the only theme)',
+    !/theme preference/i.test(privacy.body),
+  );
   check(
     'legal: privacy does not overclaim erasure',
     !/unrecoverable/i.test(privacy.body.replace(/We do not use the word[^<]*/g, '')),

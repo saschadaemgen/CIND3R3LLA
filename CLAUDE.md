@@ -111,7 +111,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   alongside the three above. Nothing is broken: the runner keys `schema_migrations` on the
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
-  than an ordinal, and new migrations allocate from **020**. See D-069.
+  than an ordinal, and new migrations allocate from **the highest number on disk plus one**
+  (currently **023**). Stated as a rule rather than a fixed number, because the fixed
+  number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
 - `deploy/` — `cinderella.service`, `nginx-admin.conf`, `RUNBOOK.md`, `backup.sh`.
 - Git-ignored: `.env`, `state/`, `media/`, `public/` (built assets), `dist/`.

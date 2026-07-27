@@ -26,6 +26,25 @@
  * particularly the privacy policy and anything touching preservation.
  */
 
+/*
+ * CORRECTIONS MADE AGAINST THE CODE (CCB-S3-029 Part D).
+ *
+ * Two claims in the drafted outline did not survive a read of the implementation,
+ * and were changed rather than shipped:
+ *
+ *  1. A ten-year default retention period. NO archive retention period exists in
+ *     this codebase. `retention` appears only for SimpleX contact-request and
+ *     group-invitation hours (`src/profiles/bot-onboarding.ts`) and for capture
+ *     event pruning; neither expires archived content. Publishing a retention
+ *     promise the system cannot keep is the exact failure this policy is written
+ *     to avoid, so the text now says there is no automatic expiry.
+ *
+ *  2. A theme preference in local storage. Dark is the only theme (operator
+ *     decision, CCB-S3-001), so no such preference is stored. The one local
+ *     storage entry is `cin-consent`, the visitor's answer to the cookie banner,
+ *     which is now named for what it is.
+ */
+
 /** True for the one locale whose legal text is binding. */
 export function isBindingLocale(locale: string): boolean {
   return locale === 'de';
@@ -228,7 +247,8 @@ export const PRIVACY_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Retention',
       body: [
-        'Content remains while your consent and the purpose persist. The operator may configure a retention period per tariff; the default is ten years. Withdrawal ends retention immediately, regardless of the configured period.',
+        'Content remains for as long as your consent stands. There is NO automatic expiry: nothing is deleted after a fixed period, and we do not claim one, because the archive does not implement one. Storage ends when you withdraw, when the operator removes the content, or when the archive is discontinued.',
+        'Withdrawal takes effect immediately. It is the only mechanism that ends storage on your initiative, which is why it is available at any time and needs no reason.',
       ],
     },
     {
@@ -281,8 +301,8 @@ export const PRIVACY_EN: { title: string; sections: LegalSection[] } = {
     {
       h: 'Website visitors',
       body: [
-        'Technically necessary storage: a language preference cookie, and a theme preference in local storage. These carry no identifier and require no consent.',
-        'Consent-requiring storage: analytics, if the operator enables it. Nothing loads before you accept, and declining leaves no analytics storage at all.',
+        'Technically necessary storage: one cookie holding your language choice. It carries no identifier and requires no consent.',
+        'Consent-requiring storage: analytics, if the operator enables it. Nothing loads before you accept. Your answer to the banner, accepted or declined, is kept in your browser’s local storage so you are not asked again; declining leaves no analytics storage beyond that record of your refusal.',
         'Server logs at our hosting provider record access data for operational security. Reports submitted through the public report form store a keyed, non-reversible token derived from your IP address rather than the address itself.',
       ],
     },
@@ -334,7 +354,8 @@ export const PRIVACY_DE: { title: string; sections: LegalSection[] } = {
     {
       h: 'Speicherdauer',
       body: [
-        'Inhalte bleiben gespeichert, solange Ihre Einwilligung und der Zweck fortbestehen. Der Betreiber kann je nach Tarif eine Speicherdauer konfigurieren; die Voreinstellung beträgt zehn Jahre. Ein Widerruf beendet die Speicherung sofort, unabhängig von der konfigurierten Dauer.',
+        'Inhalte bleiben gespeichert, solange Ihre Einwilligung besteht. Es gibt KEINE automatische Löschfrist: nichts wird nach einer festen Dauer entfernt, und wir behaupten das auch nicht, weil das Archiv keine solche Frist umsetzt. Die Speicherung endet mit Ihrem Widerruf, mit einer Entfernung durch den Betreiber oder mit der Einstellung des Archivs.',
+        'Der Widerruf wirkt sofort. Er ist der einzige Weg, die Speicherung auf Ihre Initiative hin zu beenden, und ist deshalb jederzeit und ohne Angabe von Gründen möglich.',
       ],
     },
     {
@@ -387,8 +408,8 @@ export const PRIVACY_DE: { title: string; sections: LegalSection[] } = {
     {
       h: 'Besucherinnen und Besucher der Website',
       body: [
-        'Technisch notwendige Speicherung: ein Cookie für die Sprachwahl und eine Themeneinstellung im lokalen Speicher. Beide enthalten keine Kennung und bedürfen keiner Einwilligung.',
-        'Einwilligungspflichtige Speicherung: Analysewerkzeuge, sofern der Betreiber sie aktiviert. Vor Ihrer Zustimmung wird nichts geladen, und bei Ablehnung entsteht keinerlei Analysespeicherung.',
+        'Technisch notwendige Speicherung: ein Cookie für Ihre Sprachwahl. Es enthält keine Kennung und bedarf keiner Einwilligung.',
+        'Einwilligungspflichtige Speicherung: Analysewerkzeuge, sofern der Betreiber sie aktiviert. Vor Ihrer Zustimmung wird nichts geladen. Ihre Antwort auf den Hinweis, Zustimmung oder Ablehnung, wird im lokalen Speicher Ihres Browsers festgehalten, damit Sie nicht erneut gefragt werden; bei Ablehnung entsteht darüber hinaus keinerlei Analysespeicherung.',
         'Serverprotokolle beim Hoster erfassen Zugriffsdaten zur Betriebssicherheit. Über das öffentliche Meldeformular eingereichte Meldungen speichern statt Ihrer IP-Adresse einen daraus abgeleiteten, nicht umkehrbaren Token.',
       ],
     },

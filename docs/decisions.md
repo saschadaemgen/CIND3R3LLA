@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-028**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -12,6 +12,287 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
 
 ---
+
+### D-086 — `apiChatItemReaction` is defective in BOTH directions; reactions are core-only
+
+**Status: IMPLEMENTED** (CCB-S3-028, as a documented limitation. No reaction code exists.)
+
+The SDK wrapper is unusable and the failure is disguised. `ChatApi.apiChatItemReaction`
+checks the response against `"chatItemsDeleted"` — copy-pasted from the delete-items
+handler — and throws `ChatCommandError` on anything else. The `/_reaction` command
+returns `chatItemReaction`, so the guard is never satisfied.
+
+The important correction, because the first two write-ups of this got it wrong: **both
+adding and removing throw.** There is no asymmetry. Add and remove are the same command
+distinguished by one boolean (`(self.add ? 'on' : 'off')`), both resolve to the single
+declared response union `CR.ChatItemReaction | CR.ChatCmdError`, and removal is signalled
+by `added: boolean` *inside* that response, not by a different response type. The earlier
+claim that "removing a reaction returns normally" was inferred from reading the wrapper
+and never tested; the probe's removal path ran through the replacement function and its
+failure branch was an empty catch, so the wrapper's removal path was never exercised.
+
+Two further traps. The thrown error carries the **successful** response on `.response`,
+while `.chatError` is `undefined` — that property does not exist on `ChatCommandError` at
+all. A handler that logs `err.chatError`, which is what `ChatAPIError` uses, emits a blank
+error for an operation that succeeded. And the published type is wrong: `api.d.ts` declares
+`Promise<T.ChatItemDeletion[]>`, which the method can never produce. TypeScript does not
+catch this because `sendChatCmd` is declared as the broad `Promise<ChatResponse>`.
+
+Present in 6.5.4 (current `latest`, and what is installed) and reported in 7.0.0-beta.3.
+Upstream fix [PR #7109](https://github.com/simplex-chat/simplex-chat/pull/7109) is **open
+and unmerged**, so a version bump does not fix it — and when it lands it changes the return
+type to `T.ACIReaction`, which is a breaking change for any caller.
+
+Consequence for [`wire-format.md`](wire-format.md): reactions belong in the **core-only**
+bucket already used for Forward, not in "usable". The workaround, when a first caller
+exists, is to build the command with `CC.APIChatItemReaction.cmdString(...)`, send it via
+`sendChatCmd`, and accept `chatItemReaction` or `chatItemsDeleted`. Nothing in `src/` calls
+the reaction API today, so this is recorded rather than applied.
+
+### D-085 — Multi-profile runtime model and state machine (design only)
+
+**Status: PLANNED** (design recorded under CCB-S3-028; NOT built, and not to be built
+against the seam as it stands.)
+
+Recorded because the reasoning lives in a planning chat that is being retired, and because
+several of these facts were *measured* against a live core and would otherwise be
+rediscovered expensively.
+
+One `ChatApi.init()`, one `startChat()`, all profiles subscribed simultaneously, no
+profile rotation. Incoming attribution comes from the receiving `userId` carried on the
+event. A **serialized command scheduler** fronts every command that depends on the active
+user, because concurrent `apiSetActiveUser` calls overwrite one another and the following
+command then executes **as the wrong profile without raising an error**. Measured: three
+parallel set-active-user-plus-connect batches produced exactly one success per batch (7 of
+20); serializing the issuing step produced 20 of 20. Serialize the **issuing**, not the
+waiting — completion arrives asynchronously, so many operations may be in flight at once.
+
+**Outgoing messages must be recorded from the command return value, not from the event
+stream.** The core does not reliably emit `newChatItems` for one's own send; a history
+built from events alone recorded zero sends while six profiles had demonstrably sent.
+Cinderella already does this correctly and deliberately today
+([`bot-message.ts:164`](../src/capture/bot-message.ts), with
+[`parse.ts:155`](../src/bot/parse.ts) refusing `groupSnd` on the event path), so the
+requirement is to **preserve** an existing property, not to add one.
+
+States: `offline`, `starting`, `subscribing`, `ready`, `degraded`, `stopping`. The
+load-bearing part is that **`startChat()` returning is not readiness**. It returns in
+about 42 ms with 200 profiles and subscribes in the background. A run that began sending
+8 seconds later took 10 seconds to reach the first receiver; the same operation on a
+settled core took 153 ms. `subscribing` → `ready` is therefore a quiet period — no
+subscription-class event for 10 s, hard ceiling 120 s — and the runtime must log which of
+the two declared it ready, because reaching the ceiling is a fault signal and reaching
+quiet is not. `degraded` has no measured basis: clean restart was measured, network
+interruption was not, and it must ship labelled untested.
+
+Two classes of core error are expected noise once several profiles relay the same message
+(`errorStore`/`duplicateGroupMessage`, `errorAgent`/`INTERNAL`/`SEMsgNotFound`). They are
+the core correctly discarding duplicates. Under the standing surface-failures rule
+(CCB-S3-023) the correct shape is an **allowlist of exactly these two known-benign
+classes, counted, with the count shown in the admin** — the pattern already used by
+[`scope-diagnostics.ts`](../src/capture/scope-diagnostics.ts) and
+[`media/failures.ts`](../src/media/failures.ts) — never a general catch-all. Note
+`SEMsgNotFound` is not in the type package; it reaches TypeScript only as free text inside
+`AgentErrorType.INTERNAL`.
+
+### D-084 — Four actor types, four automation modes, and the invariants between them
+
+**Status: PLANNED** (design recorded under CCB-S3-028; no code, no schema.)
+
+Cinderella distinguishes `human_user`, `human_operated_agent`, `npc` and
+`system_automation`. The rule that makes this worth recording as a decision rather than a
+data model: **actor type, avatar source, personality source and automation mode are
+independent concepts, and actor type must never be inferred from an avatar.** A generated
+avatar may belong to any of the four. Uploaded avatars stay supported for every profile so
+an operator can replace an unsuitable generated one.
+
+Avatar sources: `none`, `uploaded`, `generated_template`, `generated_local_ai`.
+Automation modes: `manual`, `assisted`, `autopilot`, `fully_automated`, defaulting to
+manual for a human user, assisted or autopilot for a human-operated agent, and fully
+automated for NPCs and system automation.
+
+Two invariants, stated as invariants because they are the product's honesty guarantees and
+not merely defaults:
+
+- A `human_operated_agent` must **never silently become** a `fully_automated` NPC.
+- An `npc` must **never be presented as** human-operated.
+
+Every automation-mode change and every manual takeover is persisted and audited. The AI
+may generate wording and creative material; identity, permissions, routing, disclosure and
+execution remain deterministic application logic.
+
+Personality is a **reference only** at this stage — `{ personalityId, seed, configVersion }`,
+where the seed reconstructs a personality given the config version. No generator. The field
+is cheap now and a migration later. Today the schema has a single free-text
+`personality_profile` column ([`017_cinderella_profiles.sql:25`](../migrations/017_cinderella_profiles.sql))
+that is **never written** — every row silently takes the literal default.
+
+### D-083 — A SimpleX `groupId` identifies a membership, not a group
+
+**Status: IMPLEMENTED** (recorded under CCB-S3-028 as a correction and an open question.)
+
+Both the multi-profile brief and its addendum stated this backwards, in the same
+direction, and the error changes what code gets written — so the correction is recorded
+with its evidence.
+
+The claim was that "the same local group ID can exist for different users without
+collision" and that "a local `groupId` must never be treated as globally unique". The core
+schema says the opposite:
+
+```sql
+CREATE TABLE groups (
+  group_id INTEGER PRIMARY KEY,          -- local group ID
+  user_id  INTEGER NOT NULL REFERENCES users ON DELETE CASCADE,
+  UNIQUE (user_id, local_display_name),
+  UNIQUE (user_id, group_profile_id)
+) STRICT
+```
+
+`group_id` **is** a global primary key. Upstream deliberately scopes `local_display_name`
+and `group_profile_id` per user and deliberately does not scope `group_id`. Two profiles
+can never both hold group 21. The measurement behind the original claim is consistent with
+this and was described wrongly: one real group with 26 participating profiles produced 26
+*different* ids, not 26 groups colliding on one id.
+
+**The hazard is aliasing, not collision.** Believing the collision story leads to
+deduplication logic that is not needed; understanding the aliasing story leads to
+canonicalisation logic, which is needed and is different code. Concretely, for this
+archive: [`001_init.sql`](../migrations/001_init.sql) constrains
+`UNIQUE (group_id, group_msg_id)`, and under multi-profile N participating profiles yield
+N distinct `group_id`s **and** N distinct `group_msg_id`s for one message. The constraint
+does not collide — it **permits all N rows**. The archive would store one copy of every
+message per participating profile, and consent, publication derivation and the FTS index
+would multiply with it.
+
+The compound key `userId + groupId` is still worth carrying, because it keeps the
+membership nature of the id visible at every call site. Only the stated reason for it was
+wrong.
+
+**Two things this settles, which need no further design:**
+
+- `group_members.member_id` is documented in the core schema as `shared member ID, unique
+  per group` and is the protocol-level id, so every profile sees the same member under the
+  same id. Cinderella keys consent on `sender_member_id`
+  ([`001_init.sql:20`](../migrations/001_init.sql), "NEVER the display name"). **Consent
+  identity therefore survives multi-profile intact.**
+- `messages.shared_msg_id` is the protocol's stable cross-recipient message id, already
+  captured at [`parse.ts:174`](../src/bot/parse.ts) and persisted. It is the natural
+  message-level canonicalisation key. It is nullable and carries no unique constraint or
+  index today. This decouples the message-level problem from the conversation-level one:
+  they need not be solved in the same migration.
+
+**OPEN QUESTION, which must be answered before the archive can key anything per
+conversation.** There must be a conversation-level identity above the membership ids, with
+a mapping from every participating profile's `group_id` onto it. Neither the brief nor the
+addendum specified this. `group_profile_id` is **not** a candidate: `group_profiles`
+itself carries a `user_id` column, so each profile holds its own row rather than sharing
+one. Two candidates exist in the same table and are unexamined: `public_group_id` and
+`group_link`. Determining the right stable key requires reading the schema on a populated
+core, and it is a design question, not a settled position.
+
+Consequence for the brief's test list: its third required test asks to prove that the same
+local group id can exist for different users without collision. The schema makes that
+impossible, so the test passes trivially and proves nothing. The useful test is the
+inverse — one conversation, N participating profiles, N distinct group ids, all resolving
+to a single conversation identity.
+
+The remaining consent questions raised by the compound identity are **open** and are
+deliberately not answered here: whose messages publish when several profiles share a
+group, whether non-consenting-name redaction holds across profiles, whether the
+first-person consent rule holds between profiles, and how `group_deleted` and the
+publication derivation behave. Each depends on the conversation identity above.
+
+### D-082 — The demo is gated by two independent keys that must agree
+
+**Status: IMPLEMENTED** (CCB-S4-001)
+
+The public demo mints an **ordinary admin session** for an anonymous visitor at
+`POST /demo/enter`. That is the whole risk: the same session machinery that protects the
+real console is handed out to strangers by design. It is safe only if the process it runs
+in can never be a production process, so the isolation is not a flag.
+
+Two independent keys, both required, checked at
+[`demoEnabled`](../src/demo/guard.ts): a `DEMO_INSTANCE` environment flag **and** a marker
+row in the database. The direction that matters is `env && !marked` — a process told it is
+the demo, pointed at a database that is not one. That is the case that would otherwise put
+a stranger in the real console, and it **refuses and logs at error**. The inverse
+(`!env && marked`) is a warning and also refuses: a demo database read by an ordinary
+console is merely synthetic data, not a breach. A marker read that throws also returns
+false. Every path fails closed, and every disagreement is loud, because the two disagreeing
+is always a deployment mistake worth seeing rather than a state to pass over quietly.
+
+The seed script refuses to write the marker into a database that already holds real-looking
+content, which is the last line of defence against seeding production.
+
+Note for whoever documents the seam next: the demo is currently the **only production
+consumer of `src/adapter/`**, via `FakeChatAdapter` in
+[`routes.ts`](../src/demo/routes.ts). The seam otherwise has no production caller.
+
+### D-081 — The marketing vhost is an allowlist, and reserved names answer 404 explicitly
+
+**Status: IMPLEMENTED** (CCB-S4-001. The nginx configuration lives on the server and is
+NOT in this repository — see the limitation noted at the end.)
+
+The marketing host serves the marketing site and nothing else. Its location block is an
+**allowlist** ending in `location / { return 404; }`: the site root, the locale-prefixed
+paths, `/assets/`, `/favicon.ico`, `/robots.txt` and `/sitemap-site.xml`. Everything else
+is 404.
+
+A blocklist was rejected for one reason: it fails open over time. Any admin route added
+later would be silently exposed on the marketing domain by default, and nobody would find
+out from the config. An allowlist fails closed — a new route is invisible until someone
+deliberately adds it.
+
+Public `:443` is an **SNI stream splitter**, shared with neighbouring services on the same
+host. It reads `$ssl_preread_server_name` and maps one name to the SimpleX SMP server;
+everything else goes to `127.0.0.1:4443` with `proxy_protocol` on. Every HTTPS vhost
+therefore listens on `127.0.0.1:4443 ssl proxy_protocol`, never on the public interface.
+Two consequences the next person to touch nginx needs:
+
+- A new domain needs **no change to the shared stream config**, because the map already
+  ends in `default 4443`. Only a vhost.
+- Because unknown names fall through to that default, a **reserved** name must be given an
+  explicit vhost or a visitor lands on whichever vhost happens to be default there. The
+  demo hostname therefore has a deliberate `return 404` block with a `noindex` header, and
+  the certificate already carries its SAN so standing the demo up later needs no
+  certificate work.
+
+Port 80 redirects to HTTPS but serves `/.well-known/acme-challenge/` from disk **before**
+the redirect, so ACME renewal does not depend on Let's Encrypt following redirects. Verified
+under CCB-S3-028 with a scoped `certbot renew --dry-run`: all simulated renewals succeeded.
+
+**Documented limitation:** none of this nginx configuration is in the repository.
+[`deploy/nginx-admin.conf`](../deploy/nginx-admin.conf) still ships a single vhost and
+knows nothing about the second origin, the allowlist or the splitter. The topology above
+was read off the running server and is recorded here because that was the only place it
+existed. Committing a sanitised copy is open work.
+
+### D-080 — `SITE_ORIGIN` is split from `PUBLIC_ORIGIN` because passkeys are bound to the console origin
+
+**Status: IMPLEMENTED** (CCB-S4-001)
+
+The marketing site moved to its own domain. The console and the public archive did **not**
+move, and could not.
+
+`PUBLIC_ORIGIN` derives the WebAuthn Relying Party ID. An RP ID is baked into every
+credential at registration, and a credential cannot be re-scoped afterwards. Moving the
+console origin would therefore have invalidated **every registered passkey** — for a
+console whose primary authentication is passkeys, on a shared production host, with a
+break-glass path that is meant to stay disabled. The cost of moving is not a redirect; it
+is locking the operator out of their own admin console.
+
+So a second origin was added rather than the first one changed. `SITE_ORIGIN` is validated
+the same way and **falls back to `PUBLIC_ORIGIN` when unset**, so a deployment that does
+not set it behaves exactly as before. It feeds only the marketing site's absolute URLs:
+canonical, `hreflang`, Open Graph, JSON-LD and `/sitemap-site.xml`.
+
+The split is enforced **entirely at the edge**. The application has no host-based routing:
+one Fastify process serves both origins on `127.0.0.1:8787`, and it is the vhost allowlist
+(D-081) that decides what each hostname may reach. That is a deliberate division of labour
+and it is worth stating plainly, because reading the application alone would suggest the
+console is reachable on the marketing domain. It is not — but only because of the edge.
+
+This amends D-022, which predates the split and assumes a single public origin.
 
 ### D-079 — Legal texts live in code, with the German version binding and the rest labelled
 
