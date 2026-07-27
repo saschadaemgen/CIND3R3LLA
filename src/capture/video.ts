@@ -12,8 +12,9 @@
  */
 
 import { extname, join } from 'node:path';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { log } from '../log.js';
+import { writeMediaFile } from '../media/at-rest.js';
 import type { Queryable } from '../db/pool.js';
 import type { CapturedMessage } from './message.js';
 import { extractLinks } from './links.js';
@@ -85,9 +86,11 @@ export async function captureVideoLink(
   const abs = join(mediaRoot, rel);
   try {
     await mkdir(join(mediaRoot, bucket(msg.sentAt)), { recursive: true });
-    const tmp = `${abs}.tmp`;
-    await writeFile(tmp, thumb.data);
-    await rename(tmp, abs);
+    // Through the at-rest layer: a video thumbnail is stored as an ORIGINAL (it
+    // lands in `media_path`) and is encrypted like any other (CCB-S3-012).
+    // `writeMediaFile` does its own tmp-and-rename, so the previous manual pair
+    // here is gone rather than nested.
+    await writeMediaFile(abs, thumb.data);
     const mime =
       extname(rel) === '.png' ? 'image/png' : extname(rel) === '.webp' ? 'image/webp' : 'image/jpeg';
     await db.query('UPDATE messages SET media_path = $2, media_mime = $3, media_size = $4 WHERE id = $1', [

@@ -370,6 +370,12 @@ export function registerNav(): void {
           label: 'Evidence holds',
           icon: icon('shield'),
         },
+        {
+          key: 'screening',
+          href: '/screening',
+          label: 'Screening',
+          icon: icon('shield'),
+        },
       ],
     },
     {

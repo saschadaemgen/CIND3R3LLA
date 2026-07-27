@@ -29,12 +29,13 @@
  * by id rather than by path.
  */
 
-import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 
 import type { FastifyInstance } from 'fastify';
 
+import { writeAudit } from '../../db/audit.js';
 import { liveHold } from '../../db/holds.js';
+import { mediaPlaintextSize, readMediaRange } from '../../media/at-rest.js';
 import { log } from '../../log.js';
 import { servableMediaPath } from '../../media/quarantine.js';
 import type { ViewContext } from '../server.js';
@@ -80,10 +81,17 @@ export function registerAdminMedia(app: FastifyInstance, ctx: ViewContext): void
     if (!info.isFile()) return reply.code(404).type('text/plain').send('Not found');
 
     reply.header('content-type', row.media_mime ?? 'application/octet-stream');
-    reply.header('content-length', String(info.size));
+    // The PLAINTEXT length: an encrypted original is longer on disk than the image
+    // it holds (CCB-S3-012).
+    reply.header('content-length', String(await mediaPlaintextSize(abs)));
     // The admin surface is never cached anywhere (the console-wide `no-store` set
     // applies here too), and a quarantine decision must take effect at once.
     reply.header('cache-control', 'no-store');
-    return reply.send(createReadStream(abs));
+    // Decrypted for the operator, and audited BECAUSE it is decrypted: viewing an
+    // original is the one routine way plaintext leaves the custody boundary.
+    await writeAudit(ctx.db, req.session?.username ?? 'unknown', 'media.view', `message:${id}`, {
+      mime: row.media_mime,
+    });
+    return reply.send(await readMediaRange(abs));
   });
 }

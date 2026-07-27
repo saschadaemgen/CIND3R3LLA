@@ -23,10 +23,11 @@
  *    told, rather than being left to assume the guarantee covers everything.
  */
 
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, rename, writeFile } from 'node:fs/promises';
 import { dirname, extname, join } from 'node:path';
 import sharp from 'sharp';
 import { log } from '../log.js';
+import { readMediaFile } from './at-rest.js';
 import { readExifSummary, type ExifSummary } from './exif.js';
 
 export interface StripResult {
@@ -87,7 +88,10 @@ export async function stripToDerivative(
   const absSource = join(mediaRoot, relPath);
   let source: Buffer;
   try {
-    source = await readFile(absSource);
+    // Through the at-rest layer (CCB-S3-012). Originals are encrypted; this is the
+    // one function that reads one in order to PRODUCE the plaintext public
+    // derivative, so it is also the only place the two representations meet.
+    source = await readMediaFile(absSource);
   } catch (err) {
     log.warn(
       `Media strip: could not read ${relPath} (${err instanceof Error ? err.message : String(err)}).`,

@@ -30,6 +30,8 @@ import { registerCapture } from './capture/handler.js';
 import { makePersistenceHooks } from './capture/persist.js';
 import { withBotCapture, type BotReplyMeta } from './capture/bot-message.js';
 import { checkPublishedMedia } from './media/pipeline.js';
+import { describeMediaEncryption } from './media/at-rest.js';
+import { sampleEncryptedOriginal } from './media/at-rest-check.js';
 import { makeConsentHandler } from './consent/commands.js';
 import type { CapturedMessage } from './capture/message.js';
 import { assertDbReachable, closePool, getPool } from './db/pool.js';
@@ -228,6 +230,36 @@ async function startCaptureWorker(
         `reply mode "${ia.replyMode}"${ia.replyMode === 'mention' && !ia.namePrefix.enabled ? ' (name prefix off)' : ''}, ` +
         `resolver "${activeResolverName()}".`,
     );
+
+    // Media encryption at rest (CCB-S3-012 §2). Three states, and they must not
+    // look alike: OFF is a choice and is merely stated; ON is confirmed; and
+    // "encrypted media exists but this key cannot read it" is a FAULT that has to
+    // be loud, because the alternative is discovering a rotated MEDIA_SECRET from
+    // a stream full of broken images weeks later.
+    try {
+      const enc = describeMediaEncryption();
+      if (!enc.configured) {
+        log.info(
+          'Media encryption at rest is OFF (MEDIA_SECRET is unset). Originals are stored as-is.',
+        );
+      } else {
+        const sample = await sampleEncryptedOriginal(getPool(), cfg.mediaRoot);
+        if (sample.checked > 0 && !sample.readable) {
+          status.error(
+            'Media encryption is configured but the stored originals cannot be decrypted with the ' +
+              'current MEDIA_SECRET. Every encrypted original is unreadable until the correct key ' +
+              'is restored. Do NOT re-encrypt or backfill: that would destroy them.',
+          );
+          log.error('Media at rest: MEDIA_SECRET does not decrypt the existing originals.');
+        } else {
+          log.info(`Media encryption at rest is ON (${enc.algo}).`);
+        }
+      }
+    } catch (err) {
+      status.error(
+        `Media encryption is misconfigured: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
 
     // A published image whose derivative is missing is INVISIBLE, not broken-
     // looking (CCB-S3-011 Addendum A). Checked and healed at boot so an empty

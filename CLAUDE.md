@@ -58,6 +58,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   under `state/`; (2) Cinderella's **archive** PostgreSQL (messages, links,
   consent, settings, audit, embeds).
 - **Media on disk** (`MEDIA_ROOT`); the DB stores the path, never the bytes.
+  **Originals are ENCRYPTED at rest** (AES-256-GCM under a dedicated `MEDIA_SECRET`,
+  D-075); the stripped public derivative stays plaintext. Every reader of an original
+  goes through `src/media/at-rest.ts`. Rotating `MEDIA_SECRET` destroys the archive:
+  there is no key history, and it must be backed up separately from the media.
   **Quarantined media is MOVED to `QUARANTINE_ROOT`**, outside `MEDIA_ROOT` and served
   by nothing; the admin console addresses media by message id (`/media/msg/:id`), never
   by path, and the raw static mount over the media tree is gone (CCB-S3-013 §4, D-074).
@@ -118,7 +122,9 @@ harnesses (real Postgres-in-WASM, no server needed): `verify:db`,
 provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:site`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
-`verify:queue`, `verify:capture-events`, `verify:no-dashes`.
+`verify:queue`, `verify:capture-events`, `verify:no-dashes`,
+`verify:screening` (encryption at rest + the hash-screening seam; the fixture
+provider proves the quarantine path with no real material).
 `scripts/admin-preview.ts` boots a seeded local admin console for browser checks.
 
 ## Documentation maintenance (binding on every briefing)
@@ -150,6 +156,16 @@ systemctl restart cinderella`. Admin console is **public + passkey-secured**
 [deploy/RUNBOOK.md](deploy/RUNBOOK.md). WireGuard (Addendum 3) is retired from the
 admin path but stays installed for optional defense-in-depth
 ([deploy/wireguard.md](deploy/wireguard.md)).
+
+## Child safety (CCB-S3-012) — foundation built, provider NOT connected
+
+Storage and custody are built; detection is not. **No screening provider is
+configured**, the null provider transmits nothing, and the public copy says "in
+development" until a real provider is configured and verified. Hash matching finds
+KNOWN material only, never new material, and a no-match is not a statement of safety.
+A match preserves and quarantines, never deletes. Reporting, retention periods and the
+point of contact are legal questions for a lawyer and are deliberately absent from the
+code. See architecture §26, D-075/D-076.
 
 ## Parked (do not build now)
 

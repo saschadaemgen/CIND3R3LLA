@@ -10,6 +10,7 @@
  */
 
 import { Pool } from 'pg';
+import { readMediaFile } from '../src/media/at-rest.js';
 import { stripAndRecord } from '../src/media/pipeline.js';
 import { readExifSummary } from '../src/media/exif.js';
 import { readFile } from 'node:fs/promises';
@@ -46,7 +47,8 @@ async function main(): Promise<void> {
   for (const r of rows) {
     if (dry) {
       try {
-        const buf = await readFile(join(mediaRoot, r.media_path));
+        // Through the at-rest layer (CCB-S3-012): originals are encrypted.
+      const buf = await readMediaFile(join(mediaRoot, r.media_path));
         const f = readExifSummary(buf);
         if (f.hasExif || f.hasXmp || f.hasIptc || f.hasContainerTags) hadMetadata++;
         if (f.hasGps) hadGps++;

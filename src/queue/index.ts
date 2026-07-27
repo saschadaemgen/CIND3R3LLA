@@ -15,6 +15,7 @@ import {
   contentAnalysisKey,
 } from './jobs/analysis.js';
 import { DELETION_APPLY_JOB, deletionApplyHandler, deletionApplyKey } from './jobs/deletion.js';
+import { SCREENING_SCAN_JOB, screeningScanHandler, screeningScanKey } from './jobs/screening.js';
 import {
   DESTRUCTION_RUN_JOB,
   HOLD_EXPIRE_JOB,
@@ -50,6 +51,12 @@ export function registerBuiltinJobs(): void {
   }
   if (!getJobHandler(HOLD_EXPIRE_JOB)) {
     registerJobHandler(HOLD_EXPIRE_JOB, holdExpireHandler);
+  }
+  // Hash screening at receipt (CCB-S3-012). Registered unconditionally: with no
+  // provider configured the handler runs, forms no opinion and contacts nothing,
+  // which is what keeps the whole pipeline exercised in the shipped configuration.
+  if (!getJobHandler(SCREENING_SCAN_JOB)) {
+    registerJobHandler(SCREENING_SCAN_JOB, screeningScanHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }
@@ -167,6 +174,22 @@ export async function enqueueHoldExpiry(
   });
 }
 
+/**
+ * Enqueue hash screening for one received image (CCB-S3-012).
+ *
+ * INTERACTIVE lane, not bulk: `bulkPaused` stops the bulk lane entirely, and an
+ * operator shedding load must never silently stop screening. Idempotent per
+ * message, so a re-delivered receipt does not queue a second scan.
+ */
+export async function enqueueScreeningScan(db: Queryable, messageId: number): Promise<void> {
+  await enqueueJob(db, SCREENING_SCAN_JOB, {
+    idempotencyKey: screeningScanKey(messageId),
+    lane: 'interactive',
+    payload: { messageId },
+  });
+}
+
+export { SCREENING_SCAN_JOB } from './jobs/screening.js';
 export { CONTENT_ANALYSIS_JOB } from './jobs/analysis.js';
 export { DELETION_APPLY_JOB } from './jobs/deletion.js';
 export { DESTRUCTION_RUN_JOB, HOLD_EXPIRE_JOB } from './jobs/destruction.js';

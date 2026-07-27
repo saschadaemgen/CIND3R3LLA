@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -306,6 +306,24 @@ The history below records the pre-CCB-S2-003 state.
       into `QUARANTINE_ROOT` ([`src/media/quarantine.ts`](../src/media/quarantine.ts)), and quarantined
       rows are withheld from publication (`migrations/022`). Both guards are independent, and the config
       loader refuses to start if the two roots are nested.
+- [x] **Encryption at rest for originals (CCB-S3-012 §2).** AES-256-GCM under a dedicated
+      `MEDIA_SECRET`, uniform across all originals so encryption status leaks nothing; derivatives stay
+      plaintext. Mixed trees supported via a magic header; `npm run encrypt-media` backfills
+      idempotently. Byte-range serving uses the plaintext size (D-075).
+- [x] **The hash-screening seam (CCB-S3-012 §3).** `HashScreeningProvider` with a null default that
+      transmits nothing and a fixture provider for harnesses; screening enqueued at receipt on every
+      image, independent of consent, never blocking capture; a provider error retries and never reads as
+      clean. Admin panel at `/screening` shows provider health and quarantined items by reference only
+      (D-076).
+- [ ] **No detection provider is connected (CCB-S3-012, blocked on the operator).** Blocked on: a
+      provider account, the legal process agreed with a lawyer, retention periods, and a designated
+      point of contact. Until then the null provider is active and the public copy says "in development".
+- [ ] **Perceptual hashing is not implemented.** The fixture provider uses SHA-256, which proves the
+      plumbing but would not survive a re-encode. A real adapter implements the same interface with
+      perceptual hashing; the interface does not need to change.
+- [ ] **`MEDIA_SECRET` is not in the backup set.** `deploy/backup.sh` copies the database and the media
+      tree but not `/etc/cinderella`. Media backups are unreadable without the key, and there is no key
+      history. Either add the env file to the backup, or record the key somewhere the operator controls.
 - [ ] **The CSAM hold source has no producer (CCB-S3-013 Part B, by design).** `evidence_holds.source`
       accepts `'csam'`, the never-expiring behaviour is implemented and tested, and the operator UI
       already refuses to offer destroy for it. Nothing creates one until hash screening exists

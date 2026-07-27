@@ -16,6 +16,7 @@ import { registerSecurity } from './security.js';
 import { registerReports } from './reports.js';
 import { registerHolds } from './holds.js';
 import { registerAdminMedia } from './admin-media.js';
+import { registerScreening } from './screening.js';
 import { registerSiteAdmin } from './site.js';
 
 export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void {
@@ -34,4 +35,5 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerReports(app, ctx);
   registerHolds(app, ctx);
   registerAdminMedia(app, ctx);
+  registerScreening(app, ctx);
 }

@@ -11,6 +11,7 @@ import { copyFile, mkdir, rename, stat, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import type { ReceivedFile } from '../bot/files.js';
 import type { CapturedMessage } from './message.js';
+import { encryptFileInPlace } from '../media/at-rest.js';
 
 export interface StoredMedia {
   /** Path relative to MEDIA_ROOT, using forward slashes. */
@@ -99,6 +100,12 @@ export async function storeMedia(
 
   await mkdir(absDir, { recursive: true });
   await moveFile(received.path, absPath);
+  // Encrypted the moment it lands (CCB-S3-012). The move is an OS-level rename, so
+  // this is the first point at which the bytes are ours and addressable; from here
+  // on every reader goes through the at-rest layer. `media_size` below is therefore
+  // deliberately read AFTER encryption and reports the on-disk size, which is what
+  // the operator's disk accounting cares about.
+  await encryptFileInPlace(absPath);
 
   const info = await stat(absPath);
   return {

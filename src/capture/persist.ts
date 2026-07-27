@@ -16,6 +16,7 @@ import {
   type LinkInput,
 } from '../db/messages.js';
 import { status } from '../web/status.js';
+import { enqueueScreeningScan } from '../queue/index.js';
 import type { CaptureHooks } from './handler.js';
 import { extractLinks, linksToSearchText } from './links.js';
 import { storeMedia } from './media.js';
@@ -118,11 +119,33 @@ export function makePersistenceHooks(cfg: Config): CaptureHooks {
           `${media.mediaPath} (${media.mediaSize} bytes, ${media.mediaMime}) ✓`,
       );
 
+      const id = await messageIdFor(getPool(), msg.groupId, msg.itemId);
+
+      // SCREENING IS ENQUEUED BEFORE THE DERIVATIVE IS MADE (CCB-S3-012 §3).
+      //
+      // Enqueued, not awaited: a member's message must never wait on a screening
+      // provider, and a provider outage must become a retry rather than a lost
+      // receipt. Screening is independent of consent - every image is screened at
+      // receipt whether or not the member ever opted in, because a file that is
+      // never published is still a file the platform received and holds.
+      //
+      // A failure to ENQUEUE is a fault, not a shrug: it would mean this image is
+      // never screened at all, silently.
+      if (id !== null) {
+        try {
+          await enqueueScreeningScan(getPool(), id);
+        } catch (err) {
+          status.error(
+            `Could not queue hash screening for message ${id}; it will not be screened until this ` +
+              `is retried: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
+
       // Strip immediately (CCB-S3-011 §1). Nothing is publishable until this has
       // run, so doing it here rather than lazily at first request means a photo
       // is never one cache-miss away from being served with its GPS intact.
       try {
-        const id = await messageIdFor(getPool(), msg.groupId, msg.itemId);
         if (id !== null) {
           await stripAndRecord(getPool(), cfg.mediaRoot, id, media.mediaPath, media.mediaMime);
         }

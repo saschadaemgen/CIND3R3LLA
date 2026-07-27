@@ -1,6 +1,6 @@
 # Cinderella — Security Posture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
 
 _Living document. Ground truth is the code; every claim below is anchored to a
 repo-relative `file:line`. Where the project outline and the code diverge, the
@@ -920,6 +920,51 @@ the file is absent even if the route were bypassed. The config loader refuses to
 BEFORE the hold state changes, so a failed segregation leaves the hold untouched rather than marking an
 item escalated while its bytes are still served, and `destroyMessage` sweeps both roots so a
 half-completed release cannot strand bytes.
+
+## 11c. Encryption at rest, and the screening seam (CCB-S3-012)
+
+**Originals are encrypted; derivatives are not.** AES-256-GCM under a scrypt-derived key from a
+dedicated `MEDIA_SECRET` ([`src/media/at-rest.ts`](../src/media/at-rest.ts)). Every original is
+encrypted, not only suspect material, so a file's encryption status cannot disclose that it is under
+suspicion. The stripped derivative stays plaintext: it is public by definition and is not the artefact
+under custody.
+
+**A dedicated secret, not `SESSION_SECRET`** (D-075). A plugin key encrypted under the session secret
+becomes undecryptable on rotation and is re-entered; media becomes undecryptable and is GONE, including
+material held under legal custody. Rotating `SESSION_SECRET` is ordinary hygiene and is already on the
+operator's task list, so coupling the archive's survival to it would make a routine security action an
+irreversible data-loss event.
+
+**Key handling, and the operator obligation.** There is no key history and no re-wrap on read: rotating
+`MEDIA_SECRET` makes every encrypted original unreadable. `deploy/backup.sh` copies the database and the
+media tree but NOT `/etc/cinderella`, so **the key must be backed up separately from the media** or the
+backups are a directory of unreadable bytes. A rotated or mistyped key is detected at boot
+([`src/media/at-rest-check.ts`](../src/media/at-rest-check.ts)) and raises `status.error`, because the
+alternative is discovering it weeks later from a stream of broken images.
+
+**Failure modes fail closed.** A wrong key throws rather than returning ciphertext, so nothing can serve
+an encrypted file as though it were an image. A weak `MEDIA_SECRET` (under 32 characters) refuses to run
+rather than silently storing in clear, because an operator who set it believes media is encrypted.
+
+**Nothing leaves the host in the default configuration.** The shipped screening provider is the null
+provider: it forms no opinion, opens no socket, and never decrypts the original. An unconfigured
+provider is structurally replaced by it, so "not configured" cannot become a code path that reaches a
+network client. This is the analytics-off-by-default discipline applied to the most sensitive content
+the system will ever hold.
+
+**A screening error is never a clean verdict.** A provider that throws produces `error`, raises
+`status.error` and rethrows so the queue retries. It never degrades to `no-match`, because "screened and
+clean" is precisely what a failure must not be mistaken for.
+
+**A match is preserved, not deleted, and never rendered.** Quarantine (§11b) does the work: bytes moved
+out of the served tree, publication withheld, no expiry, undeletable by any path. The alert carries the
+fact and the reference only, the audit records the event and not the content, and no preview, thumbnail
+or derivative is ever produced for a quarantined item. Nothing is disclosed to anyone automatically:
+reporting is a legal process the operator performs.
+
+**What the screening result is NOT.** It is never shown to members, and it is not a moderation signal
+for the community. Hash matching detects known material only; a no-match result is not a statement that
+anything is safe, and the product says so where an operator will read it.
 
 ## 12. The local AI subsystem has not been security-reviewed (D-068)
 

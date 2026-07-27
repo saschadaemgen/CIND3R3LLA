@@ -51,6 +51,13 @@ MEDIA_ROOT=/var/lib/cinderella/media
 # out of the served tree on purpose, and nesting them there would leave them
 # fetchable. The service user needs write access to it, exactly as for MEDIA_ROOT.
 # QUARANTINE_ROOT=/var/lib/cinderella/quarantine
+# Encryption of original media at rest (CCB-S3-012). Generate with
+# `openssl rand -base64 48`. NO KEY HISTORY: rotating or losing this makes every
+# encrypted original permanently unreadable, and backup.sh does NOT copy this file,
+# so back the key up separately from the media backups or a restore is worthless.
+# After setting it, backfill existing plaintext media as the service user:
+#   sudo -u cinderella env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) #     npx tsx scripts/encrypt-media.ts
+MEDIA_SECRET=<openssl rand -base64 48>
 GROUP_NAME=
 ADMIN_PORT=8787
 ADMIN_USERNAME=operator

@@ -16,7 +16,6 @@
  * admin strict headers are skipped for the public front in the server onSend hook.
  */
 
-import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { resolve, sep } from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -26,6 +25,7 @@ import { getEmbedInstance, listEmbedInstances, type EmbedSettings } from '../../
 import { VIDEO_FRAME_ORIGIN } from '../../media/video.js';
 import { ensureDerivative } from '../../media/pipeline.js';
 import { recordMediaFailure } from '../../media/failures.js';
+import { mediaPlaintextSize, readMediaRange } from '../../media/at-rest.js';
 import { log } from '../../log.js';
 import {
   ARCHIVE_TYPES,
@@ -566,10 +566,16 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
         return reply.code(404).type('text/plain').send('Not found');
       }
       let size: number;
+      // The PLAINTEXT size, not the on-disk size (CCB-S3-012). An encrypted
+      // original is 34 bytes longer than the image it holds, so serving
+      // content-length or content-range from `stat().size` would overstate every
+      // file and put every seek off by the envelope. This is also the only place
+      // that has to know encryption exists at all: everything below works on
+      // plaintext lengths.
       try {
         const st = await stat(filePath);
         if (!st.isFile()) throw new Error('not a file');
-        size = st.size;
+        size = await mediaPlaintextSize(filePath);
       } catch (err) {
         // The consent gate already confirmed this published item HAS a media path,
         // so a stat failure here is a real disk/permission fault on a committed
@@ -618,10 +624,10 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
         reply.code(206);
         reply.header('content-range', `bytes ${start}-${end}/${size}`);
         reply.header('content-length', String(end - start + 1));
-        return reply.send(createReadStream(filePath, { start, end }));
+        return reply.send(await readMediaRange(filePath, start, end));
       }
       reply.header('content-length', String(size));
-      return reply.send(createReadStream(filePath));
+      return reply.send(await readMediaRange(filePath));
     },
   );
 

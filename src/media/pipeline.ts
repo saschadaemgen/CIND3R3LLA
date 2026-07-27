@@ -8,6 +8,7 @@
  */
 
 import { log } from '../log.js';
+import { isQuarantined } from '../db/holds.js';
 import type { Queryable } from '../db/pool.js';
 import { isStrippable, stripToDerivative } from './strip.js';
 import { recordMediaFailure } from './failures.js';
@@ -142,6 +143,22 @@ export async function stripAndRecord(
   relPath: string,
   mime: string | null,
 ): Promise<StripRecord> {
+  // QUARANTINED ITEMS NEVER GET A DERIVATIVE (CCB-S3-012 §4). "No preview,
+  // thumbnail or derivative generated for a quarantined item, ever."
+  //
+  // Checked HERE rather than only at the call sites because this is the single
+  // funnel every derivative producer goes through: capture, the boot check, the
+  // public heal path, and the remediation script. A gate at any one caller would
+  // leave the others open, and the heal path in particular runs on a public
+  // request, which is exactly when it must not fire.
+  //
+  // Screening is asynchronous, so a match can land after capture already made a
+  // derivative. That case is covered separately: quarantining MOVES every file the
+  // message owns, the derivative included, out of the served tree.
+  if (await isQuarantined(db, messageId)) {
+    log.warn(`Media: refusing to derive a preview for quarantined message ${messageId}.`);
+    return { stripped: false, hadMetadata: false, hadGps: false, skipped: 'quarantined' };
+  }
   const result = await stripToDerivative(mediaRoot, relPath, messageId, mime);
   const hadMetadata =
     result.found.hasExif ||

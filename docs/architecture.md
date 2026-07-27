@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -1007,6 +1007,103 @@ reach: backups (`deploy/backup.sh` keeps fourteen generations), the SimpleX core
 `state/`, content already fetched by RSS readers or social scrapers, or media files that never had a row.
 The member-facing copy says removal plus backup expiry and deliberately avoids the word
 "unrecoverable", which overwriting does not guarantee on modern storage.
+
+## 26. Encryption at rest and hash screening (CCB-S3-012)
+
+The child-safety track's storage and screening architecture. **No detection provider is connected**;
+this is the foundation a provider becomes an adapter on.
+
+### The constraint that shapes everything
+
+The operator may not analyse suspect images: examining potential abuse material is itself legally
+fraught, so the only permissible operation is automated comparison against hashes of KNOWN material. But
+investigators need the unmodified file, so the correct response to a match is **preserve and report**,
+not delete. Together those produce an unusual requirement: **the platform must retain material it is not
+allowed to look at.** That is a custody problem, not a detection problem, and it is why the storage half
+is larger than the screening half.
+
+### Encryption at rest (`src/media/at-rest.ts`)
+
+AES-256-GCM, key derived with scrypt from a dedicated `MEDIA_SECRET`. Envelope:
+`CINDM1 | iv(12) | tag(16) | ciphertext`, 34 bytes of header.
+
+**Every original is encrypted, not only suspect material** (D-075): a selectively-encrypted store would
+disclose which files are under suspicion to anyone with a directory listing. The **stripped derivative
+stays plaintext** because it is public by definition and is not the artefact under custody.
+
+The five readers of an original all go through `readMediaFile`: the derivative producer
+(`strip.ts`), the public media route, the admin media route, and the two audit scripts. Writers
+(`storeMedia`, `captureVideoLink`) encrypt on the way in.
+
+**Serving is where the subtlety is.** GCM ciphertext is exactly as long as its plaintext, so an
+encrypted file is 34 bytes longer on disk. Byte-range video seeking computed from `stat().size` would be
+wrong by the envelope on every request, so the routes use `mediaPlaintextSize`. Encrypted files are
+decrypted into memory and sliced; plaintext files still stream. Buffering is the honest cost of
+authenticated encryption: GCM authenticates whole files, and serving an unverified fragment would throw
+away the integrity guarantee that makes custody meaningful.
+
+**Mixed trees work.** The magic header lets readers handle encrypted and legacy plaintext files alike,
+which is what makes `npm run encrypt-media` an incremental, idempotent, re-runnable backfill rather than
+a flag day.
+
+### The screening seam (`src/screening/`)
+
+`HashScreeningProvider` mirrors the price-provider chain. Verdicts are `match | no-match | not-screened
+| error`, where **`not-screened` is a first-class outcome**, not a failure code.
+
+- **Null provider (the default)** forms no opinion, opens no socket, and never even decrypts the
+  original: the `bytes()` callback is lazy precisely so that reading plaintext happens only when a
+  configured provider has actually asked.
+- **Fixture provider** compares SHA-256 against a local list, so the whole pipeline is exercised without
+  real material. It is honest about itself: production screening uses perceptual hashing, and a
+  cryptographic digest would not survive a re-encode. Its job is the plumbing, not detection.
+- `setScreeningProvider` replaces an unconfigured provider with the null one, so "not configured" cannot
+  become a code path that reaches a network client.
+
+**Health is module-global**, unlike the price panel's per-instance map, which the admin page never sees
+because it constructs a fresh service per request. The buffer is sized for receipt-rate traffic (400),
+not price-lookup traffic (60), and records message id, provider, verdict and timing. **Never the hash**:
+the hash identifies the content.
+
+### Screening at receipt
+
+Enqueued from `onFileReceived` immediately after the media is stored and BEFORE the derivative is
+produced, on the interactive lane. Enqueued, not awaited: a member's message must never wait on a
+provider, and a throw in the capture path would lose the event outright since the SDK delivers each
+event exactly once. Screening is **independent of consent** because a file that is never published is
+still a file the platform received and holds.
+
+A provider error raises `status.error` and rethrows, so the queue retries. It never degrades to
+`no-match`.
+
+### Match handling (§4)
+
+In order, and the order is the point: **quarantine first**, then preserve, then alert, then audit, then
+stop.
+
+Quarantine reuses CCB-S3-013 §4 wholesale: the bytes move to `QUARANTINE_ROOT` (still encrypted), the
+row is withheld from publication by migration 022, the hold carries no expiry, and the `BEFORE DELETE`
+trigger makes the item undeletable by member revocation, operator takedown, a reply cascade or raw SQL.
+The alert carries the fact and the reference and **never renders, embeds, previews, thumbnails or
+attaches the content**. The audit records the event, not the content.
+
+**No derivative is ever produced for a quarantined item.** The gate sits in `stripAndRecord`, the single
+funnel every producer goes through (capture, the boot check, the public heal path, the remediation
+script), because a gate at any one caller would leave the others open. Screening is asynchronous, so a
+match can land after capture already made a derivative; that case is covered because quarantining moves
+every file the message owns, the derivative included.
+
+**Nothing further happens in code.** No reporting workflow, no retention period, no point of contact, no
+automated disclosure: those are legal questions for a lawyer.
+
+### Honesty (§5)
+
+The website claimed "every message and file passes through consent checks and CSAM screening before
+anything ever goes live" while no screening code existed at all. Corrected to "in development" in
+`locales/en.json`; the same keys are deleted from the other 39 locales so they fall back to the
+corrected English rather than repeating a false claim in 39 languages. The admin console states the
+limit plainly: hash matching detects known material only, and a no-match result is not a statement that
+anything is safe. **The screening result is never shown to members.**
 
 ## Appendix: divergences (code wins)
 

@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-013**._
+> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-012**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,75 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-076 — Hash screening is a seam with a null default, and it never claims more than it does
+
+**Status: IMPLEMENTED (CCB-S3-012 §3, §5). No live provider connected.**
+**Shape.** `HashScreeningProvider` (`src/screening/types.ts`) mirrors the price-provider chain: a
+narrow interface, an `isConfigured()` gate, and health kept outside the provider. Two implementations
+ship: the **null provider** (the default, forms no opinion, opens no socket, and never even decrypts
+the original) and a **fixture provider** that compares against a local list so the whole pipeline can be
+exercised end to end without any real material.
+**Default transmits nothing.** `setScreeningProvider` replaces an unconfigured provider with the null
+one, so "not configured" cannot become a code path that reaches a network client at all. This is the
+analytics-off-by-default discipline, and it matters more here because the content is the most sensitive
+the system will ever hold.
+**Screening runs at receipt, on every image, independent of consent** (`src/capture/persist.ts`), and is
+ENQUEUED rather than awaited. A member's message must never wait on a provider, and a throw in the
+capture path would lose the event outright, since the SDK delivers each event exactly once (CCB-S3-024).
+A provider outage therefore becomes a retry and then a visible dead letter, never a lost message.
+**An error is never a verdict.** A provider that throws produces `error`, which raises `status.error`
+and rethrows so the queue retries. It never degrades to `no-match`, because "screened and clean" is the
+one thing a failure must not be mistaken for.
+**Honesty (§5).** The website claimed "every message and file passes through consent checks and CSAM
+screening before anything ever goes live" while no screening code existed. That copy is corrected to
+"in development" in `locales/en.json`, and the same keys are removed from the other 39 locales so they
+fall back to the corrected English rather than repeating a false claim in 39 languages. The limit is
+stated in the product itself: hash matching detects KNOWN material only, and a no-match result is not a
+statement that anything is safe.
+**Deliberately absent.** No reporting workflow, no retention period, no point of contact, no automated
+disclosure. Those are legal questions for a lawyer, and the briefing forbids inventing them in code.
+**Evidence.** `src/screening/`, `src/queue/jobs/screening.ts`, `src/web/views/screening.ts`,
+`scripts/verify-screening.ts`.
+
+---
+
+### D-075 — Originals are encrypted at rest under a DEDICATED secret, and derivatives are not
+
+**Status: IMPLEMENTED (CCB-S3-012 §2).**
+**The requirement it comes from.** The platform must retain material it is not permitted to look at: a
+hash match is a signal, not evidence, investigators need the unmodified file, and so the correct
+response to a match is preserve rather than delete. Material held under that constraint has to be
+unreadable to anyone reading the disk. This is a custody problem, not a detection problem.
+**Uniform, not selective.** EVERY original is encrypted, not only suspect material. If only quarantined
+files were encrypted, a file's encryption status would itself disclose that it is under suspicion to
+anyone with a directory listing.
+**Derivatives stay plaintext.** The stripped derivative is public by definition and is not the artefact
+under custody. Encrypting it would protect nothing and would put a decrypt on the hot path of every
+public image request.
+**Why a dedicated `MEDIA_SECRET` rather than the plugin pattern's `SESSION_SECRET`.** The briefing
+invites the plugin-secret pattern "unless there is a reason not to". The algorithm and envelope are
+reused exactly; the secret is not. A plugin key encrypted under `SESSION_SECRET` becomes undecryptable
+on rotation and the operator RE-ENTERS it. Media encrypted under it becomes undecryptable on rotation
+and is GONE, including material held under legal custody. Rotating `SESSION_SECRET` is ordinary
+hygiene, already on the operator's task list, and coupling the archive's survival to it would turn a
+routine security action into an irreversible data-loss event.
+**Rotation, plainly.** Rotating `MEDIA_SECRET` makes every encrypted original undecryptable. There is
+no key history and no re-wrap on read. THE KEY MUST BE BACKED UP SEPARATELY FROM THE MEDIA:
+`deploy/backup.sh` copies the database and the media tree but not `/etc/cinderella`, so a restore
+without the secret yields a directory of unreadable bytes.
+**Mixed trees are supported.** Files carry a magic header, so readers handle encrypted and plaintext
+alike. That is what lets encryption be switched on for an archive that already holds plaintext media,
+with `npm run encrypt-media` backfilling incrementally and idempotently.
+**The subtle part.** Serving reads plaintext SIZE, not on-disk size: GCM ciphertext is exactly as long
+as its plaintext, so an encrypted file is 34 bytes longer on disk, and byte-range video seeking computed
+from `stat().size` would be wrong by the envelope on every request. Encrypted files are decrypted and
+sliced in memory, because GCM authenticates whole files and serving an unverified fragment would discard
+the integrity guarantee that makes custody meaningful. Plaintext files still stream.
+**Evidence.** `src/media/at-rest.ts`, `src/media/at-rest-check.ts`, `scripts/encrypt-media.ts`,
+`scripts/verify-screening.ts` §1.
 
 ---
 

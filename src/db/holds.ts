@@ -291,3 +291,22 @@ export async function sourceIsSuppressed(
   }
   return suppressed;
 }
+
+/**
+ * Is this message quarantined (CCB-S3-012 §4)?
+ *
+ * A hash match or an operator escalation. Distinct from an ordinary report hold,
+ * which defers destruction and changes nothing else: this is the state that
+ * withholds publication, moves the bytes out of the served tree, and forbids any
+ * preview, thumbnail or derivative being produced.
+ */
+export async function isQuarantined(db: Queryable, messageId: number): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT 1 FROM evidence_holds
+     WHERE message_id = $1
+       AND state IN ('active', 'escalated')
+       AND (source = 'csam' OR state = 'escalated')`,
+    [messageId],
+  );
+  return rows.length > 0;
+}

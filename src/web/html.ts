@@ -153,6 +153,7 @@ const MEGA_GROUPS_BY_SECTION: Record<string, Record<string, string>> = {
     consent: 'Governance',
     reports: 'Review',
     holds: 'Review',
+    screening: 'Review',
   },
   interaction: {
     'interaction:addressing': 'Conversation',
@@ -198,6 +199,7 @@ const MEGA_ITEM_DESCRIPTIONS: Record<string, string> = {
   consent: 'Consent records and publication decisions.',
   reports: 'Items that require administrator review.',
   holds: 'Content held against destruction while a report is reviewed.',
+  screening: 'Hash screening health and quarantined items, by reference only.',
   'interaction:addressing': 'Names, mentions, and direct addressing.',
   'interaction:guards': 'Safety gates and response boundaries.',
   'interaction:followup': 'Follow up behavior and timing.',

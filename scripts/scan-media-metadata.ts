@@ -11,6 +11,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import { readMediaFile } from '../src/media/at-rest.js';
 import { join } from 'node:path';
 import { Pool } from 'pg';
 import { readExifSummary, type ExifSummary } from '../src/media/exif.js';
@@ -44,7 +45,8 @@ async function main(): Promise<void> {
   let unreadable = 0;
   for (const r of rows) {
     try {
-      const buf = await readFile(join(mediaRoot, r.media_path));
+      // Through the at-rest layer (CCB-S3-012): originals are encrypted.
+      const buf = await readMediaFile(join(mediaRoot, r.media_path));
       summaries.push({ type: r.type, s: readExifSummary(buf) });
     } catch {
       unreadable++;
