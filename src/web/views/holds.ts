@@ -34,6 +34,8 @@ import { liveHold, listHolds, resolveHold, type HoldListRow } from '../../db/hol
 import { withTransaction } from '../../db/pool.js';
 import { log } from '../../log.js';
 import { enqueueDestructionFor } from '../../queue/jobs/destruction.js';
+import { quarantineMedia, releaseQuarantinedMedia } from '../../media/quarantine.js';
+import { status } from '../status.js';
 import { html, page, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { actionButton } from './messages.js';
@@ -51,6 +53,9 @@ const HOLD_FLASH: Record<string, string> = {
   gone: 'That hold no longer exists.',
   refused: 'That outcome is not available for this hold.',
   failed: 'The destruction did not complete. Nothing was removed; see the logs.',
+  'segregation-failed':
+    'The escalation was NOT applied: this item’s media could not be moved out of the served ' +
+    'media store, so segregating it would not have been true. See the logs.',
 };
 
 /** Days before expiry at which the operator is warned, so a hold lapses by decision. */
@@ -175,7 +180,7 @@ export function registerHolds(app: FastifyInstance, ctx: ViewContext): void {
         await withTransaction(async (tx) => {
           const resolved = await resolveHold(tx, holdId, 'destroy', user);
           if (!resolved) throw new Error('hold was resolved by someone else');
-          await destroyMessage(tx, ctx.cfg.mediaRoot, messageId);
+          await destroyMessage(tx, ctx.cfg.mediaRoot, messageId, ctx.cfg.quarantineRoot);
         });
       } catch (err) {
         log.error(
@@ -193,10 +198,46 @@ export function registerHolds(app: FastifyInstance, ctx: ViewContext): void {
       return reply.redirect(`/holds${back}&flash=destroy`);
     }
 
+    if (action === 'escalate') {
+      // SEGREGATION IS PHYSICAL, and it happens BEFORE the state changes.
+      //
+      // "Not deletable by any path" was only ever half the requirement; the other
+      // half is that nobody can read it in normal operation, and a database state
+      // cannot deliver that while the admin console can still fetch the bytes.
+      // So the files leave MEDIA_ROOT first: if the move fails, the hold stays
+      // exactly as it was and the operator is told, rather than the item being
+      // marked escalated while its bytes are still being served.
+      try {
+        await quarantineMedia(ctx.db, ctx.cfg.mediaRoot, ctx.cfg.quarantineRoot, messageId);
+      } catch (err) {
+        log.error(
+          `Holds: could not segregate media for message ${messageId}; the escalation was not applied: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+        return reply.redirect(`/holds${back}&flash=segregation-failed`);
+      }
+    }
+
     const resolved = await resolveHold(ctx.db, holdId, action, user);
     // Scoped to a live hold, so a double-submitted button resolves nothing a
     // second time and writes no duplicate audit row.
     if (!resolved) return reply.redirect(`/holds${back}&flash=gone`);
+
+    if (action === 'release' && hold.source === 'csam') {
+      // A hash match released as a false positive gets its bytes back, so the item
+      // behaves normally again. Failure here is loud but does not undo the release:
+      // the content is readable-by-nobody until it is fixed, which is the safe way
+      // round for this one.
+      try {
+        await releaseQuarantinedMedia(ctx.db, ctx.cfg.mediaRoot, ctx.cfg.quarantineRoot, messageId);
+      } catch (err) {
+        status.error(
+          `Hold ${holdId} on message ${messageId} was released but its quarantined media could not ` +
+            `be moved back. The item is public again with its media missing: ` +
+            `${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
 
     await writeAudit(ctx.db, user, `hold.${action}`, `message:${messageId}`, {
       holdId,

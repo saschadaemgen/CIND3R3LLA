@@ -97,14 +97,25 @@ function select(name: string, current: string | undefined, options: [string, str
   </select>`;
 }
 
+/**
+ * The admin thumbnail.
+ *
+ * Addressed BY MESSAGE ID, never by media path (CCB-S3-013 §4). The console used
+ * to mount the whole media tree with `@fastify/static` and link straight at the
+ * file, which meant a quarantined item's bytes stayed readable to any admin
+ * session: deletion was blocked, access was not. `/media/msg/:id` resolves the
+ * path itself and refuses anything quarantined, so the check cannot be skipped by
+ * knowing a filename.
+ */
 export function mediaCell(m: {
+  id: number;
   type: string;
   mediaPath: string | null;
   mediaMime: string | null;
   mediaError: string | null;
 }): SafeHtml {
   if (m.mediaPath && m.mediaMime?.startsWith('image/')) {
-    const src = `/media/${m.mediaPath.split('/').map(encodeURIComponent).join('/')}`;
+    const src = `/media/msg/${String(m.id)}`;
     return html`<a href="${src}" target="_blank" rel="noopener"
       ><img
         src="${src}"

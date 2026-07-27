@@ -13,6 +13,44 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-074 — Quarantine is segregated on the filesystem, not only in the database
+
+**Status: IMPLEMENTED (CCB-S3-013 §4).**
+**The gap.** Escalation and hash-match quarantine were enforced by the `BEFORE DELETE` trigger (D-072)
+and the publish views, which between them made a quarantined item undeletable and unservable to the
+public. But the admin console mounted the whole media tree with `@fastify/static` and served any file
+under `MEDIA_ROOT` by path, with no per-message check. Deletion was blocked; **access was not**. A
+database state cannot make "accessible to nobody in normal operation" true while a filesystem path
+still hands out the bytes.
+**The decision, in three parts.**
+(1) The publish derivation withholds quarantined rows (`migrations/022_quarantine_withholds.sql`). The
+clause sits outside the bot/member CASE, because a hash match on one of Cinderella's own messages is
+exactly as unservable as one on a member's photograph.
+(2) **The bytes move.** `src/media/quarantine.ts` relocates every file the message owns into
+`QUARANTINE_ROOT`, outside `MEDIA_ROOT` and served by nothing. The config loader **refuses to start**
+when the two are nested, because that would silently reduce quarantine to a rename.
+(3) The static mount is **removed**, replaced by `/media/msg/:id`, which resolves the path from the row
+and refuses anything quarantined.
+**Why (2) and (3) are both there.** Either alone is a single point of failure for a rule this serious.
+The route refuses even if the move failed or never ran; the file is absent even if the route were
+bypassed. Same doubled-guard reasoning as the `group_deleted` precedent, applied to bytes instead of
+buttons.
+**Ordering.** The move happens BEFORE the hold state changes, so a failed segregation leaves the hold
+exactly as it was and tells the operator, rather than marking an item escalated while its bytes are
+still being served. A quarantine that fails is visibly absent rather than quietly untrue.
+**What is unchanged.** An ordinary **report hold** still defers destruction and nothing else:
+publication is untouched and hiding stays instant, because reporting must never become a way to
+unpublish. Quarantine is the narrower, stronger case, produced only by a hash match or an operator
+escalation.
+**Reversible**, because a hash match can be a false positive: releasing moves the files back to the
+paths the database already records. `destroyMessage` sweeps **both roots**, so a release whose move
+back half-completed cannot strand bytes that nothing can find again.
+**Evidence.** `migrations/022_quarantine_withholds.sql`, `src/media/quarantine.ts`,
+`src/web/views/admin-media.ts`, `src/config.ts` (`resolveQuarantineRoot`),
+`scripts/verify-revocation.ts` §16.
+
+---
+
 ### D-073 — Restoring hidden content must not publish what was said while hidden
 
 **Status: IMPLEMENTED (CCB-S3-013, found by adversarial review before release).**

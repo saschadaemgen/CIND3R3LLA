@@ -46,6 +46,11 @@ BOT_DISPLAY_NAME=Cinderella
 SIMPLEX_DB_PREFIX=/var/lib/cinderella/state/simplex/cinderella
 SIMPLEX_FILES_FOLDER=/var/lib/cinderella/files
 MEDIA_ROOT=/var/lib/cinderella/media
+# Quarantined media (CCB-S3-013). Defaults to a sibling of MEDIA_ROOT, so this
+# line is optional. It must NOT be inside MEDIA_ROOT: quarantined bytes are moved
+# out of the served tree on purpose, and nesting them there would leave them
+# fetchable. The service user needs write access to it, exactly as for MEDIA_ROOT.
+# QUARANTINE_ROOT=/var/lib/cinderella/quarantine
 GROUP_NAME=
 ADMIN_PORT=8787
 ADMIN_USERNAME=operator

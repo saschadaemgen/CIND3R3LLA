@@ -35,6 +35,12 @@ import { createReport } from '../src/db/reports.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { DEFAULT_INTERACTION, type InteractionSettings } from '../src/interaction/settings.js';
 import { filesOwnedBy } from '../src/media/owned-files.js';
+import {
+  isMediaQuarantined,
+  quarantineMedia,
+  releaseQuarantinedMedia,
+  servableMediaPath,
+} from '../src/media/quarantine.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 
 let failures = 0;
@@ -658,6 +664,78 @@ async function main(): Promise<void> {
     "SELECT type FROM jobs WHERE type = 'destruction.run' AND state = 'queued'",
   );
   check('a destruction.run job exists on the queue', queued.rows.length >= 1);
+
+  /* ── 16. Quarantine is segregated outside the database ─────────────────── */
+  section('16. Quarantine withholds everywhere and moves the bytes out of the served tree');
+
+  const quarantineRoot = await mkdtemp(join(tmpdir(), 'cinderella-quarantine-'));
+
+  const MAY = 'member-may';
+  await recordOptIn(db, MAY, '2026-07-16T09:00:00Z');
+  const q1 = await insert(MAY, { sentAt: '2026-07-16T10:00:00Z', text: 'quarantine me' });
+  const qFiles = await attachMedia(q1);
+  check('the item is published and its media is in the media store', await isPublished(q1));
+  check('the original is under MEDIA_ROOT', await exists(qFiles.original));
+
+  // An ordinary report hold must NOT withhold: that rule is unchanged.
+  const reportHold = await placeHold(db, q1, 'report', new Date(Date.now() + 86400_000));
+  check('an ordinary report hold still does not change publication', await isPublished(q1));
+  check('and does not move any bytes', await exists(qFiles.original));
+
+  // Escalation is a quarantine: it must withhold AND segregate.
+  await quarantineMedia(db, mediaRoot, quarantineRoot, q1);
+  await resolveHold(db, reportHold.hold.id, 'escalate', 'operator');
+
+  check('an escalated item is withheld from publication', !(await isPublished(q1)));
+  check('its original is GONE from the media store', !(await exists(qFiles.original)));
+  check('its derivative is GONE from the media store', !(await exists(qFiles.derived)));
+
+  async function quarantineHas(rel: string): Promise<boolean> {
+    try {
+      await stat(join(quarantineRoot, rel));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  check('the original is in the quarantine store', await quarantineHas(qFiles.original));
+  check('the derivative is in the quarantine store', await quarantineHas(qFiles.derived));
+
+  // The serving-layer guard, independent of the move.
+  const servable = await servableMediaPath(mediaRoot, qFiles.original);
+  check('nothing under MEDIA_ROOT resolves for a quarantined file', servable === null);
+  check('and the message reads as quarantined', await isMediaQuarantined(db, quarantineRoot, q1));
+
+  // A hash-match quarantine also withholds, and never expires.
+  const NOAH = 'member-noah';
+  await recordOptIn(db, NOAH, '2026-07-17T09:00:00Z');
+  const n1 = await insert(NOAH, { sentAt: '2026-07-17T10:00:00Z', text: 'hash match' });
+  check('published before the match', await isPublished(n1));
+  await placeHold(db, n1, 'csam', null);
+  check('a hash match withholds the item', !(await isPublished(n1)));
+  const csamHold = await liveHold(db, n1);
+  check('and never expires', csamHold?.expiresAt === null);
+
+  // Releasing a false positive puts the bytes back.
+  const nFiles = await attachMedia(n1);
+  await quarantineMedia(db, mediaRoot, quarantineRoot, n1);
+  check('the false-positive item is segregated', !(await exists(nFiles.original)));
+  await resolveHold(db, csamHold?.id ?? 0, 'release', 'operator');
+  await releaseQuarantinedMedia(db, mediaRoot, quarantineRoot, n1);
+  check('releasing restores publication', await isPublished(n1));
+  check('and puts the bytes back in the media store', await exists(nFiles.original));
+  check('leaving nothing in quarantine', !(await quarantineHas(nFiles.original)));
+
+  // Destruction still finds everything when files sit in either root.
+  const OMAR = 'member-omar';
+  await recordOptIn(db, OMAR, '2026-07-18T09:00:00Z');
+  const o1 = await insert(OMAR, { sentAt: '2026-07-18T10:00:00Z', text: 'omar one' });
+  const oFiles = await attachMedia(o1);
+  await quarantineMedia(db, mediaRoot, quarantineRoot, o1);
+  check('omar’s bytes are in quarantine', await quarantineHas(oFiles.original));
+  await runTx((tx) => destroyMessage(tx, mediaRoot, o1, quarantineRoot));
+  check('destroying sweeps the quarantine store too', !(await quarantineHas(oFiles.original)));
+  check('and the row is gone', !(await rowExists(o1)));
 
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${failures} FAILURE(S)`} — hide/delete on revocation with evidence holds.`,

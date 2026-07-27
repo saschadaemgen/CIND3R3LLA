@@ -58,6 +58,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   under `state/`; (2) Cinderella's **archive** PostgreSQL (messages, links,
   consent, settings, audit, embeds).
 - **Media on disk** (`MEDIA_ROOT`); the DB stores the path, never the bytes.
+  **Quarantined media is MOVED to `QUARANTINE_ROOT`**, outside `MEDIA_ROOT` and served
+  by nothing; the admin console addresses media by message id (`/media/msg/:id`), never
+  by path, and the raw static mount over the media tree is gone (CCB-S3-013 §4, D-074).
+  The config loader refuses to start if the two roots are nested.
 - **Search:** Postgres FTS (generated `tsvector` + GIN) + a `links` table.
 - **Admin console** is hostile-facing: Fastify on 127.0.0.1, public nginx TLS in
   front at the admin hostname. **Passkeys (WebAuthn) are the primary auth**
@@ -92,7 +96,8 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   (state machine, `FOR UPDATE SKIP LOCKED` claim, backoff/dead-letter, idempotency) ·
   018 capture write-ahead events · 019 formatted text · 020 revocation hide/delete +
   evidence holds (incl. the BEFORE DELETE hold trigger) · 021 consent gaps (a restore
-  never publishes what was said while hidden).
+  never publishes what was said while hidden) · 022 quarantine withholds (a hash match
+  or an escalation is served to nobody).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`

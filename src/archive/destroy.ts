@@ -37,6 +37,7 @@ import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import { forgetMediaFailures } from '../media/failures.js';
 import { filesOwnedBy } from '../media/owned-files.js';
+import { allOwnedFiles } from '../media/quarantine.js';
 import { status } from '../web/status.js';
 
 export interface DestroyResult {
@@ -104,10 +105,19 @@ export async function destroyMessage(
   db: Queryable,
   mediaRoot: string,
   messageId: number,
+  quarantineRoot?: string,
 ): Promise<DestroyResult> {
   // Enumerated first: `media_path` and `media_derived_path` exist only on the row
   // that is about to be deleted.
-  const owned = await filesOwnedBy(db, mediaRoot, messageId);
+  //
+  // BOTH ROOTS are swept when a quarantine store is configured. An escalated item
+  // can never reach here (the trigger refuses it), but a hash match released as a
+  // false positive can, and if the move back into the media store failed halfway
+  // its bytes are still under QUARANTINE_ROOT. Destroying the row while those
+  // survive would report a successful erasure over files nothing can find again.
+  const owned = quarantineRoot
+    ? { paths: await allOwnedFiles(db, mediaRoot, quarantineRoot, messageId), rejected: [] }
+    : await filesOwnedBy(db, mediaRoot, messageId);
   if (owned.rejected.length > 0) {
     throw new Error(
       `destroy: message ${messageId} has stored media path(s) outside the media root; refusing to destroy ` +

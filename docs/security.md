@@ -903,9 +903,23 @@ row. Member-facing copy promises removal from the live archive plus backup expir
 successful erasure over bytes that are still present. A hold that expires unreviewed, and a deletion
 that could not complete, both alert.
 
-**Still open.** The admin `/media/` static mount serves the raw tree by path with no per-message check,
-so an escalated item's bytes remain readable to any admin session; "segregated" is currently a database
-property, not a filesystem one. Recorded in the backlog.
+**Quarantine is enforced outside the database (§4).** An escalated or hash-matched item is withheld
+from publication (`migrations/022`), its files are MOVED out of `MEDIA_ROOT` into `QUARANTINE_ROOT`
+(`src/media/quarantine.ts`), and the raw `@fastify/static` mount over the media tree is **removed** in
+favour of `/media/msg/:id` ([`src/web/views/admin-media.ts`](../src/web/views/admin-media.ts)), which
+resolves the path from the row and 403s anything quarantined.
+
+That mount was the hole: it served any file under `MEDIA_ROOT` by path with no per-message check, so a
+quarantined item was undeletable but still fully readable to any authenticated admin session. Deletion
+was blocked; access was not. A database state cannot make "accessible to nobody in normal operation"
+true while a filesystem path still hands out the bytes.
+
+The two guards are independent on purpose: the route refuses even if the move failed or never ran, and
+the file is absent even if the route were bypassed. The config loader refuses to start when
+`QUARANTINE_ROOT` is inside `MEDIA_ROOT`, since that would reduce quarantine to a rename. The move runs
+BEFORE the hold state changes, so a failed segregation leaves the hold untouched rather than marking an
+item escalated while its bytes are still served, and `destroyMessage` sweeps both roots so a
+half-completed release cannot strand bytes.
 
 ## 12. The local AI subsystem has not been security-reviewed (D-068)
 

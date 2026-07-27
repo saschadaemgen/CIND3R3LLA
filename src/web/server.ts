@@ -168,12 +168,19 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     prefix: '/assets/',
     index: false,
   });
-  void app.register(fastifyStatic, {
-    root: deps.mediaRoot,
-    prefix: '/media/',
-    index: false,
-    decorateReply: false,
-  });
+  // THE MEDIA TREE IS NO LONGER MOUNTED (CCB-S3-013 §4).
+  //
+  // It used to be `@fastify/static` rooted at MEDIA_ROOT under `/media/`, which
+  // served any file by path with no per-message check. That was fine while nothing
+  // in the archive was meant to be inaccessible, and became a hole the moment
+  // quarantine existed: an escalated or hash-matched item was undeletable but
+  // still fully readable to any authenticated admin session.
+  //
+  // It is replaced by `/media/msg/:id` (registered with the admin views), which
+  // resolves the path from the row and refuses anything quarantined. Knowing a
+  // filename is no longer a way to fetch bytes, and quarantined files are not in
+  // this tree at all any more - they are moved to QUARANTINE_ROOT, which nothing
+  // serves.
 
   app.decorateRequest('session', null);
 

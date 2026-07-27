@@ -300,11 +300,12 @@ The history below records the pre-CCB-S2-003 state.
       expire, and the guard is a **DB trigger** so no path gets past it. Operator review offers
       release / destroy / escalate, with destroy structurally impossible for a hash match.
       Verified by [`scripts/verify-revocation.ts`](../scripts/verify-revocation.ts) (60 checks).
-- [ ] **Escalated media is segregated in the database, not on the filesystem (CCB-S3-013 follow-up).**
-      The admin `/media/` mount ([`src/web/server.ts`](../src/web/server.ts)) is `@fastify/static` over
-      the whole `MEDIA_ROOT` with no per-message check, so an escalated item's bytes stay readable to any
-      admin session by path. "Segregated, not deletable by any path" holds for deletion but not yet for
-      access. Needs either an id-resolving route or a quarantine directory outside the static root.
+- [x] **Quarantine is segregated on the filesystem and at the serving layer (CCB-S3-013 §4).** The raw
+      `@fastify/static` mount over `MEDIA_ROOT` is removed in favour of `/media/msg/:id`
+      ([`src/web/views/admin-media.ts`](../src/web/views/admin-media.ts)), quarantined bytes are MOVED
+      into `QUARANTINE_ROOT` ([`src/media/quarantine.ts`](../src/media/quarantine.ts)), and quarantined
+      rows are withheld from publication (`migrations/022`). Both guards are independent, and the config
+      loader refuses to start if the two roots are nested.
 - [ ] **The CSAM hold source has no producer (CCB-S3-013 Part B, by design).** `evidence_holds.source`
       accepts `'csam'`, the never-expiring behaviour is implemented and tested, and the operator UI
       already refuses to offer destroy for it. Nothing creates one until hash screening exists

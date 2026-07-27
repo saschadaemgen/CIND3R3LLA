@@ -189,16 +189,20 @@ async function main(): Promise<void> {
     msgs.body.includes('The glass slipper fits perfectly') &&
       msgs.body.includes('Bob never opted in'),
   );
+  // CCB-S3-013 §4: the thumbnail is addressed BY MESSAGE ID, never by media path.
+  // The raw `@fastify/static` mount over MEDIA_ROOT is gone, because it served any
+  // file by path with no per-message check and so kept quarantined bytes readable.
+  check('image row renders a thumbnail addressed by message id', /\/media\/msg\/\d+/.test(msgs.body));
   check(
-    'image row renders a thumbnail from the media store',
-    msgs.body.includes('/media/2026/07/2-slipper.jpg'),
+    'and never links at a raw media path',
+    !msgs.body.includes('/media/2026/07/2-slipper.jpg'),
   );
   check('failed file receipt is visible on the row', msgs.body.includes('XFTP AUTH error'));
   const filtered = await getPage('/messages?type=image');
   check(
     'type filter works',
     filtered.code === 200 &&
-      filtered.body.includes('/media/2026/07/2-slipper.jpg') &&
+      /\/media\/msg\/\d+/.test(filtered.body) &&
       !filtered.body.includes('Bob never opted in'),
   );
   const publishedOnly = await getPage('/messages?published=yes');
@@ -503,8 +507,7 @@ async function main(): Promise<void> {
   check('reports queue renders', reportsPage.code === 200);
   check(
     'reports queue shows the consent-gated image preview + report count',
-    reportsPage.body.includes('/media/2026/07/2-slipper.jpg') &&
-      reportsPage.body.includes('2 report'),
+    /\/media\/msg\/\d+/.test(reportsPage.body) && reportsPage.body.includes('2 report'),
   );
   check('reports queue: reason badges present', /Illegal|Spam|Copyright/.test(reportsPage.body));
   check(

@@ -15,6 +15,7 @@ import { registerEmbeds } from './embeds.js';
 import { registerSecurity } from './security.js';
 import { registerReports } from './reports.js';
 import { registerHolds } from './holds.js';
+import { registerAdminMedia } from './admin-media.js';
 import { registerSiteAdmin } from './site.js';
 
 export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void {
@@ -32,4 +33,5 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerSiteAdmin(app, ctx);
   registerReports(app, ctx);
   registerHolds(app, ctx);
+  registerAdminMedia(app, ctx);
 }

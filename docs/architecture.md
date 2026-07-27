@@ -967,6 +967,39 @@ never re-queued, because release enqueues by the held row's id. It runs at boot 
 minutes, lapses overdue holds, and re-queues every pending destruction whose blocker is gone. It never
 destroys anything itself.
 
+### Quarantine is segregated outside the database (§4)
+
+An ordinary **report hold** defers destruction and nothing else: publication is untouched and hiding
+stays instant, because reporting must never become a way to unpublish someone. **Quarantine** is a
+different thing wearing the same table, produced by a **CSAM hash match** or an operator
+**escalation**, and its requirement is stronger: accessible to nobody in normal operation.
+
+That cannot be delivered from the database alone. Withholding a row from the publish views stops the
+public media route, which is derived from `published_messages`, but the admin console used to mount the
+whole media tree with `@fastify/static` and serve any file by path. A quarantined item was undeletable
+and still fully readable to any authenticated admin session. Three changes close it:
+
+1. **The publish derivation withholds quarantined rows** (`migrations/022_quarantine_withholds.sql`).
+   The clause sits outside the bot/member CASE, because a hash match on something Cinderella posted is
+   exactly as unservable as one on a member's photograph.
+2. **The bytes move** (`src/media/quarantine.ts`). Every file the message owns is relocated into
+   `QUARANTINE_ROOT`, which lives outside `MEDIA_ROOT` and is served by nothing. The config loader
+   **refuses to start** if the two are nested, because that would silently reduce quarantine to a
+   rename. The move happens BEFORE the hold state changes, so a failure leaves the hold as it was and
+   tells the operator, rather than marking an item escalated while its bytes are still being served.
+   It is reversible, because a hash match can be a false positive.
+3. **The static mount is gone**, replaced by `/media/msg/:id`
+   (`src/web/views/admin-media.ts`), which resolves the path from the row and refuses anything
+   quarantined with 403. Knowing a filename is no longer a way to fetch bytes.
+
+Guards 2 and 3 are deliberately independent. The route refuses even if the move failed or never ran,
+and the file is absent even if the route were bypassed. Either alone would be a single point of failure
+for a rule this serious. `destroyMessage` sweeps **both roots**, so a false positive released with a
+half-completed move back cannot leave bytes behind that nothing can find again.
+
+`quarantineOnHashMatch` is the seam the screening track attaches to: written and tested with no
+producer, so that when screening lands the ordering (files first, hold second) is already settled.
+
 ### What "deleted" honestly means
 
 Removed from the live archive immediately, through every path this application serves. It does **not**

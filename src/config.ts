@@ -8,7 +8,7 @@
  * the bot owns a local SimpleX DB (SQLite) and a files folder on the same host.
  */
 
-import { resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { config as loadDotenv } from 'dotenv';
 import { parseLogLevel, type LogLevel } from './log.js';
 
@@ -32,6 +32,16 @@ export interface Config {
   groupName: string;
   /** Absolute path to Cinderella's own media store. */
   mediaRoot: string;
+  /**
+   * Absolute path to the quarantine store (CCB-S3-013 §4).
+   *
+   * Quarantined bytes are MOVED here, physically out of `mediaRoot`, because the
+   * admin console serves that tree by path. Segregation that exists only as a
+   * database state is not segregation: the files stay readable to anything that
+   * can read the directory. It MUST NOT be inside `mediaRoot`, and the loader
+   * refuses to start if it is.
+   */
+  quarantineRoot: string;
   /**
    * Path to the bot's avatar image (jpg/png/webp). Re-applied to the SimpleX
    * profile on every startup (bot.run blanks it otherwise). Optional — if the
@@ -197,6 +207,7 @@ export function loadConfig(): Config {
     simplexFilesFolder: filesFolder,
     groupName: optional('GROUP_NAME', ''),
     mediaRoot: resolve(optional('MEDIA_ROOT', './media')),
+    quarantineRoot: resolveQuarantineRoot(),
     avatarPath: resolveAvatarPath(),
     databaseUrl: required('DATABASE_URL'),
     logLevel: parseLogLevel(process.env['LOG_LEVEL']),
@@ -211,6 +222,27 @@ export function loadConfig(): Config {
  * e.g. `/var/lib/cinderella/avatar.jpg`). Standalone so the `set-avatar` helper
  * can stage an image WITHOUT the DB/admin env that full `loadConfig` requires.
  */
+/**
+ * Where quarantined media lives (CCB-S3-013 §4).
+ *
+ * Defaults to a SIBLING of the media store rather than a directory inside it,
+ * because the whole point is to be outside the tree the admin console serves. The
+ * containment check below is not paranoia: putting it under `MEDIA_ROOT` would
+ * silently reduce quarantine to a rename, leaving the bytes fetchable by path.
+ */
+export function resolveQuarantineRoot(): string {
+  const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
+  const configured = process.env['QUARANTINE_ROOT'];
+  const root = configured ? resolve(configured) : resolve(dirname(media), 'quarantine');
+  if (root === media || root.startsWith(media + sep)) {
+    throw new Error(
+      `QUARANTINE_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Quarantined media is ` +
+        'moved out of the served tree on purpose; nesting it there would leave it readable by path.',
+    );
+  }
+  return root;
+}
+
 export function resolveAvatarPath(): string {
   const filesFolder = resolve(optional('SIMPLEX_FILES_FOLDER', './state/files'));
   return resolve(optional('AVATAR_PATH', resolve(filesFolder, '..', 'avatar.jpg')));
@@ -363,6 +395,7 @@ export function redactConfig(cfg: Config): Record<string, string> {
     simplexFilesFolder: cfg.simplexFilesFolder,
     groupName: cfg.groupName || '(all groups)',
     mediaRoot: cfg.mediaRoot,
+    quarantineRoot: cfg.quarantineRoot,
     databaseUrl: safeDbUrl,
     logLevel: cfg.logLevel,
   };

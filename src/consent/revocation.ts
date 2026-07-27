@@ -109,6 +109,7 @@ export async function chooseDelete(
   choice: RevocationChoice,
   mediaRoot: string,
   runTx: TxRunner = withTransaction,
+  quarantineRoot?: string,
 ): Promise<DeleteOutcome> {
   const prior = await readConsentState(db, choice.memberId);
   const recorded = await recordRevocationMode(db, choice.memberId, 'delete');
@@ -145,7 +146,7 @@ export async function chooseDelete(
     // The row is removed by cascade when the message is actually destroyed.
     await recordPendingDestruction(db, id, choice.memberId, 'member');
     try {
-      const result = await runTx((tx) => destroyMessage(tx, mediaRoot, id));
+      const result = await runTx((tx) => destroyMessage(tx, mediaRoot, id, quarantineRoot));
       if (result.destroyed) destroyed += 1;
     } catch (err) {
       if (isHoldViolation(err)) {
