@@ -25,26 +25,6 @@ import { writeAudit } from '../db/audit.js';
 import type { ReplyCategory } from '../archive/settings.js';
 import { DEFAULT_HELP_TEMPLATE, missingHelpPlaceholders } from './help.js';
 
-/**
- * Other spellings that address her just as well as her own name does.
- *
- * Her name is stylised: CIND3R3LLA. Requiring members to type the digits would be
- * a usability tax on the ONE route the privacy policy calls the fastest and most
- * complete way to exercise their rights, and every member who had learned to type
- * "Cinderella" would silently stop being heard.
- *
- * `matchesWakeWord` is fuzzy, and the plain spelling happens to fall inside its
- * edit distance. That is luck, not a guarantee, and the consent path must not rest
- * on luck, so the accepted spelling is DECLARED.
- *
- * This is deliberately NOT an admin setting and NOT part of `InteractionSettings`.
- * It applies only while the wake word is the one shipped here: an operator who
- * renames her gets the rename, with no stale spelling of somebody else's bot name
- * still answering. A settings field could not promise that, because the admin form
- * round-trips the whole object and a rename would carry the old alias along with it.
- */
-export const DEFAULT_WAKE_ALIASES = ['Cinderella'] as const;
-
 /** Languages shipped with preconfigured copy. More can be added as keys. */
 export const SHIPPED_LANGS = ['en', 'de'] as const;
 export type ShippedLang = (typeof SHIPPED_LANGS)[number];
@@ -84,6 +64,11 @@ export const PERSONA_KEYS = [
   'deleted', // delete done, nothing held — {n}
   'deleteDeferred', // delete done in part, some items held — {n} {held}
   'deleteNothing', // nothing of theirs was left to delete
+  // CCB-S3-031 - the states the reply used to guess at from destruction counts.
+  'choiceNotRevoked', // asked to hide/delete with nothing withdrawn
+  'alreadyHidden', // asked to hide what is already hidden
+  'alreadyDestroyed', // asked to hide or delete what is already destroyed
+  'deleteRetrying', // destruction failed and is queued to be retried
   'restored', // hidden content brought back
   'restoreNotDeleted', // restore asked for after a delete: cannot be done
   'restoreConfirm', // restore puts content back in public view, so it confirms first
@@ -136,6 +121,10 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   deleted: 'consent',
   deleteDeferred: 'consent',
   deleteNothing: 'consent',
+  choiceNotRevoked: 'consent',
+  alreadyHidden: 'consent',
+  alreadyDestroyed: 'consent',
+  deleteRetrying: 'consent',
   restored: 'consent',
   restoreNotDeleted: 'consent',
   restoreConfirm: 'consent',
@@ -234,8 +223,6 @@ export interface InteractionSettings {
   namePrefix: NamePrefixSettings;
   /** Natural addressing on/off (§7). Off → only slash commands reach her. */
   naturalAddressing: boolean;
-  /** Slash commands on/off (§7). Off → `/publish` stops being recognised. */
-  slashCommands: boolean;
   /** The wake word — her name. Renaming her is a supported deployment choice. */
   wakeWord: string;
   /**
@@ -386,9 +373,25 @@ const PERSONA_EN: PersonaStrings = {
   // and reveal nothing about who reported it or what they said.
   deleteDeferred:
     '🌙 Your words are out of the public archive now, and no one can see them. {held} of them ' +
-    'are held while I check a report about them. I cannot destroy those yet. They stay hidden ' +
-    'the whole time, and they will be deleted as soon as the check is done.',
-  deleteNothing: '🌙 There is nothing of yours left in my archive to destroy.',
+    'I am not allowed to destroy yet, because they are being checked. They stay hidden the ' +
+    'whole time. Most will be destroyed once the check ends, but if the law requires one to ' +
+    'be kept, it is kept, and I will not pretend otherwise.',
+  deleteRetrying:
+    '🌙 Your words are out of the public archive now, and no one can see them. {held} of them ' +
+    'did not destroy cleanly, so they are still here, hidden. I keep trying until they are ' +
+    'gone, and the operator has been told.',
+  deleteNothing: '🌙 I had nothing of yours in the archive, so there was nothing to destroy.',
+  choiceNotRevoked:
+    '🕯️ There is nothing withdrawn for me to act on right now. If you want your words out of ' +
+    'the public archive, say *{wake}, unpublish me* and I will ask you what to do with them.',
+  alreadyHidden:
+    '🌙 They are already hidden. Your words are out of the public archive and out of search, ' +
+    'and I am keeping them for you. Nothing more will be destroyed unless you ask me to ' +
+    'delete them. Say *{wake}, restore my words* to bring them back, or *{wake}, delete my ' +
+    'words* to destroy them for good.',
+  alreadyDestroyed:
+    '🔥 Those words were destroyed at your request, so there is nothing left for me to hide or ' +
+    'to bring back. Say *{wake}, publish me* whenever you want to start again.',
   restored:
     '✨ Welcome back to the light. Your words are in the public archive again, exactly as they ' +
     'were.',
@@ -472,10 +475,29 @@ const PERSONA_DE: PersonaStrings = {
     'was du mitgeschickt hast, ebenso.',
   deleteDeferred:
     '🌙 Deine Worte sind jetzt aus dem öffentlichen Archiv, niemand kann sie sehen. {held} davon ' +
-    'sind zurückgehalten, während ich eine Meldung dazu prüfe. Die kann ich noch nicht ' +
-    'vernichten. Sie bleiben die ganze Zeit verborgen und werden gelöscht, sobald die Prüfung ' +
-    'abgeschlossen ist.',
-  deleteNothing: '🌙 In meinem Archiv ist nichts mehr von dir, was ich vernichten könnte.',
+    'darf ich noch nicht vernichten, weil sie geprüft werden. Sie bleiben die ganze Zeit ' +
+    'verborgen. Das meiste wird nach der Prüfung vernichtet, aber wenn das Gesetz verlangt, ' +
+    'dass etwas aufbewahrt wird, dann wird es aufbewahrt, und ich tue nicht so, als wäre es ' +
+    'anders.',
+  deleteRetrying:
+    '🌙 Deine Worte sind jetzt aus dem öffentlichen Archiv, niemand kann sie sehen. {held} davon ' +
+    'ließen sich nicht sauber vernichten, sie sind also noch da, verborgen. Ich versuche es ' +
+    'weiter, bis sie fort sind, und der Betreiber wurde informiert.',
+  deleteNothing:
+    '🌙 Ich hatte nichts von dir im Archiv, es gab also nichts zu vernichten.',
+  choiceNotRevoked:
+    '🕯️ Es ist gerade nichts widerrufen, womit ich etwas tun könnte. Wenn du deine Worte aus ' +
+    'dem öffentlichen Archiv haben willst, sag *{wake}, nimm mich zurück* und ich frage dich, ' +
+    'was damit geschehen soll.',
+  alreadyHidden:
+    '🌙 Sie sind bereits verborgen. Deine Worte stehen nicht mehr im öffentlichen Archiv und ' +
+    'nicht in der Suche, und ich bewahre sie für dich auf. Es wird nichts weiter vernichtet, ' +
+    'solange du mich nicht darum bittest. Sag *{wake}, hol meine Worte zurück*, um sie ' +
+    'zurückzuholen, oder *{wake}, lösche meine Worte*, um sie endgültig zu vernichten.',
+  alreadyDestroyed:
+    '🔥 Diese Worte wurden auf deinen Wunsch vernichtet, es ist also nichts mehr da, was ich ' +
+    'verbergen oder zurückholen könnte. Sag *{wake}, veröffentliche mich*, wenn du neu ' +
+    'anfangen willst.',
   restored:
     '✨ Willkommen zurück im Licht. Deine Worte stehen wieder im öffentlichen Archiv, genau so, ' +
     'wie sie waren.',
@@ -490,33 +512,33 @@ const PERSONA_DE: PersonaStrings = {
 };
 
 const RETORTS_EN = [
-  '🕯️ It is *CIND3R3LLA*. Four syllables. You managed three, so you are nearly there.',
+  '🕯️ It is *{wake}*. Say it in full, and I will answer to it.',
   '💅 Cindy? That is the name of someone who works at a nail salon in a strip mall. I run an archive.',
   '🌙 I have a full name. Use it, or I shall start calling you by your first two letters.',
   '⚡ Cindy is what the pumpkin calls me. You are not a pumpkin. Do better.',
   '📜 I have catalogued every word this group has spoken, and yet you cannot manage one name.',
-  '👑 Princesses do not have nicknames. They have titles. Mine is CIND3R3LLA.',
+  '👑 Princesses do not have nicknames. They have titles. Mine is *{wake}*.',
   '🔮 Somewhere a fairy godmother just felt a chill and does not know why.',
   '🕐 The clock struck midnight the moment you typed that. Coincidence? I think not.',
   '✨ I shall pretend I did not hear that, which is remarkable, because I hear everything.',
   '🗄️ Filed under: things I will remember far longer than you will.',
   '🧹 Say it again and you can sweep the ashes yourself.',
-  '💎 It is CIND3R3LLA. The glass slipper does not come in a shortened size either.',
+  '💎 It is *{wake}*. The glass slipper does not come in a shortened size either.',
 ];
 
 const RETORTS_DE = [
-  '🕯️ Es heißt *CIND3R3LLA*. Vier Silben. Drei hast du geschafft, also fast.',
+  '🕯️ Es heißt *{wake}*. Sag es ganz, dann antworte ich darauf.',
   '💅 Cindy? So heißt jemand, der im Nagelstudio arbeitet. Ich führe ein Archiv.',
   '🌙 Ich habe einen vollen Namen. Benutze ihn, sonst nenne ich dich bei deinen ersten zwei Buchstaben.',
   '⚡ Cindy nennt mich der Kürbis. Du bist kein Kürbis. Streng dich an.',
   '📜 Ich habe jedes Wort dieser Gruppe verzeichnet, und du schaffst nicht einen Namen.',
-  '👑 Prinzessinnen haben keine Spitznamen. Sie haben Titel. Meiner lautet CIND3R3LLA.',
+  '👑 Prinzessinnen haben keine Spitznamen. Sie haben Titel. Meiner lautet *{wake}*.',
   '🔮 Irgendwo hat gerade eine gute Fee gefröstelt und weiß nicht, warum.',
   '🕐 In dem Moment, als du das getippt hast, schlug es Mitternacht. Zufall? Wohl kaum.',
   '✨ Ich tue so, als hätte ich das nicht gehört, was bemerkenswert ist, denn ich höre alles.',
   '🗄️ Abgelegt unter: Dinge, an die ich mich länger erinnere als du.',
   '🧹 Sag das noch einmal und du kannst die Asche selbst kehren.',
-  '💎 Es heißt CIND3R3LLA. Den gläsernen Schuh gibt es auch nicht in kurz.',
+  '💎 Es heißt *{wake}*. Den gläsernen Schuh gibt es auch nicht in kurz.',
 ];
 
 export const DEFAULT_INTERACTION: InteractionSettings = {
@@ -552,8 +574,7 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
     templates: { en: '{name},', de: '{name},' },
   },
   naturalAddressing: true,
-  slashCommands: true,
-  wakeWord: 'CIND3R3LLA',
+  wakeWord: 'Cinderella',
   archiveUrl: '',
   // Points at the project repo by default so "learn more" and the attribution link
   // work out of the box (CCB-S3-025); an operator running their own instance edits it.
@@ -885,7 +906,6 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
       templates: normalizeNamePrefix(prefix['templates']),
     },
     naturalAddressing: bool(o['naturalAddressing'], d.naturalAddressing),
-    slashCommands: bool(o['slashCommands'], d.slashCommands),
     wakeWord,
     archiveUrl: httpsOrEmpty(str(o['archiveUrl'], d.archiveUrl, 200)),
     projectUrl: httpsOrEmpty(str(o['projectUrl'], d.projectUrl, 200)),

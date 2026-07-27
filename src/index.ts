@@ -219,7 +219,6 @@ async function startCaptureWorker(
 
     registerCapture(botHandle, cfg, hooks, {
       targetGroupId,
-      slashCommandsEnabled: () => interaction.get().slashCommands,
     });
     await reportGroups(botHandle, cfg);
     status.botRunning(groupNames);
@@ -227,7 +226,7 @@ async function startCaptureWorker(
     const ia = interaction.get();
     log.info(
       `Interaction layer: wake word "${ia.wakeWord}", natural addressing ` +
-        `${ia.naturalAddressing ? 'on' : 'off'}, slash commands ${ia.slashCommands ? 'on' : 'off'}, ` +
+        `${ia.naturalAddressing ? 'on' : 'off'}, ` +
         `plugins [${plugins
           .list()
           .map((p) => `${p.id}:${p.enabled ? 'on' : 'off'}`)

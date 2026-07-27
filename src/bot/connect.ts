@@ -15,7 +15,7 @@
 import type { T } from '@simplex-chat/types';
 import { loadConfig } from '../config.js';
 import { log, setLogLevel } from '../log.js';
-import { WELCOME_MESSAGE } from '../consent/commands.js';
+import { welcomeMessage } from '../consent/commands.js';
 import { startBot } from './client.js';
 
 async function main(): Promise<void> {
@@ -52,7 +52,7 @@ async function main(): Promise<void> {
       // one-shot helper terminates cleanly (also works non-interactively).
       const chatInfo: T.ChatInfo = { type: 'group', groupInfo };
       botHandle.chat
-        .apiSendTextMessage(chatInfo, WELCOME_MESSAGE)
+        .apiSendTextMessage(chatInfo, welcomeMessage(cfg.botDisplayName))
         .then(() => log.info('Posted the consent-first welcome message to the group.'))
         .catch((err: unknown) =>
           log.warn(

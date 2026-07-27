@@ -60,12 +60,6 @@ export interface CaptureOptions {
    * otherwise silently stop capture). Resolved once at startup.
    */
   targetGroupId?: number | undefined;
-  /**
-   * Whether `/publish` and `/unpublish` are currently recognised (CCB-S3-002 §7,
-   * admin-toggleable). Read per message so the toggle takes effect live. Absent
-   * means enabled, which keeps every existing caller behaving as before.
-   */
-  slashCommandsEnabled?: () => boolean;
 }
 
 async function receiveAndReport(
@@ -132,11 +126,25 @@ export function registerCapture(
     return true;
   };
 
-  /** A consent command is ONLY a plain-text message with no attachment. */
-  const commandFor = (msg: CapturedMessage): ConsentCommand | null => {
-    if (opts.slashCommandsEnabled && !opts.slashCommandsEnabled()) return null;
-    return msg.type === 'text' && !msg.file ? parseConsentCommand(msg.text) : null;
-  };
+  /**
+   * A consent command is ONLY a plain-text message with no attachment.
+   *
+   * DELIBERATELY NOT GATED BY `slashCommands` (CCB-S3-031).
+   *
+   * It used to be, and the result was that `/unpublish` did nothing and said
+   * nothing: no consent write, no reply, and the message archived as ordinary
+   * content. A member who types `/unpublish` and sees no response reasonably
+   * concludes it worked, and their content stays public. That is the worst failure
+   * this product can have, produced by a setting whose label says nothing about
+   * consent.
+   *
+   * The toggle exists so an operator can quieten shorthand in a busy group, which
+   * is reasonable for prices and search. Withdrawing consent is not a convenience
+   * feature, and an operator switching off shorthand did not intend to remove the
+   * withdrawal route. So consent commands are exempt, and the admin copy says so.
+   */
+  const commandFor = (msg: CapturedMessage): ConsentCommand | null =>
+    msg.type === 'text' && !msg.file ? parseConsentCommand(msg.text) : null;
 
   /**
    * Runs the interaction layer. A thrown hook must never take a message down

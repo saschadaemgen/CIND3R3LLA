@@ -218,7 +218,7 @@ export function loadConfig(): Config {
 
   const filesFolder = resolve(optional('SIMPLEX_FILES_FOLDER', './state/files'));
   const cfg: Config = {
-    botDisplayName: optional('BOT_DISPLAY_NAME', 'CIND3R3LLA'),
+    botDisplayName: optional('BOT_DISPLAY_NAME', 'Cinderella'),
     simplexDbPrefix: resolve(optional('SIMPLEX_DB_PREFIX', './state/simplex/cinderella')),
     simplexFilesFolder: filesFolder,
     groupName: optional('GROUP_NAME', ''),

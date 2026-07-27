@@ -65,7 +65,7 @@ const FAILURE_REPLY =
  * `_italic_`, `~strike~`, backtick code, `#secret#`. This message contains none,
  * so it is unaffected, but any copy added here must respect that.
  */
-export const WELCOME_MESSAGE = `I'm CIND3R3LLA, and yes, I run this place.
+const WELCOME_TEMPLATE = `I'm {wake}, and yes, I run this place.
 
 Before you settle in, one thing you should know. By default, whatever you say here stays here, between us. I publish nothing of yours to the outside world unless you tell me to.
 
@@ -82,7 +82,17 @@ To see everything I can do, send /help
 
 No /publish, and you simply talk freely. Nothing leaves this room. Your choice, always, and yours to change whenever you like.
 
-CIND3R3LLA`;
+{wake}`;
+
+/**
+ * The welcome, addressed in the bot's own configured name.
+ *
+ * CIND3R3LLA is the PRODUCT. The bot running in a given community is named by its
+ * operator, so no member-facing copy may hard-code a name (CCB-S3-031 follow-up).
+ */
+export function welcomeMessage(wakeWord: string): string {
+  return WELCOME_TEMPLATE.split('{wake}').join(wakeWord);
+}
 
 /**
  * Sends a consent confirmation. These NEVER quote (CCB-S3-003): a `/publish` is

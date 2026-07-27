@@ -60,7 +60,7 @@ export class FakeChatAdapter implements ChatAdapter {
     { id: 'member-1', displayName: 'Alice', role: 'member' },
     { id: 'member-2', displayName: 'Bob', role: 'admin' },
   ];
-  profile: BotProfile = { displayName: 'CIND3R3LLA', image: undefined };
+  profile: BotProfile = { displayName: 'Cinderella', image: undefined };
   /** Set to make the next `receiveFile` reject, to exercise failure handling. */
   failNextFile: string | null = null;
   /** Path `receiveFile` resolves to. */

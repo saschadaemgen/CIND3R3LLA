@@ -591,7 +591,7 @@ async function main(): Promise<void> {
   );
   check(
     'addressing holds ONLY its own settings',
-    iaPage.body.includes('value="CIND3R3LLA"') &&
+    iaPage.body.includes('value="Cinderella"') &&
       iaPage.body.includes('name="wakeWord"') &&
       !iaPage.body.includes('name="followUpSeconds"') &&
       !iaPage.body.includes('name="confidenceThreshold"'),
@@ -783,7 +783,6 @@ async function main(): Promise<void> {
 
   const iaVal = (await readIa()) as Record<string, unknown> & {
     wakeWord: string;
-    slashCommands: boolean;
     addressing: Record<string, unknown>;
     confidenceThreshold: number;
     fillerPrefixes: string[];
@@ -809,7 +808,7 @@ async function main(): Promise<void> {
   // And every section's edit actually landed on the right field.
   check(
     'addressing: wake word + unticked slash saved',
-    iaVal.wakeWord === 'Aschenputtel' && iaVal.slashCommands === false,
+    iaVal.wakeWord === 'Aschenputtel',
   );
   check(
     'guards: mode, threshold and the newly-surfaced filler settings saved',
@@ -846,7 +845,7 @@ async function main(): Promise<void> {
     String(resetRes.headers['location'] ?? '').includes('/interaction/diagnostics?saved=1'),
   );
   const iaReset = await getPage('/interaction/addressing');
-  check('reset restores the shipped wake word', iaReset.body.includes('value="CIND3R3LLA"'));
+  check('reset restores the shipped wake word', iaReset.body.includes('value="Cinderella"'));
   check(
     'interaction edits are audited',
     ((

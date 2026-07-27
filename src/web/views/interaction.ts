@@ -251,7 +251,28 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Revocation — destroyed in part, some items held',
     vars: '{n} = destroyed; {held} = held for review. Must never reveal who reported the item or what the report said.',
   },
-  deleteNothing: { label: 'Revocation — nothing left to destroy', vars: '' },
+  deleteNothing: { label: 'Revocation — the archive held nothing of theirs', vars: '' },
+  // CCB-S3-031. Each of these covers a state the reply used to guess at from
+  // destruction counts, which is how a member who had chosen HIDE came to be told
+  // their retained, restorable archive did not exist.
+  deleteRetrying: {
+    label: 'Revocation — destruction failed and is being retried',
+    vars: '{held} = still present. Must not claim the content is gone: it is hidden and still here.',
+  },
+  choiceNotRevoked: {
+    label: 'Revocation — asked to hide or delete with nothing withdrawn',
+    vars: '{wake} = her name. Should name the command that does work.',
+  },
+  alreadyHidden: {
+    label: 'Revocation — asked to hide what is already hidden',
+    vars:
+      '{wake} = her name. Must say the words are RETAINED and restorable, and must never ' +
+      'claim they are gone or that the archive is empty.',
+  },
+  alreadyDestroyed: {
+    label: 'Revocation — asked to hide or delete what is already destroyed',
+    vars: '{wake} = her name. This is the one case where "destroyed" is the truth.',
+  },
   restored: { label: 'Restore — hidden content is back', vars: '' },
   restoreNotDeleted: {
     label: 'Restore — it was destroyed, not hidden',
@@ -371,7 +392,12 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 'addressing',
                 html`
                   ${checkbox('naturalAddressing', 'Natural addressing (she responds to her name)', s.naturalAddressing)}
-                  ${checkbox('slashCommands', 'Slash commands (/publish, /unpublish)', s.slashCommands)}
+                  <p class="text-xs text-slate-400">
+                    The consent commands <code>/publish</code> and <code>/unpublish</code> are
+                    always available and cannot be switched off. Withdrawing consent is not a
+                    convenience feature, and the switch that used to disable them made
+                    <code>/unpublish</code> do nothing and say nothing (CCB-S3-031).
+                  </p>
                   ${labelled('Wake word', textField('wakeWord', s.wakeWord), 'Her name. Rename her for your community — small typos in it are still understood.')}
                   ${labelled('Greeting prefixes', textField('greetings', s.greetings.join(', ')), 'Comma separated. Allowed in front of the wake word and stripped before the instruction.')}
                   ${saveButton()}
@@ -672,7 +698,6 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     try {
       if (section === 'addressing') {
         next['naturalAddressing'] = 'naturalAddressing' in body;
-        next['slashCommands'] = 'slashCommands' in body;
         next['wakeWord'] = bodyString(body, 'wakeWord');
         next['greetings'] = bodyString(body, 'greetings');
       } else if (section === 'guards') {

@@ -72,12 +72,62 @@ export async function recordRevocationMode(
   memberId: string,
   mode: Exclude<RevocationMode, 'pending'>,
 ): Promise<boolean> {
+  // THE MODE MAY MOVE WHILE THE MEMBER IS REVOKED (CCB-S3-031).
+  //
+  // `pending` -> `hide` | `delete`, and either of those to the other. The one
+  // absolute is `revoked_at IS NOT NULL`: no transition on a member who has not
+  // withdrawn, because that would let a stray word destroy a published archive.
+  //
+  // The original rule accepted `pending` alone. It was right about the danger
+  // (destroying on a replay would be the worst bug in the feature) and wrong about
+  // two real cases. A member who chose HIDE and later asks to delete is not a
+  // replay: it is a fresh, first-person decision confirmed with the literal word,
+  // and refusing it left them with no route from hidden to destroyed while the
+  // engine told them there was "nothing left to destroy" over an archive it was
+  // deliberately keeping. And CCB-S3-013 deliberately requires the reverse: a
+  // member whose deletion was deferred by an evidence hold must be able to change
+  // their mind back to hide and withdraw it, because hiding is the reversible
+  // choice and must be able to call off the irreversible one.
+  //
+  // Honesty is NOT enforced here, because the schema cannot see it. Whether "hidden,
+  // and you can bring them back" is true depends on whether anything survived, which
+  // is a question about `messages`, not about `consent`. The engine asks it and picks
+  // its words accordingly.
   const { rowCount } = await db.query(
     `UPDATE consent SET revocation_mode = $2
-     WHERE member_id = $1 AND revoked_at IS NOT NULL AND revocation_mode = 'pending'`,
+     WHERE member_id = $1 AND revoked_at IS NOT NULL AND revocation_mode <> $2`,
     [memberId, mode],
   );
   return (rowCount ?? 0) > 0;
+}
+
+/**
+ * Why a hide/delete choice was not this call's to make (CCB-S3-031).
+ *
+ * The engine needs this to tell the member the truth. Before, both refusals came
+ * back as a bare `false` and the reply was chosen from destruction counts, so a
+ * member who was already hidden and a member who was never revoked at all were
+ * both told "there is nothing of yours left in my archive to destroy" while their
+ * content sat there, retained and restorable.
+ */
+export type ChoiceRefusal = 'not-revoked' | 'already-in-mode';
+
+/** Reads why a mode transition changed nothing, so the reply can say what is true. */
+export async function revocationRefusal(db: Queryable, memberId: string): Promise<ChoiceRefusal> {
+  const { rows } = await db.query<{ revoked: boolean }>(
+    `SELECT (revoked_at IS NOT NULL) AS revoked FROM consent WHERE member_id = $1`,
+    [memberId],
+  );
+  return rows[0]?.revoked ? 'already-in-mode' : 'not-revoked';
+}
+
+/** How many of this member's messages the archive still holds. */
+export async function memberMessageCount(db: Queryable, memberId: string): Promise<number> {
+  const { rows } = await db.query<{ n: string }>(
+    'SELECT count(*)::text AS n FROM messages WHERE sender_member_id = $1',
+    [memberId],
+  );
+  return Number(rows[0]?.n ?? 0);
 }
 
 /**

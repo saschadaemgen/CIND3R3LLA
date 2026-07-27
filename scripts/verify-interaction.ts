@@ -550,7 +550,7 @@ async function main(): Promise<void> {
   const help = await say('Cinderella what can you do');
   check(
     'help names her and lists a capability',
-    help.replies[0]?.includes('CIND3R3LLA') === true && /publish/i.test(help.replies[0] ?? ''),
+    help.replies[0]?.includes('Cinderella') === true && /publish/i.test(help.replies[0] ?? ''),
   );
 
   coolDown();
@@ -609,8 +609,10 @@ async function main(): Promise<void> {
   const nick = await say('Cindy publish me');
   check('a nickname gets a retort', nick.replies.length === 1);
   check(
-    'the retort is one of the configured retorts',
-    (DEFAULT_INTERACTION.retorts['en'] as string[]).includes(nick.replies[0] as string),
+    'the retort is one of the configured retorts, with her name filled in',
+    (DEFAULT_INTERACTION.retorts['en'] as string[])
+      .map((r) => r.split('{wake}').join(DEFAULT_INTERACTION.wakeWord))
+      .includes(nick.replies[0] as string),
   );
   check('no publish happens', (await consentRow(ALICE)).optedIn === false);
 
@@ -716,27 +718,45 @@ async function main(): Promise<void> {
   check('the old name no longer addresses her', !oldName.handled && oldName.replies.length === 0);
   settings = normalizeInteraction({});
 
-  // Her name is stylised (CIND3R3LLA), and members type the plain spelling. Both
-  // must reach her, because addressing her IS the consent path: a member sending
-  // "Cinderella unpublish me" who is silently not heard has been denied the one
-  // route the privacy policy calls the fastest and most complete.
+  // CIND3R3LLA is the PRODUCT. The bot in a given community is named by its
+  // operator, so no member-facing string may hard-code a name: a renamed bot that
+  // still insists on the shipped name is telling members something false about
+  // itself, and the nickname retorts did exactly that until CCB-S3-031.
+  settings = normalizeInteraction({ ...settings, wakeWord: 'Aschenputtel' });
   coolDown();
-  await clearConsent(ALICE);
-  const stylised = await say('CIND3R3LLA publish me');
-  check('her stylised name addresses her', stylised.handled);
-  coolDown();
-  await clearConsent(ALICE);
-  const plain = await say('Cinderella publish me');
-  check('the plain spelling addresses her just as well', plain.handled);
-  coolDown();
-  await clearConsent(ALICE);
-  // The suffix rule still applies to the alias, or "Cinderellas Archiv ist gut"
-  // would become an address and she would interrupt a conversation about her.
+  const renamedHelp = (await say('Aschenputtel help')).replies[0] ?? '';
   check(
-    'the alias does NOT loosen the possessive/compound rule',
-    detectAddress('Cinderellas Archiv ist gut', settings).kind === 'none' &&
-      detectAddress("Cinderella's archive is nice", settings).kind === 'none',
+    'a renamed bot introduces itself by ITS name, not the shipped one',
+    renamedHelp.includes('Aschenputtel') && !renamedHelp.includes('Cinderella'),
   );
+  // Only some retorts name her, so asserting on one random pick would be flaky.
+  // The property that matters holds over the whole set: after substitution no
+  // retort may carry the shipped name or a leftover placeholder, in any language.
+  const renamedShipped = normalizeInteraction({ ...settings, wakeWord: 'Aschenputtel' });
+  const leaked: string[] = [];
+  for (const lang of ['en', 'de']) {
+    for (const r of (renamedShipped.retorts[lang] ?? []) as string[]) {
+      const filled = r.split('{wake}').join(renamedShipped.wakeWord);
+      if (filled.includes('Cinderella') || filled.includes('CIND3R3LLA') || filled.includes('{wake}')) {
+        leaked.push(`${lang}: ${filled}`);
+      }
+    }
+  }
+  check(
+    'no retort carries a hard-coded name or an unsubstituted placeholder',
+    leaked.length === 0,
+    leaked.slice(0, 2).join(' | '),
+  );
+  coolDown();
+  const renamedRetort = await say('Cindy hello', { member: BOB });
+  check(
+    'and a retort actually reaches the member under a renamed bot',
+    renamedRetort.replies.length === 1 &&
+      !(renamedRetort.replies[0] ?? '').includes('Cinderella') &&
+      !(renamedRetort.replies[0] ?? '').includes('{wake}'),
+    renamedRetort.replies[0] ?? '(no reply)',
+  );
+  settings = normalizeInteraction({});
 
   settings = normalizeInteraction({ ...settings, naturalAddressing: false });
   coolDown();
@@ -786,7 +806,7 @@ async function main(): Promise<void> {
   );
   check(
     'an empty wake word falls back to the default',
-    normalizeInteraction({ wakeWord: '   ' }).wakeWord === 'CIND3R3LLA',
+    normalizeInteraction({ wakeWord: '   ' }).wakeWord === 'Cinderella',
   );
   check(
     'an emptied retort list falls back to the shipped twelve',
@@ -859,8 +879,8 @@ async function main(): Promise<void> {
   );
   check(
     'the first retort uses single-asterisk bold in both languages',
-    shipped.retorts['en']?.[0]?.includes('*CIND3R3LLA*') === true &&
-      shipped.retorts['de']?.[0]?.includes('*CIND3R3LLA*') === true,
+    shipped.retorts['en']?.[0]?.includes('*{wake}*') === true &&
+      shipped.retorts['de']?.[0]?.includes('*{wake}*') === true,
   );
 
   // Presentation defaults.
@@ -1461,10 +1481,8 @@ async function main(): Promise<void> {
     isAddressed: (m) => engine.isExplicitAddress(m),
   };
 
-  let slashEnabled = true;
   registerCapture(fakeBot, { groupName: undefined } as Config, hooks, {
     targetGroupId: GROUP,
-    slashCommandsEnabled: () => slashEnabled,
   });
 
   let chatItemId = 2000;
@@ -1519,12 +1537,20 @@ async function main(): Promise<void> {
     persisted.includes('/publish'),
   );
 
-  // The follow-up window from `Cinderella publish me` above is still open here,
-  // which is exactly the case worth testing: a disabled slash command must not
-  // come back in through the conversational route.
-  slashEnabled = false;
-  await deliver('/publish');
-  check('with slash commands off the handler is not called again', commandsSeen === 1);
+  // CCB-S3-031: THE SLASH TOGGLE IS GONE, and this assertion is inverted on purpose.
+  //
+  // It used to prove that switching slash commands off stopped `/publish` reaching
+  // the consent handler. That was the defect: the toggle's entire reach was the two
+  // consent commands, so an operator quietening shorthand silently removed the
+  // withdrawal route, and `/unpublish` then did nothing and said nothing. A member
+  // who sees no reply reasonably concludes it worked. Consent commands are now
+  // always recognised, and there is no setting that can take them away.
+  await deliver('/unpublish');
+  check(
+    'a consent command always reaches the handler, with no setting able to stop it',
+    commandsSeen === 2,
+    `commandsSeen=${String(commandsSeen)}`,
+  );
   check(
     'and the command does not sneak in as natural language — it is archived as ordinary text',
     persisted.includes('/publish'),
@@ -1640,7 +1666,7 @@ async function main(): Promise<void> {
   });
   coolDown();
   const customHelp = (await say('Cinderella help')).replies[0] ?? '';
-  check('editing the help template changes the reply', /CUSTOM HEADER for CIND3R3LLA\./.test(customHelp));
+  check('editing the help template changes the reply', /CUSTOM HEADER for Cinderella\./.test(customHelp));
   check('the generated command list still fills the {commands} slot', /\*publish\*/i.test(customHelp));
   check('the publishing properties still fill the {consent} slot', /forward only/i.test(customHelp));
 
@@ -1650,7 +1676,7 @@ async function main(): Promise<void> {
   const blankHelp = (await say('Cinderella help')).replies[0] ?? '';
   check(
     'blanking the help field restores the default',
-    /I am \*CIND3R3LLA\*/.test(blankHelp) && /What you can ask me/i.test(blankHelp),
+    /I am \*Cinderella\*/.test(blankHelp) && /What you can ask me/i.test(blankHelp),
   );
 
   // A pre-CCB-S3-021 stored one-liner (no {commands}/{consent}) must not render a
@@ -1674,8 +1700,8 @@ async function main(): Promise<void> {
   /* -- 21. CCB-S3-005 Addendum A -- a matched keyword set decides the language -- */
   section('21. CCB-S3-005 Addendum A -- short instructions answered in the language written');
   settings = normalizeInteraction({});
-  const isGerman = (r: string): boolean => /Ich bin \*CIND3R3LLA\*/.test(r);
-  const isEnglish = (r: string): boolean => /I am \*CIND3R3LLA\*/.test(r);
+  const isGerman = (r: string): boolean => /Ich bin \*Cinderella\*/.test(r);
+  const isEnglish = (r: string): boolean => /I am \*Cinderella\*/.test(r);
 
   coolDown();
   const helpDe = (await say('Cinderella Hilfe')).replies[0] ?? '';
@@ -1699,6 +1725,57 @@ async function main(): Promise<void> {
     /I keep/i.test(statusAmbiguous),
   );
   settings = normalizeInteraction({});
+
+  /* -- CCB-S3-031 -- no consent-path message may claim destruction or emptiness -- */
+  section('CCB-S3-031 -- the consent copy may not claim destruction where content is kept');
+
+  // The defect this pins: a member who chose HIDE, asking to delete, was told
+  // "there is nothing of yours left in my archive to destroy" over an archive being
+  // deliberately kept for them. A copy edit must not be able to bring that back, so
+  // the assertion is on the STRINGS, not on one reachable path.
+  const KEPT_KEYS = ['hidden', 'alreadyHidden', 'deleteRetrying'] as const;
+  const DESTRUCTION_WORDS =
+    /(gone|destroy(ed|s)?|nothing (of yours )?(is )?(left|remains)|erased|wiped)/i;
+  const DESTRUCTION_WORDS_DE = /(vernichtet|gelöscht|nichts mehr (von dir|übrig)|fort)/i;
+  const offenders: string[] = [];
+  for (const lang of ['en', 'de'] as const) {
+    const persona = DEFAULT_INTERACTION.persona[lang];
+    if (!persona) continue;
+    for (const k of KEPT_KEYS) {
+      const text = persona[k];
+      const re = lang === 'de' ? DESTRUCTION_WORDS_DE : DESTRUCTION_WORDS;
+      if (re.test(text)) offenders.push(`${lang}.${k}: ${text.slice(0, 90)}`);
+    }
+  }
+  check(
+    'no message sent while content is RETAINED claims it was destroyed or is empty',
+    offenders.length === 0,
+    offenders.slice(0, 2).join(' | '),
+  );
+  for (const lang of ['en', 'de'] as const) {
+    const persona = DEFAULT_INTERACTION.persona[lang];
+    check(
+      `${lang}: the hide confirmation says the words are KEPT and can come back`,
+      /rest quietly|keeping them|restore|zurück|bewahre|ruhen still/i.test(persona?.hidden ?? ''),
+    );
+  }
+  // A hold can be permanent (a screening match or an operator escalation never
+  // expires), so the deferral copy must not promise the deletion will happen.
+  for (const lang of ['en', 'de'] as const) {
+    const d = DEFAULT_INTERACTION.persona[lang]?.deleteDeferred ?? '';
+    check(
+      `${lang}: the deferral does not promise a deletion it may not be allowed to make`,
+      !/as soon as the check is done|sobald die Prüfung abgeschlossen ist/i.test(d),
+    );
+  }
+  // A failed destruction has no report behind it; saying there is one invents it.
+  for (const lang of ['en', 'de'] as const) {
+    const r = DEFAULT_INTERACTION.persona[lang]?.deleteRetrying ?? '';
+    check(
+      `${lang}: the retry copy does not invent a report`,
+      r.length > 0 && !/report|Meldung/i.test(r),
+    );
+  }
 
   console.log(
     `\n${failures === 0 ? 'All interaction checks passed.' : `${failures} check(s) FAILED.`}`,

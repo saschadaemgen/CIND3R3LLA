@@ -257,6 +257,64 @@ Note for whoever documents the seam next: the demo is currently the **only produ
 consumer of `src/adapter/`**, via `FakeChatAdapter` in
 [`routes.ts`](../src/demo/routes.ts). The seam otherwise has no production caller.
 
+### D-082 — A CCB-S3-023 violation in member-facing copy, and the toggle that broke withdrawal
+
+**Status: IMPLEMENTED** (CCB-S3-031)
+
+Two defects on the consent path, both found reviewing the privacy policy that had
+just been published describing them as working.
+
+**The first is a CCB-S3-023 violation, and the first one in copy rather than in a
+log.** The standing rule says a degraded or absent function must not run silently
+and a caught error must not become a value that reads as a legitimate result. A
+member who revoked, chose HIDE, and later asked to delete was told *"There is
+nothing of yours left in my archive to destroy."* Their archive was intact,
+retained and restorable, which is the entire point of hide as distinct from delete.
+The refusal was real and correct; the reply turned it into a statement about the
+member's data that was false. That is the rule's exact shape, arriving where it does
+the most damage: at the moment somebody is deciding what happens to their own words.
+
+The cause was structural rather than a bad sentence. `chooseDelete` returned
+`{recorded: false, destroyed: 0, deferred: 0, failed: 0}`, and the engine picked its
+reply from the COUNTS alone, so "the choice was not mine to make" and "there was
+nothing there" produced identical output. An audit of the whole path found nine
+reachable claims that contradicted the database at the instant they were sent. The
+reply now branches on the member's actual state first, and on counts only to describe
+how far a real deletion got. Four new persona strings cover states that previously had
+none, and `verify:interaction` asserts on the STRINGS, not on one path, so a copy edit
+cannot reintroduce the class.
+
+Two further claims were unkeepable promises rather than mis-selected strings. The
+deferral copy said held items *"will be deleted as soon as the check is done"*, which
+is the opposite of the design for a screening match or an operator escalation: those
+never expire and are preserved. And it described a *"report about them"* for items
+that were merely FAILED destructions with no report behind them, because the code
+counted `deferred + failed` as one number. Held and failed are now different sentences.
+
+**The second: `slashCommands` did nothing except break consent.** With the toggle
+off, `/unpublish` neither acted nor replied. A member who types it and sees no
+response reasonably concludes it worked, and their content stays public.
+
+The toggle's entire blast radius was `parseConsentCommand`, which recognises exactly
+`/publish` and `/unpublish`. It did not gate help, price, search or plugins, because
+no other slash command exists. So a setting labelled "Slash commands on/off", which an
+operator would reasonably read as "keep the bot quiet in a busy group", could only ever
+do one thing: remove the withdrawal route.
+
+**Consent commands are now exempt, and the setting is gone.** Not left inert: the
+administration principle forbids controls that are not wired to anything, and an
+inert switch labelled this way would actively mislead an operator into believing
+they can disable `/publish`. Withdrawing consent is not a convenience feature, and
+no setting should be able to take it away.
+
+One related change to the state machine, which the fix required. `recordRevocationMode`
+accepted only `pending`, so hide was terminal and a member could never afterwards ask
+for deletion. It now allows any transition while `revoked_at IS NOT NULL`, and the
+honesty lives where it can see the answer: whether "hidden, and you can bring them
+back" is true depends on whether anything survived, which is a question about
+`messages`, not `consent`. CCB-S3-013's property is preserved exactly, including that
+choosing hide withdraws a destruction an evidence hold had deferred.
+
 ### D-081 — The marketing vhost is an allowlist, and reserved names answer 404 explicitly
 
 **Status: IMPLEMENTED** (CCB-S4-001. The nginx configuration lives on the server and is

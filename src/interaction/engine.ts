@@ -1270,13 +1270,14 @@ export class InteractionEngine {
     pending: PendingConfirmation,
   ): Promise<boolean> {
     this.state.clearPending(msg.groupId, msg.senderMemberId);
+    let outcome;
     try {
       // The result is deliberately not branched on. `recorded: false` means the
       // choice was already settled as hide, which is the state this reply
       // describes, and `chooseHide` cancels any pending destruction either way.
       // A THROW is the only outcome that makes the reply untrue, and that is
       // handled below.
-      await chooseHide(this.deps.db, {
+      outcome = await chooseHide(this.deps.db, {
         memberId: msg.senderMemberId,
         at: msg.sentAt,
         source: 'natural',
@@ -1290,7 +1291,24 @@ export class InteractionEngine {
       await this.reply(msg, s, pending.lang, 'notUnderstood', {});
       return true;
     }
-    await this.reply(msg, s, pending.lang, 'hidden', { wake: s.wakeWord }, { bypassLimit: true });
+    // The reply follows the member's ACTUAL state, not the happy path (CCB-S3-031).
+    // `hidden` promises retention and restorability, and sending it to somebody
+    // whose content was already destroyed, or who was never revoked at all, told
+    // them something false at the moment they were deciding about their own words.
+    // The reply follows what the member ACTUALLY has, not the happy path
+    // (CCB-S3-031). `hidden` promises retention and restorability; sending it to
+    // somebody whose content was already destroyed, or who was never revoked at
+    // all, told them something false at the moment they were deciding about their
+    // own words.
+    const hideKey =
+      outcome.refusal === 'not-revoked'
+        ? 'choiceNotRevoked'
+        : outcome.remaining === 0
+          ? 'alreadyDestroyed'
+          : !outcome.recorded
+            ? 'alreadyHidden'
+            : 'hidden';
+    await this.reply(msg, s, pending.lang, hideKey, { wake: s.wakeWord }, { bypassLimit: true });
     return true;
   }
 
@@ -1338,6 +1356,9 @@ export class InteractionEngine {
         { memberId: msg.senderMemberId, at: msg.sentAt, source: 'natural' },
         this.deps.mediaRoot ?? loadConfig().mediaRoot,
         this.deps.runTx,
+        // Was omitted, so a quarantined original survived the member's own
+        // deletion while the admin path swept it (CCB-S3-031).
+        loadConfig().quarantineRoot,
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1355,21 +1376,47 @@ export class InteractionEngine {
     // A failure is counted with the deferrals for the member's benefit: in both
     // cases the honest statement is "not yet gone, and I will keep at it". The
     // operator sees the difference through status.error and the log.
-    const waiting = outcome.deferred + outcome.failed;
     if (outcome.failed > 0) {
       status.error(
         `A member asked for their content to be destroyed and ${outcome.failed} message(s) could ` +
           `not be destroyed. They are hidden and the deletion will be retried.`,
       );
     }
+    // THE DEFECT THIS REPLACES (CCB-S3-031): the key was chosen from destruction
+    // COUNTS alone, so a member whose choice was already settled as HIDE - for whom
+    // nothing is destroyed and nothing is pending, by design - fell through to
+    // `deleteNothing` and was told "there is nothing of yours left in my archive to
+    // destroy" over an archive being deliberately kept for them. The member's state
+    // is the question; the counts only describe how far a real deletion got.
+    if (!outcome.recorded) {
+      const refusedKey =
+        outcome.refusal === 'not-revoked' ? 'choiceNotRevoked' : 'alreadyDestroyed';
+      await this.reply(msg, s, pending.lang, refusedKey, { wake: s.wakeWord }, { bypassLimit: true });
+      return true;
+    }
+    // A hold and a failure are NOT the same thing to say. A hold may be permanent
+    // (a screening match or an operator escalation never expires), so promising
+    // "deleted as soon as the check is done" was an unkeepable promise; and a
+    // failure has no report behind it, so mentioning one invented a report that
+    // does not exist.
     const key =
-      waiting > 0 ? 'deleteDeferred' : outcome.destroyed > 0 ? 'deleted' : 'deleteNothing';
+      outcome.deferred > 0
+        ? 'deleteDeferred'
+        : outcome.failed > 0
+          ? 'deleteRetrying'
+          : outcome.destroyed > 0
+            ? 'deleted'
+            : 'deleteNothing';
     await this.reply(
       msg,
       s,
       pending.lang,
       key,
-      { n: String(outcome.destroyed), held: String(waiting) },
+      {
+        n: String(outcome.destroyed),
+        held: String(outcome.deferred > 0 ? outcome.deferred : outcome.failed),
+        wake: s.wakeWord,
+      },
       { bypassLimit: true },
     );
     return true;
@@ -1454,7 +1501,11 @@ export class InteractionEngine {
     const index = this.state.pickRetort(msg.groupId, list.length, this.random);
     const retort = index >= 0 ? list[index] : undefined;
     if (retort) {
-      const personalized = await this.personalizedBody(msg, lang, 'nickname', retort, 'free');
+      // Retorts name her, and her name is whatever the operator configured. They
+      // never went through placeholder substitution, so a renamed bot insisted on
+      // a name that was not its own (CCB-S3-031 follow-up).
+      const named = retort.split('{wake}').join(s.wakeWord);
+      const personalized = await this.personalizedBody(msg, lang, 'nickname', named, 'free');
       // A retort is a snub, not an address: no name prefix (that would read as
       // her talking TO the member, contradicting "never opens a conversation")
       // and no quote.

@@ -20,7 +20,13 @@
  * single unlink fault must not strand the whole request.
  */
 
-import { recordRevocationMode, restoreHidden } from '../db/consent.js';
+import {
+  memberMessageCount,
+  recordRevocationMode,
+  restoreHidden,
+  revocationRefusal,
+  type ChoiceRefusal,
+} from '../db/consent.js';
 import { journalConsentAction, readConsentState, type ConsentSource } from '../db/consent-actions.js';
 import { withTransaction, type Queryable } from '../db/pool.js';
 import { log } from '../log.js';
@@ -45,6 +51,8 @@ export interface RevocationChoice {
 export interface DeleteOutcome {
   /** Whether this call was the one that recorded the choice. */
   recorded: boolean;
+  /** When `recorded` is false, WHY, so the reply can state the truth. */
+  refusal?: ChoiceRefusal;
   destroyed: number;
   /** Items a live evidence hold defers. Their deletion is queued, not dropped. */
   deferred: number;
@@ -62,9 +70,10 @@ export interface DeleteOutcome {
 export async function chooseHide(
   db: Queryable,
   choice: RevocationChoice,
-): Promise<{ recorded: boolean }> {
+): Promise<{ recorded: boolean; refusal?: ChoiceRefusal; remaining: number }> {
   const prior = await readConsentState(db, choice.memberId);
   const recorded = await recordRevocationMode(db, choice.memberId, 'hide');
+  const refusal = recorded ? undefined : await revocationRefusal(db, choice.memberId);
   if (recorded) {
     await journalConsentAction(db, {
       memberId: choice.memberId,
@@ -83,8 +92,11 @@ export async function chooseHide(
   // be gone. Hiding is the exposure-reducing, reversible choice, so it must be
   // able to withdraw the irreversible one.
   //
-  // Unconditional on `recorded`: a member whose mode is ALREADY 'hide' saying so
-  // again must still cancel, and that is exactly the case `recorded` is false.
+  // Unconditional on `recorded`, because a member whose mode is ALREADY 'hide'
+  // saying so again must still cancel, and that is exactly the case `recorded` is
+  // false. It also runs when the previous mode was 'delete', which is the case
+  // CCB-S3-013 built it for: a deletion deferred by an evidence hold must be
+  // callable off by the member changing their mind.
   const cancelled = await db.query(
     'DELETE FROM pending_destructions WHERE member_id = $1 AND requested_by = $2',
     [choice.memberId, 'member'],
@@ -94,7 +106,11 @@ export async function chooseHide(
       `Revocation: hide cancelled ${cancelled.rowCount ?? 0} pending destruction(s) for one member.`,
     );
   }
-  return { recorded };
+  // What the member actually has left decides what she may promise. After a delete
+  // that destroyed everything, "hidden, and you can bring them back" is a lie; after
+  // one an evidence hold deferred, it is the truth (CCB-S3-031).
+  const remaining = await memberMessageCount(db, choice.memberId);
+  return { recorded, ...(refusal ? { refusal } : {}), remaining };
 }
 
 /**
@@ -114,6 +130,7 @@ export async function chooseDelete(
   const prior = await readConsentState(db, choice.memberId);
   const recorded = await recordRevocationMode(db, choice.memberId, 'delete');
   if (!recorded) {
+    const refusal = await revocationRefusal(db, choice.memberId);
     // The choice was not this call's to make: the member is not revoked, or they
     // already answered. DESTROYING ANYWAY WOULD BE THE WORST BUG IN THE FEATURE.
     // `recordRevocationMode` only matches a row that is revoked and still
@@ -125,7 +142,7 @@ export async function chooseDelete(
       `Revocation: a delete was requested for a member whose revocation is not awaiting a choice; ` +
         `nothing was destroyed.`,
     );
-    return { recorded: false, destroyed: 0, deferred: 0, failed: 0 };
+    return { recorded: false, refusal, destroyed: 0, deferred: 0, failed: 0 };
   }
   await journalConsentAction(db, {
     memberId: choice.memberId,

@@ -572,9 +572,34 @@ async function main(): Promise<void> {
   }
   check('an escalated item is still undestroyable', escStillBlocked);
 
-  // FINDING: chooseDelete ran the destruction loop even when the choice was not
-  // this call's to make, so a member whose settled mode was 'hide' could have
-  // their whole archive destroyed with the consent row still reading 'hide'.
+  const countRows = async (member: string): Promise<number> => {
+    const r = await pg.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM messages WHERE sender_member_id = $1',
+      [member],
+    );
+    return r.rows[0]?.n ?? 0;
+  };
+  const modeOf = async (member: string): Promise<string | null> => {
+    const r = await pg.query<{ m: string | null }>(
+      'SELECT revocation_mode AS m FROM consent WHERE member_id = $1',
+      [member],
+    );
+    return r.rows[0]?.m ?? null;
+  };
+
+  // CCB-S3-031 CHANGED THIS DELIBERATELY.
+  //
+  // The original finding was that `chooseDelete` destroyed while `consent` still
+  // read 'hide' - a state inconsistency, and the real defect. The fix chosen then
+  // was to refuse the transition outright, which removed something a member is
+  // entitled to: having chosen hide, they could never afterwards choose deletion,
+  // and she answered such a request with "there is nothing of yours left in my
+  // archive to destroy" over an archive being deliberately kept for them.
+  //
+  // Now the transition is allowed and the ROW MOVES WITH IT, so the inconsistency
+  // the finding was about cannot occur. Replay protection lives where it can tell a
+  // replay from a decision: the engine clears the pending confirmation before it
+  // acts, so a duplicate delivery finds nothing to answer.
   const IVY = 'member-ivy';
   await recordOptIn(db, IVY, '2026-07-12T09:00:00Z');
   const i1 = await insert(IVY, { sentAt: '2026-07-12T10:00:00Z', text: 'ivy one' });
@@ -586,9 +611,31 @@ async function main(): Promise<void> {
     mediaRoot,
     runTx,
   );
-  check('a delete after the choice was settled destroys nothing', lateDelete.destroyed === 0);
-  check('and the content survives', await rowExists(i1));
-  check('and the mode still reads hide', (await getConsent(db, IVY))?.revocationMode === 'hide');
+  check(
+    'a member who chose hide can afterwards choose deletion',
+    lateDelete.recorded && lateDelete.destroyed === 1,
+    `recorded=${String(lateDelete.recorded)} destroyed=${String(lateDelete.destroyed)}`,
+  );
+  check('and the content really is destroyed', (await countRows(IVY)) === 0);
+  check(
+    'and the row moves with it, so nothing is destroyed while consent still reads hide',
+    (await modeOf(IVY)) === 'delete',
+  );
+  check(
+    'a delete on a member who never revoked is refused and destroys nothing',
+    await (async () => {
+      const JUNO = 'member-juno';
+      await recordOptIn(db, JUNO, '2026-07-12T09:00:00Z');
+      await insert(JUNO, { sentAt: '2026-07-12T10:00:00Z', text: 'juno one' });
+      const r = await chooseDelete(
+        db,
+        { memberId: JUNO, at: '2026-07-12T11:00:00Z', source: 'natural' },
+        mediaRoot,
+        runTx,
+      );
+      return !r.recorded && r.refusal === 'not-revoked' && (await countRows(JUNO)) === 1;
+    })(),
+  );
 
   // FINDING: choosing hide did not withdraw a destruction already deferred by a
   // hold, so a member who changed their mind was told their words were safe and
