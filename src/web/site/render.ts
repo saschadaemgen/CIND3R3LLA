@@ -764,7 +764,7 @@ function proBody(v: SitePageView): SafeHtml {
             v.t('pro.tier2.f4'),
           ],
           cta: v.t('pro.tier2.cta'),
-          ctaHref: `mailto:${CONTACT_EMAIL}?subject=Cinderella%20Pro%20waitlist`,
+          ctaHref: `mailto:${CONTACT_EMAIL}?subject=CIND3R3LLA%20Pro%20waitlist`,
           highlight: true,
           tierBadge: badge('accent', v.t('badge.recommended')),
         })}
@@ -774,7 +774,7 @@ function proBody(v: SitePageView): SafeHtml {
           desc: v.t('pro.tier3.desc'),
           features: [v.t('pro.tier3.f1'), v.t('pro.tier3.f2'), v.t('pro.tier3.f3')],
           cta: v.t('pro.tier3.cta'),
-          ctaHref: `mailto:${CONTACT_EMAIL}?subject=Cinderella%20Enterprise`,
+          ctaHref: `mailto:${CONTACT_EMAIL}?subject=CIND3R3LLA%20Enterprise`,
         })}
       </div>
     </section>
@@ -791,7 +791,7 @@ function proBody(v: SitePageView): SafeHtml {
           </div>
           <a
             class="cn-btn cn-btn-primary cn-btn-md"
-            href="mailto:${CONTACT_EMAIL}?subject=Cinderella%20Pro%20access%20request"
+            href="mailto:${CONTACT_EMAIL}?subject=CIND3R3LLA%20Pro%20access%20request"
             >${v.t('pro.customer.request')}</a
           >
           ${btnLink('/login', 'secondary', 'md', html`${v.t('pro.customer.login')}`)}
