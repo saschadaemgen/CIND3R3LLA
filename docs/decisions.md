@@ -296,9 +296,15 @@ knows nothing about the second origin, the allowlist or the splitter. The topolo
 was read off the running server and is recorded here because that was the only place it
 existed. Committing a sanitised copy is open work.
 
-### D-081 — Her name is CIND3R3LLA, and the plain spelling still addresses her
+### D-088 — Her name is CIND3R3LLA, and the plain spelling still addresses her
 
 **Status: IMPLEMENTED** (operator decision, CCB-S3-029 follow-up)
+
+> _Renumbered from D-081 under CCB-S3-028. It collided with the marketing-vhost
+> allowlist entry, which was committed first (`b20ff84`) and is referenced from eight
+> places. The commit that introduced this entry (`9d11bb0`) still says D-081 in its
+> message; commit messages are not rewritten. Sits below its number because the file is
+> otherwise newest-first by number._
 
 The product is called **CIND3R3LLA**, and the name is now stylised everywhere it is
 displayed: the marketing site (880 strings across 40 locales, including `brand.name`,
@@ -357,9 +363,13 @@ console is reachable on the marketing domain. It is not — but only because of 
 
 This amends D-022, which predates the split and assumes a single public origin.
 
-### D-080 — The privacy policy describes rights as this protocol actually permits them
+### D-087 — The privacy policy describes rights as this protocol actually permits them
 
 **Status: IMPLEMENTED** (CCB-S3-029 Addendum A)
+
+> _Renumbered from D-080 under CCB-S3-028. It collided with the `SITE_ORIGIN` split
+> entry, which was committed first (`b20ff84`). The commit that introduced this entry
+> (`4403a06`) still says D-080 in its message; commit messages are not rewritten._
 
 A standard rights list assumes the controller can identify the data subject. This one
 cannot, by design, and pretending otherwise would produce a policy that fails at the

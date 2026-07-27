@@ -1,0 +1,274 @@
+{
+  "_README": "FIXTURE, NOT DATA. These are small hand-authored stand-in name pools. They are NOT a real labelled corpus. They exist for exactly one reason: so the culture-grammar engine (patronymic construction, family-first order, two-surname Spanish, particled Dutch and German surnames, mononym cultures, Arabic nasab, apostrophe survival and sanitisation) can be exercised and tested at all. Each populated gender holds roughly 12 to 20 entries, which is nowhere near enough for realistic output and will repeat visibly under any real draw volume. The shipped corpus at ../data/names_data.json cannot serve this purpose: it is five flat unlabelled arrays (firstNames, lastNames, fantasyAdj, fantasyNoun, fantasyIconic) with no culture labels, no gender labels and no word pools, which is why this file exists. A real labelled corpus replaces this file WHOLESALE by satisfying the same shape, Record<string, CulturePool> from ../types.ts; no loader change and no engine change. THE 'CULTURALLY COHERENT NAMES' PROPERTY IS NOT DELIVERED BY THIS FILE. Do not cite it as evidence that the property holds, do not grow it into a substitute corpus, and do not treat any pool here as authoritative for any culture. Names are ordinary, widely-known, generic forms chosen to represent a writing system and a naming grammar; they are not the names of real individuals, and no entry describes any real person. Three authoring conventions are load-bearing and must be preserved by any replacement. (1) Empty arrays are deliberate: 'is' has no family pool because Icelandic builds a patronymic instead, and 'ta' and 'id' have no family pool because they are modelled as mononym cultures; givenNeutral is empty wherever a separate ungendered pool would be an invention rather than a fact about the culture. (2) Russian family names are stored in MASCULINE BASE FORM (Ivanov, not Ivanova); the grammar derives the feminine form. (3) A name part may contain spaces, apostrophes, hyphens and diacritics: 'van der Meer' is ONE family entry and must never be split on the space, and O'Hara, Jean-Pierre and Guðrún must survive intact until the sanitisation stage.",
+
+  "is": {
+    "givenFemale": [
+      "Anna", "Guðrún", "Kristín", "Sigríður", "Margrét", "Helga",
+      "Sigrún", "Ingibjörg", "Jóhanna", "Katrín", "Ásta", "Elín",
+      "Hildur", "Bryndís", "Ólöf", "Þóra"
+    ],
+    "givenMale": [
+      "Jón", "Sigurður", "Guðmundur", "Gunnar", "Ólafur", "Einar",
+      "Kristján", "Magnús", "Stefán", "Björn", "Árni", "Haraldur",
+      "Baldur", "Halldór", "Ragnar", "Þórður"
+    ],
+    "givenNeutral": [],
+    "family": []
+  },
+
+  "zh": {
+    "givenFemale": [
+      "Meiling", "Xiaoyan", "Yan", "Fang", "Xiuying", "Lihua",
+      "Yuhan", "Ruoxi", "Xinyi", "Jiayi", "Wenjing", "Shuyi",
+      "Qiaoling", "Yaqin", "Huifen", "Xiulan"
+    ],
+    "givenMale": [
+      "Wei", "Jun", "Hao", "Lei", "Qiang", "Tao",
+      "Bin", "Yong", "Peng", "Jian", "Kai", "Zhihao",
+      "Yicheng", "Haoran", "Wenbo", "Guorong"
+    ],
+    "givenNeutral": [
+      "Xin", "Yu", "Yi", "Le", "Ping", "Jing",
+      "Min", "Qing", "Hui", "Zhi", "Xiang", "An"
+    ],
+    "family": [
+      "Wang", "Li", "Zhang", "Liu", "Chen", "Yang",
+      "Huang", "Zhao", "Wu", "Zhou", "Xu", "Sun",
+      "Ma", "Zhu", "Hu", "Guo", "Lin", "He"
+    ]
+  },
+
+  "ja": {
+    "givenFemale": [
+      "Hanako", "Sakura", "Aiko", "Misaki", "Naoko", "Emi",
+      "Rina", "Haruka", "Ayaka", "Keiko", "Mika", "Yumi",
+      "Nanami", "Chiyo", "Kaori", "Megumi"
+    ],
+    "givenMale": [
+      "Taro", "Hiroshi", "Kenji", "Takashi", "Daiki", "Ryo",
+      "Satoshi", "Yuta", "Kazuki", "Naoki", "Shota", "Tsuyoshi",
+      "Masashi", "Hideo", "Ren", "Osamu"
+    ],
+    "givenNeutral": [
+      "Hikaru", "Kaoru", "Makoto", "Akira", "Yuki", "Hinata",
+      "Aoi", "Tsubasa", "Rin", "Nagisa", "Izumi", "Chihiro"
+    ],
+    "family": [
+      "Sato", "Suzuki", "Takahashi", "Tanaka", "Watanabe", "Ito",
+      "Yamamoto", "Nakamura", "Kobayashi", "Kato", "Yoshida", "Yamada",
+      "Sasaki", "Matsumoto", "Inoue", "Kimura", "Hayashi", "Shimizu"
+    ]
+  },
+
+  "hu": {
+    "givenFemale": [
+      "Erzsébet", "Mária", "Katalin", "Ilona", "Éva", "Anna",
+      "Zsuzsanna", "Judit", "Margit", "Ágnes", "Krisztina", "Andrea",
+      "Eszter", "Piroska", "Réka", "Emese"
+    ],
+    "givenMale": [
+      "István", "József", "László", "János", "Zoltán", "Sándor",
+      "Gábor", "Ferenc", "Attila", "Péter", "Tamás", "Balázs",
+      "Gergely", "Csaba", "Bence", "Levente"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "Nagy", "Kovács", "Tóth", "Szabó", "Horváth", "Varga",
+      "Kiss", "Molnár", "Németh", "Farkas", "Balogh", "Papp",
+      "Takács", "Juhász", "Mészáros", "Simon", "Fekete", "Oláh"
+    ]
+  },
+
+  "es": {
+    "givenFemale": [
+      "María", "Carmen", "Ana", "Isabel", "Laura", "Lucía",
+      "Elena", "Pilar", "Rosa", "Marta", "Beatriz", "Silvia",
+      "Teresa", "Cristina", "Paula", "Nuria"
+    ],
+    "givenMale": [
+      "José", "Antonio", "Juan", "Manuel", "Carlos", "Miguel",
+      "Javier", "Francisco", "Luis", "Pablo", "Alejandro", "Sergio",
+      "Andrés", "Rafael", "Diego", "Fernando"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "García", "Martínez", "Rodríguez", "López", "Hernández", "González",
+      "Pérez", "Sánchez", "Ramírez", "Torres", "Flores", "Rivera",
+      "Gómez", "Díaz", "Cruz", "Morales", "Ortiz", "Castillo",
+      "Vargas", "Romero"
+    ]
+  },
+
+  "nl": {
+    "givenFemale": [
+      "Anna", "Maria", "Sanne", "Lotte", "Femke", "Marieke",
+      "Johanna", "Elise", "Anouk", "Willemijn", "Fleur", "Saskia",
+      "Ingrid", "Nienke", "Roos", "Katrien"
+    ],
+    "givenMale": [
+      "Jan", "Pieter", "Willem", "Hendrik", "Bram", "Sven",
+      "Joris", "Thijs", "Dirk", "Kees", "Maarten", "Bas",
+      "Ruben", "Daan", "Cornelis", "Teun"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "de Jong", "Jansen", "de Vries", "van den Berg", "van Dijk", "Bakker",
+      "Janssen", "Visser", "Smit", "Meijer", "de Boer", "Mulder",
+      "de Groot", "Bos", "Vos", "Peters", "Hendriks", "van Leeuwen",
+      "van der Meer", "van der Linden"
+    ]
+  },
+
+  "ru": {
+    "givenFemale": [
+      "Anna", "Elena", "Olga", "Natalia", "Irina", "Tatiana",
+      "Svetlana", "Ekaterina", "Maria", "Yulia", "Ksenia", "Anastasia",
+      "Galina", "Larisa", "Vera", "Nadezhda"
+    ],
+    "givenMale": [
+      "Ivan", "Alexei", "Dmitri", "Sergei", "Nikolai", "Vladimir",
+      "Andrei", "Mikhail", "Pavel", "Yuri", "Igor", "Boris",
+      "Konstantin", "Maxim", "Roman", "Oleg"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "Ivanov", "Smirnov", "Kuznetsov", "Popov", "Sokolov", "Lebedev",
+      "Kozlov", "Novikov", "Morozov", "Petrov", "Volkov", "Solovyov",
+      "Vasilyev", "Zaytsev", "Pavlov", "Semyonov", "Golubev", "Vinogradov"
+    ]
+  },
+
+  "uk": {
+    "givenFemale": [
+      "Oksana", "Kateryna", "Nataliya", "Olena", "Iryna", "Halyna",
+      "Mariya", "Sofiya", "Tetyana", "Lyudmyla", "Yaryna", "Solomiya",
+      "Zoryana", "Vira", "Nadiya", "Anastasiya"
+    ],
+    "givenMale": [
+      "Taras", "Bohdan", "Andriy", "Mykola", "Ivan", "Petro",
+      "Myroslav", "Serhiy", "Oleh", "Yaroslav", "Vasyl", "Dmytro",
+      "Roman", "Pavlo", "Ostap", "Danylo"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "Kovalenko", "Boyko", "Tkachenko", "Kravchenko", "Bondarenko", "Melnyk",
+      "Kovalchuk", "Shevchuk", "Polishchuk", "Tkachuk", "Marchenko", "Lysenko",
+      "Rudenko", "Savchenko", "Moroz", "Pavlenko", "Kravets", "Oliynyk"
+    ]
+  },
+
+  "ar": {
+    "givenFemale": [
+      "Fatima", "Aisha", "Maryam", "Layla", "Zaynab", "Amal",
+      "Huda", "Salma", "Rania", "Yasmin", "Khadija", "Samira",
+      "Latifa", "Hanan", "Nadia", "Sawsan"
+    ],
+    "givenMale": [
+      "Muhammad", "Ahmad", "Ali", "Omar", "Hassan", "Husayn",
+      "Khalid", "Yusuf", "Ibrahim", "Mustafa", "Tariq", "Bilal",
+      "Karim", "Samir", "Rashid", "Jamal"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "Haddad", "Khoury", "Mansour", "Nasser", "Saleh", "Younis",
+      "Zahran", "Sharif", "Rashad", "Darwish", "al-Amin", "al-Farsi",
+      "al-Hashimi", "al-Masri", "al-Najjar", "al-Qadi"
+    ]
+  },
+
+  "ta": {
+    "givenFemale": [
+      "Kavitha", "Lakshmi", "Meena", "Priya", "Revathi", "Selvi",
+      "Vasanthi", "Anitha", "Bhuvana", "Chitra", "Gowri", "Janani",
+      "Malathi", "Nirmala", "Sangeetha", "Thamarai"
+    ],
+    "givenMale": [
+      "Arun", "Balamurugan", "Chandran", "Elango", "Ganesan", "Karthik",
+      "Kumaran", "Murugan", "Nandhan", "Palani", "Raman", "Sekar",
+      "Selvam", "Thiru", "Velan", "Anbu"
+    ],
+    "givenNeutral": [],
+    "family": []
+  },
+
+  "id": {
+    "givenFemale": [
+      "Siti", "Dewi", "Sri", "Ayu", "Rina", "Indah",
+      "Wulan", "Ratna", "Lestari", "Fitri", "Nurul", "Anggun",
+      "Melati", "Kartika", "Yuni", "Rahayu"
+    ],
+    "givenMale": [
+      "Budi", "Agus", "Bambang", "Suryo", "Slamet", "Hendra",
+      "Rizki", "Dedi", "Wahyu", "Andi", "Eko", "Teguh",
+      "Arif", "Yusuf", "Bayu", "Gunawan"
+    ],
+    "givenNeutral": [],
+    "family": []
+  },
+
+  "de": {
+    "givenFemale": [
+      "Anna", "Maria", "Ursula", "Ingrid", "Helga", "Sabine",
+      "Petra", "Monika", "Katharina", "Julia", "Lena", "Greta",
+      "Hannelore", "Brigitte", "Elke", "Franziska"
+    ],
+    "givenMale": [
+      "Hans", "Peter", "Klaus", "Wolfgang", "Jürgen", "Michael",
+      "Thomas", "Andreas", "Stefan", "Matthias", "Lukas", "Sebastian",
+      "Dieter", "Bernd", "Rainer", "Florian"
+    ],
+    "givenNeutral": [],
+    "family": [
+      "Müller", "Schmidt", "Schneider", "Fischer", "Weber", "Meyer",
+      "Wagner", "Becker", "Schulz", "Hoffmann", "Koch", "Richter",
+      "Klein", "Wolf", "Neumann", "Zimmermann", "Krüger",
+      "von Humboldt", "von Schönfeld", "zu Rheinberg"
+    ]
+  },
+
+  "fr": {
+    "givenFemale": [
+      "Marie", "Marie-Claire", "Marie-Louise", "Anne-Sophie", "Céline", "Élodie",
+      "Sylvie", "Nathalie", "Isabelle", "Chantal", "Amélie", "Margot",
+      "Solène", "Françoise", "Aurélie", "Delphine"
+    ],
+    "givenMale": [
+      "Jean", "Jean-Pierre", "Jean-Luc", "Jean-Baptiste", "Pierre", "Michel",
+      "Philippe", "Thierry", "Olivier", "Mathieu", "Étienne", "Guillaume",
+      "Bastien", "Rémi", "Loïc", "Alain"
+    ],
+    "givenNeutral": [
+      "Camille", "Dominique", "Claude", "Alix", "Sacha", "Charlie",
+      "Ange", "Andréa", "Swann", "Yaël", "Lou", "Louison"
+    ],
+    "family": [
+      "Martin", "Bernard", "Dubois", "Thomas", "Robert", "Richard",
+      "Petit", "Durand", "Leroy", "Moreau", "Simon", "Laurent",
+      "Lefebvre", "Roux", "Fournier", "Girard", "Bonnet", "Dupont"
+    ]
+  },
+
+  "en": {
+    "givenFemale": [
+      "Mary", "Elizabeth", "Sarah", "Emily", "Alice", "Margaret",
+      "Grace", "Hannah", "Laura", "Rachel", "Charlotte", "Ruth",
+      "Nora", "Beatrice", "Eleanor", "Josephine"
+    ],
+    "givenMale": [
+      "John", "James", "William", "Thomas", "Henry", "George",
+      "Edward", "Charles", "Daniel", "Samuel", "Oliver", "Arthur",
+      "Frederick", "Walter", "Simon", "Nathaniel"
+    ],
+    "givenNeutral": [
+      "Alex", "Jordan", "Taylor", "Casey", "Riley", "Morgan",
+      "Avery", "Quinn", "Rowan", "Sage", "Charlie", "Jamie",
+      "Robin", "Cameron"
+    ],
+    "family": [
+      "Smith", "Johnson", "Williams", "Brown", "Jones", "Miller",
+      "Davis", "Wilson", "Taylor", "Anderson", "Thomas", "Harris",
+      "Clark", "Walker", "Wright", "Hall",
+      "O'Hara", "O'Brien", "O'Connell", "Fitzgerald"
+    ]
+  }
+}

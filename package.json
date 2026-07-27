@@ -60,7 +60,8 @@
     "verify:capture-events": "tsx scripts/verify-capture-events.ts",
     "deploy": "bash deploy.sh",
     "media:audit": "tsx scripts/scan-media-metadata.ts",
-    "media:remediate": "tsx scripts/remediate-media.ts"
+    "media:remediate": "tsx scripts/remediate-media.ts",
+    "verify:namegen": "tsx scripts/verify-namegen.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

@@ -333,7 +333,7 @@ nonce'd CSS/JS, `html`/`raw` escaping), NOT the Tailwind admin shell. Code lives
   named as planned), and the operator **cannot destroy content on request** (only the
   member's own in-chat path and the evidence-hold workflow destroy), which is why an
   unverifiable erasure request is answered with an Art. 18 restriction. `verify:site`
-  pins fourteen of these sentences. See D-080.
+  pins fourteen of these sentences. See D-087.
 
 - **Routing + i18n (D-024, expanded by D-030).** Copy comes from `locales/<code>.json`
   (EN master + DE + 38 machine-translated locales = **40 languages**, each translation

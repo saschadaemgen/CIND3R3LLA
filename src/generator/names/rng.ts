@@ -35,7 +35,7 @@ function fnv1a(text: string): number {
  * visible structure in the output.
  */
 function splitmix32(state: number): { value: number; next: number } {
-  let z = (state + 0x9e3779b9) >>> 0;
+  const z = (state + 0x9e3779b9) >>> 0;
   let x = z;
   x = Math.imul(x ^ (x >>> 16), 0x21f0aaad) >>> 0;
   x = Math.imul(x ^ (x >>> 15), 0x735a2d97) >>> 0;
