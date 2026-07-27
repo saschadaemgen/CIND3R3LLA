@@ -647,6 +647,16 @@ wrong or already handled and are recorded here with the correction rather than t
       `group_deleted` rather than erased (measured on the host; the claim was accurate). Open question: if
       retaining our copy serves neither the publication derivation nor consent gaps, both copies should go.
       Read `message_publish_state` before deciding — the answer is mostly in the SQL.
+- [ ] **Check the group-creator path before making the conversation key `NOT NULL`.** The conversation
+      identity is settled as `groups.via_group_link_uri_hash` (D-083), measured identical and populated
+      across 27 profiles in one group. But every profile in that sample **joined via the group link**. A
+      profile that *created* the group never joined via a link and may have no hash, and a profile that
+      joined by member invitation is equally untested. `root_pub_key` is empty in this schema version, so
+      there is no protocol-level fallback. Sufficient for a bot joining existing groups; unresolved for a
+      bot that creates one.
+- [ ] **The core stores the group avatar once per membership.** `group_profiles.image` measured at 12.1 KB
+      identical across 27 memberships, so one group picture occupies ~334 KB in one core database. Core-side
+      storage, distinct from the archive message duplication in D-083, and it scales the same way.
 - [ ] **The nginx configuration is not in the repository.** See D-081. A sanitised copy of the marketing
       vhost and the SNI splitter should be committed so the topology is not server-only.
 - [ ] **Two untracked, un-ignored inventory files sit in the working tree** (`local_ai_manifest_*.csv/.txt`).

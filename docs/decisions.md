@@ -181,14 +181,43 @@ wrong.
   index today. This decouples the message-level problem from the conversation-level one:
   they need not be solved in the same migration.
 
-**OPEN QUESTION, which must be answered before the archive can key anything per
-conversation.** There must be a conversation-level identity above the membership ids, with
-a mapping from every participating profile's `group_id` onto it. Neither the brief nor the
-addendum specified this. `group_profile_id` is **not** a candidate: `group_profiles`
-itself carries a `user_id` column, so each profile holds its own row rather than sharing
-one. Two candidates exist in the same table and are unexamined: `public_group_id` and
-`group_link`. Determining the right stable key requires reading the schema on a populated
-core, and it is a design question, not a settled position.
+**The conversation-level identity: `groups.via_group_link_uri_hash`.** There must be a
+conversation identity above the membership ids, with a mapping from every participating
+profile's `group_id` onto it. Neither the brief nor the addendum specified this. It was
+settled by measurement, not inference: every column of `groups` and `group_profiles` was
+scanned across **27 profiles belonging to one real group in one core**, and classified by
+whether its value is identical across all memberships.
+
+`via_group_link_uri_hash` is 32 bytes, a hash of the group link, **populated on all 27 and
+identical across all 27**. Fixed length, opaque, and it carries no credential material.
+
+What was ruled out, and why it matters that these were measured rather than reasoned about:
+
+- `group_profiles.public_group_id` and `group_profiles.group_link` — the two candidates
+  this decision originally proposed — are **populated 0 of 27**. They may be populated for
+  public directory groups; that was not tested and must not be assumed.
+- `groups.via_group_link_uri` carries the same stable value but holds the **full join
+  link**: 373 bytes of server addresses and key material. Using it as an archive key would
+  write a credential into every row referencing a conversation. Use the hash.
+- `groups.root_pub_key` is never populated in this schema version, so there is no
+  protocol-level group key to fall back on.
+- `group_profiles.image`, `preferences`, `display_name` and `groups.local_display_name` are
+  identical across memberships because the group profile is shared, but they are group
+  **content** and change when someone edits the group. They cannot key anything.
+
+**Residual open cases.** All 27 profiles in the sample joined **via the group link**, which
+is how they were created. Two paths are untested: a profile that **created** the group
+(it never joined via a link, so the hash may be absent) and a profile that joined via a
+**member invitation** rather than the group link. With `root_pub_key` empty there is no
+fallback for those. For a bot joining existing groups, which is the normal operation, the
+field is sufficient. Make the column `NOT NULL` **only after** the creator path has been
+checked against a database that contains one.
+
+**Related, same class of problem, core-side rather than archive-side:**
+`group_profiles.image` is stored **per membership**. Measured at 12.1 KB identical across
+all 27 rows, so one group avatar occupies roughly 334 KB in a single core database. It
+scales as groups multiplied by participating profiles, exactly as the message duplication
+above does.
 
 Consequence for the brief's test list: its third required test asks to prove that the same
 local group id can exist for different users without collision. The schema makes that
