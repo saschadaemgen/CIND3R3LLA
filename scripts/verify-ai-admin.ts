@@ -192,6 +192,36 @@ async function main(): Promise<void> {
   const runtimePage = await app.inject({ method: 'GET', url: '/ai/runtime', headers: authed });
   const csrf = /name="_csrf" value="([a-f0-9]{64})"/.exec(runtimePage.body)?.[1] ?? '';
   check('runtime page embeds CSRF token', csrf !== '');
+  check(
+    'Runtime Control separates stored and effective state',
+    runtimePage.body.includes('Runtime Control') &&
+      runtimePage.body.includes('data-runtime-stored-state') &&
+      runtimePage.body.includes('data-runtime-effective-state') &&
+      runtimePage.body.includes('Stored setting') &&
+      runtimePage.body.includes('Effective mode'),
+  );
+  check(
+    'runtime modes expose real persistent controls',
+    runtimePage.body.includes('data-runtime-mode="local"') &&
+      runtimePage.body.includes('data-runtime-mode="rules"') &&
+      runtimePage.body.includes('name="mode" value="local"') &&
+      runtimePage.body.includes('name="mode" value="rules"'),
+  );
+  check(
+    'runtime status and safety boundary are visible',
+    runtimePage.body.includes('Environment gate') &&
+      runtimePage.body.includes('Active resolver') &&
+      runtimePage.body.includes('Fail closed activation') &&
+      runtimePage.body.includes('Automatic cloud fallback') &&
+      runtimePage.body.includes('disabled'),
+  );
+  check(
+    'runtime test, routing, audit, and technical status are connected',
+    runtimePage.body.includes('action="/ai/test"') &&
+      runtimePage.body.includes('href="/ai/routing"') &&
+      runtimePage.body.includes('local-ai.toggle') &&
+      runtimePage.body.includes('Technical details'),
+  );
 
   const useRules = await app.inject({
     method: 'POST',

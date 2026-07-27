@@ -151,8 +151,8 @@ async function main(): Promise<void> {
 
   const routes = [
     ['/ai/overview', 'AI Overview'],
-    ['/ai/profiles', 'AI Profiles and Groups'],
-    ['/ai/runtime', 'AI Runtime'],
+    ['/ai/profiles', 'Access Control'],
+    ['/ai/runtime', 'Runtime Control'],
     ['/ai/models', 'AI Models'],
     ['/ai/routing', 'AI Routing'],
     ['/ai/hardware', 'AI Hardware'],
@@ -189,8 +189,12 @@ async function main(): Promise<void> {
   check(
     'runtime page keeps real controls',
     runtime.body.includes('action="/ai/runtime"') &&
-      runtime.body.includes('Enable Local AI') &&
-      runtime.body.includes('Use deterministic rules'),
+      runtime.body.includes('data-runtime-mode="local"') &&
+      runtime.body.includes('data-runtime-mode="rules"') &&
+      runtime.body.includes('name="mode" value="local"') &&
+      runtime.body.includes('name="mode" value="rules"') &&
+      runtime.body.includes('Stored setting') &&
+      runtime.body.includes('Effective mode'),
   );
 
   const models = await app.inject({ method: 'GET', url: '/ai/models', headers });

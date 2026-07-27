@@ -470,62 +470,333 @@ function overviewBody(snapshot: AiRuntimeSnapshot): SafeHtml {
   `;
 }
 
-function runtimeBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
-  return html`<div class="grid gap-4 lg:grid-cols-2">
-    ${card(
-      'Runtime lane',
-      html`
-        ${definitionList([
-          [
-            'Environment availability',
-            snapshot.available ? 'Available' : 'Disabled by environment',
-          ],
-          ['Requested mode', snapshot.requestedEnabled ? 'Local AI' : 'Deterministic rules'],
-          ['Effective mode', snapshot.enabled ? 'Local AI' : 'Deterministic rules'],
-          ['Active resolver', snapshot.activeResolver],
-        ])}
+function runtimeBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuery): SafeHtml {
+  const requestedMode = snapshot.requestedEnabled ? 'Local AI' : 'Deterministic rules';
+  const effectiveMode = snapshot.enabled ? 'Local AI' : 'Deterministic rules';
+  const aligned = snapshot.requestedEnabled === snapshot.enabled;
+  const probeState =
+    snapshot.probe.ok === true ? 'passed' : snapshot.probe.ok === false ? 'failed' : 'not tested';
+  const catalogState =
+    snapshot.catalog.ok === true
+      ? `${snapshot.catalog.models.length} models discovered`
+      : snapshot.catalog.ok === false
+        ? 'refresh failed'
+        : 'not loaded';
 
-        <form method="post" action="/ai/runtime" class="mt-4 flex flex-wrap gap-2">
-          <input type="hidden" name="_csrf" value="${csrf}" />
-          <button
-            type="submit"
-            name="mode"
-            value="local"
-            class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-            ${snapshot.available ? '' : 'disabled'}
-          >
-            Enable Local AI
-          </button>
-          <button
-            type="submit"
-            name="mode"
-            value="rules"
-            class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Use deterministic rules
-          </button>
-        </form>
-
-        <p class="mt-3 text-xs text-slate-500">
-          Enabling is fail-closed. Cinderella verifies every selected role model before switching
-          away from rules.
+  return html`<section class="runtime-control-page">
+    <header class="setup-page-header runtime-control-header">
+      <div>
+        <span class="setup-eyebrow">AI Control</span>
+        <h1>Runtime Control</h1>
+        <p>
+          Control the active inference lane, compare the stored request with the effective mode, and
+          verify the private runtime boundary.
         </p>
-      `,
-    )}
-    ${card(
-      'Runtime configuration boundary',
-      definitionList([
-        ['Provider', 'Ollama'],
-        ['Endpoint', snapshot.baseUrl || 'Not configured'],
-        ['Endpoint scope', endpointScope(snapshot.baseUrl)],
-        ['Environment default', snapshot.routing.defaultModel || 'Not configured'],
-        ['Timeout', snapshot.timeoutMs > 0 ? `${snapshot.timeoutMs} ms` : 'Not configured'],
-        ['Browser endpoint editing', 'Blocked by design'],
-        ['Automatic cloud fallback', 'Disabled'],
-        ['Configuration source', 'Environment plus persisted runtime mode'],
-      ]),
-    )}
-  </div>`;
+      </div>
+
+      <form method="post" action="/ai/test">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <button type="submit" class="setup-button setup-button-primary setup-create-button">
+          Test active models
+        </button>
+      </form>
+    </header>
+
+    ${notice(query)}
+
+    <div class="runtime-control-status-grid">
+      <article class="runtime-control-status" data-runtime-stored-state>
+        <span>Stored setting</span>
+        <strong>${requestedMode}</strong>
+        <small>Persistent requested runtime mode</small>
+      </article>
+      <article class="runtime-control-status" data-runtime-effective-state>
+        <span>Effective mode</span>
+        <strong>${effectiveMode}</strong>
+        <small>Mode currently serving requests</small>
+      </article>
+      <article class="runtime-control-status">
+        <span>Environment gate</span>
+        <strong>${snapshot.available ? 'open' : 'closed'}</strong>
+        <small
+          >${snapshot.available ? 'Private provider available' : 'Local AI disabled by environment'}</small
+        >
+      </article>
+      <article class="runtime-control-status">
+        <span>Active resolver</span>
+        <strong>${snapshot.activeResolver}</strong>
+        <small
+          >${aligned ? 'Stored and active state aligned' : 'Stored and active state differ'}</small
+        >
+      </article>
+    </div>
+
+    <div class="runtime-control-badges">
+      ${badge(aligned ? 'stored and active aligned' : 'stored and active differ', aligned ? 'green' : 'amber')}
+      ${badge(`role probe ${probeState}`, snapshot.probe.ok === true ? 'green' : snapshot.probe.ok === false ? 'red' : 'slate')}
+      ${badge(`catalog ${catalogState}`, snapshot.catalog.ok === true ? 'green' : snapshot.catalog.ok === false ? 'red' : 'slate')}
+      ${badge(endpointScope(snapshot.baseUrl), endpointScope(snapshot.baseUrl) === 'External endpoint' ? 'amber' : 'blue')}
+      ${badge('cloud fallback disabled', 'slate')}
+    </div>
+
+    <section class="runtime-control-mode-panel">
+      <header class="runtime-control-section-header">
+        <div>
+          <span class="setup-eyebrow">Runtime mode</span>
+          <h2>Select the active processing lane</h2>
+          <p>
+            Every change is persisted, audited, and applied immediately when its safety checks pass.
+          </p>
+        </div>
+      </header>
+
+      <div class="runtime-control-mode-grid">
+        <article
+          class="runtime-control-mode-card"
+          data-runtime-mode="local"
+          data-state="${snapshot.enabled ? 'active' : snapshot.requestedEnabled ? 'stored' : 'inactive'}"
+        >
+          <div class="runtime-control-mode-icon">AI</div>
+          <div class="runtime-control-mode-copy">
+            <div class="runtime-control-mode-title">
+              <h3>Local AI</h3>
+              ${badge(snapshot.enabled ? 'active' : snapshot.requestedEnabled ? 'stored' : 'inactive', snapshot.enabled ? 'green' : snapshot.requestedEnabled ? 'amber' : 'slate')}
+            </div>
+            <p>
+              Use the configured private Ollama lane for intent classification and guarded replies.
+            </p>
+
+            <dl class="runtime-control-mode-facts">
+              <div>
+                <dt>Availability</dt>
+                <dd>${snapshot.available ? 'available' : 'blocked'}</dd>
+              </div>
+              <div>
+                <dt>Provider</dt>
+                <dd>Ollama</dd>
+              </div>
+              <div>
+                <dt>Probe</dt>
+                <dd>${probeState}</dd>
+              </div>
+              <div>
+                <dt>Fallback</dt>
+                <dd>deterministic rules</dd>
+              </div>
+            </dl>
+
+            <form method="post" action="/ai/runtime">
+              <input type="hidden" name="_csrf" value="${csrf}" />
+              <input type="hidden" name="mode" value="local" />
+              <button
+                type="submit"
+                class="setup-button setup-button-primary"
+                ${!snapshot.available || snapshot.enabled ? raw('disabled') : ''}
+              >
+                ${snapshot.enabled ? 'Local AI active' : 'Enable Local AI'}
+              </button>
+            </form>
+          </div>
+        </article>
+
+        <article
+          class="runtime-control-mode-card"
+          data-runtime-mode="rules"
+          data-state="${snapshot.enabled ? 'inactive' : 'active'}"
+        >
+          <div class="runtime-control-mode-icon">R</div>
+          <div class="runtime-control-mode-copy">
+            <div class="runtime-control-mode-title">
+              <h3>Deterministic rules</h3>
+              ${badge(snapshot.enabled ? 'available' : 'active', snapshot.enabled ? 'blue' : 'green')}
+            </div>
+            <p>
+              Keep all request handling inside deterministic application rules without model
+              inference.
+            </p>
+
+            <dl class="runtime-control-mode-facts">
+              <div>
+                <dt>Availability</dt>
+                <dd>always available</dd>
+              </div>
+              <div>
+                <dt>Provider</dt>
+                <dd>application rules</dd>
+              </div>
+              <div>
+                <dt>Network</dt>
+                <dd>not required</dd>
+              </div>
+              <div>
+                <dt>Safety</dt>
+                <dd>baseline mode</dd>
+              </div>
+            </dl>
+
+            <form method="post" action="/ai/runtime">
+              <input type="hidden" name="_csrf" value="${csrf}" />
+              <input type="hidden" name="mode" value="rules" />
+              <button
+                type="submit"
+                class="setup-button setup-button-secondary"
+                ${snapshot.enabled ? '' : raw('disabled')}
+              >
+                ${snapshot.enabled ? 'Use deterministic rules' : 'Rules active'}
+              </button>
+            </form>
+          </div>
+        </article>
+      </div>
+
+      <div class="runtime-control-safety-note">
+        <strong>Fail closed activation</strong>
+        <span>
+          Local AI becomes effective only after the selected role models are confirmed. Any failure
+          keeps or returns the runtime to deterministic rules.
+        </span>
+      </div>
+    </section>
+
+    <div class="runtime-control-secondary-grid">
+      <section class="runtime-control-panel">
+        <header class="runtime-control-panel-header">
+          <div>
+            <span class="setup-eyebrow">Health</span>
+            <h2>Runtime health</h2>
+          </div>
+          <a href="/ai/testing" class="setup-button setup-button-quiet">Open testing</a>
+        </header>
+
+        <dl class="runtime-control-list">
+          <div>
+            <dt>Last role probe</dt>
+            <dd>${displayTime(snapshot.probe.at)}</dd>
+          </div>
+          <div>
+            <dt>Probe result</dt>
+            <dd>${probeState}</dd>
+          </div>
+          <div>
+            <dt>Probe latency</dt>
+            <dd>${displayLatency(snapshot.probe.latencyMs)}</dd>
+          </div>
+          <div>
+            <dt>Model catalog</dt>
+            <dd>${catalogState}</dd>
+          </div>
+          <div>
+            <dt>Intent model</dt>
+            <dd>${snapshot.routing.intentModel}</dd>
+          </div>
+          <div>
+            <dt>Reply model</dt>
+            <dd>${snapshot.routing.replyModel}</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="runtime-control-panel">
+        <header class="runtime-control-panel-header">
+          <div>
+            <span class="setup-eyebrow">Boundary</span>
+            <h2>Configuration boundary</h2>
+          </div>
+          <a href="/ai/routing" class="setup-button setup-button-quiet">Open routing</a>
+        </header>
+
+        <dl class="runtime-control-list">
+          <div>
+            <dt>Provider</dt>
+            <dd>Ollama</dd>
+          </div>
+          <div>
+            <dt>Endpoint scope</dt>
+            <dd>${endpointScope(snapshot.baseUrl)}</dd>
+          </div>
+          <div>
+            <dt>Browser endpoint editing</dt>
+            <dd>blocked by design</dd>
+          </div>
+          <div>
+            <dt>Automatic cloud fallback</dt>
+            <dd>disabled</dd>
+          </div>
+          <div>
+            <dt>Configuration source</dt>
+            <dd>environment and persisted mode</dd>
+          </div>
+          <div>
+            <dt>Audit action</dt>
+            <dd>local-ai.toggle</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <section class="runtime-control-activation">
+      <header class="runtime-control-section-header">
+        <div>
+          <span class="setup-eyebrow">Activation path</span>
+          <h2>What happens when Local AI is enabled</h2>
+          <p>
+            The stored request and effective runtime state are deliberately shown as separate facts.
+          </p>
+        </div>
+      </header>
+
+      <ol class="runtime-control-activation-steps">
+        <li>
+          <span>1</span><strong>Store request</strong
+          ><small>Persist the desired runtime mode.</small>
+        </li>
+        <li>
+          <span>2</span><strong>Verify models</strong
+          ><small>Confirm every selected local role model.</small>
+        </li>
+        <li>
+          <span>3</span><strong>Activate lane</strong
+          ><small>Switch only after the private probe passes.</small>
+        </li>
+        <li>
+          <span>4</span><strong>Audit result</strong
+          ><small>Record the operator and runtime change.</small>
+        </li>
+      </ol>
+    </section>
+
+    <details class="setup-technical runtime-control-technical">
+      <summary>Technical details</summary>
+      <div class="setup-technical-content">
+        <dl class="setup-technical-grid">
+          <div>
+            <dt>Endpoint</dt>
+            <dd>${snapshot.baseUrl || 'not configured'}</dd>
+          </div>
+          <div>
+            <dt>Timeout</dt>
+            <dd>${snapshot.timeoutMs > 0 ? `${snapshot.timeoutMs} ms` : 'not configured'}</dd>
+          </div>
+          <div>
+            <dt>Default model</dt>
+            <dd>${snapshot.routing.defaultModel || 'not configured'}</dd>
+          </div>
+          <div>
+            <dt>Requested enabled</dt>
+            <dd>${snapshot.requestedEnabled ? 'true' : 'false'}</dd>
+          </div>
+          <div>
+            <dt>Effective enabled</dt>
+            <dd>${snapshot.enabled ? 'true' : 'false'}</dd>
+          </div>
+          <div>
+            <dt>Active resolver</dt>
+            <dd>${snapshot.activeResolver}</dd>
+          </div>
+        </dl>
+      </div>
+    </details>
+  </section>`;
 }
 
 function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
@@ -975,15 +1246,13 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
     reply.type('text/html');
-    return renderAiPage(
-      'AI Runtime',
-      'Live runtime mode, private endpoint boundary, fail-closed activation, and resolver state.',
-      'ai:runtime',
-      csrf,
-      req.query,
-      snapshot,
-      runtimeBody(snapshot, csrf),
-    );
+
+    return page({
+      title: 'Runtime Control',
+      active: 'ai:runtime',
+      csrfToken: csrf,
+      body: runtimeBody(snapshot, csrf, req.query),
+    });
   });
 
   app.get<{ Querystring: AiPageQuery }>('/ai/models', async (req, reply) => {

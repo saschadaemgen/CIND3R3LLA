@@ -3350,3 +3350,331 @@ input[type='radio'] {
   }
 }
 /* END CIND3R3LLA access control workspace */
+
+/* CIND3R3LLA Runtime Control */
+.runtime-control-page {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
+.runtime-control-header form {
+  flex: none;
+}
+
+.runtime-control-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.runtime-control-status,
+.runtime-control-mode-panel,
+.runtime-control-panel,
+.runtime-control-activation {
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(69, 189, 209, 0.025), transparent 38%), rgba(9, 16, 29, 0.84);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: blur(16px);
+}
+
+.runtime-control-status {
+  min-height: 116px;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.runtime-control-status span {
+  display: block;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.runtime-control-status strong {
+  display: block;
+  margin-top: 10px;
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.15;
+}
+
+.runtime-control-status small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.runtime-control-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.runtime-control-mode-panel,
+.runtime-control-panel,
+.runtime-control-activation {
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.runtime-control-section-header,
+.runtime-control-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line);
+  padding: 18px 20px;
+}
+
+.runtime-control-section-header h2,
+.runtime-control-panel-header h2 {
+  margin: 5px 0 3px;
+  font-size: 20px;
+}
+
+.runtime-control-section-header p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.runtime-control-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.runtime-control-mode-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(5, 10, 18, 0.32);
+  padding: 16px;
+}
+
+.runtime-control-mode-card[data-state='active'] {
+  border-color: rgba(74, 222, 158, 0.34);
+  background: linear-gradient(145deg, rgba(74, 222, 158, 0.08), rgba(5, 10, 18, 0.38));
+  box-shadow: inset 3px 0 0 rgba(74, 222, 158, 0.72);
+}
+
+.runtime-control-mode-card[data-state='stored'] {
+  border-color: rgba(224, 180, 84, 0.34);
+  box-shadow: inset 3px 0 0 rgba(224, 180, 84, 0.72);
+}
+
+.runtime-control-mode-icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid rgba(69, 189, 209, 0.28);
+  border-radius: 13px;
+  background: rgba(69, 189, 209, 0.08);
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.runtime-control-mode-copy {
+  min-width: 0;
+}
+
+.runtime-control-mode-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.runtime-control-mode-title h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.runtime-control-mode-copy > p {
+  margin: 6px 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.runtime-control-mode-facts {
+  display: grid;
+  margin: 0 0 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.runtime-control-mode-facts div {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: rgba(2, 7, 14, 0.32);
+  padding: 9px;
+}
+
+.runtime-control-mode-facts dt,
+.runtime-control-list dt {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.runtime-control-mode-facts dd {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.runtime-control-mode-card button:disabled {
+  cursor: default;
+  opacity: 0.48;
+}
+
+.runtime-control-safety-note {
+  display: flex;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: rgba(69, 189, 209, 0.04);
+  padding: 13px 16px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.runtime-control-safety-note strong {
+  flex: none;
+  color: var(--accent-strong);
+}
+
+.runtime-control-secondary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.runtime-control-list {
+  margin: 0;
+}
+
+.runtime-control-list div {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.2fr);
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 11px 16px;
+}
+
+.runtime-control-list div:last-child {
+  border-bottom: 0;
+}
+
+.runtime-control-list dd {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.runtime-control-activation-steps {
+  display: grid;
+  margin: 0;
+  padding: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  list-style: none;
+}
+
+.runtime-control-activation-steps li {
+  display: grid;
+  min-height: 130px;
+  align-content: start;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(5, 10, 18, 0.32);
+  padding: 14px;
+}
+
+.runtime-control-activation-steps li > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 1px solid rgba(69, 189, 209, 0.3);
+  border-radius: 50%;
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.runtime-control-activation-steps strong {
+  margin-top: 12px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.runtime-control-activation-steps small {
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.runtime-control-technical {
+  margin-top: 0;
+}
+
+@media (max-width: 1120px) {
+  .runtime-control-status-grid,
+  .runtime-control-activation-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 820px) {
+  .runtime-control-mode-grid,
+  .runtime-control-secondary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 620px) {
+  .runtime-control-status-grid,
+  .runtime-control-activation-steps,
+  .runtime-control-mode-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-control-mode-card {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-control-list div {
+    grid-template-columns: 1fr;
+  }
+
+  .runtime-control-list dd {
+    text-align: left;
+  }
+
+  .runtime-control-safety-note {
+    flex-direction: column;
+  }
+}
+/* END CIND3R3LLA Runtime Control */
