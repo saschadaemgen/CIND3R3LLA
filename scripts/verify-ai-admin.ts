@@ -5,6 +5,8 @@
  * and never sends a SimpleX message or touches production.
  */
 
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import argon2 from 'argon2';
 import type { LocalAiConfig, AdminConfig, Config } from '../src/config.js';
@@ -89,6 +91,14 @@ const fakeFetch: FetchLike = async (input) => {
 
 async function main(): Promise<void> {
   process.env['SESSION_SECRET'] ??= SESSION_SECRET;
+
+  const projectRoot = process.cwd();
+  const modelCatalogClient = await readFile(
+    join(projectRoot, 'assets', 'admin-model-catalog.js'),
+    'utf8',
+  );
+  const modelCatalogCss = await readFile(join(projectRoot, 'assets', 'app.css'), 'utf8');
+  const assetCopier = await readFile(join(projectRoot, 'scripts', 'copy-assets.mjs'), 'utf8');
 
   const pg = new PGlite();
   const db: Queryable = {
@@ -259,6 +269,44 @@ async function main(): Promise<void> {
   check(
     'catalog refresh redirects to models page',
     refresh.statusCode === 302 && refresh.headers.location === '/ai/models?refreshed=1',
+  );
+
+  const modelsPage = await app.inject({ method: 'GET', url: '/ai/models', headers: authed });
+  check('AI Models page renders', modelsPage.statusCode === 200);
+  check(
+    'AI Models page exposes catalog master detail',
+    modelsPage.body.includes('model-catalog-master-detail') &&
+      modelsPage.body.includes('data-model-item') &&
+      modelsPage.body.includes('data-model-detail') &&
+      modelsPage.body.includes('Selected model'),
+  );
+  check(
+    'AI Models page exposes real catalog status and refresh control',
+    modelsPage.body.includes('Catalog state') &&
+      modelsPage.body.includes('Installed models') &&
+      modelsPage.body.includes('Last refresh') &&
+      modelsPage.body.includes('action="/ai/models/refresh"'),
+  );
+  check(
+    'AI Models page exposes search, role filter, and routing link',
+    modelsPage.body.includes('data-model-search') &&
+      modelsPage.body.includes('data-model-role-filter') &&
+      modelsPage.body.includes('href="/ai/routing"'),
+  );
+  check(
+    'AI Models page is honest about management boundaries',
+    modelsPage.body.includes('Discovery is read only') &&
+      modelsPage.body.includes('Catalog persistence') &&
+      modelsPage.body.includes('process memory') &&
+      modelsPage.body.includes('Pull model') &&
+      modelsPage.body.includes('not implemented'),
+  );
+  check(
+    'AI Models client and styles are published',
+    modelCatalogClient.includes('data-model-target') &&
+      modelCatalogClient.includes('applyFilters') &&
+      modelCatalogCss.includes('CIND3R3LLA Model Catalog') &&
+      assetCopier.includes('admin-model-catalog.js'),
   );
 
   const routeModels = await app.inject({

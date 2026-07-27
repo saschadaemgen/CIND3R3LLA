@@ -201,7 +201,9 @@ async function main(): Promise<void> {
   check(
     'models page keeps catalog controls',
     models.body.includes('action="/ai/models/refresh"') &&
-      models.body.includes('Installed Ollama models'),
+      models.body.includes('data-model-search') &&
+      models.body.includes('data-model-role-filter') &&
+      models.body.includes('Model management boundary'),
   );
 
   const routing = await app.inject({ method: 'GET', url: '/ai/routing', headers });

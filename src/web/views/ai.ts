@@ -214,47 +214,301 @@ function modelSelect(name: string, current: string, models: string[]): SafeHtml 
   </select>`;
 }
 
-function modelTable(models: AiModelInfo[], routing: AiModelRoutingSnapshot): SafeHtml {
-  if (models.length === 0) {
-    return html`<p class="text-sm text-slate-500">
-      No model inventory has been loaded yet. Refresh the catalog to read the local Ollama node.
-    </p>`;
-  }
+function modelRoleNames(model: AiModelInfo, routing: AiModelRoutingSnapshot): string[] {
+  const roles: string[] = [];
 
-  return html`<div class="overflow-x-auto">
-    <table class="min-w-full text-left text-sm">
-      <thead class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-        <tr>
-          <th class="px-3 py-2 font-medium">Model</th>
-          <th class="px-3 py-2 font-medium">Size</th>
-          <th class="px-3 py-2 font-medium">Family</th>
-          <th class="px-3 py-2 font-medium">Parameters</th>
-          <th class="px-3 py-2 font-medium">Quantization</th>
-          <th class="px-3 py-2 font-medium">Modified</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y divide-slate-100">
-        ${models.map(
-          (model) =>
-            html`<tr>
-              <td class="px-3 py-3 font-medium text-slate-900">
-                <div class="flex flex-wrap items-center gap-2">
-                  <span>${model.name}</span>
-                  ${model.name === routing.intentModel ? badge('Intent', 'blue') : null}
-                  ${model.name === routing.replyModel ? badge('Reply', 'green') : null}
-                  ${model.name === routing.defaultModel ? badge('Env default', 'slate') : null}
-                </div>
-              </td>
-              <td class="px-3 py-3 text-slate-600">${displayBytes(model.sizeBytes)}</td>
-              <td class="px-3 py-3 text-slate-600">${model.family ?? 'Unknown'}</td>
-              <td class="px-3 py-3 text-slate-600">${model.parameterSize ?? 'Unknown'}</td>
-              <td class="px-3 py-3 text-slate-600">${model.quantizationLevel ?? 'Unknown'}</td>
-              <td class="px-3 py-3 text-slate-600">${displayTime(model.modifiedAt)}</td>
-            </tr>`,
-        )}
-      </tbody>
-    </table>
-  </div>`;
+  if (model.name === routing.intentModel) roles.push('intent');
+  if (model.name === routing.replyModel) roles.push('reply');
+  if (model.name === routing.defaultModel) roles.push('default');
+
+  return roles;
+}
+
+function modelRoleBadges(model: AiModelInfo, routing: AiModelRoutingSnapshot): SafeHtml {
+  const roles = modelRoleNames(model, routing);
+
+  if (roles.length === 0) return badge('unassigned', 'slate');
+
+  return html`${roles.map((role) =>
+    badge(role, role === 'intent' ? 'blue' : role === 'reply' ? 'green' : 'slate'),
+  )}`;
+}
+
+function modelCatalogItem(
+  model: AiModelInfo,
+  routing: AiModelRoutingSnapshot,
+  index: number,
+): SafeHtml {
+  const roles = modelRoleNames(model, routing);
+  const roleSearch = roles.length > 0 ? roles.join(' ') : 'unassigned';
+
+  return html`<button
+    type="button"
+    class="model-catalog-item"
+    data-model-item
+    data-model-target="model-detail-${index}"
+    data-search-value="${model.name} ${model.family ?? ''} ${model.parameterSize ?? ''} ${model.quantizationLevel ?? ''}"
+    data-role-value="${roleSearch}"
+    ${index === 0 ? raw('aria-current="true"') : raw('aria-current="false"')}
+  >
+    <span class="model-catalog-item-icon">M</span>
+    <span class="model-catalog-item-copy">
+      <strong>${model.name}</strong>
+      <small
+        >${model.parameterSize ?? 'Unknown size'} ·
+        ${model.quantizationLevel ?? 'Unknown quantization'}</small
+      >
+    </span>
+    <span class="model-catalog-item-roles">${modelRoleBadges(model, routing)}</span>
+  </button>`;
+}
+
+function modelDetailPanel(
+  model: AiModelInfo,
+  routing: AiModelRoutingSnapshot,
+  index: number,
+): SafeHtml {
+  const roles = modelRoleNames(model, routing);
+
+  return html`<article
+    id="model-detail-${index}"
+    class="model-catalog-detail"
+    data-model-detail
+    ${index === 0 ? '' : raw('hidden')}
+  >
+    <header class="model-catalog-detail-header">
+      <div>
+        <span class="setup-eyebrow">Selected model</span>
+        <h2>${model.name}</h2>
+        <p>Read only metadata discovered from the configured Ollama endpoint.</p>
+      </div>
+      <div class="model-catalog-detail-badges">${modelRoleBadges(model, routing)}</div>
+    </header>
+
+    <div class="model-catalog-detail-stats">
+      ${stat('File size', displayBytes(model.sizeBytes))}
+      ${stat('Family', model.family ?? 'Unknown')}
+      ${stat('Parameters', model.parameterSize ?? 'Unknown')}
+      ${stat('Quantization', model.quantizationLevel ?? 'Unknown')}
+    </div>
+
+    <section class="model-catalog-detail-section">
+      <header>
+        <div>
+          <span class="setup-eyebrow">Routing state</span>
+          <h3>Current role assignments</h3>
+        </div>
+        <a href="/ai/routing" class="setup-button setup-button-secondary">Open routing</a>
+      </header>
+
+      <dl class="model-catalog-routing-grid">
+        <div>
+          <dt>Intent classification</dt>
+          <dd>${model.name === routing.intentModel ? 'assigned' : 'not assigned'}</dd>
+        </div>
+        <div>
+          <dt>Reply wording</dt>
+          <dd>${model.name === routing.replyModel ? 'assigned' : 'not assigned'}</dd>
+        </div>
+        <div>
+          <dt>Environment default</dt>
+          <dd>${model.name === routing.defaultModel ? 'assigned' : 'not assigned'}</dd>
+        </div>
+        <div>
+          <dt>Active role count</dt>
+          <dd>${roles.length}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="model-catalog-detail-section">
+      <header>
+        <div>
+          <span class="setup-eyebrow">Catalog metadata</span>
+          <h3>Discovery record</h3>
+        </div>
+      </header>
+
+      <dl class="model-catalog-definition-list">
+        <div>
+          <dt>Model name</dt>
+          <dd>${model.name}</dd>
+        </div>
+        <div>
+          <dt>Family</dt>
+          <dd>${model.family ?? 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Parameter size</dt>
+          <dd>${model.parameterSize ?? 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Quantization</dt>
+          <dd>${model.quantizationLevel ?? 'Unknown'}</dd>
+        </div>
+        <div>
+          <dt>Modified</dt>
+          <dd>${displayTime(model.modifiedAt)}</dd>
+        </div>
+        <div>
+          <dt>Catalog source</dt>
+          <dd>Ollama /api/tags</dd>
+        </div>
+      </dl>
+    </section>
+  </article>`;
+}
+
+function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuery): SafeHtml {
+  const models = snapshot.catalog.models;
+  const routedModels = new Set([
+    snapshot.routing.intentModel,
+    snapshot.routing.replyModel,
+    snapshot.routing.defaultModel,
+  ]).size;
+  const catalogState =
+    snapshot.catalog.ok === true
+      ? 'healthy'
+      : snapshot.catalog.ok === false
+        ? 'failed'
+        : 'not loaded';
+
+  return html`<section class="model-catalog-page">
+    <header class="setup-page-header">
+      <div>
+        <span class="setup-eyebrow">AI Control</span>
+        <h1>AI Models</h1>
+        <p>
+          Inspect installed Ollama models, catalog health, routing assignments, and management
+          boundaries.
+        </p>
+      </div>
+
+      <form method="post" action="/ai/models/refresh">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <button type="submit" class="setup-button setup-button-primary setup-create-button">
+          Refresh catalog
+        </button>
+      </form>
+    </header>
+
+    ${notice(query)}
+
+    <div class="model-catalog-status-grid">
+      <article class="model-catalog-status">
+        <span>Catalog state</span>
+        <strong>${catalogState}</strong>
+        <small>${snapshot.catalog.error ?? 'No discovery error recorded'}</small>
+      </article>
+      <article class="model-catalog-status">
+        <span>Installed models</span>
+        <strong>${models.length}</strong>
+        <small>Read only inventory from Ollama</small>
+      </article>
+      <article class="model-catalog-status">
+        <span>Routed model names</span>
+        <strong>${routedModels}</strong>
+        <small>Intent, reply, and environment default</small>
+      </article>
+      <article class="model-catalog-status">
+        <span>Last refresh</span>
+        <strong>${snapshot.catalog.at ? 'recorded' : 'not recorded'}</strong>
+        <small>${displayTime(snapshot.catalog.at)}</small>
+      </article>
+    </div>
+
+    <div class="model-catalog-toolbar">
+      <label class="setup-search">
+        <span class="setup-search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          placeholder="Search installed models"
+          aria-label="Search installed models"
+          data-model-search
+        />
+      </label>
+
+      <label class="model-catalog-filter">
+        <span>Role filter</span>
+        <select data-model-role-filter>
+          <option value="all">All models</option>
+          <option value="routed">Any routed role</option>
+          <option value="intent">Intent</option>
+          <option value="reply">Reply</option>
+          <option value="default">Environment default</option>
+          <option value="unassigned">Unassigned</option>
+        </select>
+      </label>
+
+      <div class="setup-toolbar-summary">
+        <strong data-model-visible-count>${models.length}</strong>
+        <span>visible</span>
+      </div>
+    </div>
+
+    ${
+      models.length > 0
+        ? html`<div class="model-catalog-master-detail">
+            <aside class="model-catalog-list-panel">
+              <div class="setup-list-heading">
+                <span>Installed Ollama models</span>
+                <strong>${models.length}</strong>
+              </div>
+              <div class="model-catalog-list">
+                ${models.map((model, index) => modelCatalogItem(model, snapshot.routing, index))}
+                <p class="setup-list-empty" data-model-empty hidden>
+                  No models match the current filters.
+                </p>
+              </div>
+            </aside>
+
+            <section class="model-catalog-detail-panel">
+              ${models.map((model, index) => modelDetailPanel(model, snapshot.routing, index))}
+            </section>
+          </div>`
+        : html`<section class="setup-empty">
+            <span class="setup-eyebrow">Catalog empty</span>
+            <h2>No installed models discovered</h2>
+            <p>
+              Refresh the catalog to read the current model inventory from the private Ollama
+              endpoint.
+            </p>
+            <form method="post" action="/ai/models/refresh">
+              <input type="hidden" name="_csrf" value="${csrf}" />
+              <button type="submit" class="setup-button setup-button-primary">
+                Refresh catalog
+              </button>
+            </form>
+          </section>`
+    }
+
+    <details class="setup-reference model-catalog-boundary">
+      <summary>Model management boundary</summary>
+      <div class="setup-reference-body">
+        <div class="setup-reference-intro">
+          <div>
+            <span class="setup-eyebrow">Current capability</span>
+            <h2>Discovery is read only</h2>
+            <p>
+              Catalog refresh updates the process snapshot and operations telemetry. It does not
+              install, remove, load, or unload models.
+            </p>
+          </div>
+        </div>
+
+        <div class="model-catalog-boundary-grid">
+          <div><span>Discovery</span><strong>available</strong></div>
+          <div><span>Catalog persistence</span><strong>process memory</strong></div>
+          <div><span>Pull model</span><strong>not implemented</strong></div>
+          <div><span>Remove model</span><strong>not implemented</strong></div>
+          <div><span>Load or unload</span><strong>not implemented</strong></div>
+          <div><span>Role assignment</span><strong>available in Routing</strong></div>
+          <div><span>Cloud catalog</span><strong>disabled</strong></div>
+          <div><span>Secret material shown</span><strong>no</strong></div>
+        </div>
+      </div>
+    </details>
+  </section>`;
 }
 
 function activityTone(outcome: AiActivityEvent['outcome']): 'green' | 'red' | 'amber' | 'blue' {
@@ -799,47 +1053,6 @@ function runtimeBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQue
   </section>`;
 }
 
-function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
-  return html`
-    <div class="grid gap-4 lg:grid-cols-2">
-      ${card(
-        'Catalog status',
-        html`
-          ${definitionList([
-            ['Last refresh', displayTime(snapshot.catalog.at)],
-            ['Discovery latency', displayLatency(snapshot.catalog.latencyMs)],
-            ['Installed models', String(snapshot.catalog.models.length)],
-            ['Last discovery error', snapshot.catalog.error ?? 'None'],
-          ])}
-          <form method="post" action="/ai/models/refresh" class="mt-4">
-            <input type="hidden" name="_csrf" value="${csrf}" />
-            <button
-              type="submit"
-              class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Refresh model catalog
-            </button>
-          </form>
-        `,
-      )}
-      ${card(
-        'Model management boundary',
-        definitionList([
-          ['Discovery', 'Read-only'],
-          ['Pull model', 'Not implemented'],
-          ['Remove model', 'Not implemented'],
-          ['Load or unload model', 'Not implemented'],
-          ['Role assignment', 'Available under Routing'],
-          ['Secret material shown', 'No'],
-        ]),
-      )}
-    </div>
-    <div class="mt-4">
-      ${card('Installed Ollama models', modelTable(snapshot.catalog.models, snapshot.routing))}
-    </div>
-  `;
-}
-
 function routingBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
   const availableModels = modelNames(snapshot.catalog.models, snapshot.routing);
 
@@ -1259,15 +1472,14 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
     reply.type('text/html');
-    return renderAiPage(
-      'AI Models',
-      'Installed Ollama models, metadata, catalog health, and model management boundaries.',
-      'ai:models',
-      csrf,
-      req.query,
-      snapshot,
-      modelsBody(snapshot, csrf),
-    );
+
+    return page({
+      title: 'AI Models',
+      active: 'ai:models',
+      csrfToken: csrf,
+      head: html`<script src="/assets/admin-model-catalog.js" defer></script>`,
+      body: modelsBody(snapshot, csrf, req.query),
+    });
   });
 
   app.get<{ Querystring: AiPageQuery }>('/ai/routing', async (req, reply) => {
