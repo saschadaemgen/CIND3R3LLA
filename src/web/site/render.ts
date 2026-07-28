@@ -184,7 +184,6 @@ function btnLink(
 
 function wordmark(v: SitePageView, large = false): SafeHtml {
   return html`<a class="wordmark${large ? ' wordmark-lg' : ''}" href="${pagePath(v.locale, HOME)}">
-    <img class="wm-av" src="${AVATAR_SRC}" alt="" aria-hidden="true" width="32" height="32" />
     <span class="wm-name">${v.t('brand.name')}</span>
   </a>`;
 }

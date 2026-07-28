@@ -188,9 +188,7 @@ section.band{padding:120px 0 0}
 /* The main bar. */
 .site-header .hdr-row{display:flex;align-items:center;gap:26px;height:70px}
 .wm-name{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--text-bright)}
-.wm-av{transition:box-shadow var(--duration-base) var(--ease-out)}
-.wordmark:hover .wm-av{box-shadow:0 0 0 1.5px var(--cyan-400),0 0 18px rgba(141,225,236,.7)}
-
+.wordmark:hover 
 .hdr-nav{position:relative;display:flex;align-items:center;margin-left:auto}
 .nav-link{border:none;background:none;cursor:pointer;white-space:nowrap;
   font-family:var(--font-sans);font-size:11.5px;font-weight:600;letter-spacing:.11em;
@@ -276,87 +274,124 @@ section.band{padding:120px 0 0}
   .cn-menu .cn-menu-close{width:46px;height:46px}
 }
 
-/* ---- The fullscreen menu (CCB-S3-036 4, CCB-S3-037 2) ---------------------- */
-.cn-menu{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
-  visibility:hidden;opacity:0;pointer-events:none;
-  transition:visibility 0s linear 200ms,opacity 170ms ease}
-.cn-menu[data-open=true]{visibility:visible;opacity:1;pointer-events:auto;transition-delay:0s}
-.cn-menu-wash{position:absolute;inset:0;
+/* ---- The navigation panel: the admin's mega panel, COPIED (CCB-S3-038 1) -----
+   Rules lifted verbatim from assets/app.css with admin-mega- renamed. Five
+   admin tokens have no site equivalent and are aliased below with the admin's
+   EXACT values, so nothing drifts; --line and --line-strong were already
+   identical to the site's --border-hairline and --border-strong. */
+:root{
+  --mega-line:rgba(69,189,209,.12);
+  --mega-line-strong:rgba(69,189,209,.28);
+  --mega-accent-strong:#8fe1ec;
+  --mega-brand-strong:#fba9d6;
+  --mega-text:#e8edf4;
+}
+.cn-mega-shell{position:absolute;top:100%;right:0;left:0;z-index:70;
+  visibility:hidden;pointer-events:none;
+  border-top:1px solid rgba(232,56,159,.18);
+  border-bottom:1px solid var(--mega-line-strong);
   background:
-    radial-gradient(circle at 22% 4%,rgba(244,92,176,.15),transparent 30rem),
-    radial-gradient(circle at 82% 22%,rgba(141,225,236,.12),transparent 34rem),
-    rgba(5,10,18,.985);
+    radial-gradient(circle at 22% 0,rgba(232,56,159,.13),transparent 26rem),
+    radial-gradient(circle at 82% 18%,rgba(69,189,209,.11),transparent 30rem),
+    rgba(5,10,18,.975);
+  box-shadow:0 34px 74px rgba(0,0,0,.5);
+  opacity:0;transform:translateY(-12px);
+  transition:visibility 0s linear 190ms,opacity 150ms ease,
+    transform 190ms cubic-bezier(.2,.8,.2,1);
   backdrop-filter:blur(26px) saturate(145%)}
-.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:22px;
-  width:min(100%,1500px);margin:0 auto;padding:18px 34px 40px;height:100%;
-  overflow-y:auto;transform:translateY(-10px);
-  transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
-.cn-menu[data-open=true] .cn-menu-inner{transform:translateY(0)}
-.cn-menu-head{display:flex;align-items:center;justify-content:space-between;
-  padding-bottom:14px;border-bottom:1px solid var(--border)}
-.cn-menu-kicker{font-family:var(--font-mono);font-size:9.5px;font-weight:500;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent)}
-.cn-menu-close{display:inline-flex;align-items:center;justify-content:center;
-  width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
-  background:none;color:var(--text-muted);cursor:pointer}
-.cn-menu-close:hover{color:var(--text);border-color:var(--text-accent)}
-.cn-menu-sections{display:flex;flex-direction:column;gap:26px}
-/* One section at a time: blocks are hidden and the script reveals the one that
-   was clicked (CCB-S3-037 2). */
-.cn-menu-block[hidden]{display:none}
-.cn-menu-block{display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);
-  gap:34px;align-items:start}
-.cn-menu-intro{padding-right:26px;border-right:1px solid var(--border)}
-.cn-menu-heading{font-size:19px;font-weight:600;margin:8px 0 10px;color:var(--text-bright)}
-.cn-menu-desc{font-size:13.5px;line-height:1.65;color:var(--text-muted);margin:0}
-.cn-menu-entries{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));
-  gap:4px 22px;align-items:start}
-.cn-menu-entry{display:flex;align-items:flex-start;gap:11px;padding:9px 10px;
-  border-radius:9px;cursor:default}
-.cme-icon{display:inline-flex;flex:none;margin-top:2px;color:var(--text-accent);opacity:.85}
-.cme-text{display:flex;flex-direction:column;gap:2px;min-width:0}
-.cme-label{font-size:14px;font-weight:600;color:var(--text)}
-.cme-desc{font-size:12.5px;line-height:1.5;color:var(--text-muted)}
-@media (max-width:900px){
-  .cn-menu-block{grid-template-columns:1fr;gap:14px}
-  .cn-menu-intro{padding-right:0;border-right:0;border-bottom:1px solid var(--border);
-    padding-bottom:12px}
-  .cn-menu-inner{padding:14px 18px 32px;gap:18px}
+.cn-mega-shell[data-open='true']{visibility:visible;pointer-events:auto;opacity:1;
+  transform:translateY(0);transition-delay:0s}
+.cn-mega-panel[hidden]{display:none}
+.cn-mega-panel-inner{position:relative;display:grid;width:min(100%,1600px);margin:0 auto;
+  padding:28px 38px 32px;
+  grid-template-columns:minmax(220px,290px) minmax(0,1fr) auto;
+  align-items:start;gap:34px}
+.cn-mega-intro{padding-right:28px;border-right:1px solid var(--mega-line)}
+.cn-mega-kicker{color:var(--mega-brand-strong);font-family:var(--font-mono);font-size:9px;
+  font-weight:500;letter-spacing:.14em;text-transform:uppercase}
+.cn-mega-title{margin:7px 0 0;font-size:24px;line-height:1.1;color:var(--mega-text)}
+.cn-mega-description{margin:10px 0 0;color:var(--text-muted);font-size:13px;line-height:1.55}
+.cn-mega-overview-link{display:inline-flex;margin-top:16px;align-items:center;gap:7px;
+  color:var(--mega-accent-strong);font-size:12px;font-weight:700;text-decoration:none}
+.cn-mega-overview-link::after{content:'›';font-size:17px;line-height:1;
+  transition:transform 140ms ease}
+.cn-mega-overview-link:hover::after{transform:translateX(3px)}
+.cn-mega-groups{display:grid;min-width:0;grid-template-columns:repeat(4,minmax(150px,1fr));
+  gap:26px}
+.cn-mega-group-title{margin:0 0 9px;color:var(--text-faint);font-family:var(--font-mono);
+  font-size:9px;font-weight:500;letter-spacing:.11em;text-transform:uppercase}
+.cn-mega-group-links{display:grid;gap:5px}
+.cn-mega-link{display:grid;min-height:52px;grid-template-columns:30px minmax(0,1fr);
+  align-items:center;gap:10px;border:1px solid transparent;border-radius:11px;padding:7px 9px;
+  color:var(--text-muted);
+  transition:border-color 140ms ease,background 140ms ease,color 140ms ease,transform 140ms ease}
+.cn-mega-link-icon{display:grid;width:30px;height:30px;place-items:center;
+  border:1px solid var(--mega-line);border-radius:9px;background:rgba(5,10,18,.56);
+  color:var(--mega-accent-strong)}
+.cn-mega-link-icon svg{width:15px;height:15px}
+.cn-mega-link-copy{min-width:0}
+.cn-mega-link-label{display:block;color:inherit;font-size:12px;font-weight:700}
+.cn-mega-link-description{display:block;margin-top:2px;overflow:hidden;color:var(--text-faint);
+  font-size:10px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.cn-mega-close{display:grid;width:34px;height:34px;place-items:center;cursor:pointer;
+  border:1px solid var(--mega-line);border-radius:10px;background:rgba(5,10,18,.52);
+  color:var(--text-muted);font:inherit;font-size:20px;line-height:1}
+.cn-mega-close:hover{border-color:rgba(232,56,159,.34);color:var(--mega-brand-strong)}
+@media (max-width:1100px){
+  .cn-mega-panel-inner{padding-right:26px;padding-left:26px;
+    grid-template-columns:minmax(190px,240px) minmax(0,1fr) auto;gap:24px}
+  .cn-mega-groups{grid-template-columns:repeat(2,minmax(170px,1fr));gap:20px}
 }
+/* Below the mobile breakpoint the panel is the whole navigation, so it stacks and
+   scrolls rather than sitting as a strip under a header that has no nav in it. */
+@media (max-width:900px){
+  .cn-mega-shell{position:fixed;top:60px;bottom:0;overflow-y:auto}
+  .cn-mega-panel-inner{grid-template-columns:1fr;gap:18px;padding:18px 18px 28px}
+  .cn-mega-intro{padding-right:0;border-right:0;border-bottom:1px solid var(--mega-line);
+    padding-bottom:14px}
+  .cn-mega-groups{grid-template-columns:1fr}
+  .cn-mega-link{min-height:60px}
+  .cn-mega-link-label{font-size:14px}
+  .cn-mega-link-description{font-size:11.5px;white-space:normal}
+  .cn-mega-close{width:44px;height:44px}
+}
+@media (prefers-reduced-motion:reduce){
+  .cn-mega-shell,.cn-mega-link,.cn-mega-overview-link::after{transition:none}
+}
+.cn-menu-demo{display:none}
+@media (max-width:900px){.cn-menu-demo{display:block;margin-top:18px}}
 
-/* ---- Hero: the feature row and the rotating headline (§2, §3) --------------- */
-/* ONE LINE, ALWAYS. nowrap on the row and on every item, so it cannot wrap by
-   accident when the copy changes later; it is not relying on the current text
-   happening to fit. Below the breakpoint it stacks deliberately. */
-.trust{display:flex;flex-wrap:nowrap;align-items:center;gap:20px;white-space:nowrap}
-.trust-item{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:0 0 auto;
-  opacity:0;transform:translateY(6px);
+/* ---- Hero (CCB-S3-038 2) ----------------------------------------------------
+   ONE COLUMN, ONE MEASURE, ONE LEFT EDGE. The headline, the paragraph, the button
+   row and the feature row all start on the same vertical line. Nothing in this
+   column is centred; the feature row used to be, so it lined up with nothing. */
+.hero-col{max-width:560px}
+.hero-col > *{text-align:left;margin-left:0}
+.hero-feats{display:flex;flex-wrap:nowrap;justify-content:flex-start;gap:20px}
+.hero-feats > *{flex:0 0 auto}
+.trust-item{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+  position:relative;opacity:0;transform:translateY(6px);
   animation:trustIn .5s cubic-bezier(.2,.8,.2,1) forwards}
-.trust-item[data-i="0"]{animation-delay:.62s}
-.trust-item[data-i="1"]{animation-delay:.72s}
-.trust-item[data-i="2"]{animation-delay:.82s}
-.trust-item[data-i="3"]{animation-delay:.92s}
 @keyframes trustIn{to{opacity:1;transform:translateY(0)}}
-/* A slow, very restrained shimmer. This is a supporting line, not the headline. */
-.trust-item::after{content:"";position:absolute;inset:0;pointer-events:none}
-.trust-item{position:relative;overflow:hidden}
-.trust-item::before{content:"";position:absolute;top:0;bottom:0;width:38%;
-  left:-45%;pointer-events:none;
-  background:linear-gradient(90deg,transparent,rgba(141,225,236,.16),transparent);
-  animation:trustShimmer 9s ease-in-out infinite;animation-delay:2.4s}
-@keyframes trustShimmer{0%,72%{left:-45%}88%,100%{left:115%}}
+/* Staggered, because simultaneous reads as a rendering fault. */
+.hero-feats > *:nth-child(1){animation-delay:0ms}
+.hero-feats > *:nth-child(2){animation-delay:110ms}
+.hero-feats > *:nth-child(3){animation-delay:220ms}
+.hero-feats > *:nth-child(4){animation-delay:330ms}
 @media (max-width:900px){
-  .trust{flex-wrap:wrap;white-space:normal;gap:12px 18px}
+  .hero-feats{flex-wrap:wrap;gap:12px 18px}
 }
 
-/* The rotator reserves its width by stacking every phrase and letting the widest
-   set the box, so the layout cannot shift as phrases change. */
-.hline.hrot{position:relative;display:grid;justify-items:start}
-.hrot-phrase{grid-area:1/1;opacity:0;visibility:hidden}
-.hrot-phrase.on{opacity:1;visibility:visible}
-/* The header controls' glitch: hard steps, a brief cyan/magenta tear, no soft
-   crossfade, so the hero speaks the same interaction language. */
-.hrot-phrase.glitch{animation:heroGlitch 340ms steps(1,end) both}
+/* THE ROTATOR RESERVES HEIGHT, NEVER WIDTH. Every phrase occupies the same grid
+   cell, so the row sizes to the tallest and nothing shifts vertically; the
+   column's max-width caps the line, so nothing overruns horizontally. No explicit
+   width is set anywhere on the rotator, which is what made the old version leave
+   short phrases hanging past the paragraph. */
+.hero-rot{display:grid}
+.hero-rot > .ph{grid-area:1 / 1;opacity:0}
+.hero-rot > .ph[data-on]{opacity:1}
+/* The header controls' glitch: hard steps, a brief cyan and magenta tear. */
+.hero-rot > .ph.glitch{animation:heroGlitch 340ms steps(1,end) both}
 @keyframes heroGlitch{
   0%{transform:translate3d(0,0,0);clip-path:inset(0 0 0 0);
      text-shadow:-2px 0 rgba(244,92,176,.9),2px 0 rgba(141,225,236,.9)}
@@ -369,8 +404,23 @@ section.band{padding:120px 0 0}
 }
 @media (prefers-reduced-motion:reduce){
   .trust-item{opacity:1;transform:none;animation:none}
-  .trust-item::before{animation:none;display:none}
-  .hrot-phrase.glitch{animation:none}
+  .hero-rot > .ph.glitch{animation:none}
+}
+
+/* The two chips over the portrait: same size, same treatment, and offsets measured
+   from the portrait's edge rather than left where they fell (CCB-S3-038 2d). */
+.hero-stage{position:relative}
+.pchip{position:absolute;display:inline-flex;align-items:center;gap:7px;
+  height:30px;padding:0 13px;border-radius:999px;
+  font-size:11.5px;font-weight:600;white-space:nowrap;
+  border:1px solid var(--border-strong);background:rgba(5,10,18,.86);
+  color:var(--text-bright);backdrop-filter:blur(8px)}
+.pchip .d{width:6px;height:6px;border-radius:50%;background:var(--cyan-400);flex:none}
+.pchip.c1{top:9%;right:-4%}
+.pchip.c2{bottom:9%;left:-4%}
+@media (max-width:900px){
+  .pchip.c1{top:4%;right:2%}
+  .pchip.c2{bottom:4%;left:2%}
 }
 
 /* ---- Breadcrumbs and previous/next ---------------------------------------- */
@@ -462,7 +512,6 @@ footer a:hover{color:var(--text-accent);text-decoration:none}
 .cn-btn-primary:hover:not(:disabled){background:linear-gradient(180deg,var(--magenta-300),var(--magenta-400))!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.4),var(--glow-neon)!important}
 .cn-btn-secondary{background:rgba(69,189,209,.1)!important;border-color:rgba(69,189,209,.45)!important;color:var(--cyan-200)!important}
 .cn-btn-secondary:hover:not(:disabled){background:rgba(69,189,209,.16)!important;border-color:var(--cyan-400)!important;color:#EAFBFF!important}
-.wm-av{width:32px;height:32px;border-radius:50%;object-fit:cover;flex:none;margin-right:10px;box-shadow:0 0 0 1.5px var(--magenta-500),0 0 14px rgba(232,56,159,.55)}
 .wordmark{display:inline-flex;align-items:center;text-decoration:none}
 .wordmark:hover{text-decoration:none}
 .hero-cine{display:grid;grid-template-columns:1.15fr .85fr;gap:44px;align-items:center;text-align:left;padding:72px 0 84px}
@@ -659,8 +708,7 @@ const NO_INLINE_CSS = `
 .mm-controls{display:flex;gap:10px;align-items:center;margin-top:14px}
 .wm-name{font-weight:700;font-size:20px;letter-spacing:-.03em;color:var(--text-bright)}
 .wordmark-lg .wm-name{font-size:22px}
-.wordmark-lg .wm-av{width:34px;height:34px}
-.page-hero{padding:80px 24px 64px;max-width:900px;position:relative}
+.wordmark-lg .page-hero{padding:80px 24px 64px;max-width:900px;position:relative}
 .hero-badge{margin-bottom:16px}
 .eyebrow-neon{font-size:12px;font-weight:700;letter-spacing:var(--tracking-caps);text-transform:uppercase;color:var(--text-neon);margin-bottom:14px}
 .page-h1{font-size:var(--size-display);margin:0;letter-spacing:-.025em;line-height:1.06}
@@ -794,8 +842,7 @@ section.pt64{padding-top:64px}
   .fcol::before{display:none}
 }
 /* Bigger brand portrait in the footer */
-.wordmark-lg .wm-av{width:72px;height:72px;margin-right:16px;box-shadow:0 0 0 2px var(--magenta-500),0 0 22px rgba(232,56,159,.6)}
-.wordmark-lg .wm-name{font-size:26px}
+.wordmark-lg .wordmark-lg .wm-name{font-size:26px}
 
 /* ---- Sections below the hero (CCB-S3-037 5) ---------------------------------
    Every section is a panel carrying the SAME 9px clipped corner as the Demo
