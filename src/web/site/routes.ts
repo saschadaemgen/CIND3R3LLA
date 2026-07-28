@@ -131,9 +131,15 @@ export function registerSiteRoutes(
     return renderSitePage(view);
   };
 
-  // Root → negotiated language home.
+  // Root goes to the one language there is (CCB-S3-037 1).
+  //
+  // `/en` is KEPT as the path rather than stripped. Dropping the prefix would mean
+  // redirecting every URL already published in the sitemap, and the nginx vhost
+  // routes the site on `^/[a-z]{2}(-[a-z]{2})?(/|$)`, so it would need changing in
+  // the same breath. Negotiation still runs when more than one locale is loaded,
+  // so the machinery is intact; with one it resolves to that one and cannot loop.
   app.get('/', (req, reply) => {
-    const locale = negotiateLocale(req, locales);
+    const locale = locales.codes.length > 1 ? negotiateLocale(req, locales) : locales.default;
     reply.header('cache-control', 'no-store');
     return reply.redirect(`/${locale}`, 302);
   });

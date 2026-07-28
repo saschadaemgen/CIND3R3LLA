@@ -161,49 +161,48 @@ section.band{padding:120px 0 0}
 .nav-link:hover{color:var(--text-bright);background:var(--surface-hover);text-decoration:none}
 .nav-link.active{color:var(--text-accent)}
 .doc{max-width:760px}
+.legal-binding{margin-top:36px;padding-top:28px;border-top:1px solid var(--border)}
 .legal-binding-note{color:var(--text-muted);font-size:14px;border-left:2px solid var(--border);padding-left:12px;margin:0 0 20px}
 /* ---- Navigation with submenus (CCB-S3-030) ---------------------------------
    <details> gives click and keyboard for free. Hover-to-open is added ONLY on
    pointer-fine devices, so a touch device never gets a menu that springs open
    while you scroll past it. No script, so the CSP is untouched. */
-/* ---- The two-tier header (CCB-S3-036 3) -------------------------------------
-   Modelled on the operator's SimpleGo site: a thin utility rail over a taller main
-   bar. Moving Login and the language switcher into the rail is the point, because
-   it leaves exactly one control in the main bar. */
+/* ---- The two-tier header (CCB-S3-036 3, CCB-S3-037 2) ----------------------- */
 .site-header{padding:0}
 .rail{background:rgba(3,7,14,.92);border-bottom:1px solid rgba(141,225,236,.14)}
 .rail-row{display:flex;align-items:center;justify-content:space-between;height:34px;gap:18px}
-.rail-side{display:flex;align-items:center;gap:16px;min-width:0}
+.rail-side{display:flex;align-items:center;min-width:0}
 .rail-right{margin-left:auto}
 .rail-link{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;line-height:1;
-  color:var(--text-muted);text-decoration:none;white-space:nowrap;
+  color:var(--text-muted);text-decoration:none;white-space:nowrap;padding:0 13px;
   transition:color var(--duration-fast) var(--ease)}
 .rail-link:hover{color:var(--cyan-400);text-decoration:none}
 .rail-link svg{flex:none;opacity:.8}
 .rail-link:hover svg{opacity:1}
-.rail-login{font-weight:600}
-@media (max-width:820px){
-  .rail-side .rail-link span{display:none}
-  .rail-row{gap:10px}
-}
+/* Hairline separators, the height of the TEXT rather than of the bar. This is what
+   makes a rail read as a rail instead of as floating words (CCB-S3-037 2). */
+.rail-side .rail-link + .rail-link{border-left:1px solid rgba(141,225,236,.16)}
+.rail-side .rail-link:first-child{padding-left:0}
+.rail-right .rail-link:last-child{padding-right:0}
 
-/* The main bar. One control, four nav items, and the mark. */
-
+/* The main bar. */
+.site-header .hdr-row{display:flex;align-items:center;gap:26px;height:70px}
 .wm-name{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--text-bright)}
-.wordmark:hover .wm-av{box-shadow:0 0 0 1.5px var(--cyan-400),0 0 18px rgba(141,225,236,.7)}
 .wm-av{transition:box-shadow var(--duration-base) var(--ease-out)}
+.wordmark:hover .wm-av{box-shadow:0 0 0 1.5px var(--cyan-400),0 0 18px rgba(141,225,236,.7)}
 
-/* Nav: uppercase, letter-spaced, muted, and NOTHING under an item except the one
-   travelling indicator. The old per-item ::after underline is gone. */
-.hdr-nav{position:relative;display:flex;align-items:center;gap:6px;margin-left:auto}
+.hdr-nav{position:relative;display:flex;align-items:center;margin-left:auto}
 .nav-link{border:none;background:none;cursor:pointer;white-space:nowrap;
   font-family:var(--font-sans);font-size:11.5px;font-weight:600;letter-spacing:.11em;
-  text-transform:uppercase;color:var(--text-muted);padding:8px 10px;text-decoration:none;
+  text-transform:uppercase;color:var(--text-muted);padding:8px 15px;text-decoration:none;
   display:inline-flex;align-items:center;
   transition:color var(--duration-fast) var(--ease)}
 .nav-link:hover{color:var(--text-bright);background:none}
 .nav-link.active{color:var(--text-accent)}
-.nav-indicator{position:absolute;bottom:-6px;left:0;width:0;height:3px;pointer-events:none;
+.hdr-nav .nav-link + .nav-link{border-left:1px solid rgba(141,225,236,.16)}
+/* Raised so it sits close under the label rather than near the bar's bottom edge
+   (CCB-S3-037 2): was -6px, now -1px, a 5px lift. */
+.nav-indicator{position:absolute;bottom:-1px;left:0;width:0;height:3px;pointer-events:none;
   border-radius:999px;opacity:0;
   background:linear-gradient(90deg,rgba(244,92,176,0) 0%,rgba(244,92,176,.92) 18%,
     rgba(141,225,236,.92) 82%,rgba(141,225,236,0) 100%);
@@ -211,82 +210,73 @@ section.band{padding:120px 0 0}
   transition:transform 270ms cubic-bezier(.2,.8,.2,1),width 270ms cubic-bezier(.2,.8,.2,1),
     opacity 140ms ease;will-change:transform,width}
 .nav-indicator[data-ready=true]{opacity:1}
-.hdr-controls{display:flex;align-items:center;gap:12px}
-/* Last-wins over the older 64px rule further down the sheet. */
-.site-header .hdr-row{height:70px;gap:26px}
+.hdr-controls{display:flex;align-items:center;gap:12px;margin-left:8px}
 
-/* ---- The Demo control (CCB-S3-036 3c) ---------------------------------------
-   Clipped top-left and bottom-right, outlined not filled, and it does not move on
-   hover. Everything that happens happens INSIDE the button. */
-.dm{position:relative;display:inline-flex;align-items:center;justify-content:center;
-  height:38px;padding:0 20px;overflow:hidden;isolation:isolate;
-  font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
-  color:var(--cyan-400);text-decoration:none;cursor:pointer;
-  background:rgba(5,10,18,.9);
-  border:1.2px solid rgba(141,225,236,.45);
+/* ---- The Demo control (CCB-S3-037 3) ----------------------------------------
+   The operator's approved CSS, adapted to the site's class names. The outer
+   element carries the clip and a 1.2px pad that acts as the border; .in carries
+   the same clip, the dark interior and the overflow that keeps the scanline in.
+   Nothing transforms. */
+.dm{position:relative;height:34px;cursor:pointer;display:inline-block;text-decoration:none;
   clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
-  transition:border-color var(--duration-base) var(--ease-out),
-    background var(--duration-base) var(--ease-out),color var(--duration-base) var(--ease-out)}
-.dm:hover{border-color:var(--cyan-400);background:rgba(15,46,58,.92);color:#dffaff;
-  text-decoration:none}
-.dm-soon{cursor:default}
-.dm-label{position:relative;z-index:2}
-
-/* The raster: one-pixel lines at three-pixel spacing, very low opacity. */
-.dm-raster{position:absolute;inset:0;z-index:1;opacity:0;pointer-events:none;
-  background:repeating-linear-gradient(180deg,rgba(141,225,236,.5) 0 1px,transparent 1px 3px);
-  transition:opacity 220ms ease}
-.dm:hover .dm-raster{opacity:.13}
-
-/* One scanline, once, top to bottom. */
-.dm-scan{position:absolute;left:0;right:0;top:-30%;height:26%;z-index:1;opacity:0;
-  pointer-events:none;
-  background:linear-gradient(180deg,transparent,rgba(141,225,236,.42),transparent)}
-.dm:hover .dm-scan{animation:dmScan 620ms cubic-bezier(.3,.7,.4,1) 1;opacity:1}
-@keyframes dmScan{from{top:-30%}to{top:110%}}
-
-/* The label tears into cyan and magenta in hard steps, sliced into bands, then
-   resolves. steps() on purpose: no crossfade anywhere. */
-.dm:hover .dm-label{animation:dmGlitch 300ms steps(1,end) 1}
-.dm-label::before,.dm-label::after{content:attr(data-text);position:absolute;left:0;top:0;
-  width:100%;opacity:0;pointer-events:none}
-.dm:hover .dm-label::before{color:#f45cb0;animation:dmSliceA 300ms steps(1,end) 1}
-.dm:hover .dm-label::after{color:#8de1ec;animation:dmSliceB 300ms steps(1,end) 1}
+  padding:1.2px;background:rgba(255,61,166,.34);
+  transition:background 200ms cubic-bezier(.2,0,0,1)}
+.dm .in{position:relative;height:100%;overflow:hidden;
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  background:#08060F;color:#F58FCD;
+  display:flex;align-items:center;gap:6px;padding:0 15px;
+  font-size:11.5px;font-weight:500;letter-spacing:.1em;
+  transition:color 190ms cubic-bezier(.2,0,0,1),background 200ms cubic-bezier(.2,0,0,1)}
+.dm:hover{background:#FF3DA6}
+.dm:hover .in{color:#fff;background:#160410}
+.dm.dm-soon{cursor:default}
+.dm .in::after{content:'';position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:repeating-linear-gradient(0deg,rgba(255,61,166,.1) 0 1px,transparent 1px 3px);
+  transition:opacity 220ms cubic-bezier(.2,0,0,1)}
+.dm:hover .in::after{opacity:1}
+.dm .sl{position:absolute;left:0;right:0;height:1.5px;background:#FF3DA6;opacity:0;
+  pointer-events:none}
+.dm:hover .sl{animation:dmScan 340ms cubic-bezier(.2,0,0,1) 1}
+@keyframes dmScan{0%{top:0;opacity:0}12%{opacity:.85}88%{opacity:.85}100%{top:100%;opacity:0}}
+.dm .t{position:relative;display:inline-block}
+.dm:hover .t{animation:dmGlitch 300ms steps(1) 1}
 @keyframes dmGlitch{
-  0%{transform:translate3d(0,0,0)}
-  20%{transform:translate3d(-2px,0,0)}
-  40%{transform:translate3d(2px,0,0)}
-  60%{transform:translate3d(-1px,0,0)}
-  80%{transform:translate3d(1px,0,0)}
-  100%{transform:translate3d(0,0,0)}
-}
-@keyframes dmSliceA{
-  0%{opacity:1;transform:translate3d(-2px,0,0);clip-path:inset(0 0 62% 0)}
-  30%{opacity:1;transform:translate3d(2px,0,0);clip-path:inset(48% 0 22% 0)}
-  60%{opacity:1;transform:translate3d(-1px,0,0);clip-path:inset(74% 0 0 0)}
-  80%,100%{opacity:0}
-}
-@keyframes dmSliceB{
-  0%{opacity:1;transform:translate3d(2px,0,0);clip-path:inset(28% 0 44% 0)}
-  30%{opacity:1;transform:translate3d(-2px,0,0);clip-path:inset(0 0 70% 0)}
-  60%{opacity:1;transform:translate3d(1px,0,0);clip-path:inset(60% 0 10% 0)}
-  80%,100%{opacity:0}
-}
+  0%{transform:translate(0);text-shadow:none}
+  15%{transform:translate(-2px,1px);text-shadow:-2px 0 #3DE0F0,2px 0 #FF3DA6;clip-path:inset(20% 0 45% 0)}
+  30%{transform:translate(2px,-1px);text-shadow:2px 0 #3DE0F0,-2px 0 #FF3DA6;clip-path:inset(55% 0 15% 0)}
+  45%{transform:translate(-1px,0);text-shadow:-1px 0 #3DE0F0,1px 0 #FF3DA6;clip-path:inset(10% 0 70% 0)}
+  60%{transform:translate(1px,1px);text-shadow:none;clip-path:inset(0)}
+  100%{transform:translate(0);text-shadow:none;clip-path:inset(0)}}
 @media (prefers-reduced-motion:reduce){
-  .dm:hover .dm-label,.dm:hover .dm-label::before,.dm:hover .dm-label::after,
-  .dm:hover .dm-scan{animation:none}
-  .dm-scan{display:none}
-  .dm:hover .dm-raster{opacity:0}
+  .dm:hover .t,.dm:hover .sl{animation:none}
+  .dm .in::after{transition:none}
 }
 
-/* ---- The fullscreen menu (CCB-S3-036 4) -------------------------------------
-   The admin console's THREE-COLUMN shape: an intro column with a kicker, heading
-   and description, then entry columns where each entry carries an icon, a label
-   and a one-line description. Colours and easing alone were not the port.
+/* ---- Mobile header, built deliberately (CCB-S3-037 4) -----------------------
+   Not the desktop layout reflowed. Under 900px the main bar is the logo and the
+   menu trigger, nothing else; the rail is hidden rather than allowed to wrap; and
+   the Demo control moves into the menu at full size. */
+.burger{display:none}
+.cn-menu-demo{display:none}
+@media (max-width:900px){
+  .rail{display:none}
+  .nav-desktop{display:none}
+  .burger{display:inline-flex}
+  .site-header .hdr-row{height:60px;gap:12px}
+  /* Raised specificity: the base .hdr-iconbtn and .cn-menu-close rules sit LATER
+     in the sheet and would otherwise win on source order, leaving 38px and 40px
+     targets on a phone. */
+  .site-header .hdr-iconbtn{width:44px;height:44px;margin-left:auto}
+  .cn-menu-demo{display:block}
+  .cn-menu-demo .dm{height:46px}
+  .cn-menu-demo .dm .in{font-size:13px;padding:0 22px;justify-content:center}
+  /* Real touch targets, reachable one-handed. */
+  .cn-menu-entry{padding:13px 10px}
+  .cme-label{font-size:15.5px}
+  .cn-menu .cn-menu-close{width:46px;height:46px}
+}
 
-   It is a sibling of the header, not a child: the header has a backdrop-filter,
-   which makes it the containing block for fixed-position descendants, so the menu
-   was resolving inset:0 against a 64px box. */
+/* ---- The fullscreen menu (CCB-S3-036 4, CCB-S3-037 2) ---------------------- */
 .cn-menu{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
   visibility:hidden;opacity:0;pointer-events:none;
   transition:visibility 0s linear 200ms,opacity 170ms ease}
@@ -297,8 +287,8 @@ section.band{padding:120px 0 0}
     radial-gradient(circle at 82% 22%,rgba(141,225,236,.12),transparent 34rem),
     rgba(5,10,18,.985);
   backdrop-filter:blur(26px) saturate(145%)}
-.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:26px;
-  width:min(100%,1500px);margin:0 auto;padding:20px 34px 46px;height:100%;
+.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:22px;
+  width:min(100%,1500px);margin:0 auto;padding:18px 34px 40px;height:100%;
   overflow-y:auto;transform:translateY(-10px);
   transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
 .cn-menu[data-open=true] .cn-menu-inner{transform:translateY(0)}
@@ -310,10 +300,12 @@ section.band{padding:120px 0 0}
   width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
   background:none;color:var(--text-muted);cursor:pointer}
 .cn-menu-close:hover{color:var(--text);border-color:var(--text-accent)}
-.cn-menu-sections{display:flex;flex-direction:column;gap:30px}
+.cn-menu-sections{display:flex;flex-direction:column;gap:26px}
+/* One section at a time: blocks are hidden and the script reveals the one that
+   was clicked (CCB-S3-037 2). */
+.cn-menu-block[hidden]{display:none}
 .cn-menu-block{display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);
-  gap:34px;align-items:start;padding-bottom:26px;border-bottom:1px solid var(--border)}
-.cn-menu-block:last-child{border-bottom:0;padding-bottom:0}
+  gap:34px;align-items:start}
 .cn-menu-intro{padding-right:26px;border-right:1px solid var(--border)}
 .cn-menu-heading{font-size:19px;font-weight:600;margin:8px 0 10px;color:var(--text-bright)}
 .cn-menu-desc{font-size:13.5px;line-height:1.65;color:var(--text-muted);margin:0}
@@ -326,10 +318,10 @@ section.band{padding:120px 0 0}
 .cme-label{font-size:14px;font-weight:600;color:var(--text)}
 .cme-desc{font-size:12.5px;line-height:1.5;color:var(--text-muted)}
 @media (max-width:900px){
-  .cn-menu-block{grid-template-columns:1fr;gap:16px}
+  .cn-menu-block{grid-template-columns:1fr;gap:14px}
   .cn-menu-intro{padding-right:0;border-right:0;border-bottom:1px solid var(--border);
-    padding-bottom:14px}
-  .cn-menu-inner{padding:16px 20px 36px}
+    padding-bottom:12px}
+  .cn-menu-inner{padding:14px 18px 32px;gap:18px}
 }
 
 /* ---- Hero: the feature row and the rotating headline (§2, §3) --------------- */
@@ -805,62 +797,46 @@ section.pt64{padding-top:64px}
 .wordmark-lg .wm-av{width:72px;height:72px;margin-right:16px;box-shadow:0 0 0 2px var(--magenta-500),0 0 22px rgba(232,56,159,.6)}
 .wordmark-lg .wm-name{font-size:26px}
 
-/* ---- Sections below the hero (CCB-S3-035 §5) --------------------------------
-   Every section gets a deliberate layout instead of paragraphs dropped on the
-   starfield: one alignment held throughout (left), a panel with the clipped
-   corner from the header controls so the page reads as one system, a controlled
-   measure, and a consistent eyebrow / heading / body relationship. */
+/* ---- Sections below the hero (CCB-S3-037 5) ---------------------------------
+   Every section is a panel carrying the SAME 9px clipped corner as the Demo
+   control, because that shape is the site's signature and repeating it is what
+   makes the page read as one system. One alignment throughout (left), a capped
+   measure, and a tightened rhythm: the gaps used to be larger than the content. */
+:root{--band-gap:52px;--measure:68ch}
 .band{padding-block:0;margin-block:0}
-.band + .band{margin-top:var(--band-gap,88px)}
-:root{--band-gap:88px;--measure:68ch}
+.band + .band{margin-top:var(--band-gap)}
+.band > .cn-card,.band > .sec-panel,.band.wrap{position:relative}
+
+/* The panel. Same clip as .dm, drawn with a padded wrapper so the 1px edge shows
+   through the cut corners exactly the way the Demo control's does. */
+.sec-panel{position:relative;padding:1px;
+  background:linear-gradient(180deg,rgba(141,225,236,.22),rgba(244,92,176,.14));
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px)}
+.sec-panel > .sec-panel-in{position:relative;
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  background:linear-gradient(180deg,rgba(11,18,32,.86),rgba(8,13,24,.72));
+  padding:30px 32px}
+@media (max-width:640px){.sec-panel > .sec-panel-in{padding:22px 18px}}
+
+/* One relationship between eyebrow, heading and body, everywhere. Left aligned:
+   mixing left and centre in adjacent sections is what made it look accidental. */
 .cn-sechead{text-align:left;max-width:var(--measure)}
 .cn-sechead-center{text-align:left}
-.cn-sechead-eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;
-  letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent);
-  margin-bottom:12px;display:flex;align-items:center;gap:9px}
-.cn-sechead-eyebrow::before{content:"";width:22px;height:1px;background:var(--text-accent);
+.cn-sechead-eyebrow{display:flex;align-items:center;gap:9px;margin-bottom:10px;
+  font-family:var(--font-mono);font-size:10px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--text-accent)}
+.cn-sechead-eyebrow::before{content:"";width:20px;height:1px;background:var(--text-accent);
   opacity:.65;flex:0 0 auto}
-.cn-sechead-title{font-size:clamp(24px,3vw,33px);font-weight:600;line-height:1.2;
-  margin:0 0 14px;color:var(--text)}
-.cn-sechead-lede{font-size:16px;line-height:1.72;color:var(--text-muted);margin:0;
+.cn-sechead-title{font-size:clamp(23px,2.7vw,30px);font-weight:600;line-height:1.22;
+  margin:0 0 12px;color:var(--text)}
+.cn-sechead-lede{font-size:15.5px;line-height:1.7;color:var(--text-muted);margin:0;
   max-width:var(--measure)}
-
-/* The panel: the clipped corner from the header controls, so a section has an
-   edge to sit against rather than floating on the starfield. */
-.sec-panel{position:relative;padding:34px 36px;border:1px solid var(--border);
-  background:linear-gradient(180deg,rgba(11,18,32,.78),rgba(11,18,32,.55));
-  clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
-.sec-panel::after{content:"";position:absolute;top:0;right:0;width:18px;height:18px;
-  background:linear-gradient(225deg,var(--text-accent),transparent);opacity:.55;
-  pointer-events:none}
-@media (max-width:640px){.sec-panel{padding:24px 20px}}
-
-/* A two-column arrangement so a text section has something to look at beside it. */
-.sec-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.85fr);
-  gap:38px;align-items:start}
-@media (max-width:900px){.sec-split{grid-template-columns:1fr;gap:26px}}
-
-/* The architecture figure: a bordered block in the same shape language. */
-.sec-figure{position:relative;padding:22px 24px;border:1px solid var(--border);
-  background:rgba(5,10,18,.6);
-  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
-.sec-figure-cap{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--text-accent);margin:0 0 14px}
-.arch-rows{display:flex;flex-direction:column;gap:9px}
-.arch-row{display:flex;align-items:center;gap:11px;padding:10px 12px;
-  border:1px solid var(--border);border-radius:9px;background:rgba(11,18,32,.62);
-  font-size:13.5px;color:var(--text-muted)}
-.arch-row strong{color:var(--text);font-weight:600}
-.arch-flow{display:flex;justify-content:center;color:var(--text-accent);opacity:.55;
-  font-size:12px;line-height:1}
-
-/* Capability tiles keep the measure and gain the same edge treatment. */
 .cn-ftile-body{max-width:52ch}
-.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:18px}
-.list-col{display:flex;flex-direction:column;gap:11px;max-width:var(--measure)}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));gap:16px}
+.list-col{display:flex;flex-direction:column;gap:10px;max-width:var(--measure)}
 .icon-line{display:flex;align-items:flex-start;gap:11px;font-size:15px;line-height:1.6;
   color:var(--text-muted)}
-
+.mt48{margin-top:26px}.mt40{margin-top:24px}.mt36{margin-top:22px}.mt22{margin-top:16px}
 `;
 
 /** The complete site stylesheet (emitted once per page under the CSP nonce). */

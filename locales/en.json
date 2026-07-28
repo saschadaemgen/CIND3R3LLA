@@ -10,7 +10,6 @@
   "brand.name": "CIND3R3LLA",
   "a11y.skip": "Skip to content",
   "a11y.menu": "Menu",
-  "lang.label": "Language",
   "nav.home": "Home",
   "nav.pro": "Pro",
   "nav.security": "Security",
@@ -243,6 +242,5 @@
   "nav.menu.close": "Close menu",
   "nav.menu.kicker": "The platform",
   "nav.rail.community": "Community",
-  "nav.rail.simplex": "SimpleX group",
-  "nav.rail.roadmap": "Roadmap"
+  "nav.rail.simplex": "SimpleX group"
 }

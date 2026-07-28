@@ -43,7 +43,7 @@ import {
   sectionOf,
   type SitePage,
 } from './pages.js';
-import { CONTACT_EMAIL, GITHUB_URL, type SiteSeoHead } from './seo.js';
+import { CONTACT_EMAIL, GITHUB_URL, SIMPLEX_GROUP_URL, type SiteSeoHead } from './seo.js';
 import {
   contentFor,
   isFallbackLocale,
@@ -230,11 +230,16 @@ function inSection(v: SitePageView, sectionKey: string): boolean {
  */
 
 function navLinks(v: SitePageView): SafeHtml {
-  // FOUR items, each a real destination (CCB-S3-036 2). Open Source left the nav:
-  // it is an attribute of the product, not a place you go, and GitHub sits in the
-  // rail above. Its pages keep their URLs; Roadmap is in the rail and Contributing
-  // in the footer.
-  return html`${NAV_SECTIONS.map((sec) => {
+  // FIVE items: Home plus the four sections (CCB-S3-037 2). The earlier reading of
+  // "four items" dropped Home; the intent was four SECTIONS.
+  return html`<a
+      class="nav-link${v.page.key === HOME.key ? ' active' : ''}"
+      href="${pagePath(v.locale, HOME)}"
+      data-nav-item
+      ${v.page.key === HOME.key ? raw('aria-current="page"') : ''}
+      >${v.t('nav.home')}</a
+    >
+    ${NAV_SECTIONS.map((sec) => {
       const current = inSection(v, sec.page.key);
       return html`<button
         type="button"
@@ -251,25 +256,24 @@ function navLinks(v: SitePageView): SafeHtml {
 }
 
 /**
- * The utility rail: the thin tier above the main bar (CCB-S3-036 3a).
+ * The utility rail (CCB-S3-037 2).
  *
- * Everything secondary lives here, which is the point of the split: moving Login
- * and the language switcher up clears the main bar so the only control left in it
- * is the Demo. Small, muted, an icon each, cyan on hover, and nothing else.
+ * GitHub and Docs on the left, Community, the SimpleX group and Login on the
+ * right. Roadmap is gone from the rail and the language switcher with it, because
+ * the site ships one language now. Hairline separators between items are what make
+ * this read as a rail rather than as floating words: they run the height of the
+ * text, not of the bar.
  */
 function utilityRail(v: SitePageView): SafeHtml {
   const l = v.locale;
   const left: Array<[string, string, string, boolean]> = [
     ['github', v.t('footer.github'), GITHUB_URL, true],
     ['book-open', v.t('nav.docs'), `/${l}/docs`, false],
-    // Status and roadmap keeps its URL; only its route into the site changed.
-    ['map', v.t('nav.rail.roadmap'), `/${l}/open-source/status`, false],
   ];
   const right: Array<[string, string, string, boolean]> = [
     ['users', v.t('nav.rail.community'), `${GITHUB_URL}/discussions`, true],
-    // No group invite link is configured, so this points at the member guide,
-    // which is where joining is explained. A rail entry must not lead nowhere.
-    ['message-circle', v.t('nav.rail.simplex'), `/${l}/docs/member-guide`, false],
+    ['message-circle', v.t('nav.rail.simplex'), SIMPLEX_GROUP_URL, true],
+    ['key-round', v.t('nav.login'), '/login', false],
   ];
   const item = ([icon, label, href, ext]: [string, string, string, boolean]): SafeHtml =>
     html`<a class="rail-link" href="${href}" ${ext ? raw('target="_blank" rel="noopener"') : ''}
@@ -278,37 +282,34 @@ function utilityRail(v: SitePageView): SafeHtml {
   return html`<div class="rail">
     <div class="wrap rail-row">
       <div class="rail-side">${left.map(item)}</div>
-      <div class="rail-side rail-right">
-        ${right.map(item)} ${langMenu(v)}
-        <a class="rail-link rail-login" href="/login"
-          >${siteIcon('key-round', { size: 13 })}<span>${v.t('nav.login')}</span></a
-        >
-      </div>
+      <div class="rail-side rail-right">${right.map(item)}</div>
     </div>
   </div>`;
 }
 
 /**
- * The Demo control: the one real control in the main bar (CCB-S3-036 3c).
+ * The Demo control (CCB-S3-037 3).
  *
- * Outlined rather than filled, clipped at top-left and bottom-right, and it does
- * NOT move on hover. Everything that happens on hover happens INSIDE the button:
- * the label glitches in hard steps, one scanline crosses it, and a fine raster
- * fades in. Reduced motion keeps the colour change and drops all three.
+ * Built to the CSS the operator approved, rather than to a description of it. The
+ * shape is an outer element carrying the clip and a 1.2px padding that acts as the
+ * border, and an inner `.in` carrying the same clip, the dark interior and the
+ * overflow that keeps the scanline inside. Nothing on the button transforms.
  *
- * The demo does not exist yet, so with no `demoUrl` configured this renders as the
- * same shape without an href. A control that leads to a 404 is worse than one that
- * says it is coming.
+ * The demo does not exist yet, so with no `demoUrl` this renders the identical
+ * shape without an href. A control that 404s is worse than one that says it is
+ * coming, and hiding it would empty the main bar of its only control.
  */
-function demoControl(v: SitePageView): SafeHtml {
+function demoControl(v: SitePageView, inMenu = false): SafeHtml {
   const url = v.site.demoUrl?.trim();
-  const label = v.t('nav.demo');
-  const inner = html`<span class="dm-raster" aria-hidden="true"></span>
-    <span class="dm-scan" aria-hidden="true"></span>
-    <span class="dm-label" data-text="${label}">${label}</span>`;
+  const inner = html`<span class="in">
+    <span class="sl" aria-hidden="true"></span>
+    ${siteIcon('play', { size: 13 })}
+    <span class="t">${v.t('nav.demo')}</span>
+  </span>`;
+  const cls = `dm${inMenu ? ' dm-in-menu' : ''}${url ? '' : ' dm-soon'}`;
   return url
-    ? html`<a class="dm" href="${url}">${inner}</a>`
-    : html`<span class="dm dm-soon" aria-disabled="true" title="${v.t('nav.demo.soon')}"
+    ? html`<a class="${cls}" href="${url}">${inner}</a>`
+    : html`<span class="${cls}" aria-disabled="true" title="${v.t('nav.demo.soon')}"
         >${inner}</span
       >`;
 }
@@ -344,6 +345,7 @@ function fullscreenMenu(v: SitePageView): SafeHtml {
           ${siteIcon('x', { size: 20 })}
         </button>
       </div>
+      <div class="cn-menu-demo">${demoControl(v, true)}</div>
       <div class="cn-menu-sections">
         ${NAV_SECTIONS.map((sec) => {
           const copy = menuCopyFor(sec.page.key);
@@ -353,7 +355,12 @@ function fullscreenMenu(v: SitePageView): SafeHtml {
               (c) => [c.key, v.t(c.navKey), c.key] as [string, string, string],
             ),
           ];
-          return html`<section class="cn-menu-block" data-section="${sec.page.key}">
+          return html`<section
+            class="cn-menu-block"
+            data-section="${sec.page.key}"
+            data-menu-block
+            hidden
+          >
             <div class="cn-menu-intro">
               <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
               <h2 class="cn-menu-heading">${v.t(sec.page.navKey)}</h2>
@@ -429,29 +436,6 @@ function prevNext(v: SitePageView): SafeHtml | null {
   </nav>`;
 }
 
-/** Language switcher: a details-dropdown that scales to the full locale set. */
-function langMenu(v: SitePageView): SafeHtml {
-  return html`<details class="lang-menu">
-    <summary aria-label="${v.t('lang.label')}" title="${v.t('lang.label')}">
-      ${siteIcon('globe', { size: 15 })}<span class="lm-code">${v.locale}</span>${siteIcon(
-        'chevron-down',
-        { size: 13, className: 'lm-chev' },
-      )}
-    </summary>
-    <div class="lang-panel" role="menu" aria-label="${v.t('lang.label')}">
-      ${v.locales.codes.map(
-        (code) =>
-          html`<a
-            href="${pagePath(code, v.page)}"
-            hreflang="${code}"
-            class="${code === v.locale ? 'on' : ''}"
-            ${code === v.locale ? raw('aria-current="true"') : ''}
-            ><span class="lc">${code}</span>${v.locales.meta[code]?.name ?? code.toUpperCase()}</a
-          >`,
-      )}
-    </div>
-  </details>`;
-}
 
 
 function header(v: SitePageView): SafeHtml {
@@ -460,7 +444,7 @@ function header(v: SitePageView): SafeHtml {
     <div class="wrap hdr-row">
       ${wordmark(v)}
       <nav class="nav-desktop hdr-nav" aria-label="Primary">${navLinks(v)}</nav>
-      <span class="hdr-controls">${demoControl(v)}</span>
+      <span class="nav-desktop hdr-controls">${demoControl(v)}</span>
       <button
         type="button"
         id="cn-burger"
@@ -470,8 +454,8 @@ function header(v: SitePageView): SafeHtml {
         aria-expanded="false"
         aria-controls="cn-menu"
       >
-        ${siteIcon('menu', { size: 20, className: 'i-menu' })}${siteIcon('x', {
-          size: 20,
+        ${siteIcon('menu', { size: 22, className: 'i-menu' })}${siteIcon('x', {
+          size: 22,
           className: 'i-close',
         })}
       </button>
@@ -1174,17 +1158,41 @@ function legalBody(v: SitePageView): SafeHtml {
         </div>
         ${translated
           ? html`<p class="legal-binding-note">
-              This is a convenience translation. The legally binding version is the German one:
-              <a href="/de/${v.page.slug}">Deutsch</a>.
+              This is a convenience translation. The legally binding version is the German one,
+              which follows below.
             </p>`
           : null}
         ${doc}
+        ${translated ? legalBindingOriginal(v) : null}
       </div>
     </section>
   `;
 }
 
 /** A clean "coming soon" stub (Docs — never a 404), in the template design. */
+/**
+ * The binding German original, printed beneath the English translation.
+ *
+ * CCB-S3-037 removed every locale but English, which took `/de/legal` with it. The
+ * German Impressum is the LEGALLY BINDING text (D-079) and a German business is
+ * required to publish one, so it cannot leave the site with the locale. It is
+ * rendered on the same page instead: the English convenience translation first,
+ * then the German that actually governs, so nothing is unreachable and the
+ * cross-link that would now be dead is gone.
+ *
+ * The Terms are excluded because they remain a draft in one language only.
+ */
+function legalBindingOriginal(v: SitePageView): SafeHtml {
+  const doc =
+    v.page.key === 'legal-privacy' ? legalDoc(privacyFor('de')) : legalDoc(impressumFor('de'));
+  return html`<div class="legal-binding">
+    <p class="legal-binding-note">
+      Maßgeblich ist die folgende deutsche Fassung.
+    </p>
+    ${doc}
+  </div>`;
+}
+
 function stubBody(v: SitePageView): SafeHtml {
   return html`
     <section class="hero-bg fx-hero">
@@ -1267,6 +1275,18 @@ function statusChip(v: SitePageView, status: ClaimStatus): SafeHtml | null {
   return status === 'in-development' ? badge('warning', v.t('status.inDevelopment')) : null;
 }
 
+/**
+ * A section panel: the 9px clipped corner from the Demo control (CCB-S3-037 5).
+ *
+ * Two nested elements rather than a border, so the 1px edge follows the cut
+ * corners instead of being sliced off by the clip, which is how the Demo control
+ * draws its edge too. Repeating that one shape is what makes the page read as a
+ * system rather than as a stack of unrelated blocks.
+ */
+function secPanel(inner: SafeHtml): SafeHtml {
+  return html`<div class="sec-panel"><div class="sec-panel-in">${inner}</div></div>`;
+}
+
 function contentBody(v: SitePageView, c: PageContent): SafeHtml {
   return html`
     ${pageHero({
@@ -1282,7 +1302,7 @@ function contentBody(v: SitePageView, c: PageContent): SafeHtml {
       : null}
     <section class="wrap pt40 doc-page">
       ${c.sections.map(
-        (sec) => html`<section class="doc-sec">
+        (sec) => secPanel(html`<section class="doc-sec">
           <h2>
             ${sec.h}${sec.status ? html` ${statusChip(v, sec.status)}` : null}
           </h2>
@@ -1293,7 +1313,7 @@ function contentBody(v: SitePageView, c: PageContent): SafeHtml {
               </ul>`
             : null}
           ${sec.callout ? html`<p class="doc-callout">${sec.callout}</p>` : null}
-        </section>`,
+        </section>`),
       )}
     </section>
     ${prevNext(v)}

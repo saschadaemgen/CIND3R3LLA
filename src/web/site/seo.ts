@@ -15,6 +15,10 @@ import { contentFor } from './content.js';
 /** Canonical project links (not translatable). */
 export const GITHUB_URL = 'https://github.com/saschadaemgen/cinderella';
 export const LICENSE_URL = 'https://www.gnu.org/licenses/agpl-3.0.html';
+/** The public SimpleX group (CCB-S3-037 2). */
+export const SIMPLEX_GROUP_URL =
+  'https://smp15.simplex.im/g#O6P1s2earUQKND1Gdn4-g8objkdMyhQXS1Ba8hxQzNA';
+
 export const CONTACT_EMAIL = 'cind3rella@cind3r3lla.com';
 
 /** JSON for a <script type="application/ld+json"> — escape `<` so text can't break out. */
@@ -65,8 +69,19 @@ export interface SiteSeoContext {
   t: (key: string, vars?: Record<string, string | number>) => string;
 }
 
-/** hreflang alternates for a page: one per locale + x-default → the default locale. */
+/**
+ * hreflang alternates (CCB-S3-037 1).
+ *
+ * The site ships one language now, and hreflang for a single language says
+ * nothing a crawler cannot already see from the page. Emitting a lone
+ * `hreflang="en"` plus an `x-default` pointing at the same URL is noise at best
+ * and a contradiction at worst. Returns empty, and the head renders nothing.
+ *
+ * The MACHINERY stays: this is a content decision, not an architectural one, and
+ * a second locale file reinstates the alternates by making this list non-empty.
+ */
 function alternatesFor(c: SiteSeoContext): SiteAlternate[] {
+  if (c.locales.codes.length < 2) return [];
   const alts: SiteAlternate[] = c.locales.codes.map((code) => ({
     hreflang: code,
     href: `${c.origin}${pagePath(code, c.page)}`,
@@ -163,24 +178,24 @@ function buildSiteJsonLd(c: SiteSeoContext): string {
  * each with xhtml:link hreflang alternates. Referenced from the origin sitemap index.
  */
 export function buildSiteSitemapXml(origin: string, locales: LocaleSet): string {
-  // SITE_PAGES, not NAV_PAGES. NAV_PAGES drops every nested slug because the top
-  // nav has no room for them, and reusing that filter here silently kept an
-  // indexable page out of the sitemap (CCB-S3-029: the privacy policy). The
-  // sitemap's question is "is it built and indexable", not "does it fit the nav".
   const built = [HOME, ...SITE_PAGES].filter((p) => p.built && !p.noindex);
+  const multi = locales.codes.length > 1;
   const urls: string[] = [];
   for (const page of built) {
     for (const code of locales.codes) {
-      const links = [
-        ...locales.codes.map(
-          (alt) =>
-            `    <xhtml:link rel="alternate" hreflang="${xml(alt)}" href="${xml(`${origin}${pagePath(alt, page)}`)}"/>`,
-        ),
-        `    <xhtml:link rel="alternate" hreflang="x-default" href="${xml(`${origin}${pagePath(locales.default, page)}`)}"/>`,
-      ].join('\n');
-      urls.push(
-        `  <url>\n    <loc>${xml(`${origin}${pagePath(code, page)}`)}</loc>\n${links}\n  </url>`,
-      );
+      // One language means no alternates to declare (CCB-S3-037 1). The loop and
+      // the xhtml namespace stay, so adding a locale file restores them.
+      const links = multi
+        ? '\n' +
+          [
+            ...locales.codes.map(
+              (alt) =>
+                `    <xhtml:link rel="alternate" hreflang="${xml(alt)}" href="${xml(`${origin}${pagePath(alt, page)}`)}"/>`,
+            ),
+            `    <xhtml:link rel="alternate" hreflang="x-default" href="${xml(`${origin}${pagePath(locales.default, page)}`)}"/>`,
+          ].join('\n')
+        : '';
+      urls.push(`  <url>\n    <loc>${xml(`${origin}${pagePath(code, page)}`)}</loc>${links}\n  </url>`);
     }
   }
   return (

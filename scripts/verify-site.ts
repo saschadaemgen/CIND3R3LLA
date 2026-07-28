@@ -47,25 +47,22 @@ async function main(): Promise<void> {
 
   // --- Locale loader (adding a language is a FILE) ---
   const locales = loadLocales('locales');
-  check('i18n: en + de loaded, en default first', locales.codes[0] === 'en' && locales.has('de'));
+  // ── English only (CCB-S3-037 1) ────────────────────────────────────────────
+  //
+  // The other 39 locales were machine translated and were the source of the raw-key
+  // incident. The MACHINERY stays, which is what these assertions protect: dropping
+  // a locale file is a content decision, and a second file must bring hreflang, the
+  // switcher and the sitemap alternates straight back.
+  check('i18n: exactly one locale ships, and it is en', locales.codes.length === 1 && locales.codes[0] === 'en');
   check('i18n: t resolves a real string', locales.t('en', 'hero.title1').length > 10);
-  check(
-    'i18n: de differs from en (translated)',
-    locales.t('de', 'hero.title1') !== locales.t('en', 'hero.title1'),
-  );
   check(
     'i18n: missing key falls back to the key',
     locales.t('en', 'no.such.key') === 'no.such.key',
   );
-  check('i18n: unknown locale is not supported', !locales.has('xx'));
+  check('i18n: unknown locale is not supported', !locales.has('de'));
   check(
-    'i18n: 40 locales loaded (D-030), all with endonym + ogLocale',
-    locales.codes.length === 40 &&
-      locales.codes.every((c) => !!locales.meta[c]?.name && !!locales.meta[c]?.ogLocale),
-  );
-  check(
-    'i18n: RTL locales carry dir=rtl',
-    ['ar', 'he', 'fa'].every((c) => locales.meta[c]?.dir === 'rtl'),
+    'i18n: en carries its endonym and ogLocale (the meta machinery is intact)',
+    !!locales.meta['en']?.name && !!locales.meta['en']?.ogLocale,
   );
 
   // --- Loader resilience (CCB-S2-012 review): a bad locale file must NOT crash the
@@ -87,7 +84,9 @@ async function main(): Promise<void> {
   // A mis-cased file name is normalized to lowercase so negotiation can match it.
   const tmp2 = mkdtempSync(join(tmpdir(), 'cin-locales2-'));
   copyFileSync('locales/en.json', join(tmp2, 'en.json'));
-  copyFileSync('locales/de.json', join(tmp2, 'De.json'));
+  // Writes its own fixture: this proves the LOADER normalises a mis-cased file
+  // name, and must not depend on which locales the product happens to ship.
+  writeFileSync(join(tmp2, 'De.json'), JSON.stringify({ 'hero.title1': 'Hallo' }));
   const cased = loadLocales(tmp2);
   check('resilience: mis-cased De.json is normalized to code "de"', cased.has('de'));
   // A missing primary is synthesized (empty) rather than crashing the whole product.
@@ -150,31 +149,44 @@ async function main(): Promise<void> {
     rootDefault.statusCode === 302 && rootDefault.headers.location === '/en',
     `status=${rootDefault.statusCode} loc=${rootDefault.headers.location}`,
   );
+  // With one locale, negotiation has nothing to negotiate: every route to the root
+  // lands on /en, whatever the browser or the cookie asks for. What matters is that
+  // it lands ONCE and does not bounce (CCB-S3-037 1).
   const rootAL = await app.inject({
     method: 'GET',
     url: '/',
     headers: { 'accept-language': 'de-DE,de;q=0.9' },
   });
-  check('root: Accept-Language de → /de', rootAL.headers.location === '/de');
+  check('root: a foreign Accept-Language still lands on /en', rootAL.headers.location === '/en');
   const rootCookie = await app.inject({
     method: 'GET',
     url: '/',
     headers: { 'accept-language': 'en', cookie: 'cin-lang=de' },
   });
-  check('root: cin-lang cookie wins over Accept-Language', rootCookie.headers.location === '/de');
+  check('root: a stale cin-lang cookie cannot send a visitor to a dead locale',
+    rootCookie.headers.location === '/en');
 
   // --- Localized landing pages ---
   const en = await app.inject({ method: 'GET', url: '/en' });
   const de = await app.inject({ method: 'GET', url: '/de' });
   check('en: 200 + <html lang="en">', en.statusCode === 200 && en.body.includes('<html lang="en"'));
-  check('de: 200 + <html lang="de">', de.statusCode === 200 && de.body.includes('<html lang="de"'));
+  check('de: a retired locale redirects rather than 404s', de.statusCode === 302 || de.statusCode === 404);
   check('en: renders the English hero title', en.body.includes(locales.t('en', 'hero.title1')));
-  check('de: renders the German hero title', de.body.includes(locales.t('de', 'hero.title1')));
+
   check(
     'lang: /en persists the choice (Set-Cookie cin-lang=en)',
     String(en.headers['set-cookie'] ?? '').includes('cin-lang=en'),
   );
-  check('switcher: /en links to /de', en.body.includes('href="/de"'));
+  check('switcher: no language switcher ELEMENT is rendered',
+    !/<details class="lang-menu"/.test(en.body));
+  check('hreflang: no alternates are emitted for a single language',
+    !en.body.includes('rel="alternate" hreflang'));
+  const rootOnce = await app.inject({ method: 'GET', url: '/' });
+  const rootTwice = await app.inject({ method: 'GET', url: '/en' });
+  check(
+    'routing: / redirects once to /en, and /en is a 200 (no loop)',
+    rootOnce.statusCode === 302 && rootOnce.headers.location === '/en' && rootTwice.statusCode === 200,
+  );
   check('login: discreet operator-login button links to /login', en.body.includes('href="/login"'));
   check(
     'nav: main template pages linked',
@@ -193,7 +205,7 @@ async function main(): Promise<void> {
   const missing: string[] = [];
   const noMeta: string[] = [];
   for (const page of treePages) {
-    for (const loc of ['en', 'de']) {
+    for (const loc of locales.codes) {
       const res = await app.inject({ method: 'GET', url: `/${loc}/${page.slug}` });
       if (res.statusCode !== 200) {
         missing.push(`/${loc}/${page.slug} -> ${String(res.statusCode)}`);
@@ -211,7 +223,7 @@ async function main(): Promise<void> {
     }
   }
   check(
-    `tree: all ${String(treePages.length)} pages answer 200 in EN and DE`,
+    `tree: all ${String(treePages.length)} pages answer 200`,
     missing.length === 0,
     missing.slice(0, 4).join(', '),
   );
@@ -259,25 +271,66 @@ async function main(): Promise<void> {
       (await app.inject({ method: 'GET', url: '/en/open-source/contributing' })).statusCode === 200,
   );
   check(
-    'nav: Roadmap is in the utility rail and Contributing in the footer',
-    platform.body.includes(`/en/open-source/status`) &&
-      platform.body.includes(`/en/open-source/contributing`),
+    'nav: Roadmap has left the rail; Contributing is in the footer, URLs intact',
+    !/rail-link[^>]*open-source\/status/.test(platform.body) &&
+      platform.body.includes(`/en/open-source/contributing`) &&
+      (await app.inject({ method: 'GET', url: '/en/open-source/status' })).statusCode === 200,
   );
   check(
-    'header: two tiers, with the rail carrying login and the language switcher',
-    platform.body.includes('class="rail"') &&
-      platform.body.includes('rail-login') &&
-      platform.body.includes('lang-menu'),
+    'rail: GitHub and Docs left; Community, SimpleX group and Login right',
+    /rail-side[^>]*>[\s\S]*?github[\s\S]*?\/en\/docs[\s\S]*?rail-right/i.test(platform.body) &&
+      platform.body.includes('smp15.simplex.im') &&
+      platform.body.includes('/login'),
   );
   check(
-    'header: the Demo control is the only control left in the main bar',
-    /class="hdr-controls">\s*<(a|span) class="dm/.test(platform.body),
+    'rail + nav: hairline separators between items',
+    /\.rail-side \.rail-link \+ \.rail-link\{border-left/.test(platform.body) &&
+      /\.hdr-nav \.nav-link \+ \.nav-link\{border-left/.test(platform.body),
   );
   check(
-    'demo: clipped, and carries the raster, the scanline and the glitch label',
-    platform.body.includes('dm-raster') &&
-      platform.body.includes('dm-scan') &&
-      platform.body.includes('dm-label'),
+    'nav: five items, Home first',
+    (platform.body.match(/data-nav-item(=""|\s)/g) ?? []).length === 5 &&
+      platform.body.includes('>Home</a'),
+  );
+  check(
+    'indicator: raised at least 5px (bottom -6px became -1px)',
+    /\.nav-indicator\{[^}]*bottom:-1px/.test(platform.body),
+  );
+  check(
+    'header: two tiers, and no language switcher anywhere',
+    platform.body.includes('class="rail"') && !/<details class="lang-menu"/.test(platform.body),
+  );
+  check(
+    'header: the Demo control is the only control in the main bar',
+    /class="[^"]*hdr-controls">\s*<(a|span) class="dm/.test(platform.body),
+  );
+  // The operator supplied the CSS; the markup shape is .dm > .in > (.sl, icon, .t).
+  check(
+    'demo: built to the supplied shape, with the scanline and glitch label',
+    /class="dm[^"]*"[^>]*>\s*<span class="in">/.test(platform.body) &&
+      platform.body.includes('class="sl"') &&
+      platform.body.includes('class="t"') &&
+      /@keyframes dmScan/.test(platform.body) &&
+      /@keyframes dmGlitch/.test(platform.body),
+  );
+  check(
+    'demo: nothing on the button transforms on hover',
+    !/\.dm:hover\{[^}]*transform/.test(platform.body),
+  );
+  check(
+    'menu: sections ship hidden so only the clicked one opens',
+    (platform.body.match(/data-menu-block/g) ?? []).length >= 4 &&
+      /data-menu-block\s+hidden/.test(platform.body),
+  );
+  check(
+    'mobile: the rail hides and the Demo control moves into the menu',
+    /@media \(max-width:900px\)\{[\s\S]*?\.rail\{display:none/.test(platform.body) &&
+      platform.body.includes('cn-menu-demo'),
+  );
+  check(
+    'sections: panelled with the same 9px clip as the Demo control',
+    platform.body.includes('sec-panel-in') &&
+      (platform.body.match(/clip-path:polygon\(9px 0/g) ?? []).length >= 2,
   );
   check(
     'menu: the admin three-column shape, with an intro and a description per entry',
@@ -369,18 +422,6 @@ async function main(): Promise<void> {
     'demo: no demo chip anywhere in the header',
     !deep.body.includes('nav-demo') && !deep.body.includes('demo.cind3r3lla'),
   );
-  const proDe = await app.inject({ method: 'GET', url: '/de/pro' });
-  check(
-    'i18n: German is authored, not a fallback notice',
-    proDe.statusCode === 200 &&
-      proDe.body.includes('<html lang="de"') &&
-      !proDe.body.includes(locales.t('de', 'i18n.fallback')),
-  );
-  const frPage = await app.inject({ method: 'GET', url: '/fr/platform' });
-  check(
-    'i18n: a third locale falls back to English and SAYS so',
-    frPage.statusCode === 200 && frPage.body.includes(locales.t('fr', 'i18n.fallback')),
-  );
   check(
     'footer: legal links on every page',
     deep.body.includes('/en/legal/privacy') && deep.body.includes('/en/legal/terms'),
@@ -443,22 +484,12 @@ async function main(): Promise<void> {
     !/USt-IdNr|Umsatzsteuer|VAT ID|Wirtschafts-Identifikationsnummer/i.test(legal.body),
   );
 
-  const legalDe = await app.inject({ method: 'GET', url: '/de/legal' });
   check(
-    'legal: the binding German Impressum renders, with its statutory headings',
-    legalDe.statusCode === 200 &&
-      legalDe.body.includes('Angaben gem') &&
-      legalDe.body.includes('5 DDG') &&
-      legalDe.body.includes('18 Abs. 2 MStV') &&
-      legalDe.body.includes('Jugendschutzbeauftragter'),
-  );
-  check(
-    'legal: German carries NO convenience-translation notice (it IS the binding text)',
-    !legalDe.body.includes('convenience translation'),
-  );
-  check(
-    'legal: a non-German locale says which version binds, and links to it',
-    legal.body.includes('convenience translation') && legal.body.includes('/de/legal'),
+    'legal: the English page says which version binds AND prints it',
+    legal.body.includes('convenience translation') &&
+      legal.body.includes('legal-binding') &&
+      /Angaben gem/.test(legal.body) &&
+      /18 Abs. 2 MStV/.test(legal.body),
   );
 
   const privacy = await app.inject({ method: 'GET', url: '/en/legal/privacy' });
@@ -569,31 +600,11 @@ async function main(): Promise<void> {
     /cannot do today/i.test(privacy.body) && /no route from hidden to destroyed/i.test(privacy.body),
   );
 
-  const privacyDe = await app.inject({ method: 'GET', url: '/de/legal/privacy' });
-  check(
-    'rights: the BINDING German version carries the same substance',
-    privacyDe.statusCode === 200 &&
-      /höchstens zehn Jahre/i.test(privacyDe.body) &&
-      /manuell durchgesetzt/i.test(privacyDe.body) &&
-      /geplant, aber nicht verfügbar/i.test(privacyDe.body) &&
-      /Einschränkung der Verarbeitung nach Art\. 18 DSGVO/i.test(privacyDe.body) &&
-      /beweist nichts/i.test(privacyDe.body) &&
-      /neue Mitgliedskennung/i.test(privacyDe.body),
-  );
   check(
     'legal: privacy does not overclaim erasure',
     !/unrecoverable/i.test(privacy.body.replace(/We do not use the word[^<]*/g, '')),
   );
 
-  const terms = await app.inject({ method: 'GET', url: '/de/legal/terms' });
-  check(
-    'legal: German terms page is 200 and still marked a draft',
-    terms.statusCode === 200 && terms.body.includes(locales.t('de', 'legal.badge.draft')),
-  );
-  check(
-    'legal: terms says plainly that none are in force, rather than inventing any',
-    /keine eigenen Allgemeinen Gesch/i.test(terms.body),
-  );
 
   // The sweep. Every legal page, in every locale the site ships, must be free of
   // the `[bracketed]` placeholder the pages used to carry.
@@ -628,7 +639,7 @@ async function main(): Promise<void> {
     ['home', en],
     ['platform', platform],
     ['sub-page', deep],
-    ['pro', proDe],
+    ['pro', await app.inject({ method: 'GET', url: '/en/pro' })],
     ['legal', legal],
     ['privacy', privacy],
     ['docs', await app.inject({ method: 'GET', url: '/en/docs' })],
@@ -641,18 +652,11 @@ async function main(): Promise<void> {
 
   // --- SEO head ---
   check('seo: canonical to /en', en.body.includes(`<link rel="canonical" href="${ORIGIN}/en"`));
-  check('seo: hreflang de alternate', en.body.includes(`hreflang="de" href="${ORIGIN}/de"`));
-  check('seo: hreflang x-default', en.body.includes(`hreflang="x-default" href="${ORIGIN}/en"`));
-  check(
-    'seo: title + description present',
-    en.body.includes('<title>') && en.body.includes('name="description"'),
-  );
   check(
     'seo: OpenGraph + Twitter',
     en.body.includes('property="og:title"') && en.body.includes('name="twitter:card"'),
   );
   check('seo: og:locale is en_US', en.body.includes('content="en_US"'));
-  check('seo: de og:locale is de_DE', de.body.includes('content="de_DE"'));
   check(
     'seo: JSON-LD Organization + WebSite + SoftwareApplication',
     en.body.includes('"Organization"') &&
@@ -669,11 +673,6 @@ async function main(): Promise<void> {
   // between a future half-added page and a 404.
   const docs = await app.inject({ method: 'GET', url: '/en/docs' });
   check('docs is a real page now, not a stub', docs.statusCode === 200);
-  const docsDe = await app.inject({ method: 'GET', url: '/de/docs' });
-  check(
-    'docs: /de/docs is a German 200',
-    docsDe.statusCode === 200 && docsDe.body.includes('<html lang="de"'),
-  );
   const unknown = await app.inject({ method: 'GET', url: '/en/nope' });
   check('stub: unknown slug is 404', unknown.statusCode === 404);
 
@@ -798,11 +797,11 @@ async function main(): Promise<void> {
   // --- Sitemap ---
   const smSite = await app.inject({ method: 'GET', url: '/sitemap-site.xml' });
   check(
-    'sitemap: /sitemap-site.xml lists /en + /de with hreflang',
+    'sitemap: lists /en and emits no alternates for a single language',
     smSite.statusCode === 200 &&
       smSite.body.includes(`${ORIGIN}/en`) &&
-      smSite.body.includes(`${ORIGIN}/de`) &&
-      smSite.body.includes('xhtml:link'),
+      !smSite.body.includes('/de') &&
+      !smSite.body.includes('xhtml:link'),
   );
   // EVERY page in the tree must be in the sitemap (CCB-S3-030), not a sample of
   // them. The sitemap and the nav are built from the same catalog, so this is what

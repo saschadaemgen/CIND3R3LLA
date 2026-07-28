@@ -33,8 +33,23 @@ function setMenu(open){
     if(lastFocus&&lastFocus.focus)lastFocus.focus();
   }
 }
+/* ONE SECTION AT A TIME (CCB-S3-037 2). Every block was rendered open, so the
+   menu showed all four at once. Blocks ship hidden; the trigger reveals the one it
+   names, and the burger (which names none) reveals the first. */
+function showSection(key){
+  var blocks=[].slice.call(document.querySelectorAll('[data-menu-block]'));
+  if(!blocks.length)return;
+  var wanted=key&&document.querySelector('[data-menu-block][data-section="'+key+'"]');
+  blocks.forEach(function(b){b.setAttribute('hidden','');});
+  (wanted||blocks[0]).removeAttribute('hidden');
+}
 document.querySelectorAll('[data-menu-open]').forEach(function(b){
-  b.addEventListener('click',function(e){e.preventDefault();setMenu(menu&&menu.getAttribute('data-open')!=='true');});
+  b.addEventListener('click',function(e){
+    e.preventDefault();
+    var open=menu&&menu.getAttribute('data-open')!=='true';
+    if(open)showSection(b.getAttribute('data-section'));
+    setMenu(open);
+  });
 });
 document.querySelectorAll('[data-menu-close]').forEach(function(b){
   b.addEventListener('click',function(){setMenu(false);});
