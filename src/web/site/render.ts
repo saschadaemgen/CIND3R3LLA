@@ -330,6 +330,21 @@ function demoControl(v: SitePageView, inMenu = false): SafeHtml {
  * Entries are inert (CCB-S3-034), so the admin's `<a>` becomes a `<span>`; that is
  * the only structural change, and the CSS is identical for both.
  */
+/**
+ * Splits entries across the columns the admin grid already provides.
+ *
+ * The grid is `repeat(4, ...)`, and putting every entry in ONE group left a single
+ * tall column with three empty ones beside it. The admin distributes its children
+ * across groups; the site has no group names to distribute BY, so it balances by
+ * count, which is what fills the same grid.
+ */
+function chunk<T>(items: T[], columns: number): T[][] {
+  const per = Math.ceil(items.length / columns);
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += per) out.push(items.slice(i, i + per));
+  return out;
+}
+
 function megaPanel(v: SitePageView, sec: (typeof NAV_SECTIONS)[number]): SafeHtml {
   const copy = menuCopyFor(sec.page.key);
   const rows: Array<[string, string]> = [
@@ -356,21 +371,27 @@ function megaPanel(v: SitePageView, sec: (typeof NAV_SECTIONS)[number]): SafeHtm
       </div>
 
       <div class="cn-mega-groups">
-        <section class="cn-mega-group">
-          <h3 class="cn-mega-group-title">${v.t(sec.page.navKey)}</h3>
-          <div class="cn-mega-group-links">
-            ${rows.map(([label, copyKey]) => {
-              const ec = copy?.entries[copyKey];
-              return html`<span class="cn-mega-link">
-                <span class="cn-mega-link-icon">${siteIcon(ec?.icon ?? 'circle', { size: 15 })}</span>
-                <span class="cn-mega-link-copy">
-                  <span class="cn-mega-link-label">${label}</span>
-                  <span class="cn-mega-link-description">${ec ? localised(ec, v.locale) : ''}</span>
-                </span>
-              </span>`;
-            })}
-          </div>
-        </section>
+        ${chunk(rows, 4).map(
+          (colRows) =>
+            html`<section class="cn-mega-group">
+              <div class="cn-mega-group-links">
+                ${colRows.map(([label, copyKey]) => {
+                  const ec = copy?.entries[copyKey];
+                  return html`<span class="cn-mega-link">
+                    <span class="cn-mega-link-icon"
+                      >${siteIcon(ec?.icon ?? 'circle', { size: 15 })}</span
+                    >
+                    <span class="cn-mega-link-copy">
+                      <span class="cn-mega-link-label">${label}</span>
+                      <span class="cn-mega-link-description"
+                        >${ec ? localised(ec, v.locale) : ''}</span
+                      >
+                    </span>
+                  </span>`;
+                })}
+              </div>
+            </section>`,
+        )}
       </div>
 
       <button type="button" class="cn-mega-close" data-menu-close aria-label="${v.t('nav.menu.close')}">

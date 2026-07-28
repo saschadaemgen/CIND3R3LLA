@@ -181,7 +181,11 @@ section.band{padding:120px 0 0}
 .rail-link:hover svg{opacity:1}
 /* Hairline separators, the height of the TEXT rather than of the bar. This is what
    makes a rail read as a rail instead of as floating words (CCB-S3-037 2). */
-.rail-side .rail-link + .rail-link{border-left:1px solid rgba(141,225,236,.16)}
+/* A plain 1px vertical hairline, sized to the TEXT rather than the padded box.
+   border-left spanned the whole element height, which read as a shape. */
+.rail-side .rail-link + .rail-link::before{content:'';position:absolute;left:0;top:50%;
+  width:1px;height:12px;margin-top:-6px;background:rgba(141,225,236,.16)}
+.rail-link{position:relative}
 .rail-side .rail-link:first-child{padding-left:0}
 .rail-right .rail-link:last-child{padding-right:0}
 
@@ -197,10 +201,12 @@ section.band{padding:120px 0 0}
   transition:color var(--duration-fast) var(--ease)}
 .nav-link:hover{color:var(--text-bright);background:none}
 .nav-link.active{color:var(--text-accent)}
-.hdr-nav .nav-link + .nav-link{border-left:1px solid rgba(141,225,236,.16)}
+.hdr-nav .nav-link + .nav-link::before{content:'';position:absolute;left:0;top:50%;
+  width:1px;height:12px;margin-top:-6px;background:rgba(141,225,236,.16)}
+.nav-link{position:relative}
 /* Raised so it sits close under the label rather than near the bar's bottom edge
    (CCB-S3-037 2): was -6px, now -1px, a 5px lift. */
-.nav-indicator{position:absolute;bottom:-1px;left:0;width:0;height:3px;pointer-events:none;
+.nav-indicator{position:absolute;bottom:4px;left:0;width:0;height:3px;pointer-events:none;
   border-radius:999px;opacity:0;
   background:linear-gradient(90deg,rgba(244,92,176,0) 0%,rgba(244,92,176,.92) 18%,
     rgba(141,225,236,.92) 82%,rgba(141,225,236,0) 100%);
@@ -318,7 +324,7 @@ section.band{padding:120px 0 0}
 .cn-mega-overview-link:hover::after{transform:translateX(3px)}
 .cn-mega-groups{display:grid;min-width:0;grid-template-columns:repeat(4,minmax(150px,1fr));
   gap:26px}
-.cn-mega-group-title{margin:0 0 9px;color:var(--text-faint);font-family:var(--font-mono);
+.cn-mega-group-title{margin:0 0 9px;min-height:1px;color:var(--text-faint);font-family:var(--font-mono);
   font-size:9px;font-weight:500;letter-spacing:.11em;text-transform:uppercase}
 .cn-mega-group-links{display:grid;gap:5px}
 .cn-mega-link{display:grid;min-height:52px;grid-template-columns:30px minmax(0,1fr);

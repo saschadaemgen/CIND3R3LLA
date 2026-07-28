@@ -83,9 +83,13 @@ if(nav&&ind){
     var nr=nav.getBoundingClientRect(),r=el.getBoundingClientRect();
     /* Slightly narrower than the item, so it reads as drawn rather than as a
        default text underline stretched edge to edge. */
-    var inset=Math.min(9,r.width*0.14);
-    ind.style.width=(r.width-inset*2)+'px';
-    ind.style.transform='translate3d('+(r.left-nr.left+inset)+'px,0,0)';
+    /* Align to the LABEL, not the padded box: the item carries 15px of horizontal
+       padding, and insetting by a fraction of the width put the bar off-centre and
+       too wide. Reading the real padding makes it sit exactly under the text. */
+    var cs=getComputedStyle(el);
+    var padL=parseFloat(cs.paddingLeft)||0, padR=parseFloat(cs.paddingRight)||0;
+    ind.style.width=Math.max(0,r.width-padL-padR)+'px';
+    ind.style.transform='translate3d('+(r.left-nr.left+padL)+'px,0,0)';
     ind.setAttribute('data-ready','true');
   }
   items.forEach(function(el){
