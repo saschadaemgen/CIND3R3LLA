@@ -387,7 +387,13 @@ section.band{padding:120px 0 0}
    column's max-width caps the line, so nothing overruns horizontally. No explicit
    width is set anywhere on the rotator, which is what made the old version leave
    short phrases hanging past the paragraph. */
-.hero-rot{display:grid}
+/* .hline sets display:block and sits LATER in the sheet, so it wins on source
+   order unless the selector is more specific. This is the third time that trap
+   has caught the rotator; the compound selector ends it. */
+.hline.hero-rot{display:grid;white-space:normal}
+/* .hline is nowrap, which would push a phrase past the column instead of
+   letting it wrap. The column caps the line; the phrase wraps inside it. */
+.hline.hero-rot > .ph{white-space:normal}
 .hero-rot > .ph{grid-area:1 / 1;opacity:0}
 .hero-rot > .ph[data-on]{opacity:1}
 /* The header controls' glitch: hard steps, a brief cyan and magenta tear. */
@@ -529,7 +535,11 @@ footer a:hover{color:var(--text-accent);text-decoration:none}
 .pchip.c1{top:13%;left:-3%}
 .pchip.c2{bottom:11%;right:-4%;border-color:rgba(69,189,209,.32);color:#cdeff5}
 .pchip.c2 .d{background:var(--cyan-400);box-shadow:0 0 10px rgba(69,189,209,.9)}
-@media (max-width:860px){.hero-cine{grid-template-columns:1fr;text-align:center}.hero-cine .htext{align-items:center}.hero-stage{order:-1}.trust{justify-content:center!important}}
+/* NOTHING IN THE TEXT COLUMN IS CENTRED, AT ANY WIDTH (CCB-S3-038 2a).
+   This media query used to centre the column and force the feature row to
+   justify-content:center, so every child sat at its own width's centre and no
+   two shared a left edge. It stacks now, and stays left. */
+@media (max-width:860px){.hero-cine{grid-template-columns:1fr;text-align:left}.hero-cine .htext{align-items:flex-start}.hero-stage{order:-1}}
 .cn-sechead-eyebrow{color:var(--text-neon)!important}
 .cn-ftile-icon{color:var(--text-neon)!important;background:var(--neon-weak)!important;border-color:rgba(232,56,159,.2)!important}
 .cn-card-accent{border-color:rgba(232,56,159,.42)!important;box-shadow:var(--edge-lit),var(--glow-neon),var(--shadow-1)!important}
