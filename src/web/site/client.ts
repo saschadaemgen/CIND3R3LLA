@@ -13,30 +13,100 @@ export const JS_BOOT_SCRIPT = `document.documentElement.className='js';`;
 /** Header chrome: mobile burger menu + closing the language dropdown on outside
  * clicks (the details element handles opening natively, no JS required). */
 export const CHROME_SCRIPT = `(function(){
-var bg=document.getElementById('cn-burger'),mm=document.getElementById('cn-mobile-menu');
-if(bg&&mm)bg.addEventListener('click',function(){
-  var open=!mm.hasAttribute('hidden');
-  if(open){mm.setAttribute('hidden','');bg.classList.remove('open');}
-  else{mm.removeAttribute('hidden');bg.classList.add('open');}
-  bg.setAttribute('aria-expanded',open?'false':'true');
+function boot(){
+/* ---- The fullscreen menu (CCB-S3-035 4a) ---------------------------------- */
+var menu=document.getElementById('cn-menu');
+var burger=document.getElementById('cn-burger');
+var lastFocus=null;
+function setMenu(open){
+  if(!menu)return;
+  if(open){menu.removeAttribute('hidden');}
+  /* Read back before flipping the flag so the transition actually runs. */
+  void menu.offsetWidth;
+  menu.setAttribute('data-open',open?'true':'false');
+  document.documentElement.style.overflow=open?'hidden':'';
+  if(burger){burger.classList.toggle('open',open);burger.setAttribute('aria-expanded',open?'true':'false');}
+  if(open){lastFocus=document.activeElement;var c=menu.querySelector('[data-menu-close]');if(c)c.focus();}
+  else{
+    /* Hide only after the transition, so it fades out instead of vanishing. */
+    setTimeout(function(){if(menu.getAttribute('data-open')!=='true')menu.setAttribute('hidden','');},220);
+    if(lastFocus&&lastFocus.focus)lastFocus.focus();
+  }
+}
+document.querySelectorAll('[data-menu-open]').forEach(function(b){
+  b.addEventListener('click',function(e){e.preventDefault();setMenu(menu&&menu.getAttribute('data-open')!=='true');});
+});
+document.querySelectorAll('[data-menu-close]').forEach(function(b){
+  b.addEventListener('click',function(){setMenu(false);});
+});
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape')return;
+  if(menu&&menu.getAttribute('data-open')==='true'){setMenu(false);return;}
+  var lm=document.querySelector('details.lang-menu[open]');
+  if(lm){lm.removeAttribute('open');var sum=lm.querySelector('summary');if(sum)sum.focus();}
 });
 document.addEventListener('click',function(e){
-  document.querySelectorAll('details.lang-menu[open],details.nav-sub[open]').forEach(function(d){
+  document.querySelectorAll('details.lang-menu[open]').forEach(function(d){
     if(!d.contains(e.target))d.removeAttribute('open');
   });
 });
-/* Escape closes the open panel and returns focus to the item that opened it, so a
-   keyboard user is never left inside a menu they cannot get out of. <details> has
-   no native Escape behaviour, and one at a time is enforced by the exclusive
-   accordion (name=), not here. */
-document.addEventListener('keydown',function(e){
-  if(e.key!=='Escape')return;
-  var open=document.querySelector('details.nav-sub[open],details.lang-menu[open]');
-  if(!open)return;
-  open.removeAttribute('open');
-  var sum=open.querySelector('summary');
-  if(sum)sum.focus();
-});
+
+/* ---- The travelling nav indicator (CCB-S3-035 4b) --------------------------
+   ONE element that animates its position and width between items, so it reads as
+   a single object tracking the cursor. Hover moves it, keyboard focus moves it,
+   and leaving the nav returns it to the active item. */
+var nav=document.querySelector('.hdr-nav');
+var ind=nav&&nav.querySelector('[data-nav-indicator]');
+if(nav&&ind){
+  var items=[].slice.call(nav.querySelectorAll('[data-nav-item]'));
+  function activeItem(){
+    return nav.querySelector('[data-nav-item].active')||items[0];
+  }
+  function moveTo(el){
+    if(!el)return;
+    var nr=nav.getBoundingClientRect(),r=el.getBoundingClientRect();
+    /* Slightly narrower than the item, so it reads as drawn rather than as a
+       default text underline stretched edge to edge. */
+    var inset=Math.min(9,r.width*0.14);
+    ind.style.width=(r.width-inset*2)+'px';
+    ind.style.transform='translate3d('+(r.left-nr.left+inset)+'px,0,0)';
+    ind.setAttribute('data-ready','true');
+  }
+  items.forEach(function(el){
+    el.addEventListener('mouseenter',function(){moveTo(el);});
+    el.addEventListener('focus',function(){moveTo(el);});
+  });
+  nav.addEventListener('mouseleave',function(){moveTo(activeItem());});
+  nav.addEventListener('focusout',function(e){
+    if(!nav.contains(e.relatedTarget))moveTo(activeItem());
+  });
+  requestAnimationFrame(function(){moveTo(activeItem());});
+  addEventListener('resize',function(){moveTo(activeItem());});
+}
+
+/* ---- The headline rotator (CCB-S3-035 3) ----------------------------------
+   The header controls' glitch: hard steps, a brief cyan/magenta tear, no soft
+   crossfade. Width is reserved in CSS by stacking every phrase, so nothing shifts.
+   Under reduced motion it holds the first phrase and never cycles. */
+var rot=document.querySelector('[data-hero-rotator]');
+if(rot&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
+  var phrases=[].slice.call(rot.querySelectorAll('[data-hero-phrase]'));
+  if(phrases.length>1){
+    var cur=0;
+    setInterval(function(){
+      if(document.hidden)return;
+      var from=phrases[cur];
+      cur=(cur+1)%phrases.length;
+      var to=phrases[cur];
+      from.classList.remove('on');from.setAttribute('aria-hidden','true');
+      to.classList.add('on');to.removeAttribute('aria-hidden');
+      to.classList.remove('glitch');void to.offsetWidth;to.classList.add('glitch');
+    },3600);
+  }
+}
+}
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);
+else boot();
 })();`;
 
 /** Twinkling multi-colour starfield (white / cyan / magenta), honors reduced motion. */

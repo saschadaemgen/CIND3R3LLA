@@ -253,10 +253,22 @@ async function main(): Promise<void> {
     'nav: entries are inert, so none of them is a link or a tab stop',
     !/<a[^>]*class="np-item/.test(platform.body) && !/np-item[^"]*"[^>]*href=/.test(platform.body),
   );
+  // CCB-S3-035: the dropdown panels are gone. One fullscreen menu carries every
+  // section, in the admin console's design language, so overlapping panels are not
+  // a state the markup can reach.
   check(
-    'nav: exactly one panel can be open at a time (exclusive accordion)',
-    (platform.body.match(/details class="nav-sub[^"]*" name="cn-nav"/g) ?? []).length ===
-      SECTIONS.length,
+    'nav: one fullscreen menu, no per-item dropdown panels',
+    platform.body.includes('id="cn-menu"') &&
+      !platform.body.includes('nav-sub') &&
+      !platform.body.includes('nav-panel'),
+  );
+  check(
+    'nav: the menu groups every section, with all its entries',
+    SECTIONS.every((sec) => platform.body.includes(`data-section="${sec.page.key}"`)),
+  );
+  check(
+    'nav: exactly one travelling indicator, not an underline per item',
+    (platform.body.match(/class="nav-indicator" data-nav-indicator/g) ?? []).length === 1,
   );
   // Each entry's contents must be plain text: no badge, no "soon", no dimming
   // element. A menu full of pending-labels reads as a product that does not work.
@@ -269,8 +281,8 @@ async function main(): Promise<void> {
   );
   const deep = await app.inject({ method: 'GET', url: '/en/platform/consent-archive' });
   check(
-    'nav: a sub-page marks its section as current',
-    deep.body.includes('nav-sub active') || deep.body.includes('class="nav-sub active"'),
+    'nav: a sub-page still marks its section as current',
+    deep.body.includes('nav-section active'),
   );
   check(
     'breadcrumbs: a sub-page shows a trail through its section',
@@ -292,9 +304,28 @@ async function main(): Promise<void> {
     'prev/next: the last page of a section has no next (the ends do not wrap)',
     lastOfSection.body.includes('rel="prev"') && !lastOfSection.body.includes('rel="next"'),
   );
+  // One menu at every width now, so there is no separate drawer to diverge.
   check(
-    'mobile: the drawer carries expandable sections, not the hover menu',
-    deep.body.includes('class="mm-sec"') || deep.body.includes('mm-sec'),
+    'mobile: the same fullscreen menu serves every width',
+    deep.body.includes('id="cn-menu"') && !deep.body.includes('cn-mobile-menu'),
+  );
+  // The hero specifically (CCB-S3-035 §1). It appeared twice, in the chip and in
+  // the feature row, on a marketing page for something nobody can obtain.
+  const heroOf = (body: string): string => {
+    const a = body.indexOf('hero-cine');
+    const b = body.indexOf('</section>', a);
+    return a < 0 ? '' : body.slice(a, b);
+  };
+  check(
+    'hero: the words "in development" appear nowhere in the hero',
+    heroOf(en.body).length > 200 &&
+      !/in development/i.test(heroOf(en.body)) &&
+      !/in Entwicklung/i.test(heroOf(de.body)),
+  );
+  const secPage = await app.inject({ method: 'GET', url: '/en/security' });
+  check(
+    'hero: and the honest screening detail is still on the Security page',
+    /in development/i.test(secPage.body),
   );
   // The demo chip is gone entirely (CCB-S3-034). It returns when the demo exists.
   check(
@@ -317,18 +348,22 @@ async function main(): Promise<void> {
     'footer: legal links on every page',
     deep.body.includes('/en/legal/privacy') && deep.body.includes('/en/legal/terms'),
   );
+  // CCB-S3-035 §1 removed the hero disclaimer, so this now measures what it always
+  // meant to: wherever a page actually CLAIMS screening, that claim carries the
+  // marker. The stub pages match nothing because they make no claim; the phrase
+  // used to reach them only through the header announcement, which is gone.
   const csamUnmarked: string[] = [];
   for (const page of treePages) {
     const res = await app.inject({ method: 'GET', url: `/en/${page.slug}` });
-    if (!/CSAM|child sexual abuse|screening provider/i.test(res.body)) continue;
-    // The requirement is that the CLAIM is marked, not that one particular badge
-    // is used. The header announcement already says it in words on every page, and
-    // authored sections add the badge; either satisfies it, neither alone is
-    // assumed.
-    if (!/in development|in Entwicklung/i.test(res.body)) csamUnmarked.push(page.slug);
+    const body = res.body;
+    // Only the visible document, never the <head>: a meta description is not a
+    // place a marker can be read.
+    const visible = body.slice(body.indexOf('<body'));
+    if (!/CSAM|child sexual abuse/i.test(visible)) continue;
+    if (!/in development|in Entwicklung|planned/i.test(visible)) csamUnmarked.push(page.slug);
   }
   check(
-    'honesty: CSAM screening is marked in development wherever it appears',
+    'honesty: wherever a page claims screening, the claim is marked in development',
     csamUnmarked.length === 0,
     csamUnmarked.join(', '),
   );

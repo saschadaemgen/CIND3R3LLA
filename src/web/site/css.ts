@@ -155,59 +155,122 @@ section.band{padding:120px 0 0}
    <details> gives click and keyboard for free. Hover-to-open is added ONLY on
    pointer-fine devices, so a touch device never gets a menu that springs open
    while you scroll past it. No script, so the CSP is untouched. */
-.nav-sub{position:relative}
-.nav-sub>summary{display:inline-flex;align-items:center;gap:5px;cursor:pointer;list-style:none;
-  padding:6px 9px;border-radius:8px;font-size:14px;color:var(--text-muted);white-space:nowrap}
-.nav-sub>summary::-webkit-details-marker{display:none}
-.nav-sub>summary:hover{color:var(--text)}
-.nav-sub>summary:focus-visible{outline:2px solid var(--text-accent);outline-offset:2px}
-.nav-sub.active>summary{color:var(--text-accent)}
-.nav-sub[open]>summary{color:var(--text)}
-.nav-sub[open]>summary .ns-chev{transform:rotate(180deg)}
-.ns-chev{transition:transform .15s ease}
+/* ---- Navigation: flat items, one travelling indicator (CCB-S3-035 §4b) ------
+   A single element that animates its position and width between items, so it
+   reads as one object following the cursor rather than as separate underlines
+   fading in and out. Timings and easing are the admin console's, because the
+   operator wants one interaction language across both surfaces. */
+.nav-desktop.hdr-nav{position:relative}
+.nav-link{padding:7px 11px;border-radius:8px;font-size:14px;color:var(--text-muted);
+  white-space:nowrap;background:none;border:0;font:inherit;font-size:14px;cursor:pointer}
+.nav-link:hover{color:var(--text)}
+.nav-link.active{color:var(--text-accent)}
+.nav-link:focus-visible{outline:2px solid var(--text-accent);outline-offset:3px}
+.nav-indicator{position:absolute;bottom:-9px;left:0;width:0;height:3px;pointer-events:none;
+  border-radius:999px;opacity:0;
+  /* Drawn properly rather than as a default text underline: a thicker bar, the
+     accent at partial opacity, and a soft falloff at both ends. */
+  background:linear-gradient(90deg,rgba(244,92,176,0) 0%,rgba(244,92,176,.92) 18%,
+    rgba(141,225,236,.92) 82%,rgba(141,225,236,0) 100%);
+  box-shadow:0 0 14px rgba(244,92,176,.42),0 0 22px rgba(141,225,236,.22);
+  transition:transform 270ms cubic-bezier(.2,.8,.2,1),width 270ms cubic-bezier(.2,.8,.2,1),
+    opacity 140ms ease;will-change:transform,width}
+.nav-indicator[data-ready=true]{opacity:1}
 
-/* THE PANEL IS HIDDEN UNLESS ITS OWN <details> IS OPEN.
-   The previous rule set display:flex on the panel unconditionally, which
-   OVERRIDES the browser's own hiding of closed <details> content: all five
-   panels rendered at once, absolutely positioned, stacked on top of each other
-   and unreadable. display on a details child must always be conditional. */
-.nav-sub>.nav-panel{display:none}
-.nav-sub[open]>.nav-panel{display:flex}
-.nav-panel{position:absolute;top:calc(100% + 8px);left:0;z-index:80;min-width:264px;
-  flex-direction:column;padding:7px;border-radius:12px;
-  border:1px solid var(--border);
-  /* Opaque on purpose. A translucent panel over dark neon body copy is the same
-     unreadable result by a different route. */
-  background:#0B1220;box-shadow:0 22px 48px rgba(0,0,0,.66)}
-/* The last section would otherwise open off the right edge of the viewport. */
-.nav-sub:last-of-type>.nav-panel{left:auto;right:0}
-.np-item{display:block;padding:8px 10px;border-radius:8px;font-size:14px;
-  color:var(--text-muted);white-space:nowrap}
-/* Entries are INERT until their pages are written: real text, no pointer, no
-   hover state, not focusable (the markup uses <span>, not <a>). They stay in the
-   menu because the menu is what shows the shape of the platform. */
-.np-item.inert{cursor:default;color:var(--text-muted)}
-.np-item.inert:hover{background:none;color:var(--text-muted)}
-.nav-panel a.np-item:hover{background:var(--bg-hover);color:var(--text)}
-.nav-panel .np-overview{border-bottom:1px solid var(--border);border-radius:8px 8px 0 0;
-  margin-bottom:4px;padding-bottom:9px}
-@media (hover:hover) and (pointer:fine){
-  /* Hover opens, and only the hovered one: each panel is scoped to its own item. */
-  .nav-sub:hover>.nav-panel{display:flex}
+/* ---- The fullscreen menu (CCB-S3-035 §4a) ----------------------------------
+   The admin console's mega-panel treatment at full viewport: the same radial
+   washes over a near-opaque base, the same mono uppercase kicker, the same
+   grouping and the same easing. Deliberately not a second design language. */
+.cn-menu{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
+  visibility:hidden;opacity:0;pointer-events:none;
+  transition:visibility 0s linear 200ms,opacity 170ms ease}
+.cn-menu[data-open=true]{visibility:visible;opacity:1;pointer-events:auto;transition-delay:0s}
+.cn-menu-wash{position:absolute;inset:0;
+  background:
+    radial-gradient(circle at 22% 4%,rgba(244,92,176,.15),transparent 30rem),
+    radial-gradient(circle at 82% 22%,rgba(141,225,236,.12),transparent 34rem),
+    rgba(5,10,18,.985);
+  backdrop-filter:blur(26px) saturate(145%)}
+.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:34px;
+  width:min(100%,1500px);margin:0 auto;padding:26px 34px 46px;height:100%;
+  overflow-y:auto;transform:translateY(-10px);
+  transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
+.cn-menu[data-open=true] .cn-menu-inner{transform:translateY(0)}
+.cn-menu-head{display:flex;align-items:center;justify-content:space-between;
+  padding-bottom:18px;border-bottom:1px solid var(--border)}
+.cn-menu-kicker{font-family:var(--font-mono);font-size:10px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent)}
+.cn-menu-close{display:inline-flex;align-items:center;justify-content:center;
+  width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
+  background:none;color:var(--text-muted);cursor:pointer}
+.cn-menu-close:hover{color:var(--text);border-color:var(--text-accent)}
+.cn-menu-close:focus-visible{outline:2px solid var(--text-accent);outline-offset:2px}
+.cn-menu-grid{display:grid;gap:30px 34px;
+  grid-template-columns:repeat(auto-fit,minmax(210px,1fr));align-items:start}
+.cn-menu-col-title{font-size:12px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--text-accent);margin:0 0 12px;
+  padding-bottom:9px;border-bottom:1px solid var(--border)}
+.cn-menu-items{display:flex;flex-direction:column;gap:2px}
+/* Entries stay inert: real text, no pointer, no hover state, not a tab stop. */
+.np-item{display:block;padding:7px 2px;font-size:14.5px;line-height:1.45;
+  color:var(--text-muted)}
+.np-item.inert{cursor:default}
+.cn-menu-foot{margin-top:auto;padding-top:20px;border-top:1px solid var(--border)}
+.cn-menu-home{font-size:14px;color:var(--text-muted)}
+.cn-menu-home:hover{color:var(--text-accent)}
+@media (max-width:640px){
+  .cn-menu-inner{padding:20px 20px 36px;gap:26px}
+  .cn-menu-grid{grid-template-columns:1fr;gap:24px}
 }
 
-/* ---- Mobile drawer: expandable sections, not a hover menu ------------------ */
-.mm-link{display:block;padding:10px 4px;font-size:15px;color:var(--text-muted)}
-.mm-link.active{color:var(--text-accent)}
-.mm-sec>summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;
-  list-style:none;padding:10px 4px;font-size:15px;color:var(--text-muted)}
-.mm-sec>summary::-webkit-details-marker{display:none}
-.mm-sec[open]>summary{color:var(--text)}
-.mm-sec[open]>summary .ns-chev{transform:rotate(180deg)}
-.mm-panel{display:flex;flex-direction:column;padding:2px 0 8px 12px;
-  border-left:1px solid var(--border);margin-left:4px}
-.mm-panel a{padding:8px 10px;font-size:14px;color:var(--text-muted);border-radius:8px}
-.mm-panel a.on{color:var(--text-accent)}
+/* ---- Hero: the feature row and the rotating headline (§2, §3) --------------- */
+/* ONE LINE, ALWAYS. nowrap on the row and on every item, so it cannot wrap by
+   accident when the copy changes later; it is not relying on the current text
+   happening to fit. Below the breakpoint it stacks deliberately. */
+.trust{display:flex;flex-wrap:nowrap;align-items:center;gap:20px;white-space:nowrap}
+.trust-item{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;flex:0 0 auto;
+  opacity:0;transform:translateY(6px);
+  animation:trustIn .5s cubic-bezier(.2,.8,.2,1) forwards}
+.trust-item[data-i="0"]{animation-delay:.62s}
+.trust-item[data-i="1"]{animation-delay:.72s}
+.trust-item[data-i="2"]{animation-delay:.82s}
+.trust-item[data-i="3"]{animation-delay:.92s}
+@keyframes trustIn{to{opacity:1;transform:translateY(0)}}
+/* A slow, very restrained shimmer. This is a supporting line, not the headline. */
+.trust-item::after{content:"";position:absolute;inset:0;pointer-events:none}
+.trust-item{position:relative;overflow:hidden}
+.trust-item::before{content:"";position:absolute;top:0;bottom:0;width:38%;
+  left:-45%;pointer-events:none;
+  background:linear-gradient(90deg,transparent,rgba(141,225,236,.16),transparent);
+  animation:trustShimmer 9s ease-in-out infinite;animation-delay:2.4s}
+@keyframes trustShimmer{0%,72%{left:-45%}88%,100%{left:115%}}
+@media (max-width:900px){
+  .trust{flex-wrap:wrap;white-space:normal;gap:12px 18px}
+}
+
+/* The rotator reserves its width by stacking every phrase and letting the widest
+   set the box, so the layout cannot shift as phrases change. */
+.hline.hrot{position:relative;display:grid;justify-items:start}
+.hrot-phrase{grid-area:1/1;opacity:0;visibility:hidden}
+.hrot-phrase.on{opacity:1;visibility:visible}
+/* The header controls' glitch: hard steps, a brief cyan/magenta tear, no soft
+   crossfade, so the hero speaks the same interaction language. */
+.hrot-phrase.glitch{animation:heroGlitch 340ms steps(1,end) both}
+@keyframes heroGlitch{
+  0%{transform:translate3d(0,0,0);clip-path:inset(0 0 0 0);
+     text-shadow:-2px 0 rgba(244,92,176,.9),2px 0 rgba(141,225,236,.9)}
+  20%{transform:translate3d(-3px,0,0);clip-path:inset(12% 0 46% 0)}
+  40%{transform:translate3d(3px,0,0);clip-path:inset(54% 0 12% 0);
+     text-shadow:3px 0 rgba(244,92,176,.9),-3px 0 rgba(141,225,236,.9)}
+  60%{transform:translate3d(-2px,0,0);clip-path:inset(28% 0 34% 0)}
+  80%{transform:translate3d(1px,0,0);clip-path:inset(0 0 0 0)}
+  100%{transform:translate3d(0,0,0);clip-path:inset(0 0 0 0);text-shadow:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .trust-item{opacity:1;transform:none;animation:none}
+  .trust-item::before{animation:none;display:none}
+  .hrot-phrase.glitch{animation:none}
+}
 
 /* ---- Breadcrumbs and previous/next ---------------------------------------- */
 .crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-top:18px;font-size:13px;
@@ -627,6 +690,63 @@ section.pt64{padding-top:64px}
 /* Bigger brand portrait in the footer */
 .wordmark-lg .wm-av{width:72px;height:72px;margin-right:16px;box-shadow:0 0 0 2px var(--magenta-500),0 0 22px rgba(232,56,159,.6)}
 .wordmark-lg .wm-name{font-size:26px}
+
+/* ---- Sections below the hero (CCB-S3-035 §5) --------------------------------
+   Every section gets a deliberate layout instead of paragraphs dropped on the
+   starfield: one alignment held throughout (left), a panel with the clipped
+   corner from the header controls so the page reads as one system, a controlled
+   measure, and a consistent eyebrow / heading / body relationship. */
+.band{padding-block:0;margin-block:0}
+.band + .band{margin-top:var(--band-gap,88px)}
+:root{--band-gap:88px;--measure:68ch}
+.cn-sechead{text-align:left;max-width:var(--measure)}
+.cn-sechead-center{text-align:left}
+.cn-sechead-eyebrow{font-family:var(--font-mono);font-size:10px;font-weight:500;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent);
+  margin-bottom:12px;display:flex;align-items:center;gap:9px}
+.cn-sechead-eyebrow::before{content:"";width:22px;height:1px;background:var(--text-accent);
+  opacity:.65;flex:0 0 auto}
+.cn-sechead-title{font-size:clamp(24px,3vw,33px);font-weight:600;line-height:1.2;
+  margin:0 0 14px;color:var(--text)}
+.cn-sechead-lede{font-size:16px;line-height:1.72;color:var(--text-muted);margin:0;
+  max-width:var(--measure)}
+
+/* The panel: the clipped corner from the header controls, so a section has an
+   edge to sit against rather than floating on the starfield. */
+.sec-panel{position:relative;padding:34px 36px;border:1px solid var(--border);
+  background:linear-gradient(180deg,rgba(11,18,32,.78),rgba(11,18,32,.55));
+  clip-path:polygon(0 0,calc(100% - 18px) 0,100% 18px,100% 100%,18px 100%,0 calc(100% - 18px))}
+.sec-panel::after{content:"";position:absolute;top:0;right:0;width:18px;height:18px;
+  background:linear-gradient(225deg,var(--text-accent),transparent);opacity:.55;
+  pointer-events:none}
+@media (max-width:640px){.sec-panel{padding:24px 20px}}
+
+/* A two-column arrangement so a text section has something to look at beside it. */
+.sec-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.85fr);
+  gap:38px;align-items:start}
+@media (max-width:900px){.sec-split{grid-template-columns:1fr;gap:26px}}
+
+/* The architecture figure: a bordered block in the same shape language. */
+.sec-figure{position:relative;padding:22px 24px;border:1px solid var(--border);
+  background:rgba(5,10,18,.6);
+  clip-path:polygon(0 0,calc(100% - 14px) 0,100% 14px,100% 100%,14px 100%,0 calc(100% - 14px))}
+.sec-figure-cap{font-family:var(--font-mono);font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--text-accent);margin:0 0 14px}
+.arch-rows{display:flex;flex-direction:column;gap:9px}
+.arch-row{display:flex;align-items:center;gap:11px;padding:10px 12px;
+  border:1px solid var(--border);border-radius:9px;background:rgba(11,18,32,.62);
+  font-size:13.5px;color:var(--text-muted)}
+.arch-row strong{color:var(--text);font-weight:600}
+.arch-flow{display:flex;justify-content:center;color:var(--text-accent);opacity:.55;
+  font-size:12px;line-height:1}
+
+/* Capability tiles keep the measure and gain the same edge treatment. */
+.cn-ftile-body{max-width:52ch}
+.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(258px,1fr));gap:18px}
+.list-col{display:flex;flex-direction:column;gap:11px;max-width:var(--measure)}
+.icon-line{display:flex;align-items:flex-start;gap:11px;font-size:15px;line-height:1.6;
+  color:var(--text-muted)}
+
 `;
 
 /** The complete site stylesheet (emitted once per page under the CSP nonce). */

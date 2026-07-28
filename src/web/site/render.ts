@@ -227,43 +227,37 @@ function inSection(v: SitePageView, sectionKey: string): boolean {
  * click AND keyboard, and this is the construction that gives all three without a
  * script the CSP would have to be loosened for.
  */
-/**
- * One entry inside a navigation panel.
- *
- * INERT BY DESIGN (CCB-S3-034). The individual pages are commissioned one at a
- * time, so the entries are real text rather than links: no href, no pointer, no
- * hover state, and not reachable by tab, because a focus stop that goes nowhere is
- * worse than no focus stop. They stay listed because the menu is what shows the
- * shape of the platform, and no badge or dimming marks them, because a menu full
- * of "soon" labels reads as a product that does not work.
- */
-function navEntry(label: string, overview: boolean): SafeHtml {
-  return html`<span class="np-item inert${overview ? ' np-overview' : ''}">${label}</span>`;
-}
 
 function navLinks(v: SitePageView): SafeHtml {
+  // FLAT ITEMS, ONE INDICATOR. The dropdown panels are gone: the sections open in
+  // the fullscreen menu instead, which is the admin console's language and removes
+  // the whole class of overlapping-panel bugs as a side effect rather than as the
+  // point. The indicator is a single element that travels between items, so it
+  // reads as one object tracking the cursor rather than as separate underlines
+  // fading in and out (CCB-S3-035 §4b).
   return html`<a
       class="nav-link${v.page.key === HOME.key ? ' active' : ''}"
       href="${pagePath(v.locale, HOME)}"
+      data-nav-item
       ${v.page.key === HOME.key ? raw('aria-current="page"') : ''}
       >${v.t('nav.home')}</a
     >
     ${SECTIONS.map((sec) => {
       const current = inSection(v, sec.page.key);
-      // `name` makes these an EXCLUSIVE accordion: opening one closes the rest,
-      // enforced by the browser rather than by a script. One panel at a time is
-      // then true for click and for the keyboard, not only for hover.
-      return html`<details class="nav-sub${current ? ' active' : ''}" name="cn-nav">
-        <summary>
-          <span>${v.t(sec.page.navKey)}</span>
-          ${siteIcon('chevron-down', { size: 13, className: 'ns-chev' })}
-        </summary>
-        <div class="nav-panel">
-          ${navEntry(v.t('nav.overview'), true)}
-          ${sec.children.map((c) => navEntry(v.t(c.navKey), false))}
-        </div>
-      </details>`;
-    })}`;
+      // The section names open the fullscreen menu rather than navigating,
+      // because their overview pages are not commissioned yet (CCB-S3-034).
+      return html`<button
+        type="button"
+        class="nav-link nav-section${current ? ' active' : ''}"
+        data-nav-item
+        data-menu-open
+        data-section="${sec.page.key}"
+        ${current ? raw('aria-current="true"') : ''}
+      >
+        ${v.t(sec.page.navKey)}
+      </button>`;
+    })}
+    <span class="nav-indicator" data-nav-indicator aria-hidden="true"></span>`;
 }
 
 /**
@@ -275,25 +269,47 @@ function navLinks(v: SitePageView): SafeHtml {
  * that expands in place, and the section holding the current page starts open so a
  * reader lands with their surroundings already visible.
  */
-function mobileNav(v: SitePageView): SafeHtml {
-  return html`<a
-      class="mm-link${v.page.key === HOME.key ? ' active' : ''}"
-      href="${pagePath(v.locale, HOME)}"
-      >${v.t('nav.home')}</a
-    >
-    ${SECTIONS.map((sec) => {
-      const current = inSection(v, sec.page.key);
-      return html`<details class="mm-sec" name="cn-mm" ${current ? raw('open') : ''}>
-        <summary>
-          <span>${v.t(sec.page.navKey)}</span>
-          ${siteIcon('chevron-down', { size: 15, className: 'ns-chev' })}
-        </summary>
-        <div class="mm-panel">
-          ${navEntry(v.t('nav.overview'), false)}
-          ${sec.children.map((c) => navEntry(v.t(c.navKey), false))}
-        </div>
-      </details>`;
-    })}`;
+/**
+ * The fullscreen menu (CCB-S3-035 §4a).
+ *
+ * One menu for every width, built in the admin console's language: the same
+ * radial-gradient panel wash over a near-opaque base, the same mono uppercase
+ * kicker over each group, the same easing and the same grouping. The operator
+ * wanted one design system across both surfaces, so this deliberately does not
+ * invent a second one.
+ *
+ * Entries stay inert (CCB-S3-034): real text, no href, not a tab stop, no badges.
+ * The menu is what shows the shape of the platform, so nothing is dropped while the
+ * individual pages are commissioned one at a time.
+ */
+function fullscreenMenu(v: SitePageView): SafeHtml {
+  return html`<div class="cn-menu" id="cn-menu" data-menu data-open="false" hidden>
+    <div class="cn-menu-wash" aria-hidden="true"></div>
+    <div class="cn-menu-inner">
+      <div class="cn-menu-head">
+        <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
+        <button type="button" class="cn-menu-close" data-menu-close aria-label="${v.t('nav.menu.close')}">
+          ${siteIcon('x', { size: 20 })}
+        </button>
+      </div>
+      <div class="cn-menu-grid">
+        ${SECTIONS.map(
+          (sec) => html`<section class="cn-menu-col" data-section="${sec.page.key}">
+            <h2 class="cn-menu-col-title">${v.t(sec.page.navKey)}</h2>
+            <div class="cn-menu-items">
+              ${[
+                v.t('nav.overview'),
+                ...sec.children.map((c) => v.t(c.navKey)),
+              ].map((label) => html`<span class="np-item inert">${label}</span>`)}
+            </div>
+          </section>`,
+        )}
+      </div>
+      <div class="cn-menu-foot">
+        <a class="cn-menu-home" href="${pagePath(v.locale, HOME)}">${v.t('nav.home')}</a>
+      </div>
+    </div>
+  </div>`;
 }
 
 /** Breadcrumbs, so a reader below the top level knows where they are. */
@@ -386,10 +402,11 @@ function header(v: SitePageView): SafeHtml {
       <button
         type="button"
         id="cn-burger"
+        data-menu-open
         class="hdr-iconbtn burger"
         aria-label="${v.t('a11y.menu')}"
         aria-expanded="false"
-        aria-controls="cn-mobile-menu"
+        aria-controls="cn-menu"
       >
         ${siteIcon('menu', { size: 20, className: 'i-menu' })}${siteIcon('x', {
           size: 20,
@@ -397,10 +414,7 @@ function header(v: SitePageView): SafeHtml {
         })}
       </button>
     </div>
-    <div id="cn-mobile-menu" class="mobile-menu mobile-panel" hidden>
-      <nav class="mm-nav" aria-label="Menu">${mobileNav(v)}</nav>
-      <div class="mm-controls">${headerControls(v)}</div>
-    </div>
+    ${fullscreenMenu(v)}
   </header>`;
 }
 
@@ -625,13 +639,21 @@ function homeBody(v: SitePageView): SafeHtml {
     v.t('home.control.point2'),
     v.t('home.control.point3'),
   ];
+  // FOUR items, deliberately. The fifth (CSAM screening) is gone from the hero
+  // entirely: the honest detail belongs on the Security page, where somebody
+  // evaluating the product reads it properly, and a disclaimer on a marketing hero
+  // for something nobody can obtain protects no one (CCB-S3-035 §1).
   const trust: Array<[string, string]> = [
-    ['shield-alert', v.t('trust.csam')],
     ['shield-check', v.t('trust.consent')],
     ['key-round', v.t('trust.passkeys')],
     ['cpu', v.t('trust.localai')],
-    ['git-branch', 'AGPL-3.0'],
+    ['git-branch', v.t('trust.agpl')],
   ];
+  // The rotating half of the headline. The width is reserved by rendering every
+  // phrase stacked, so the layout cannot shift as they change.
+  const rotations = ['hero.rot1', 'hero.rot2', 'hero.rot3', 'hero.rot4', 'hero.rot5'].map((k) =>
+    v.t(k),
+  );
   const secPoints: Array<[string, string]> = [
     ['key-round', v.t('home.sec.point1')],
     ['lock', v.t('home.sec.point2')],
@@ -649,7 +671,17 @@ function homeBody(v: SitePageView): SafeHtml {
           </a>
           <h1 class="hero-h1 home-h1">
             <span class="hline sym sym-blur d120">${v.t('hero.title1')}</span>
-            <span class="hline grad-text sym sym-rise d240">${v.t('hero.title2')}</span>
+            <span class="hline grad-text sym sym-rise d240 hrot" data-hero-rotator>
+              ${rotations.map(
+                (phrase, i) =>
+                  html`<span
+                    class="hrot-phrase${i === 0 ? ' on' : ''}"
+                    data-hero-phrase
+                    ${i === 0 ? raw('') : raw('aria-hidden="true"')}
+                    >${phrase}</span
+                  >`,
+              )}
+            </span>
           </h1>
           <p class="home-lede sym sym-left d380">${v.t('hero.lede')}</p>
           <div class="home-cta sym sym-scale d480">
@@ -661,10 +693,12 @@ function homeBody(v: SitePageView): SafeHtml {
               html`${v.t('hero.cta.explore')} ${siteIcon('arrow-right', { size: 15 })}`,
             )}
           </div>
-          <div class="trust trust-left sym sym-blur d580">
+          <div class="trust trust-left" data-hero-features>
             ${trust.map(
-              ([i, label]) =>
-                html`<span>${siteIcon(i, { size: 14, tone: 'faint' })}${label}</span>`,
+              ([i, label], n) =>
+                html`<span class="trust-item" data-i="${String(n)}"
+                  >${siteIcon(i, { size: 14, tone: 'faint' })}${label}</span
+                >`,
             )}
           </div>
         </div>
