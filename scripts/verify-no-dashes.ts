@@ -25,7 +25,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_INTERACTION } from '../src/interaction/settings.js';
 import { buildHelpReply, buildHelpTopic } from '../src/interaction/help.js';
-import { WELCOME_MESSAGE } from '../src/consent/commands.js';
+import { welcomeMessage } from '../src/consent/commands.js';
 import type { Intent } from '../src/interaction/intent.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -76,7 +76,7 @@ for (const lang of ['en', 'de'] as const) {
   check(`helpTopic.consent.${lang}`, buildHelpTopic('consent', 'Cinderella', lang));
   check(`helpTopic.prices.${lang}`, buildHelpTopic('prices', 'Cinderella', lang));
 }
-check('WELCOME_MESSAGE', WELCOME_MESSAGE);
+check('welcomeMessage', welcomeMessage('Cinderella'));
 
 /* ── 3. Source backstop (comments stripped) ──────────────────────────────── */
 function stripComments(src: string): string {

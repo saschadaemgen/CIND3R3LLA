@@ -21,9 +21,21 @@ if(bg&&mm)bg.addEventListener('click',function(){
   bg.setAttribute('aria-expanded',open?'false':'true');
 });
 document.addEventListener('click',function(e){
-  document.querySelectorAll('details.lang-menu[open]').forEach(function(d){
+  document.querySelectorAll('details.lang-menu[open],details.nav-sub[open]').forEach(function(d){
     if(!d.contains(e.target))d.removeAttribute('open');
   });
+});
+/* Escape closes the open panel and returns focus to the item that opened it, so a
+   keyboard user is never left inside a menu they cannot get out of. <details> has
+   no native Escape behaviour, and one at a time is enforced by the exclusive
+   accordion (name=), not here. */
+document.addEventListener('keydown',function(e){
+  if(e.key!=='Escape')return;
+  var open=document.querySelector('details.nav-sub[open],details.lang-menu[open]');
+  if(!open)return;
+  open.removeAttribute('open');
+  var sum=open.querySelector('summary');
+  if(sum)sum.focus();
 });
 })();`;
 

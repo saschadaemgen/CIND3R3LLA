@@ -162,29 +162,39 @@ section.band{padding:120px 0 0}
 .nav-sub>summary:hover{color:var(--text)}
 .nav-sub>summary:focus-visible{outline:2px solid var(--text-accent);outline-offset:2px}
 .nav-sub.active>summary{color:var(--text-accent)}
+.nav-sub[open]>summary{color:var(--text)}
 .nav-sub[open]>summary .ns-chev{transform:rotate(180deg)}
 .ns-chev{transition:transform .15s ease}
-.nav-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:248px;
-  display:flex;flex-direction:column;padding:6px;border-radius:12px;
-  border:1px solid var(--border);background:var(--bg-panel);box-shadow:0 18px 40px rgba(0,0,0,.55)}
-.nav-panel a{padding:8px 10px;border-radius:8px;font-size:14px;color:var(--text-muted);white-space:nowrap}
-.nav-panel a:hover{background:var(--bg-hover);color:var(--text)}
-.nav-panel a.on{color:var(--text-accent)}
-.nav-panel .np-overview{border-bottom:1px solid var(--border);border-radius:8px 8px 0 0;margin-bottom:4px}
-@media (hover:hover) and (pointer:fine){
-  .nav-sub:hover>.nav-panel{display:flex}
-  .nav-sub:not([open])>.nav-panel{display:none}
-  .nav-sub:hover:not([open])>.nav-panel{display:flex}
-}
 
-/* The Demo entry. A chip rather than a link until the demo exists, because a nav
-   item that 404s is worse than one that says it is coming. */
-.nav-demo{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;
-  font-size:13px;font-weight:600;border:1px solid var(--text-accent);color:var(--text-accent)}
-.nav-demo:hover{background:var(--text-accent);color:var(--bg)}
-.nav-demo.soon{border-style:dashed;opacity:.62;cursor:default}
-.nav-demo.soon:hover{background:none;color:var(--text-accent)}
-.nav-demo em{font-style:normal;font-size:11px;opacity:.8}
+/* THE PANEL IS HIDDEN UNLESS ITS OWN <details> IS OPEN.
+   The previous rule set display:flex on the panel unconditionally, which
+   OVERRIDES the browser's own hiding of closed <details> content: all five
+   panels rendered at once, absolutely positioned, stacked on top of each other
+   and unreadable. display on a details child must always be conditional. */
+.nav-sub>.nav-panel{display:none}
+.nav-sub[open]>.nav-panel{display:flex}
+.nav-panel{position:absolute;top:calc(100% + 8px);left:0;z-index:80;min-width:264px;
+  flex-direction:column;padding:7px;border-radius:12px;
+  border:1px solid var(--border);
+  /* Opaque on purpose. A translucent panel over dark neon body copy is the same
+     unreadable result by a different route. */
+  background:#0B1220;box-shadow:0 22px 48px rgba(0,0,0,.66)}
+/* The last section would otherwise open off the right edge of the viewport. */
+.nav-sub:last-of-type>.nav-panel{left:auto;right:0}
+.np-item{display:block;padding:8px 10px;border-radius:8px;font-size:14px;
+  color:var(--text-muted);white-space:nowrap}
+/* Entries are INERT until their pages are written: real text, no pointer, no
+   hover state, not focusable (the markup uses <span>, not <a>). They stay in the
+   menu because the menu is what shows the shape of the platform. */
+.np-item.inert{cursor:default;color:var(--text-muted)}
+.np-item.inert:hover{background:none;color:var(--text-muted)}
+.nav-panel a.np-item:hover{background:var(--bg-hover);color:var(--text)}
+.nav-panel .np-overview{border-bottom:1px solid var(--border);border-radius:8px 8px 0 0;
+  margin-bottom:4px;padding-bottom:9px}
+@media (hover:hover) and (pointer:fine){
+  /* Hover opens, and only the hovered one: each panel is scoped to its own item. */
+  .nav-sub:hover>.nav-panel{display:flex}
+}
 
 /* ---- Mobile drawer: expandable sections, not a hover menu ------------------ */
 .mm-link{display:block;padding:10px 4px;font-size:15px;color:var(--text-muted)}

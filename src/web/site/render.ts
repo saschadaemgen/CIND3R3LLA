@@ -227,6 +227,20 @@ function inSection(v: SitePageView, sectionKey: string): boolean {
  * click AND keyboard, and this is the construction that gives all three without a
  * script the CSP would have to be loosened for.
  */
+/**
+ * One entry inside a navigation panel.
+ *
+ * INERT BY DESIGN (CCB-S3-034). The individual pages are commissioned one at a
+ * time, so the entries are real text rather than links: no href, no pointer, no
+ * hover state, and not reachable by tab, because a focus stop that goes nowhere is
+ * worse than no focus stop. They stay listed because the menu is what shows the
+ * shape of the platform, and no badge or dimming marks them, because a menu full
+ * of "soon" labels reads as a product that does not work.
+ */
+function navEntry(label: string, overview: boolean): SafeHtml {
+  return html`<span class="np-item inert${overview ? ' np-overview' : ''}">${label}</span>`;
+}
+
 function navLinks(v: SitePageView): SafeHtml {
   return html`<a
       class="nav-link${v.page.key === HOME.key ? ' active' : ''}"
@@ -236,26 +250,17 @@ function navLinks(v: SitePageView): SafeHtml {
     >
     ${SECTIONS.map((sec) => {
       const current = inSection(v, sec.page.key);
-      return html`<details class="nav-sub${current ? ' active' : ''}">
+      // `name` makes these an EXCLUSIVE accordion: opening one closes the rest,
+      // enforced by the browser rather than by a script. One panel at a time is
+      // then true for click and for the keyboard, not only for hover.
+      return html`<details class="nav-sub${current ? ' active' : ''}" name="cn-nav">
         <summary>
           <span>${v.t(sec.page.navKey)}</span>
           ${siteIcon('chevron-down', { size: 13, className: 'ns-chev' })}
         </summary>
-        <div class="nav-panel" role="menu" aria-label="${v.t(sec.page.navKey)}">
-          <a
-            class="np-overview${v.page.key === sec.page.key ? ' on' : ''}"
-            href="${pagePath(v.locale, sec.page)}"
-            >${v.t('nav.overview')}</a
-          >
-          ${sec.children.map(
-            (c) =>
-              html`<a
-                class="${v.page.key === c.key ? 'on' : ''}"
-                href="${pagePath(v.locale, c)}"
-                ${v.page.key === c.key ? raw('aria-current="page"') : ''}
-                >${v.t(c.navKey)}</a
-              >`,
-          )}
+        <div class="nav-panel">
+          ${navEntry(v.t('nav.overview'), true)}
+          ${sec.children.map((c) => navEntry(v.t(c.navKey), false))}
         </div>
       </details>`;
     })}`;
@@ -278,46 +283,17 @@ function mobileNav(v: SitePageView): SafeHtml {
     >
     ${SECTIONS.map((sec) => {
       const current = inSection(v, sec.page.key);
-      return html`<details class="mm-sec" ${current ? raw('open') : ''}>
+      return html`<details class="mm-sec" name="cn-mm" ${current ? raw('open') : ''}>
         <summary>
           <span>${v.t(sec.page.navKey)}</span>
           ${siteIcon('chevron-down', { size: 15, className: 'ns-chev' })}
         </summary>
         <div class="mm-panel">
-          <a
-            class="${v.page.key === sec.page.key ? 'on' : ''}"
-            href="${pagePath(v.locale, sec.page)}"
-            >${v.t('nav.overview')}</a
-          >
-          ${sec.children.map(
-            (c) =>
-              html`<a class="${v.page.key === c.key ? 'on' : ''}" href="${pagePath(v.locale, c)}"
-                >${v.t(c.navKey)}</a
-              >`,
-          )}
+          ${navEntry(v.t('nav.overview'), false)}
+          ${sec.children.map((c) => navEntry(v.t(c.navKey), false))}
         </div>
       </details>`;
     })}`;
-}
-
-/**
- * The Demo link.
- *
- * MUST NOT LEAD TO A 404 (briefing Part B). Until the demo itself ships this is a
- * labelled chip rather than a link, because sending a visitor to a page that is not
- * there is worse than telling them it is coming. Setting `site.demoUrl` turns it
- * into a real link, which is the switch the briefing asks for.
- */
-function demoLink(v: SitePageView): SafeHtml {
-  const url = v.site.demoUrl?.trim();
-  return url
-    ? html`<a class="nav-demo" href="${url}"
-        >${siteIcon('play', { size: 14 })} ${v.t('nav.demo')}</a
-      >`
-    : html`<span class="nav-demo soon" aria-disabled="true"
-        >${siteIcon('play', { size: 14 })} ${v.t('nav.demo')}
-        <em>${v.t('nav.demo.soon')}</em></span
-      >`;
 }
 
 /** Breadcrumbs, so a reader below the top level knows where they are. */
@@ -405,7 +381,7 @@ function header(v: SitePageView): SafeHtml {
     <div class="wrap hdr-row">
       ${wordmark(v)}
       <nav class="nav-desktop hdr-nav" aria-label="Primary">${navLinks(v)}</nav>
-      <span class="nav-desktop hdr-controls">${demoLink(v)}${headerControls(v)}</span>
+      <span class="nav-desktop hdr-controls">${headerControls(v)}</span>
       <span class="mobile-menu hdr-spacer"></span>
       <button
         type="button"
@@ -423,7 +399,7 @@ function header(v: SitePageView): SafeHtml {
     </div>
     <div id="cn-mobile-menu" class="mobile-menu mobile-panel" hidden>
       <nav class="mm-nav" aria-label="Menu">${mobileNav(v)}</nav>
-      <div class="mm-controls">${demoLink(v)}${headerControls(v)}</div>
+      <div class="mm-controls">${headerControls(v)}</div>
     </div>
   </header>`;
 }
@@ -634,26 +610,27 @@ function demoConfig(v: SitePageView): DemoConfig {
 
 function homeBody(v: SitePageView): SafeHtml {
   const l = v.locale;
-  const tiles = [
-    ['shield-alert', 'csam'],
-    ['shield-check', 'consent'],
-    ['lock', 'secure'],
-    ['database', 'archived'],
-  ] as const;
+  const caps: Array<[string, string]> = [
+    ['cpu', 'ai'],
+    ['users', 'identities'],
+    ['sparkles', 'npcs'],
+    ['user-cog', 'agents'],
+    ['database', 'memory'],
+    ['sliders-horizontal', 'admin'],
+    ['shield-alert', 'safety'],
+    ['git-branch', 'selfhost'],
+  ];
+  const controlPoints = [
+    v.t('home.control.point1'),
+    v.t('home.control.point2'),
+    v.t('home.control.point3'),
+  ];
   const trust: Array<[string, string]> = [
     ['shield-alert', v.t('trust.csam')],
     ['shield-check', v.t('trust.consent')],
     ['key-round', v.t('trust.passkeys')],
     ['cpu', v.t('trust.localai')],
     ['git-branch', 'AGPL-3.0'],
-  ];
-  const roadmap = [
-    'matrix',
-    'categorization',
-    'videogallery',
-    'moderation',
-    'localai',
-    'multitenancy',
   ];
   const secPoints: Array<[string, string]> = [
     ['key-round', v.t('home.sec.point1')],
@@ -665,7 +642,7 @@ function homeBody(v: SitePageView): SafeHtml {
     <section class="hero-bg fx-hero">
       <div class="wrap hero-cine">
         <div class="htext">
-          <a class="ann sym sym-left d40" href="/${l}/features">
+          <a class="ann sym sym-left d40" href="/${l}/platform">
             <span class="ann-dot"></span>
             <span>${v.t('hero.ann')}</span>
             <span class="ann-chip">${siteIcon('arrow-right', { size: 13 })}</span>
@@ -678,7 +655,7 @@ function homeBody(v: SitePageView): SafeHtml {
           <div class="home-cta sym sym-scale d480">
             ${btnLink(`/${l}/security`, 'primary', 'lg', html`${v.t('hero.cta.safeguards')}`)}
             ${btnLink(
-              `/${l}/features`,
+              `/${l}/platform`,
               'secondary',
               'lg',
               html`${v.t('hero.cta.explore')} ${siteIcon('arrow-right', { size: 15 })}`,
@@ -717,11 +694,6 @@ function homeBody(v: SitePageView): SafeHtml {
         lede: v.t('home.how.lede'),
         center: true,
       })}
-      <div class="grid4 mt48">
-        ${tiles.map(([icon, k]) =>
-          featureTile(icon, v.t(`home.tile.${k}.title`), v.t(`home.tile.${k}.body`)),
-        )}
-      </div>
     </section>
 
     <section class="band wrap" data-reveal>
@@ -729,33 +701,29 @@ function homeBody(v: SitePageView): SafeHtml {
         eyebrow: v.t('home.suite.eyebrow'),
         title: v.t('home.suite.title'),
         lede: v.t('home.suite.lede'),
+        center: true,
       })}
-      <div class="grid2 grid-stretch mt40">
-        <div class="cn-card cn-card-default cn-card-pad-lg">
-          <div class="row-title">
-            <span class="card-title">${v.t('home.suite.archive.title')}</span>${badge(
-              'success',
-              v.t('badge.live'),
-            )}
-          </div>
-          <p class="card-lede">${v.t('home.suite.archive.body')}</p>
-          ${btnLink(
-            `/${l}/features`,
-            'secondary',
-            'sm',
-            html`${v.t('home.suite.archive.cta')} ${siteIcon('arrow-right', { size: 14 })}`,
+      <div class="grid4 mt48">
+        ${caps.map(([icon, k]) =>
+          featureTile(icon, v.t(`home.cap.${k}.title`), v.t(`home.cap.${k}.body`)),
+        )}
+      </div>
+    </section>
+
+    <section class="band wrap" data-reveal>
+      <div class="cn-card cn-card-default cn-card-pad-lg">
+        ${sectionHeader({
+          eyebrow: v.t('home.control.eyebrow'),
+          title: v.t('home.control.title'),
+          lede: v.t('home.control.lede'),
+        })}
+        <div class="list-col mt22">
+          ${controlPoints.map(
+            (point) =>
+              html`<div class="icon-line">
+                ${siteIcon('shield-check', { size: 17, tone: 'accent' })}${point}
+              </div>`,
           )}
-        </div>
-        <div class="cn-card cn-card-default cn-card-pad-lg">
-          <div class="card-title">${v.t('home.suite.roadmap.title')}</div>
-          <div class="list-col">
-            ${roadmap.map(
-              (r) =>
-                html`<div class="roadmap-row">
-                  <span>${v.t(`roadmap.${r}`)}</span>${badge('outline', v.t('badge.planned'))}
-                </div>`,
-            )}
-          </div>
         </div>
       </div>
     </section>

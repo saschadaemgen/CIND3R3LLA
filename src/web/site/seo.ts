@@ -84,12 +84,25 @@ export function resolveSiteHead(c: SiteSeoContext): SiteSeoHead {
   const authored = contentFor(c.page.key, c.locale);
   const metaTitle = c.t(`meta.${c.page.key}.title`);
   const metaDesc = c.t(`meta.${c.page.key}.description`);
-  const title =
-    authored && metaTitle === `meta.${c.page.key}.title`
-      ? `${authored.title} · ${c.t('brand.name')}`
-      : metaTitle;
-  const description =
-    authored && metaDesc === `meta.${c.page.key}.description` ? authored.description : metaDesc;
+  //
+  // NO RAW KEY MAY EVER REACH THE PAGE (CCB-S3-034). `t()` returns the key itself
+  // when it is missing, which put `meta.contributing.title` in a browser tab. The
+  // fix is structural rather than 34 new strings in 40 locale files: resolve in
+  // order, and end on something that cannot be missing. The nav label exists for
+  // every page in the tree by construction, so the last step always resolves.
+  const titleMissing = metaTitle === `meta.${c.page.key}.title`;
+  const descMissing = metaDesc === `meta.${c.page.key}.description`;
+  const brand = c.t('brand.name');
+  const title = !titleMissing
+    ? metaTitle
+    : authored
+      ? `${authored.title} · ${brand}`
+      : `${c.t(c.page.navKey)} · ${brand}`;
+  const description = !descMissing
+    ? metaDesc
+    : authored
+      ? authored.description
+      : c.t('meta.home.description');
   const canonicalUrl = `${c.origin}${pagePath(c.locale, c.page)}`;
   // Built pages are indexable; thin stubs AND draft legal texts are noindex (still
   // followable) so placeholders don't dilute the index while links stay crawlable.

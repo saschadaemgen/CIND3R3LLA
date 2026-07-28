@@ -236,11 +236,36 @@ async function main(): Promise<void> {
     'tree: a section overview is 200 and indexable',
     platform.statusCode === 200 && platform.body.includes('name="robots" content="index'),
   );
+  // CCB-S3-034: every entry is present as INERT TEXT, not a link. The menu is what
+  // shows the shape of the platform, so nothing is dropped while the individual
+  // pages are commissioned; but an entry that goes nowhere must not look like it
+  // does, and must not be a tab stop.
   check(
-    'nav: every section renders a submenu with its children',
+    'nav: all 28 entries are present in the menu',
     SECTIONS.every((sec) =>
-      sec.children.every((c) => platform.body.includes(`href="/en/${c.slug}"`)),
+      [locales.t('en', 'nav.overview'), ...sec.children.map((c) => locales.t('en', c.navKey))].every(
+        (label) => platform.body.includes(`class="np-item inert">${label}</span>`) ||
+          platform.body.includes(`inert np-overview">${label}</span>`),
+      ),
     ),
+  );
+  check(
+    'nav: entries are inert, so none of them is a link or a tab stop',
+    !/<a[^>]*class="np-item/.test(platform.body) && !/np-item[^"]*"[^>]*href=/.test(platform.body),
+  );
+  check(
+    'nav: exactly one panel can be open at a time (exclusive accordion)',
+    (platform.body.match(/details class="nav-sub[^"]*" name="cn-nav"/g) ?? []).length ===
+      SECTIONS.length,
+  );
+  // Each entry's contents must be plain text: no badge, no "soon", no dimming
+  // element. A menu full of pending-labels reads as a product that does not work.
+  const entryInners = [...platform.body.matchAll(/<span class="np-item[^"]*">([\s\S]*?)<\/span>/g)]
+    .map((m) => m[1] ?? '');
+  check(
+    'nav: no badge or "soon" label decorates an entry',
+    entryInners.length > 0 && entryInners.every((t) => !t.includes('<')),
+    entryInners.filter((t) => t.includes('<')).slice(0, 2).join(' | '),
   );
   const deep = await app.inject({ method: 'GET', url: '/en/platform/consent-archive' });
   check(
@@ -271,9 +296,10 @@ async function main(): Promise<void> {
     'mobile: the drawer carries expandable sections, not the hover menu',
     deep.body.includes('class="mm-sec"') || deep.body.includes('mm-sec'),
   );
+  // The demo chip is gone entirely (CCB-S3-034). It returns when the demo exists.
   check(
-    'demo: the header entry exists and does NOT link anywhere while the demo is unbuilt',
-    deep.body.includes('nav-demo soon') && !deep.body.includes('href="https://demo.'),
+    'demo: no demo chip anywhere in the header',
+    !deep.body.includes('nav-demo') && !deep.body.includes('demo.cind3r3lla'),
   );
   const proDe = await app.inject({ method: 'GET', url: '/de/pro' });
   check(
