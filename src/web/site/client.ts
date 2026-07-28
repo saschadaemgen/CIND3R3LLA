@@ -113,8 +113,8 @@ if(rot&&!matchMedia('(prefers-reduced-motion: reduce)').matches){
       var from=phrases[cur];
       cur=(cur+1)%phrases.length;
       var to=phrases[cur];
-      from.classList.remove('on');from.setAttribute('aria-hidden','true');
-      to.classList.add('on');to.removeAttribute('aria-hidden');
+      from.removeAttribute('data-on');from.setAttribute('aria-hidden','true');
+      to.setAttribute('data-on','');to.removeAttribute('aria-hidden');
       to.classList.remove('glitch');void to.offsetWidth;to.classList.add('glitch');
     },3600);
   }

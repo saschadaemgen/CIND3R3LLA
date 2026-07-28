@@ -315,75 +315,76 @@ function demoControl(v: SitePageView, inMenu = false): SafeHtml {
 }
 
 /**
- * The fullscreen menu (CCB-S3-036 4), built to the admin console's shape.
+ * The navigation panel: the admin console's mega panel, COPIED (CCB-S3-038 1).
  *
- * IT RENDERED AS AN EMPTY BAR, and the cause was not the markup: the content was
- * always there. `.cn-menu` is `position: fixed; inset: 0`, and it was a child of
- * `<header>`, which carries `backdrop-filter: blur(16px)`. A backdrop-filter makes
- * an element the containing block for fixed-position descendants, so `inset: 0`
- * resolved against the 64px header instead of the viewport. Measured: the menu box
- * was 64px tall around a 541px grid, which is exactly a bar with a kicker and a
- * close cross. It is now a sibling of the header, in the body.
+ * Three previous attempts took the colours and the easing and rebuilt the
+ * structure from a description, and all three were wrong. This is the admin's
+ * markup with `admin-mega-` renamed to `cn-mega-`, fed the site's sections. The
+ * grid, the column sizing, the intro block, the entry rows, the spacing, the
+ * timing and the border and background treatment are unchanged.
  *
- * MATCHING THE ADMIN means the three-column structure, not the colours: an intro
- * column carrying a kicker, the section heading and a description, then entry
- * columns where each entry has an icon, a label and a one-line description.
- * Entries stay inert until their pages are commissioned (CCB-S3-034).
+ * Shape, from the admin: ONE shell positioned `absolute; top:100%` under the
+ * header, holding one panel per section, all `hidden` but the open one. It drops
+ * from the header and occupies the upper part of the viewport. It is not a
+ * full-viewport overlay, and it was one until now.
+ *
+ * Entries are inert (CCB-S3-034), so the admin's `<a>` becomes a `<span>`; that is
+ * the only structural change, and the CSS is identical for both.
  */
-function fullscreenMenu(v: SitePageView): SafeHtml {
-  return html`<div class="cn-menu" id="cn-menu" data-menu data-open="false" hidden>
-    <div class="cn-menu-wash" aria-hidden="true"></div>
-    <div class="cn-menu-inner">
-      <div class="cn-menu-head">
-        <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
-        <button
-          type="button"
-          class="cn-menu-close"
-          data-menu-close
-          aria-label="${v.t('nav.menu.close')}"
+function megaPanel(v: SitePageView, sec: (typeof NAV_SECTIONS)[number]): SafeHtml {
+  const copy = menuCopyFor(sec.page.key);
+  const rows: Array<[string, string]> = [
+    [v.t('nav.overview'), 'overview'],
+    ...sec.children.map((c) => [v.t(c.navKey), c.key] as [string, string]),
+  ];
+  return html`<section
+    id="cn-mega-${sec.page.key}"
+    class="cn-mega-panel"
+    data-mega-panel="${sec.page.key}"
+    aria-hidden="true"
+    hidden
+  >
+    <div class="cn-mega-panel-inner">
+      <div class="cn-mega-intro">
+        <span class="cn-mega-kicker">${v.t('nav.menu.kicker')}</span>
+        <h2 class="cn-mega-title">${v.t(sec.page.navKey)}</h2>
+        <p class="cn-mega-description">
+          ${copy ? localised(copy.intro, v.locale) : ''}
+        </p>
+        <a href="${pagePath(v.locale, sec.page)}" class="cn-mega-overview-link"
+          >${v.t('nav.overview')}</a
         >
-          ${siteIcon('x', { size: 20 })}
-        </button>
       </div>
-      <div class="cn-menu-demo">${demoControl(v, true)}</div>
-      <div class="cn-menu-sections">
-        ${NAV_SECTIONS.map((sec) => {
-          const copy = menuCopyFor(sec.page.key);
-          const rows: Array<[string, string, string]> = [
-            [sec.page.key, v.t('nav.overview'), 'overview'],
-            ...sec.children.map(
-              (c) => [c.key, v.t(c.navKey), c.key] as [string, string, string],
-            ),
-          ];
-          return html`<section
-            class="cn-menu-block"
-            data-section="${sec.page.key}"
-            data-menu-block
-            hidden
-          >
-            <div class="cn-menu-intro">
-              <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
-              <h2 class="cn-menu-heading">${v.t(sec.page.navKey)}</h2>
-              ${copy
-                ? html`<p class="cn-menu-desc">${localised(copy.intro, v.locale)}</p>`
-                : null}
-            </div>
-            <div class="cn-menu-entries">
-              ${rows.map(([, label, copyKey]) => {
-                const ec = copy?.entries[copyKey];
-                return html`<span class="cn-menu-entry np-item inert">
-                  <span class="cme-icon">${siteIcon(ec?.icon ?? 'circle', { size: 15 })}</span>
-                  <span class="cme-text">
-                    <span class="cme-label">${label}</span>
-                    ${ec ? html`<span class="cme-desc">${localised(ec, v.locale)}</span>` : null}
-                  </span>
-                </span>`;
-              })}
-            </div>
-          </section>`;
-        })}
+
+      <div class="cn-mega-groups">
+        <section class="cn-mega-group">
+          <h3 class="cn-mega-group-title">${v.t(sec.page.navKey)}</h3>
+          <div class="cn-mega-group-links">
+            ${rows.map(([label, copyKey]) => {
+              const ec = copy?.entries[copyKey];
+              return html`<span class="cn-mega-link">
+                <span class="cn-mega-link-icon">${siteIcon(ec?.icon ?? 'circle', { size: 15 })}</span>
+                <span class="cn-mega-link-copy">
+                  <span class="cn-mega-link-label">${label}</span>
+                  <span class="cn-mega-link-description">${ec ? localised(ec, v.locale) : ''}</span>
+                </span>
+              </span>`;
+            })}
+          </div>
+        </section>
       </div>
+
+      <button type="button" class="cn-mega-close" data-menu-close aria-label="${v.t('nav.menu.close')}">
+        ×
+      </button>
     </div>
+  </section>`;
+}
+
+/** The shell, holding one panel per section. Copied from `megaNavigationPanels`. */
+function fullscreenMenu(v: SitePageView): SafeHtml {
+  return html`<div class="cn-mega-shell" id="cn-menu" data-menu data-open="false">
+    ${NAV_SECTIONS.map((sec) => megaPanel(v, sec))}
   </div>`;
 }
 
@@ -460,6 +461,7 @@ function header(v: SitePageView): SafeHtml {
         })}
       </button>
     </div>
+    ${fullscreenMenu(v)}
   </header>`;
 }
 
@@ -710,7 +712,7 @@ function homeBody(v: SitePageView): SafeHtml {
   return html`
     <section class="hero-bg fx-hero">
       <div class="wrap hero-cine">
-        <div class="htext">
+        <div class="htext hero-col">
           <a class="ann sym sym-left d40" href="/${l}/platform">
             <span class="ann-dot"></span>
             <span>${v.t('hero.ann')}</span>
@@ -718,11 +720,11 @@ function homeBody(v: SitePageView): SafeHtml {
           </a>
           <h1 class="hero-h1 home-h1">
             <span class="hline sym sym-blur d120">${v.t('hero.title1')}</span>
-            <span class="hline grad-text sym sym-rise d240 hrot" data-hero-rotator>
+            <span class="hline grad-text sym sym-rise d240 hero-rot" data-hero-rotator>
               ${rotations.map(
                 (phrase, i) =>
                   html`<span
-                    class="hrot-phrase${i === 0 ? ' on' : ''}"
+                    class="ph"${i === 0 ? raw(' data-on') : ''}
                     data-hero-phrase
                     ${i === 0 ? raw('') : raw('aria-hidden="true"')}
                     >${phrase}</span
@@ -740,10 +742,10 @@ function homeBody(v: SitePageView): SafeHtml {
               html`${v.t('hero.cta.explore')} ${siteIcon('arrow-right', { size: 15 })}`,
             )}
           </div>
-          <div class="trust trust-left" data-hero-features>
+          <div class="hero-feats" data-hero-features>
             ${trust.map(
-              ([i, label], n) =>
-                html`<span class="trust-item" data-i="${String(n)}"
+              ([i, label]) =>
+                html`<span class="trust-item"
                   >${siteIcon(i, { size: 14, tone: 'faint' })}${label}</span
                 >`,
             )}
@@ -1402,7 +1404,7 @@ export function renderSitePage(v: SitePageView): string {
       <body>
         <a class="skip" href="#main">${v.t('a11y.skip')}</a>
         <canvas id="cn-starfield" aria-hidden="true"></canvas>
-        ${header(v)} ${fullscreenMenu(v)}
+        ${header(v)}
         <main id="main"><div class="screen">${body}</div></main>
         ${footer(v)} ${gated ? cookieBanner(v) : null}
         <script nonce="${v.nonce}">
