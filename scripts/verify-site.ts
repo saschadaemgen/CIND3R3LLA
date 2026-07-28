@@ -292,8 +292,14 @@ async function main(): Promise<void> {
   );
   check(
     'rail + nav: hairline separators between items',
-    /\.rail-side \.rail-link \+ \.rail-link\{border-left/.test(platform.body) &&
-      /\.hdr-nav \.nav-link \+ \.nav-link\{border-left/.test(platform.body),
+    // Plain 1px vertical hairlines sized to the TEXT, not border-left on the padded
+    // box, which spanned the whole element and read as a shape (CCB-S3-038 follow-up).
+    /\.rail-side \.rail-link \+ \.rail-link::before\{[^}]*width:1px;height:12px/.test(
+      platform.body,
+    ) &&
+      /\.hdr-nav \.nav-link \+ \.nav-link::before\{[^}]*width:1px;height:12px/.test(
+        platform.body,
+      ),
   );
   check(
     'nav: five items, Home first',
@@ -301,8 +307,8 @@ async function main(): Promise<void> {
       platform.body.includes('>Home</a'),
   );
   check(
-    'indicator: raised at least 5px (bottom -6px became -1px)',
-    /\.nav-indicator\{[^}]*bottom:-1px/.test(platform.body),
+    'indicator: sits close under the label, not at the bar edge',
+    /\.nav-indicator\{[^}]*bottom:4px/.test(platform.body),
   );
   check(
     'header: two tiers, and no language switcher anywhere',
