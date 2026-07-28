@@ -1,82 +1,31 @@
-/**
- * Marketing-site CSS (CCB-S3-001) — the operator's approved dark-neon design,
- * ported from the website template (tmp/Cinderella Website.html):
- * ink/cyan/magenta token system (dark ONLY, light mode removed per operator), Source Sans 3 +
- * JetBrains Mono self-hosted woff2 (Google-subset files under /assets/site/fonts,
- * SIL OFL), the cinematic FX layer, and the design-system component styles
- * (cn-badge/card/tag/btn/input/tabs/sechead/ftile/tier/cookiebar).
- *
- * Self-contained: no CDN fonts/icons — everything resolves same-origin or data:
- * under the site's strict CSP (see routes.ts applySiteHeaders).
- */
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CIND3R3LLA design system</title>
+<style>
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-cyrillic-ext.woff2") format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-cyrillic.woff2") format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-greek.woff2") format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-vietnamese.woff2") format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-latin-ext.woff2") format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'JetBrains Mono';font-style:normal;font-weight:400 500;font-display:swap;src:url("/assets/site/fonts/jetbrains-mono-latin.woff2") format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-cyrillic-ext.woff2") format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-cyrillic.woff2") format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-greek-ext.woff2") format('woff2');unicode-range:U+1F00-1FFF}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-greek.woff2") format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-vietnamese.woff2") format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-latin-ext.woff2") format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Source Sans 3';font-style:italic;font-weight:400;font-display:swap;src:url("/assets/site/fonts/source-sans-3-italic-latin.woff2") format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-cyrillic-ext.woff2") format('woff2');unicode-range:U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-cyrillic.woff2") format('woff2');unicode-range:U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-greek-ext.woff2") format('woff2');unicode-range:U+1F00-1FFF}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-greek.woff2") format('woff2');unicode-range:U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-vietnamese.woff2") format('woff2');unicode-range:U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-latin-ext.woff2") format('woff2');unicode-range:U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF}
+@font-face{font-family:'Source Sans 3';font-style:normal;font-weight:400 700;font-display:swap;src:url("/assets/site/fonts/source-sans-3-latin.woff2") format('woff2');unicode-range:U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD}
 
-import { iconMaskDataUri } from './icons.js';
-
-const FONTS_BASE = '/assets/site/fonts';
-
-interface FontSubset {
-  name: string;
-  range: string;
-}
-
-const SUBSETS = {
-  cyrillicExt: {
-    name: 'cyrillic-ext',
-    range: 'U+0460-052F, U+1C80-1C8A, U+20B4, U+2DE0-2DFF, U+A640-A69F, U+FE2E-FE2F',
-  },
-  cyrillic: { name: 'cyrillic', range: 'U+0301, U+0400-045F, U+0490-0491, U+04B0-04B1, U+2116' },
-  greekExt: { name: 'greek-ext', range: 'U+1F00-1FFF' },
-  greek: {
-    name: 'greek',
-    range: 'U+0370-0377, U+037A-037F, U+0384-038A, U+038C, U+038E-03A1, U+03A3-03FF',
-  },
-  vietnamese: {
-    name: 'vietnamese',
-    range:
-      'U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB',
-  },
-  latinExt: {
-    name: 'latin-ext',
-    range:
-      'U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF',
-  },
-  latin: {
-    name: 'latin',
-    range:
-      'U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD',
-  },
-} satisfies Record<string, FontSubset>;
-
-function face(
-  family: string,
-  style: string,
-  weight: string,
-  file: string,
-  subset: FontSubset,
-): string {
-  return `@font-face{font-family:'${family}';font-style:${style};font-weight:${weight};font-display:swap;src:url("${FONTS_BASE}/${file}") format('woff2');unicode-range:${subset.range}}`;
-}
-
-/** The @font-face set — variable files shared across weights (as Google serves them). */
-function fontFacesCss(): string {
-  const s = SUBSETS;
-  const jbm = [s.cyrillicExt, s.cyrillic, s.greek, s.vietnamese, s.latinExt, s.latin];
-  const ss3 = [s.cyrillicExt, s.cyrillic, s.greekExt, s.greek, s.vietnamese, s.latinExt, s.latin];
-  const out: string[] = [];
-  for (const sub of jbm) {
-    out.push(face('JetBrains Mono', 'normal', '400 500', `jetbrains-mono-${sub.name}.woff2`, sub));
-  }
-  for (const sub of ss3) {
-    out.push(face('Source Sans 3', 'italic', '400', `source-sans-3-italic-${sub.name}.woff2`, sub));
-  }
-  for (const sub of ss3) {
-    out.push(face('Source Sans 3', 'normal', '400 700', `source-sans-3-${sub.name}.woff2`, sub));
-  }
-  return out.join('\n');
-}
-
-/** Cinderella color system — cyber black, neon cyan, magenta brand. Dark default. */
-const TOKENS_CSS = `
 :root{
 --ink-950:#050A12;--ink-900:#080D18;--ink-850:#0B1220;--ink-800:#0E1626;--ink-700:#131D31;--ink-600:#1A2740;
 --cyan-200:#B5EBF2;--cyan-300:#8FE1EC;--cyan-400:#6DD0DF;--cyan-500:#45BDD1;--cyan-600:#2E9DB0;--cyan-700:#1F7A8A;--cyan-800:#155765;
@@ -136,10 +85,8 @@ code,pre{font-family:var(--font-mono);font-size:.9em}
 ::selection{background:rgba(69,189,209,.3)}
 svg{vertical-align:-0.18em;flex:none}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
-`;
 
-/** Layout + FX — the template's page CSS, adapted to the SSR document structure. */
-const LAYOUT_CSS = `
+
 .skip{position:absolute;left:-9999px;top:0;background:var(--primary);color:var(--text-on-accent);padding:8px 14px;border-radius:var(--radius-sm);z-index:100}
 .skip:focus{left:12px;top:12px}
 /* NO FOCUS RING ON A MOUSE CLICK, ANYWHERE (CCB-S3-036 1).
@@ -591,10 +538,8 @@ body::after{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;opac
 .stub-hero h1{font-size:var(--size-display);margin:16px 0 12px;letter-spacing:-.025em}
 .stub-hero p{color:var(--text-muted);max-width:52ch;margin:0 auto 10px;font-size:16px}
 .stub-cta{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-top:26px}
-`;
 
-/** The interactive archive-demo frame (the product as hero). */
-const DEMO_CSS = `
+
 .ad-frame{width:100%;text-align:left;background:var(--surface-card);border:1px solid var(--border-strong);border-radius:var(--radius-lg);box-shadow:var(--edge-lit),var(--glow-accent),var(--shadow-3);overflow:hidden}
 .ad-titlebar{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid var(--border-neutral);background:var(--surface-raised)}
 .ad-dot{width:11px;height:11px;border-radius:99px;flex:none;opacity:.9}
@@ -632,12 +577,8 @@ mark.ad-hl{background:rgba(69,189,209,.28);color:var(--text-bright);border-radiu
 .ad-chip{display:inline-flex;align-items:center;gap:6px;margin-top:8px;padding:4px 9px;border:1px solid var(--border-neutral);border-radius:var(--radius-sm);font-family:var(--font-mono);font-size:11.5px;color:var(--text-muted);background:var(--surface-field)}
 .ad-empty{display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:56px 20px;text-align:center;color:var(--text-muted);font-size:14px}
 @media (max-width:719px){.ad-body{grid-template-columns:1fr}.ad-side{flex-direction:row;flex-wrap:wrap;border-right:none;border-bottom:1px solid var(--border-neutral)}.ad-side-label,.ad-consent{display:none}.ad-g{width:auto}}
-`;
 
-/** Design-system component CSS (from the template's bundled Cinderella DS). */
-function componentsCss(): string {
-  const checkMask = iconMaskDataUri('check');
-  return `
+
 .cn-badge{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:var(--radius-xs);font-family:var(--font-sans);font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;border:1px solid transparent}
 .cn-badge-neutral{background:var(--surface-hover);color:var(--text-muted)}
 .cn-badge-accent{background:var(--info-surface);color:var(--text-accent);border-color:var(--border-hairline)}
@@ -698,25 +639,15 @@ button.cn-tag-selected:hover{border-color:var(--accent);color:var(--accent-hover
 .cn-tier-desc{font-size:14px;color:var(--text-muted);line-height:1.55;margin:6px 0 0;min-height:44px}
 .cn-tier-list{list-style:none;margin:18px 0 22px;padding:0;display:flex;flex-direction:column;gap:9px}
 .cn-tier-list li{display:flex;gap:9px;align-items:flex-start;font-size:14px;color:var(--text-body)}
-.cn-tier-list li::before{content:"";flex:none;width:16px;height:16px;margin-top:2px;background:var(--text-accent);-webkit-mask:url("${checkMask}") center/contain no-repeat;mask:url("${checkMask}") center/contain no-repeat}
+.cn-tier-list li::before{content:"";flex:none;width:16px;height:16px;margin-top:2px;background:var(--text-accent);-webkit-mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%20%2F%3E%3C%2Fsvg%3E") center/contain no-repeat;mask:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22black%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M20%206%209%2017l-5-5%22%20%2F%3E%3C%2Fsvg%3E") center/contain no-repeat}
 .cn-cookiebar{position:fixed;left:0;right:0;bottom:0;z-index:90;background:var(--surface-raised);border-top:1px solid var(--border-hairline);box-shadow:var(--edge-lit),0 -8px 32px rgba(0,0,0,.4);font-family:var(--font-sans);animation:cn-cookie-in var(--duration-slow) var(--ease-out)}
 .cn-cookiebar-inner{max-width:1200px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
 .cn-cookiebar-text{flex:1;min-width:260px;font-size:13px;line-height:1.55;color:var(--text-muted)}
 .cn-cookiebar-text b{color:var(--text-bright);font-weight:700}
 .cn-cookiebar-actions{display:flex;gap:10px}
 @keyframes cn-cookie-in{from{transform:translateY(100%)}}
-`;
-}
 
-/**
- * Layout classes replacing the template's inline styles. The site CSP is
- * `style-src 'nonce-…'`, and a nonce covers only <style> ELEMENTS — style
- * ATTRIBUTES are blocked. So every layout rule the React template carried as
- * `style={{…}}` lives here as a class; render.ts emits NO style attributes
- * (verify:site asserts this). Defined last so these win the cascade where they
- * override earlier component rules (e.g. section padding).
- */
-const NO_INLINE_CSS = `
+
 .hdr-row{display:flex;align-items:center;gap:20px;height:64px}
 .hdr-nav{gap:2px;flex:1;margin-left:14px}
 .hdr-controls{gap:10px}
@@ -904,11 +835,418 @@ section.pt64{padding-top:64px}
 .icon-line{display:flex;align-items:flex-start;gap:11px;font-size:15px;line-height:1.6;
   color:var(--text-muted)}
 .mt48{margin-top:26px}.mt40{margin-top:24px}.mt36{margin-top:22px}.mt22{margin-top:16px}
-`;
+</style>
+<style>
+/* Showcase chrome only. Never shipped; the page above is the real stylesheet. */
+body{margin:0;background:var(--surface-page);color:var(--text-body);font-family:var(--font-sans);
+  padding:40px 32px 80px}
+.ds-wrap{max-width:1100px;margin:0 auto}
+h1{font-size:var(--size-title);margin:0 0 6px;color:var(--text-bright)}
+.ds-sub{color:var(--text-muted);margin:0 0 34px;font-size:var(--size-body-sm)}
+h2{font-size:var(--size-heading);margin:46px 0 4px;color:var(--text-bright);
+  padding-top:20px;border-top:1px solid var(--border-hairline)}
+h2 + p{color:var(--text-muted);font-size:var(--size-caption);margin:0 0 20px;max-width:70ch}
+h3{font-size:var(--size-subheading);margin:26px 0 12px;color:var(--text-accent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.sw{margin:0}
+.sw-chip{height:52px;border-radius:var(--radius-sm);border:1px solid var(--border-hairline)}
+.sw figcaption{display:flex;flex-direction:column;gap:2px;margin-top:7px;font-size:11px}
+.sw code{color:var(--text-bright);font-family:var(--font-mono)}
+.sw span{color:var(--text-faint);font-family:var(--font-mono)}
+.specs{display:flex;flex-wrap:wrap;gap:16px;align-items:flex-start}
+.spec{margin:0}
+.spec-stage{display:flex;align-items:center;justify-content:center;min-height:80px;min-width:190px;
+  padding:18px;border:1px solid var(--border-hairline);border-radius:var(--radius-md);
+  background:var(--surface-raised)}
+.spec figcaption{margin-top:7px;font-size:11px;color:var(--text-faint);font-family:var(--font-mono)}
+.spec-forced .spec-stage{border-color:var(--border-strong)}
+.ramp-row{display:grid;grid-template-columns:150px 1fr 80px;align-items:baseline;gap:14px;
+  padding:8px 0;border-bottom:1px solid var(--border-hairline)}
+.ramp-row code,.ramp-row em{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);
+  font-style:normal}
+.ramp-row span{color:var(--text-bright);font-weight:600;line-height:1.1}
+.sw-0{background:#050A12}
+.sw-1{background:#080D18}
+.sw-2{background:#0B1220}
+.sw-3{background:#0E1626}
+.sw-4{background:#131D31}
+.sw-5{background:#1A2740}
+.sw-6{background:#B5EBF2}
+.sw-7{background:#8FE1EC}
+.sw-8{background:#6DD0DF}
+.sw-9{background:#45BDD1}
+.sw-10{background:#2E9DB0}
+.sw-11{background:#1F7A8A}
+.sw-12{background:#155765}
+.sw-13{background:#FBA9D6}
+.sw-14{background:#F45CB0}
+.sw-15{background:#E8389F}
+.sw-16{background:#C21E80}
+.sw-17{background:#8A1259}
+.sw-18{background:#E8EDF4}
+.sw-19{background:#CBD5E1}
+.sw-20{background:#94A3B8}
+.sw-21{background:#64748B}
+.sw-22{background:#475569}
+.sw-23{background:#334155}
+.sw-24{background:#4ADE9E}
+.sw-25{background:#1E9E6C}
+.sw-26{background:#E0B454}
+.sw-27{background:#B08A2E}
+.sw-28{background:#E5646E}
+.sw-29{background:#C2434E}
+.sw-30{background:#CBD5E1}
+.sw-31{background:#E8EDF4}
+.sw-32{background:#94A3B8}
+.sw-33{background:#64748B}
+.sw-34{background:#8FE1EC}
+.sw-35{background:#8FE1EC}
+.sw-36{background:#04121A}
+.sw-37{background:#050A12}
+.sw-38{background:#080D18}
+.sw-39{background:#0B1220}
+.sw-40{background:rgba(5,10,18,.55)}
+.sw-41{background:rgba(203,213,225,.06)}
+.sw-42{background:rgba(69,189,209,.08)}
+.sw-43{background:rgba(69,189,209,.12)}
+.sw-44{background:rgba(69,189,209,.28)}
+.sw-45{background:rgba(203,213,225,.09)}
+.sw-46{background:#45BDD1}
+.sw-47{background:#6DD0DF}
+.sw-48{background:#2E9DB0}
+.sw-49{background:#45BDD1}
+.sw-50{background:#6DD0DF}
+.sw-51{background:#E8389F}
+.sw-52{background:#F45CB0}
+.sw-53{background:rgba(232,56,159,.1)}
+.sw-54{background:#FBA9D6}
+.sw-55{background:#4ADE9E}
+.sw-56{background:rgba(74,222,158,.1)}
+.sw-57{background:#E0B454}
+.sw-58{background:rgba(224,180,84,.1)}
+.sw-59{background:#E5646E}
+.sw-60{background:rgba(229,100,110,.1)}
+.sw-61{background:#6DD0DF}
+.sw-62{background:rgba(69,189,209,.1)}
+.sw-63{background:0 0 0 3px rgba(69,189,209,.3)}
+.sw-64{background:rgba(2,5,10,.7)}
+.ramp-hero{font-size:76px}
+.ramp-display{font-size:46px}
+.ramp-title{font-size:32px}
+.ramp-heading{font-size:22px}
+.ramp-subheading{font-size:17px}
+.ramp-body{font-size:16px}
+.ramp-body-sm{font-size:14px}
+.ramp-caption{font-size:13px}
+.ramp-micro{font-size:11px}
+/* Forced states. Hover cannot be photographed on a static page, so each
+   interactive specimen is rendered a second time with its hover rules applied. */
+.force-hover .dm{background:#FF3DA6}
+.force-hover .dm .in{color:#fff;background:#160410}
+.force-hover .dm .in::after{opacity:1}
+.force-hover .cn-btn-primary{filter:brightness(1.08)}
+.force-hover .nav-link{color:var(--text-bright)}
+.force-hover .rail-link{color:var(--cyan-400)}
+.force-focus .cn-btn{outline:none;box-shadow:var(--focus-ring)}
+.force-focus .nav-link{outline:none;box-shadow:var(--focus-ring)}
+.note{font-size:var(--size-caption);color:var(--text-muted);max-width:74ch;line-height:1.6}
+.rule-count{font-family:var(--font-mono);font-size:10px;color:var(--text-faint)}
+</style>
+</head>
+<body>
+<div class="ds-wrap">
+<h1>CIND3R3LLA design system</h1>
+<p class="ds-sub">Generated from <code>src/web/site/css.ts</code>. Every specimen below uses the
+site's real stylesheet, inlined above, so what you see is what the site renders.</p>
 
-/** The complete site stylesheet (emitted once per page under the CSP nonce). */
-export function siteCss(): string {
-  return [fontFacesCss(), TOKENS_CSS, LAYOUT_CSS, DEMO_CSS, componentsCss(), NO_INLINE_CSS]
-    .join('\n')
-    .trim();
-}
+<h2>Colour</h2>
+<p>The palette is the raw ramp; the semantic layer above it is what components use. Reach for a
+semantic token, never a palette one, so a change of hue does not leave a lying variable name.</p>
+<div class="grid">
+<figure class="sw"><div class="sw-chip sw-0"></div>
+      <figcaption><code>--ink-950</code><span>#050A12</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-1"></div>
+      <figcaption><code>--ink-900</code><span>#080D18</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-2"></div>
+      <figcaption><code>--ink-850</code><span>#0B1220</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-3"></div>
+      <figcaption><code>--ink-800</code><span>#0E1626</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-4"></div>
+      <figcaption><code>--ink-700</code><span>#131D31</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-5"></div>
+      <figcaption><code>--ink-600</code><span>#1A2740</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-6"></div>
+      <figcaption><code>--cyan-200</code><span>#B5EBF2</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-7"></div>
+      <figcaption><code>--cyan-300</code><span>#8FE1EC</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-8"></div>
+      <figcaption><code>--cyan-400</code><span>#6DD0DF</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-9"></div>
+      <figcaption><code>--cyan-500</code><span>#45BDD1</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-10"></div>
+      <figcaption><code>--cyan-600</code><span>#2E9DB0</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-11"></div>
+      <figcaption><code>--cyan-700</code><span>#1F7A8A</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-12"></div>
+      <figcaption><code>--cyan-800</code><span>#155765</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-13"></div>
+      <figcaption><code>--magenta-300</code><span>#FBA9D6</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-14"></div>
+      <figcaption><code>--magenta-400</code><span>#F45CB0</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-15"></div>
+      <figcaption><code>--magenta-500</code><span>#E8389F</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-16"></div>
+      <figcaption><code>--magenta-600</code><span>#C21E80</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-17"></div>
+      <figcaption><code>--magenta-700</code><span>#8A1259</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-18"></div>
+      <figcaption><code>--slate-50</code><span>#E8EDF4</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-19"></div>
+      <figcaption><code>--slate-200</code><span>#CBD5E1</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-20"></div>
+      <figcaption><code>--slate-400</code><span>#94A3B8</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-21"></div>
+      <figcaption><code>--slate-500</code><span>#64748B</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-22"></div>
+      <figcaption><code>--slate-600</code><span>#475569</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-23"></div>
+      <figcaption><code>--slate-700</code><span>#334155</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-24"></div>
+      <figcaption><code>--green-400</code><span>#4ADE9E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-25"></div>
+      <figcaption><code>--green-600</code><span>#1E9E6C</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-26"></div>
+      <figcaption><code>--amber-400</code><span>#E0B454</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-27"></div>
+      <figcaption><code>--amber-600</code><span>#B08A2E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-28"></div>
+      <figcaption><code>--red-400</code><span>#E5646E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-29"></div>
+      <figcaption><code>--red-600</code><span>#C2434E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-30"></div>
+      <figcaption><code>--text-body</code><span>#CBD5E1</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-31"></div>
+      <figcaption><code>--text-bright</code><span>#E8EDF4</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-32"></div>
+      <figcaption><code>--text-muted</code><span>#94A3B8</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-33"></div>
+      <figcaption><code>--text-faint</code><span>#64748B</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-34"></div>
+      <figcaption><code>--text-accent</code><span>#8FE1EC</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-35"></div>
+      <figcaption><code>--text-link</code><span>#8FE1EC</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-36"></div>
+      <figcaption><code>--text-on-accent</code><span>#04121A</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-37"></div>
+      <figcaption><code>--surface-page</code><span>#050A12</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-38"></div>
+      <figcaption><code>--surface-raised</code><span>#080D18</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-39"></div>
+      <figcaption><code>--surface-card</code><span>#0B1220</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-40"></div>
+      <figcaption><code>--surface-field</code><span>rgba(5,10,18,.55)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-41"></div>
+      <figcaption><code>--surface-hover</code><span>rgba(203,213,225,.06)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-42"></div>
+      <figcaption><code>--surface-accent-weak</code><span>rgba(69,189,209,.08)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-43"></div>
+      <figcaption><code>--border-hairline</code><span>rgba(69,189,209,.12)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-44"></div>
+      <figcaption><code>--border-strong</code><span>rgba(69,189,209,.28)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-45"></div>
+      <figcaption><code>--border-neutral</code><span>rgba(203,213,225,.09)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-46"></div>
+      <figcaption><code>--primary</code><span>#45BDD1</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-47"></div>
+      <figcaption><code>--primary-hover</code><span>#6DD0DF</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-48"></div>
+      <figcaption><code>--primary-active</code><span>#2E9DB0</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-49"></div>
+      <figcaption><code>--accent</code><span>#45BDD1</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-50"></div>
+      <figcaption><code>--accent-hover</code><span>#6DD0DF</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-51"></div>
+      <figcaption><code>--neon</code><span>#E8389F</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-52"></div>
+      <figcaption><code>--neon-hover</code><span>#F45CB0</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-53"></div>
+      <figcaption><code>--neon-weak</code><span>rgba(232,56,159,.1)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-54"></div>
+      <figcaption><code>--text-neon</code><span>#FBA9D6</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-55"></div>
+      <figcaption><code>--success</code><span>#4ADE9E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-56"></div>
+      <figcaption><code>--success-surface</code><span>rgba(74,222,158,.1)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-57"></div>
+      <figcaption><code>--warning</code><span>#E0B454</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-58"></div>
+      <figcaption><code>--warning-surface</code><span>rgba(224,180,84,.1)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-59"></div>
+      <figcaption><code>--danger</code><span>#E5646E</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-60"></div>
+      <figcaption><code>--danger-surface</code><span>rgba(229,100,110,.1)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-61"></div>
+      <figcaption><code>--info</code><span>#6DD0DF</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-62"></div>
+      <figcaption><code>--info-surface</code><span>rgba(69,189,209,.1)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-63"></div>
+      <figcaption><code>--focus-ring</code><span>0 0 0 3px rgba(69,189,209,.3)</span></figcaption></figure>
+<figure class="sw"><div class="sw-chip sw-64"></div>
+      <figcaption><code>--scrim</code><span>rgba(2,5,10,.7)</span></figcaption></figure>
+</div>
+
+<h2>Type</h2>
+<p>Two families: <code>--font-sans</code> for everything, <code>--font-mono</code> for kickers,
+labels and anything that should read as machine output.</p>
+<div class="ramp-row"><code>--size-hero</code><span class="ramp-hero">CIND3R3LLA</span><em>76px</em></div>
+<div class="ramp-row"><code>--size-display</code><span class="ramp-display">CIND3R3LLA</span><em>46px</em></div>
+<div class="ramp-row"><code>--size-title</code><span class="ramp-title">CIND3R3LLA</span><em>32px</em></div>
+<div class="ramp-row"><code>--size-heading</code><span class="ramp-heading">CIND3R3LLA</span><em>22px</em></div>
+<div class="ramp-row"><code>--size-subheading</code><span class="ramp-subheading">CIND3R3LLA</span><em>17px</em></div>
+<div class="ramp-row"><code>--size-body</code><span class="ramp-body">CIND3R3LLA</span><em>16px</em></div>
+<div class="ramp-row"><code>--size-body-sm</code><span class="ramp-body-sm">CIND3R3LLA</span><em>14px</em></div>
+<div class="ramp-row"><code>--size-caption</code><span class="ramp-caption">CIND3R3LLA</span><em>13px</em></div>
+<div class="ramp-row"><code>--size-micro</code><span class="ramp-micro">CIND3R3LLA</span><em>11px</em></div>
+
+<h2>The signature shape</h2>
+<p>A 9px cut at the top-left and bottom-right, held in <code>--clip-corner</code>. It appears on the
+Demo control and on section panels, and it is what makes the page read as one system.</p>
+<div class="specs">
+<figure class="spec">
+      <div class="spec-stage"><div class="sec-panel"><div class="sec-panel-in">Section panel</div></div></div>
+      <figcaption>sec-panel</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="dm "><span class="in"><span class="sl"></span><span class="t">DEMO</span></span></span></div>
+      <figcaption>dm (default)</figcaption>
+    </figure>
+</div>
+
+<h2>Controls</h2>
+<p>The approved control treatment. Nothing moves on hover: the border brightens, the interior
+darkens toward the accent, the label glitches in hard <code>steps(1)</code>, one scanline crosses,
+and a fine raster fades in. All inside the element.</p>
+<div class="specs">
+<figure class="spec">
+      <div class="spec-stage"><span class="dm "><span class="in"><span class="sl"></span><span class="t">DEMO</span></span></span></div>
+      <figcaption>Demo, default</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-hover"><span class="dm "><span class="in"><span class="sl"></span><span class="t">DEMO</span></span></span></span></div>
+      <figcaption>Demo, hover (forced)</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="dm dm-soon"><span class="in"><span class="sl"></span><span class="t">DEMO</span></span></span></div>
+      <figcaption>Demo, unbuilt state</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><a class="cn-btn cn-btn-primary cn-btn-md" href="#">Primary</a></div>
+      <figcaption>Button, primary</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-hover"><a class="cn-btn cn-btn-primary cn-btn-md" href="#">Primary</a></span></div>
+      <figcaption>Button, primary hover (forced)</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><a class="cn-btn cn-btn-secondary cn-btn-md" href="#">Secondary</a></div>
+      <figcaption>Button, secondary</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><a class="cn-btn cn-btn-ghost cn-btn-md" href="#">Ghost</a></div>
+      <figcaption>Button, ghost</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-focus"><a class="cn-btn cn-btn-primary cn-btn-md" href="#">Focused</a></span></div>
+      <figcaption>Button, focus (forced)</figcaption>
+    </figure>
+</div>
+
+<h2>Navigation</h2>
+<p>One indicator travels between items; nothing else is drawn under a nav item. Rail items carry a
+1px hairline separator sized to the text, not to the padded box.</p>
+<div class="specs">
+<figure class="spec">
+      <div class="spec-stage"><span class="nav-link">Platform</span></div>
+      <figcaption>nav-link</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="nav-link active">Platform</span></div>
+      <figcaption>nav-link, active</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-hover"><span class="nav-link">Platform</span></span></div>
+      <figcaption>nav-link, hover (forced)</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-focus"><span class="nav-link">Platform</span></span></div>
+      <figcaption>nav-link, focus (forced)</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="rail-link"><span>GitHub</span></span></div>
+      <figcaption>rail-link</figcaption>
+    </figure>
+<figure class="spec spec-forced">
+      <div class="spec-stage"><span class="force-hover"><span class="rail-link"><span>GitHub</span></span></span></div>
+      <figcaption>rail-link, hover (forced)</figcaption>
+    </figure>
+</div>
+
+<h2>Content</h2>
+<div class="specs">
+<figure class="spec">
+      <div class="spec-stage"><div class="cn-card cn-card-default cn-card-pad-md">Card</div></div>
+      <figcaption>cn-card</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="cn-badge cn-badge-warning">In development</span></div>
+      <figcaption>badge, warning</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="cn-badge cn-badge-success">Live</span></div>
+      <figcaption>badge, success</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="cn-badge cn-badge-outline">Planned</span></div>
+      <figcaption>badge, outline</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="trust-item">Consent first</span></div>
+      <figcaption>feature chip</figcaption>
+    </figure>
+<figure class="spec">
+      <div class="spec-stage"><span class="pchip"><span class="d"></span>Consent first</span></div>
+      <figcaption>portrait badge</figcaption>
+    </figure>
+</div>
+
+<h2>Motion</h2>
+<p class="note">One control curve, <code>--ease-control: cubic-bezier(.2,0,0,1)</code>, plus the
+interface curves <code>--ease-out</code> and <code>--ease-in-out</code>. Durations are
+<code>--duration-fast</code> 150ms, <code>--duration-base</code> 300ms, <code>--duration-slow</code>
+500ms. Every animation on the site is disabled under <code>prefers-reduced-motion</code>; the Demo
+control keeps only its colour change.</p>
+
+<h2>Component rules</h2>
+<p>Extracted verbatim from the site stylesheet. The full text is in
+<code>components.css</code>.</p>
+<h3>Demo control <span class="rule-count">13 rules</span></h3>
+<p class="note">The approved control treatment. Nothing moves on hover; the glitch, scanline and raster all happen inside the element.</p>
+<h3>Buttons <span class="rule-count">15 rules</span></h3>
+<p class="note">Primary, secondary and ghost, in three sizes.</p>
+<h3>Navigation item and indicator <span class="rule-count">11 rules</span></h3>
+<p class="note">One indicator travels between items; nothing else is drawn under a nav item.</p>
+<h3>Utility rail <span class="rule-count">12 rules</span></h3>
+<p class="note">The secondary tier above the main bar.</p>
+<h3>Mega menu panel <span class="rule-count">22 rules</span></h3>
+<p class="note">Copied from the admin console so both surfaces share one navigation language.</p>
+<h3>Section panel <span class="rule-count">2 rules</span></h3>
+<p class="note">Carries the signature clipped corner.</p>
+<h3>Feature chip and portrait badge <span class="rule-count">17 rules</span></h3>
+<p class="note">The hero feature row staggers in; the portrait badge floats over the image.</p>
+<h3>Cards and tiles <span class="rule-count">18 rules</span></h3>
+<p class="note">Content containers.</p>
+<h3>Badges <span class="rule-count">7 rules</span></h3>
+<p class="note">Status pills.</p>
+</div>
+</body>
+</html>

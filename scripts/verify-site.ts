@@ -268,7 +268,7 @@ async function main(): Promise<void> {
     `nav: all ${String(menuEntryCount)} entries of the four nav sections are in the menu`,
     NAV_SECTIONS.every((sec) =>
       [locales.t('en', 'nav.overview'), ...sec.children.map((c) => locales.t('en', c.navKey))].every(
-        (label) => platform.body.includes(`class="cme-label">${label}</span>`),
+        (label) => platform.body.includes(`class="cn-mega-link-label">${label}</span>`),
       ),
     ),
   );
@@ -292,8 +292,14 @@ async function main(): Promise<void> {
   );
   check(
     'rail + nav: hairline separators between items',
-    /\.rail-side \.rail-link \+ \.rail-link\{border-left/.test(platform.body) &&
-      /\.hdr-nav \.nav-link \+ \.nav-link\{border-left/.test(platform.body),
+    // Plain 1px vertical hairlines sized to the TEXT, not border-left on the padded
+    // box, which spanned the whole element and read as a shape (CCB-S3-038 follow-up).
+    /\.rail-side \.rail-link \+ \.rail-link::before\{[^}]*width:1px;height:12px/.test(
+      platform.body,
+    ) &&
+      /\.hdr-nav \.nav-link \+ \.nav-link::before\{[^}]*width:1px;height:12px/.test(
+        platform.body,
+      ),
   );
   check(
     'nav: five items, Home first',
@@ -301,8 +307,8 @@ async function main(): Promise<void> {
       platform.body.includes('>Home</a'),
   );
   check(
-    'indicator: raised at least 5px (bottom -6px became -1px)',
-    /\.nav-indicator\{[^}]*bottom:-1px/.test(platform.body),
+    'indicator: sits close under the label, not at the bar edge',
+    /\.nav-indicator\{[^}]*bottom:4px/.test(platform.body),
   );
   check(
     'header: two tiers, and no language switcher anywhere',
@@ -325,10 +331,27 @@ async function main(): Promise<void> {
     'demo: nothing on the button transforms on hover',
     !/\.dm:hover\{[^}]*transform/.test(platform.body),
   );
+  // The inline chrome script contains the same selector as a string, so the markup
+  // is counted with scripts stripped rather than over the whole document.
+  const markupOnly = platform.body.replace(/<script[\s\S]*?<\/script>/g, '');
   check(
-    'menu: sections ship hidden so only the clicked one opens',
-    (platform.body.match(/data-menu-block/g) ?? []).length >= 4 &&
-      /data-menu-block\s+hidden/.test(platform.body),
+    'menu: one panel per section, every one shipping hidden',
+    (markupOnly.match(/data-mega-panel="/g) ?? []).length === NAV_SECTIONS.length &&
+      (markupOnly.match(/class="cn-mega-panel"/g) ?? []).length === NAV_SECTIONS.length &&
+      (markupOnly.match(/aria-hidden="true"\s+hidden/g) ?? []).length === NAV_SECTIONS.length,
+  );
+  check(
+    'menu: it is the admin component, not a reinterpretation of it',
+    ['cn-mega-shell','cn-mega-panel-inner','cn-mega-intro','cn-mega-kicker','cn-mega-title',
+     'cn-mega-description','cn-mega-overview-link','cn-mega-groups','cn-mega-group-title',
+     'cn-mega-link','cn-mega-link-icon','cn-mega-link-label','cn-mega-link-description',
+     'cn-mega-close'].every((c) => platform.body.includes(c)),
+  );
+  check(
+    'menu: it SLIDES from under the header, and is not a full-viewport overlay',
+    /\.cn-mega-shell\{position:absolute;top:100%/.test(platform.body) &&
+      /transform:translateY\(-12px\)/.test(platform.body) &&
+      /transform 190ms cubic-bezier\(\.2,\.8,\.2,1\)/.test(platform.body),
   );
   check(
     'mobile: the rail hides and the Demo control moves into the menu',
@@ -336,16 +359,19 @@ async function main(): Promise<void> {
       platform.body.includes('cn-menu-demo'),
   );
   check(
-    'sections: panelled with the same 9px clip as the Demo control',
+    // The 9px lives in --clip-corner now (CCB-S3-040), so the assertion follows the
+    // token rather than the literal it replaced.
+    'sections: panelled with the same clipped corner as the Demo control',
     platform.body.includes('sec-panel-in') &&
-      (platform.body.match(/clip-path:polygon\(9px 0/g) ?? []).length >= 2,
+      /--clip-corner:9px/.test(platform.body) &&
+      (platform.body.match(/clip-path:polygon\(var\(--clip-corner\)/g) ?? []).length >= 2,
   );
   check(
-    'menu: the admin three-column shape, with an intro and a description per entry',
-    platform.body.includes('cn-menu-intro') &&
-      platform.body.includes('cn-menu-heading') &&
-      platform.body.includes('cn-menu-desc') &&
-      (platform.body.match(/cme-desc/g) ?? []).length >= menuEntryCount - 4,
+    'menu: the admin three-column grid, verbatim',
+    /\.cn-mega-panel-inner\{[^}]*grid-template-columns:minmax\(220px,290px\) minmax\(0,1fr\) auto/.test(
+      platform.body,
+    ) &&
+      (platform.body.match(/cn-mega-link-description/g) ?? []).length >= menuEntryCount,
   );
   check(
     'nav: entries are inert, so none of them is a link or a tab stop',
