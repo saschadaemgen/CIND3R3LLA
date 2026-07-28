@@ -34,8 +34,25 @@ import {
   type DemoMessage,
 } from './client.js';
 import type { LocaleSet } from './i18n.js';
-import { NAV_PAGES, pagePath, HOME, type SitePage } from './pages.js';
+import {
+  breadcrumbs,
+  HOME,
+  neighbours,
+  pagePath,
+  SECTIONS,
+  sectionOf,
+  type SitePage,
+} from './pages.js';
 import { CONTACT_EMAIL, GITHUB_URL, type SiteSeoHead } from './seo.js';
+import {
+  contentFor,
+  isFallbackLocale,
+  type ClaimStatus,
+  type PageContent,
+} from './content.js';
+// Importing the content modules is what REGISTERS their pages: each calls
+// definePage() at module load. Without this the tree would render stubs.
+import './content/platform.js';
 import { impressumFor, isBindingLocale, privacyFor, type LegalSection } from './legal.js';
 import { shouldLoadAnalytics, type SiteSettings } from '../../site/settings.js';
 import { shareUrl, SHARE_LABELS } from '../share.js';
@@ -189,15 +206,167 @@ function pageHero(o: {
 
 // ---------- chrome ----------
 
+/**
+ * Is this page inside that section? Used to mark the current section in the nav.
+ *
+ * A sub-page marks its parent, so a reader three levels into Platform still sees
+ * where they are. The legal pages mark nothing: they live in the footer.
+ */
+function inSection(v: SitePageView, sectionKey: string): boolean {
+  const sec = sectionOf(v.page);
+  return sec?.page.key === sectionKey;
+}
+
+/**
+ * Desktop navigation with submenus.
+ *
+ * `<details>` rather than a scripted menu, so it opens on CLICK and with the
+ * KEYBOARD for free and works with JavaScript off. Hover-to-open is layered on in
+ * CSS for pointer-fine devices only, so a touch device never gets a menu that
+ * springs open while you are scrolling past it. The briefing asks for hover AND
+ * click AND keyboard, and this is the construction that gives all three without a
+ * script the CSP would have to be loosened for.
+ */
 function navLinks(v: SitePageView): SafeHtml {
-  const links = NAV_PAGES.map((p) => {
-    // The legal sub-pages highlight the Legal nav entry.
-    const current = p.key === v.page.key || (p.key === 'legal' && v.page.key.startsWith('legal'));
-    return html`<a class="nav-link${current ? ' active' : ''}" href="${pagePath(v.locale, p)}"
-      >${v.t(p.navKey)}</a
-    >`;
-  });
-  return html`${links}`;
+  return html`<a
+      class="nav-link${v.page.key === HOME.key ? ' active' : ''}"
+      href="${pagePath(v.locale, HOME)}"
+      ${v.page.key === HOME.key ? raw('aria-current="page"') : ''}
+      >${v.t('nav.home')}</a
+    >
+    ${SECTIONS.map((sec) => {
+      const current = inSection(v, sec.page.key);
+      return html`<details class="nav-sub${current ? ' active' : ''}">
+        <summary>
+          <span>${v.t(sec.page.navKey)}</span>
+          ${siteIcon('chevron-down', { size: 13, className: 'ns-chev' })}
+        </summary>
+        <div class="nav-panel" role="menu" aria-label="${v.t(sec.page.navKey)}">
+          <a
+            class="np-overview${v.page.key === sec.page.key ? ' on' : ''}"
+            href="${pagePath(v.locale, sec.page)}"
+            >${v.t('nav.overview')}</a
+          >
+          ${sec.children.map(
+            (c) =>
+              html`<a
+                class="${v.page.key === c.key ? 'on' : ''}"
+                href="${pagePath(v.locale, c)}"
+                ${v.page.key === c.key ? raw('aria-current="page"') : ''}
+                >${v.t(c.navKey)}</a
+              >`,
+          )}
+        </div>
+      </details>`;
+    })}`;
+}
+
+/**
+ * Mobile navigation: a full drawer with expandable sections.
+ *
+ * NOT the desktop menu at a smaller size. A hover submenu cannot be opened on a
+ * phone at all, and members arrive on phones from a link in a chat, so a submenu
+ * they cannot reach is a submenu that does not exist. Each section is a `<details>`
+ * that expands in place, and the section holding the current page starts open so a
+ * reader lands with their surroundings already visible.
+ */
+function mobileNav(v: SitePageView): SafeHtml {
+  return html`<a
+      class="mm-link${v.page.key === HOME.key ? ' active' : ''}"
+      href="${pagePath(v.locale, HOME)}"
+      >${v.t('nav.home')}</a
+    >
+    ${SECTIONS.map((sec) => {
+      const current = inSection(v, sec.page.key);
+      return html`<details class="mm-sec" ${current ? raw('open') : ''}>
+        <summary>
+          <span>${v.t(sec.page.navKey)}</span>
+          ${siteIcon('chevron-down', { size: 15, className: 'ns-chev' })}
+        </summary>
+        <div class="mm-panel">
+          <a
+            class="${v.page.key === sec.page.key ? 'on' : ''}"
+            href="${pagePath(v.locale, sec.page)}"
+            >${v.t('nav.overview')}</a
+          >
+          ${sec.children.map(
+            (c) =>
+              html`<a class="${v.page.key === c.key ? 'on' : ''}" href="${pagePath(v.locale, c)}"
+                >${v.t(c.navKey)}</a
+              >`,
+          )}
+        </div>
+      </details>`;
+    })}`;
+}
+
+/**
+ * The Demo link.
+ *
+ * MUST NOT LEAD TO A 404 (briefing Part B). Until the demo itself ships this is a
+ * labelled chip rather than a link, because sending a visitor to a page that is not
+ * there is worse than telling them it is coming. Setting `site.demoUrl` turns it
+ * into a real link, which is the switch the briefing asks for.
+ */
+function demoLink(v: SitePageView): SafeHtml {
+  const url = v.site.demoUrl?.trim();
+  return url
+    ? html`<a class="nav-demo" href="${url}"
+        >${siteIcon('play', { size: 14 })} ${v.t('nav.demo')}</a
+      >`
+    : html`<span class="nav-demo soon" aria-disabled="true"
+        >${siteIcon('play', { size: 14 })} ${v.t('nav.demo')}
+        <em>${v.t('nav.demo.soon')}</em></span
+      >`;
+}
+
+/** Breadcrumbs, so a reader below the top level knows where they are. */
+function breadcrumbTrail(v: SitePageView): SafeHtml | null {
+  const trail = breadcrumbs(v.page);
+  // A trail that only repeats the page's own title is noise, so section overviews
+  // and home get none.
+  if (trail.length < 2) return null;
+  return html`<nav class="wrap crumbs" aria-label="${v.t('a11y.breadcrumb')}">
+    <a href="${pagePath(v.locale, HOME)}">${v.t('nav.home')}</a>
+    ${trail.map((page, i) =>
+      i === trail.length - 1
+        ? html`<span class="crumb-sep" aria-hidden="true">/</span><span
+              class="crumb-here"
+              aria-current="page"
+              >${v.t(page.navKey)}</span
+            >`
+        : html`<span class="crumb-sep" aria-hidden="true">/</span><a
+              href="${pagePath(v.locale, page)}"
+              >${v.t(page.navKey)}</a
+            >`,
+    )}
+  </nav>`;
+}
+
+/**
+ * Previous and next within the section, so the site can be read through rather than
+ * only jumped into.
+ *
+ * The ends are open rather than wrapping: a reader who finished the last page of a
+ * section should see that they finished it, not be sent silently back to the top.
+ */
+function prevNext(v: SitePageView): SafeHtml | null {
+  const { prev, next } = neighbours(v.page);
+  if (!prev && !next) return null;
+  return html`<nav class="wrap prevnext" aria-label="${v.t('a11y.pagination')}">
+    ${prev
+      ? html`<a class="pn pn-prev" href="${pagePath(v.locale, prev)}" rel="prev">
+          <span class="pn-label">${siteIcon('chevron-left', { size: 13 })} ${v.t('nav.prev')}</span>
+          <span class="pn-title">${v.t(prev.navKey)}</span>
+        </a>`
+      : html`<span class="pn pn-empty"></span>`}
+    ${next
+      ? html`<a class="pn pn-next" href="${pagePath(v.locale, next)}" rel="next">
+          <span class="pn-label">${v.t('nav.next')} ${siteIcon('chevron-right', { size: 13 })}</span>
+          <span class="pn-title">${v.t(next.navKey)}</span>
+        </a>`
+      : html`<span class="pn pn-empty"></span>`}
+  </nav>`;
 }
 
 /** Language switcher: a details-dropdown that scales to the full locale set. */
@@ -236,7 +405,7 @@ function header(v: SitePageView): SafeHtml {
     <div class="wrap hdr-row">
       ${wordmark(v)}
       <nav class="nav-desktop hdr-nav" aria-label="Primary">${navLinks(v)}</nav>
-      <span class="nav-desktop hdr-controls">${headerControls(v)}</span>
+      <span class="nav-desktop hdr-controls">${demoLink(v)}${headerControls(v)}</span>
       <span class="mobile-menu hdr-spacer"></span>
       <button
         type="button"
@@ -253,8 +422,8 @@ function header(v: SitePageView): SafeHtml {
       </button>
     </div>
     <div id="cn-mobile-menu" class="mobile-menu mobile-panel" hidden>
-      <nav class="mm-nav" aria-label="Menu">${navLinks(v)}</nav>
-      <div class="mm-controls">${headerControls(v)}</div>
+      <nav class="mm-nav" aria-label="Menu">${mobileNav(v)}</nav>
+      <div class="mm-controls">${demoLink(v)}${headerControls(v)}</div>
     </div>
   </header>`;
 }
@@ -288,7 +457,7 @@ function footer(v: SitePageView): SafeHtml {
         </div>
       </div>
       ${footerCol(v.t('footer.product'), [
-        [v.t('nav.features'), `/${l}/features`],
+        [v.t('nav.platform'), `/${l}/platform`],
         ['Pro', `/${l}/pro`],
         [v.t('nav.security'), `/${l}/security`],
         [v.t('footer.docs'), `/${l}/docs`],
@@ -616,77 +785,6 @@ function homeBody(v: SitePageView): SafeHtml {
               </div>`,
           )}
         </div>
-      </div>
-    </section>
-  `;
-}
-
-function featuresBody(v: SitePageView): SafeHtml {
-  const caps = [
-    { icon: 'shield-check', k: 'cap1', dev: false },
-    { icon: 'shield-alert', k: 'cap2', dev: true },
-    { icon: 'search', k: 'cap3', dev: false, extraChips: ['Video', 'SEO'] },
-    { icon: 'flag', k: 'cap4', dev: false },
-  ];
-  const roadmap = [
-    ['network', 'matrix'],
-    ['tags', 'categorization'],
-    ['images', 'videogallery'],
-    ['gavel', 'moderation'],
-    ['cpu', 'localai'],
-    ['building-2', 'multitenancy'],
-  ] as const;
-  return html`
-    ${pageHero({
-      badge: badge('warning', v.t('badge.alpha')),
-      eyebrow: v.t('features.eyebrow'),
-      title: html`${v.t('features.title1')}<span class="grad-text">${v.t('brand.name')}</span
-        >${v.t('features.title2')}`,
-      lede: v.t('features.lede'),
-    })}
-    <section class="band wrap pt64" data-reveal>
-      <div class="cap-list">
-        ${caps.map(
-          (c, i) =>
-            html`<div
-              class="cn-card ${c.dev ? 'cn-card-accent' : 'cn-card-default'} cn-card-pad-lg cap-card"
-            >
-              <div class="cap-icon">
-                ${siteIcon(c.icon, { size: 22 })}
-                <span class="cap-num">${i + 1}</span>
-              </div>
-              <div class="cap-main">
-                <div class="row-title">
-                  <span class="cap-title">${v.t(`features.${c.k}.title`)}</span>
-                  ${c.dev ? badge('danger', v.t('badge.indev')) : null}
-                </div>
-                <p class="cap-body">${v.t(`features.${c.k}.body`)}</p>
-                <div class="chip-row">
-                  ${[1, 2, 3].map(
-                    (n) => html`<span class="cn-tag">${v.t(`features.${c.k}.chip${n}`)}</span>`,
-                  )}
-                  ${(c.extraChips ?? []).map((ch) => html`<span class="cn-tag">${ch}</span>`)}
-                </div>
-              </div>
-            </div>`,
-        )}
-      </div>
-    </section>
-    <section class="band wrap" data-reveal>
-      ${sectionHeader({
-        eyebrow: v.t('features.roadmap.eyebrow'),
-        title: v.t('features.roadmap.title'),
-        lede: v.t('features.roadmap.lede'),
-      })}
-      <div class="grid3 mt36">
-        ${roadmap.map(([icon, k]) =>
-          featureTile(
-            icon,
-            v.t(`roadmap.${k}`),
-            v.t(`features.rm.${k}.body`),
-            badge('outline', v.t('badge.planned')),
-          ),
-        )}
       </div>
     </section>
   `;
@@ -1090,25 +1188,82 @@ function cookieBanner(v: SitePageView): SafeHtml {
   </div>`;
 }
 
+/**
+ * The generic content page (CCB-S3-030).
+ *
+ * Thirty pages share one renderer rather than each having a bespoke layout,
+ * because the argument is the same shape everywhere: a hero, then sections of real
+ * prose, some with a load-bearing sentence pulled out as a callout and some with a
+ * marker saying the claim is not shipped yet. A bespoke layout per page would mean
+ * thirty places for the marker to be forgotten.
+ */
+function statusChip(v: SitePageView, status: ClaimStatus): SafeHtml | null {
+  // Only 'in-development' is worth showing. Marking everything else 'live' would
+  // turn the honest marker into decoration and train readers to ignore it.
+  return status === 'in-development' ? badge('warning', v.t('status.inDevelopment')) : null;
+}
+
+function contentBody(v: SitePageView, c: PageContent): SafeHtml {
+  return html`
+    ${pageHero({
+      ...(sectionOf(v.page) ? { eyebrow: v.t(sectionOf(v.page)?.page.navKey ?? '') } : {}),
+      title: html`${c.title}`,
+      lede: c.lede,
+    })}
+    ${breadcrumbTrail(v)}
+    ${isFallbackLocale(v.locale)
+      ? html`<div class="wrap">
+          <p class="fallback-note">${v.t('i18n.fallback')}</p>
+        </div>`
+      : null}
+    <section class="wrap pt40 doc-page">
+      ${c.sections.map(
+        (sec) => html`<section class="doc-sec">
+          <h2>
+            ${sec.h}${sec.status ? html` ${statusChip(v, sec.status)}` : null}
+          </h2>
+          ${sec.body.map((para) => html`<p>${para}</p>`)}
+          ${sec.list
+            ? html`<ul class="doc-list">
+                ${sec.list.map((item) => html`<li>${item}</li>`)}
+              </ul>`
+            : null}
+          ${sec.callout ? html`<p class="doc-callout">${sec.callout}</p>` : null}
+        </section>`,
+      )}
+    </section>
+    ${prevNext(v)}
+  `;
+}
+
 // ---------- document ----------
 
 function bodyFor(v: SitePageView): SafeHtml {
   if (!v.page.built) return stubBody(v);
   switch (v.page.key) {
-    case 'features':
-      return featuresBody(v);
-    case 'pro':
-      return proBody(v);
-    case 'security':
-      return securityBody(v);
-    case 'open-source':
-      return openSourceBody(v);
     case 'legal':
     case 'legal-privacy':
     case 'legal-terms':
       return legalBody(v);
-    default:
+    case 'home':
       return homeBody(v);
+    default: {
+      // Every page in the tree draws from the content registry. A page with no
+      // entry renders the stub rather than a 404, which is the same promise the
+      // site has always made, but the acceptance criterion for CCB-S3-030 is that
+      // nothing in the navigation reaches it.
+      const c = contentFor(v.page.key, v.locale);
+      if (c) return contentBody(v, c);
+      // CCB-S3-030 lands in passes, and no page may get WORSE in the meantime.
+      // Three section overviews already had bespoke pages from CCB-S3-001, so they
+      // keep them until their authored copy arrives rather than regressing to a
+      // stub. Everything else renders the clean stub: a 200 with the full site
+      // chrome, never a 404.
+      if (v.page.key === 'pro') return proBody(v);
+      if (v.page.key === 'security') return securityBody(v);
+      if (v.page.key === 'open-source') return openSourceBody(v);
+      return stubBody(v);
+    }
   }
 }
 

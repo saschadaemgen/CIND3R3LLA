@@ -50,12 +50,21 @@ export interface SiteSettings {
     /** Which networks to offer (subset of {@link KNOWN_NETWORKS}). */
     networks: ShareNetwork[];
   };
+  /**
+   * The public demo, if one is running (CCB-S3-030 / CCB-S4-001).
+   *
+   * Empty until the demo ships, and the header then renders a labelled chip rather
+   * than a link. A nav entry that leads to a 404 is worse than one that says the
+   * thing is coming, and the briefing forbids the 404 explicitly.
+   */
+  demoUrl: string;
 }
 
 export const DEFAULT_SITE: SiteSettings = {
   analytics: { enabled: false, provider: '', scriptUrl: '' },
   cookieBanner: { enabled: false, policyUrl: '' },
   socialShare: { enabled: false, networks: [...KNOWN_NETWORKS] },
+  demoUrl: '',
 };
 
 function rec(v: unknown): Record<string, unknown> {
@@ -118,6 +127,7 @@ export function normalizeSite(input: unknown): SiteSettings {
       enabled: bool(sh['enabled'], d.socialShare.enabled),
       networks: 'networks' in sh ? networks(sh['networks']) : [...d.socialShare.networks],
     },
+    demoUrl: str(o['demoUrl'], d.demoUrl, 200).trim(),
   };
 }
 

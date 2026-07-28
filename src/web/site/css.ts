@@ -151,6 +151,85 @@ section.band{padding:120px 0 0}
 .nav-link.active{color:var(--text-accent)}
 .doc{max-width:760px}
 .legal-binding-note{color:var(--text-muted);font-size:14px;border-left:2px solid var(--border);padding-left:12px;margin:0 0 20px}
+/* ---- Navigation with submenus (CCB-S3-030) ---------------------------------
+   <details> gives click and keyboard for free. Hover-to-open is added ONLY on
+   pointer-fine devices, so a touch device never gets a menu that springs open
+   while you scroll past it. No script, so the CSP is untouched. */
+.nav-sub{position:relative}
+.nav-sub>summary{display:inline-flex;align-items:center;gap:5px;cursor:pointer;list-style:none;
+  padding:6px 9px;border-radius:8px;font-size:14px;color:var(--text-muted);white-space:nowrap}
+.nav-sub>summary::-webkit-details-marker{display:none}
+.nav-sub>summary:hover{color:var(--text)}
+.nav-sub>summary:focus-visible{outline:2px solid var(--text-accent);outline-offset:2px}
+.nav-sub.active>summary{color:var(--text-accent)}
+.nav-sub[open]>summary .ns-chev{transform:rotate(180deg)}
+.ns-chev{transition:transform .15s ease}
+.nav-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:60;min-width:248px;
+  display:flex;flex-direction:column;padding:6px;border-radius:12px;
+  border:1px solid var(--border);background:var(--bg-panel);box-shadow:0 18px 40px rgba(0,0,0,.55)}
+.nav-panel a{padding:8px 10px;border-radius:8px;font-size:14px;color:var(--text-muted);white-space:nowrap}
+.nav-panel a:hover{background:var(--bg-hover);color:var(--text)}
+.nav-panel a.on{color:var(--text-accent)}
+.nav-panel .np-overview{border-bottom:1px solid var(--border);border-radius:8px 8px 0 0;margin-bottom:4px}
+@media (hover:hover) and (pointer:fine){
+  .nav-sub:hover>.nav-panel{display:flex}
+  .nav-sub:not([open])>.nav-panel{display:none}
+  .nav-sub:hover:not([open])>.nav-panel{display:flex}
+}
+
+/* The Demo entry. A chip rather than a link until the demo exists, because a nav
+   item that 404s is worse than one that says it is coming. */
+.nav-demo{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;
+  font-size:13px;font-weight:600;border:1px solid var(--text-accent);color:var(--text-accent)}
+.nav-demo:hover{background:var(--text-accent);color:var(--bg)}
+.nav-demo.soon{border-style:dashed;opacity:.62;cursor:default}
+.nav-demo.soon:hover{background:none;color:var(--text-accent)}
+.nav-demo em{font-style:normal;font-size:11px;opacity:.8}
+
+/* ---- Mobile drawer: expandable sections, not a hover menu ------------------ */
+.mm-link{display:block;padding:10px 4px;font-size:15px;color:var(--text-muted)}
+.mm-link.active{color:var(--text-accent)}
+.mm-sec>summary{display:flex;align-items:center;justify-content:space-between;cursor:pointer;
+  list-style:none;padding:10px 4px;font-size:15px;color:var(--text-muted)}
+.mm-sec>summary::-webkit-details-marker{display:none}
+.mm-sec[open]>summary{color:var(--text)}
+.mm-sec[open]>summary .ns-chev{transform:rotate(180deg)}
+.mm-panel{display:flex;flex-direction:column;padding:2px 0 8px 12px;
+  border-left:1px solid var(--border);margin-left:4px}
+.mm-panel a{padding:8px 10px;font-size:14px;color:var(--text-muted);border-radius:8px}
+.mm-panel a.on{color:var(--text-accent)}
+
+/* ---- Breadcrumbs and previous/next ---------------------------------------- */
+.crumbs{display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding-top:18px;font-size:13px;
+  color:var(--text-muted)}
+.crumbs a{color:var(--text-muted)}
+.crumbs a:hover{color:var(--text-accent)}
+.crumb-sep{opacity:.45}
+.crumb-here{color:var(--text)}
+.prevnext{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:56px auto 72px}
+.pn{display:flex;flex-direction:column;gap:4px;padding:16px 18px;border-radius:14px;
+  border:1px solid var(--border);background:var(--bg-panel)}
+.pn:hover{border-color:var(--text-accent)}
+.pn-empty{border:0;background:none}
+.pn-label{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--text-muted);
+  text-transform:uppercase;letter-spacing:.06em}
+.pn-title{font-size:15px;font-weight:600;color:var(--text)}
+.pn-next{text-align:right;align-items:flex-end}
+@media (max-width:640px){.prevnext{grid-template-columns:1fr}.pn-empty{display:none}}
+
+/* ---- The generic content page --------------------------------------------- */
+.doc-page{max-width:820px}
+.doc-sec{margin-bottom:44px}
+.doc-sec h2{display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:23px;font-weight:600;
+  margin:0 0 14px;color:var(--text)}
+.doc-sec p{margin:0 0 14px;line-height:1.72;color:var(--text-muted)}
+.doc-list{margin:0 0 16px;padding-left:20px;display:flex;flex-direction:column;gap:7px}
+.doc-list li{line-height:1.65;color:var(--text-muted)}
+.doc-callout{margin:18px 0 0;padding:14px 18px;border-radius:12px;
+  border-left:3px solid var(--text-accent);background:var(--bg-panel);
+  color:var(--text);font-weight:500}
+.fallback-note{margin:18px 0 0;font-size:13px;color:var(--text-muted);
+  border-left:2px solid var(--border);padding-left:12px}
 .doc h2{font-size:22px;font-weight:600;margin:0 0 18px;color:var(--text)}
 .doc h3{font-size:18px;margin:28px 0 8px}
 .doc p,.doc li{font-size:14px;line-height:1.7;color:var(--text-muted)}

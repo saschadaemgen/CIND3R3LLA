@@ -19,7 +19,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ViewContext } from '../server.js';
 import type { LocaleSet } from './i18n.js';
-import { pageBySlug, HOME } from './pages.js';
+import { SECTIONS, pageBySlug, HOME } from './pages.js';
 import { buildSiteSitemapXml, resolveSiteHead, type SiteSeoContext } from './seo.js';
 import { renderSitePage, type SitePageView } from './render.js';
 import { shouldLoadAnalytics } from '../../site/settings.js';
@@ -146,13 +146,20 @@ export function registerSiteRoutes(
       if (!page) return reply.code(404).type('text/plain').send('Not found');
       return renderPage(reply, code, req.params.slug);
     });
-    // Legal sub-pages (CCB-S3-001): two-segment slugs, registered explicitly so
-    // nothing greedy exists beyond the catalog.
-    app.get<{ Params: { sub: string } }>(`/${code}/legal/:sub`, (req, reply) => {
-      const page = pageBySlug(`legal/${req.params.sub}`);
-      if (!page) return reply.code(404).type('text/plain').send('Not found');
-      return renderPage(reply, code, page.slug);
-    });
+    // Two-segment slugs (CCB-S3-001 for legal, CCB-S3-030 for the five sections).
+    //
+    // Registered per SECTION rather than as one greedy `/:a/:b`, so nothing beyond
+    // the catalog is reachable and a typo in a section name is a 404 rather than a
+    // page rendered from an unexpected key. The section list comes from the same
+    // tree the nav and sitemap use, so a new section cannot be added to one and
+    // forgotten in the other.
+    for (const parent of [...SECTIONS.map((x) => x.page.slug), 'legal']) {
+      app.get<{ Params: { sub: string } }>(`/${code}/${parent}/:sub`, (req, reply) => {
+        const page = pageBySlug(`${parent}/${req.params.sub}`);
+        if (!page) return reply.code(404).type('text/plain').send('Not found');
+        return renderPage(reply, code, page.slug);
+      });
+    }
   }
 
   // Marketing sitemap (referenced from the origin sitemap index).

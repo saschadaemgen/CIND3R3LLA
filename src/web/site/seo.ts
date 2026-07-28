@@ -10,6 +10,7 @@
 
 import type { LocaleSet } from './i18n.js';
 import { HOME, SITE_PAGES, pagePath, type SitePage } from './pages.js';
+import { contentFor } from './content.js';
 
 /** Canonical project links (not translatable). */
 export const GITHUB_URL = 'https://github.com/saschadaemgen/cinderella';
@@ -75,8 +76,20 @@ function alternatesFor(c: SiteSeoContext): SiteAlternate[] {
 }
 
 export function resolveSiteHead(c: SiteSeoContext): SiteSeoHead {
-  const title = c.t(`meta.${c.page.key}.title`);
-  const description = c.t(`meta.${c.page.key}.description`);
+  // A page with authored content carries its own title and description in the
+  // language it was written in (CCB-S3-030). The locale files remain the source for
+  // the pages that predate the content module, and `t()` returns the key itself when
+  // it is missing, so falling back to the content is what stops a raw
+  // `meta.platform-npcs.title` reaching a <title> tag.
+  const authored = contentFor(c.page.key, c.locale);
+  const metaTitle = c.t(`meta.${c.page.key}.title`);
+  const metaDesc = c.t(`meta.${c.page.key}.description`);
+  const title =
+    authored && metaTitle === `meta.${c.page.key}.title`
+      ? `${authored.title} · ${c.t('brand.name')}`
+      : metaTitle;
+  const description =
+    authored && metaDesc === `meta.${c.page.key}.description` ? authored.description : metaDesc;
   const canonicalUrl = `${c.origin}${pagePath(c.locale, c.page)}`;
   // Built pages are indexable; thin stubs AND draft legal texts are noindex (still
   // followable) so placeholders don't dilute the index while links stay crawlable.
