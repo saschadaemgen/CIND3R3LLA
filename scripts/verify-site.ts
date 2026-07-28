@@ -170,7 +170,15 @@ async function main(): Promise<void> {
   const en = await app.inject({ method: 'GET', url: '/en' });
   const de = await app.inject({ method: 'GET', url: '/de' });
   check('en: 200 + <html lang="en">', en.statusCode === 200 && en.body.includes('<html lang="en"'));
-  check('de: a retired locale redirects rather than 404s', de.statusCode === 302 || de.statusCode === 404);
+  const deDeep = await app.inject({ method: 'GET', url: '/de/platform/consent-archive' });
+  check(
+    'de: a retired locale 301s to the English page, and never to /login',
+    de.statusCode === 301 &&
+      de.headers.location === '/en' &&
+      deDeep.statusCode === 301 &&
+      deDeep.headers.location === '/en/platform/consent-archive',
+    `de=${String(de.statusCode)} ${String(de.headers.location)} deep=${String(deDeep.headers.location)}`,
+  );
   check('en: renders the English hero title', en.body.includes(locales.t('en', 'hero.title1')));
 
   check(

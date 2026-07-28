@@ -27,11 +27,26 @@ import { shouldLoadAnalytics } from '../../site/settings.js';
 const LANG_COOKIE = 'cin-lang';
 const LANG_COOKIE_MAX_AGE = 31_536_000; // 1 year
 
+/**
+ * Locale prefixes the site used to serve (CCB-S3-037 1).
+ *
+ * Kept so old links keep working. They belong to the marketing site even though no
+ * locale answers to them any more, which is what {@link isPublicSitePath} needs to
+ * know: the admin auth hook runs BEFORE routing, so without this a visitor on a
+ * /de link is sent to the login page and never reaches the redirect that would
+ * have taken them to the English page.
+ */
+export const RETIRED_LOCALES: readonly string[] = [
+  'ar', 'bg', 'bn', 'ca', 'cs', 'da', 'de', 'el', 'es', 'et', 'fa', 'fi', 'fr', 'he',
+  'hi', 'hr', 'hu', 'id', 'it', 'ja', 'ko', 'lt', 'lv', 'ms', 'nl', 'no', 'pl', 'pt',
+  'ro', 'ru', 'sk', 'sl', 'sr', 'sv', 'th', 'tr', 'uk', 'vi', 'zh',
+];
+
 /** True for any path the marketing site owns (root, /<lang>*, the site sitemap). */
 export function isPublicSitePath(path: string, codes: readonly string[]): boolean {
   if (path === '/' || path === '/sitemap-site.xml') return true;
   const seg = path.split('/')[1] ?? '';
-  return codes.includes(seg);
+  return codes.includes(seg) || RETIRED_LOCALES.includes(seg);
 }
 
 /** The origin of an analytics script URL ('' when unset/invalid). */
@@ -166,6 +181,28 @@ export function registerSiteRoutes(
         return renderPage(reply, code, page.slug);
       });
     }
+  }
+
+  const PREFIX = '/';
+  /**
+   * Retired locale prefixes (CCB-S3-037 1).
+   *
+   * The site shipped 40 languages and now ships one, so /de/... links exist in the
+   * wild and in search results. Without this they fall past every marketing route
+   * to the admin catch-all, which sends an unauthenticated visitor to the LOGIN
+   * page. Not a 404 and not a loop, so it slipped the acceptance list, and
+   * completely wrong all the same.
+   *
+   * An explicit list rather than a two-letter `/:lang` pattern, because a greedy
+   * one would shadow real admin paths, `/ai` among them. 301: these URLs are
+   * permanently gone, and the English page is where they went.
+   */
+  for (const code of RETIRED_LOCALES) {
+    app.get(PREFIX + code, (_req, reply) => reply.redirect(PREFIX + locales.default, 301));
+    app.get(PREFIX + code + '/*', (req, reply) => {
+      const rest = (req.params as Record<string, string>)['*'] ?? '';
+      return reply.redirect(PREFIX + locales.default + PREFIX + rest, 301);
+    });
   }
 
   // Marketing sitemap (referenced from the origin sitemap index).
