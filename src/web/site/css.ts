@@ -165,7 +165,17 @@ section.band{padding:120px 0 0}
   white-space:nowrap;background:none;border:0;font:inherit;font-size:14px;cursor:pointer}
 .nav-link:hover{color:var(--text)}
 .nav-link.active{color:var(--text-accent)}
-.nav-link:focus-visible{outline:2px solid var(--text-accent);outline-offset:3px}
+/* THE UA RING STAYS STUCK AFTER A MOUSE CLICK (CCB-S3-034 follow-up).
+   :focus-visible alone does not fix that: it only ADDS a ring for keyboard
+   focus, it never removes the browser's default one, so clicking a nav item left
+   a light blue outline sitting there until something else took focus. This
+   removes the default when focus did not come from the keyboard. Written as
+   :focus:not(:focus-visible) rather than a bare outline:none on :focus so a
+   browser without :focus-visible support never matches the selector and keeps
+   its own ring, rather than losing focus indication entirely.
+   The keyboard ring uses the site's own token, like every other control here. */
+.nav-link:focus:not(:focus-visible){outline:none}
+.nav-link:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .nav-indicator{position:absolute;bottom:-9px;left:0;width:0;height:3px;pointer-events:none;
   border-radius:999px;opacity:0;
   /* Drawn properly rather than as a default text underline: a thicker bar, the
@@ -204,7 +214,8 @@ section.band{padding:120px 0 0}
   width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
   background:none;color:var(--text-muted);cursor:pointer}
 .cn-menu-close:hover{color:var(--text);border-color:var(--text-accent)}
-.cn-menu-close:focus-visible{outline:2px solid var(--text-accent);outline-offset:2px}
+.cn-menu-close:focus:not(:focus-visible){outline:none}
+.cn-menu-close:focus-visible{outline:none;box-shadow:var(--focus-ring)}
 .cn-menu-grid{display:grid;gap:30px 34px;
   grid-template-columns:repeat(auto-fit,minmax(210px,1fr));align-items:start}
 .cn-menu-col-title{font-size:12px;font-weight:600;letter-spacing:.14em;
