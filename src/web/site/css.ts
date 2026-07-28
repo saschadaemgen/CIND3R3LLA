@@ -138,6 +138,17 @@ svg{vertical-align:-0.18em;flex:none}
 const LAYOUT_CSS = `
 .skip{position:absolute;left:-9999px;top:0;background:var(--primary);color:var(--text-on-accent);padding:8px 14px;border-radius:var(--radius-sm);z-index:100}
 .skip:focus{left:12px;top:12px}
+/* NO FOCUS RING ON A MOUSE CLICK, ANYWHERE (CCB-S3-036 1).
+   Every interactive element on this site styles :focus-visible and none of them
+   suppressed the user-agent default, so a pointer click matched plain :focus, the
+   browser drew its own ring, and it stayed until focus moved. One rule covers the
+   whole site rather than a fix per element, which is how the nav came to be the
+   only one anybody noticed.
+   Scoped as :focus:not(:focus-visible) rather than a blanket outline:none on
+   :focus, so a browser without :focus-visible support never matches and keeps its
+   ring instead of losing focus indication entirely. Text inputs always match
+   :focus-visible per spec, so they are unaffected. */
+:focus:not(:focus-visible){outline:none}
 .wrap{max-width:1200px;margin:0 auto;padding:0 24px}
 .screen{animation:screenIn var(--duration-base) var(--ease-out)}
 @keyframes screenIn{from{opacity:0;transform:translateY(8px)}}
@@ -155,42 +166,127 @@ section.band{padding:120px 0 0}
    <details> gives click and keyboard for free. Hover-to-open is added ONLY on
    pointer-fine devices, so a touch device never gets a menu that springs open
    while you scroll past it. No script, so the CSP is untouched. */
-/* ---- Navigation: flat items, one travelling indicator (CCB-S3-035 §4b) ------
-   A single element that animates its position and width between items, so it
-   reads as one object following the cursor rather than as separate underlines
-   fading in and out. Timings and easing are the admin console's, because the
-   operator wants one interaction language across both surfaces. */
-.nav-desktop.hdr-nav{position:relative}
-.nav-link{padding:7px 11px;border-radius:8px;font-size:14px;color:var(--text-muted);
-  white-space:nowrap;background:none;border:0;font:inherit;font-size:14px;cursor:pointer}
-.nav-link:hover{color:var(--text)}
+/* ---- The two-tier header (CCB-S3-036 3) -------------------------------------
+   Modelled on the operator's SimpleGo site: a thin utility rail over a taller main
+   bar. Moving Login and the language switcher into the rail is the point, because
+   it leaves exactly one control in the main bar. */
+.site-header{padding:0}
+.rail{background:rgba(3,7,14,.92);border-bottom:1px solid rgba(141,225,236,.14)}
+.rail-row{display:flex;align-items:center;justify-content:space-between;height:34px;gap:18px}
+.rail-side{display:flex;align-items:center;gap:16px;min-width:0}
+.rail-right{margin-left:auto}
+.rail-link{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;line-height:1;
+  color:var(--text-muted);text-decoration:none;white-space:nowrap;
+  transition:color var(--duration-fast) var(--ease)}
+.rail-link:hover{color:var(--cyan-400);text-decoration:none}
+.rail-link svg{flex:none;opacity:.8}
+.rail-link:hover svg{opacity:1}
+.rail-login{font-weight:600}
+@media (max-width:820px){
+  .rail-side .rail-link span{display:none}
+  .rail-row{gap:10px}
+}
+
+/* The main bar. One control, four nav items, and the mark. */
+
+.wm-name{font-weight:700;font-size:19px;letter-spacing:.01em;color:var(--text-bright)}
+.wordmark:hover .wm-av{box-shadow:0 0 0 1.5px var(--cyan-400),0 0 18px rgba(141,225,236,.7)}
+.wm-av{transition:box-shadow var(--duration-base) var(--ease-out)}
+
+/* Nav: uppercase, letter-spaced, muted, and NOTHING under an item except the one
+   travelling indicator. The old per-item ::after underline is gone. */
+.hdr-nav{position:relative;display:flex;align-items:center;gap:6px;margin-left:auto}
+.nav-link{border:none;background:none;cursor:pointer;white-space:nowrap;
+  font-family:var(--font-sans);font-size:11.5px;font-weight:600;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--text-muted);padding:8px 10px;text-decoration:none;
+  display:inline-flex;align-items:center;
+  transition:color var(--duration-fast) var(--ease)}
+.nav-link:hover{color:var(--text-bright);background:none}
 .nav-link.active{color:var(--text-accent)}
-/* THE UA RING STAYS STUCK AFTER A MOUSE CLICK (CCB-S3-034 follow-up).
-   :focus-visible alone does not fix that: it only ADDS a ring for keyboard
-   focus, it never removes the browser's default one, so clicking a nav item left
-   a light blue outline sitting there until something else took focus. This
-   removes the default when focus did not come from the keyboard. Written as
-   :focus:not(:focus-visible) rather than a bare outline:none on :focus so a
-   browser without :focus-visible support never matches the selector and keeps
-   its own ring, rather than losing focus indication entirely.
-   The keyboard ring uses the site's own token, like every other control here. */
-.nav-link:focus:not(:focus-visible){outline:none}
-.nav-link:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.nav-indicator{position:absolute;bottom:-9px;left:0;width:0;height:3px;pointer-events:none;
+.nav-indicator{position:absolute;bottom:-6px;left:0;width:0;height:3px;pointer-events:none;
   border-radius:999px;opacity:0;
-  /* Drawn properly rather than as a default text underline: a thicker bar, the
-     accent at partial opacity, and a soft falloff at both ends. */
   background:linear-gradient(90deg,rgba(244,92,176,0) 0%,rgba(244,92,176,.92) 18%,
     rgba(141,225,236,.92) 82%,rgba(141,225,236,0) 100%);
   box-shadow:0 0 14px rgba(244,92,176,.42),0 0 22px rgba(141,225,236,.22);
   transition:transform 270ms cubic-bezier(.2,.8,.2,1),width 270ms cubic-bezier(.2,.8,.2,1),
     opacity 140ms ease;will-change:transform,width}
 .nav-indicator[data-ready=true]{opacity:1}
+.hdr-controls{display:flex;align-items:center;gap:12px}
+/* Last-wins over the older 64px rule further down the sheet. */
+.site-header .hdr-row{height:70px;gap:26px}
 
-/* ---- The fullscreen menu (CCB-S3-035 §4a) ----------------------------------
-   The admin console's mega-panel treatment at full viewport: the same radial
-   washes over a near-opaque base, the same mono uppercase kicker, the same
-   grouping and the same easing. Deliberately not a second design language. */
+/* ---- The Demo control (CCB-S3-036 3c) ---------------------------------------
+   Clipped top-left and bottom-right, outlined not filled, and it does not move on
+   hover. Everything that happens happens INSIDE the button. */
+.dm{position:relative;display:inline-flex;align-items:center;justify-content:center;
+  height:38px;padding:0 20px;overflow:hidden;isolation:isolate;
+  font-size:11.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--cyan-400);text-decoration:none;cursor:pointer;
+  background:rgba(5,10,18,.9);
+  border:1.2px solid rgba(141,225,236,.45);
+  clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+  transition:border-color var(--duration-base) var(--ease-out),
+    background var(--duration-base) var(--ease-out),color var(--duration-base) var(--ease-out)}
+.dm:hover{border-color:var(--cyan-400);background:rgba(15,46,58,.92);color:#dffaff;
+  text-decoration:none}
+.dm-soon{cursor:default}
+.dm-label{position:relative;z-index:2}
+
+/* The raster: one-pixel lines at three-pixel spacing, very low opacity. */
+.dm-raster{position:absolute;inset:0;z-index:1;opacity:0;pointer-events:none;
+  background:repeating-linear-gradient(180deg,rgba(141,225,236,.5) 0 1px,transparent 1px 3px);
+  transition:opacity 220ms ease}
+.dm:hover .dm-raster{opacity:.13}
+
+/* One scanline, once, top to bottom. */
+.dm-scan{position:absolute;left:0;right:0;top:-30%;height:26%;z-index:1;opacity:0;
+  pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(141,225,236,.42),transparent)}
+.dm:hover .dm-scan{animation:dmScan 620ms cubic-bezier(.3,.7,.4,1) 1;opacity:1}
+@keyframes dmScan{from{top:-30%}to{top:110%}}
+
+/* The label tears into cyan and magenta in hard steps, sliced into bands, then
+   resolves. steps() on purpose: no crossfade anywhere. */
+.dm:hover .dm-label{animation:dmGlitch 300ms steps(1,end) 1}
+.dm-label::before,.dm-label::after{content:attr(data-text);position:absolute;left:0;top:0;
+  width:100%;opacity:0;pointer-events:none}
+.dm:hover .dm-label::before{color:#f45cb0;animation:dmSliceA 300ms steps(1,end) 1}
+.dm:hover .dm-label::after{color:#8de1ec;animation:dmSliceB 300ms steps(1,end) 1}
+@keyframes dmGlitch{
+  0%{transform:translate3d(0,0,0)}
+  20%{transform:translate3d(-2px,0,0)}
+  40%{transform:translate3d(2px,0,0)}
+  60%{transform:translate3d(-1px,0,0)}
+  80%{transform:translate3d(1px,0,0)}
+  100%{transform:translate3d(0,0,0)}
+}
+@keyframes dmSliceA{
+  0%{opacity:1;transform:translate3d(-2px,0,0);clip-path:inset(0 0 62% 0)}
+  30%{opacity:1;transform:translate3d(2px,0,0);clip-path:inset(48% 0 22% 0)}
+  60%{opacity:1;transform:translate3d(-1px,0,0);clip-path:inset(74% 0 0 0)}
+  80%,100%{opacity:0}
+}
+@keyframes dmSliceB{
+  0%{opacity:1;transform:translate3d(2px,0,0);clip-path:inset(28% 0 44% 0)}
+  30%{opacity:1;transform:translate3d(-2px,0,0);clip-path:inset(0 0 70% 0)}
+  60%{opacity:1;transform:translate3d(1px,0,0);clip-path:inset(60% 0 10% 0)}
+  80%,100%{opacity:0}
+}
+@media (prefers-reduced-motion:reduce){
+  .dm:hover .dm-label,.dm:hover .dm-label::before,.dm:hover .dm-label::after,
+  .dm:hover .dm-scan{animation:none}
+  .dm-scan{display:none}
+  .dm:hover .dm-raster{opacity:0}
+}
+
+/* ---- The fullscreen menu (CCB-S3-036 4) -------------------------------------
+   The admin console's THREE-COLUMN shape: an intro column with a kicker, heading
+   and description, then entry columns where each entry carries an icon, a label
+   and a one-line description. Colours and easing alone were not the port.
+
+   It is a sibling of the header, not a child: the header has a backdrop-filter,
+   which makes it the containing block for fixed-position descendants, so the menu
+   was resolving inset:0 against a 64px box. */
 .cn-menu{position:fixed;inset:0;z-index:200;display:flex;flex-direction:column;
   visibility:hidden;opacity:0;pointer-events:none;
   transition:visibility 0s linear 200ms,opacity 170ms ease}
@@ -201,37 +297,39 @@ section.band{padding:120px 0 0}
     radial-gradient(circle at 82% 22%,rgba(141,225,236,.12),transparent 34rem),
     rgba(5,10,18,.985);
   backdrop-filter:blur(26px) saturate(145%)}
-.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:34px;
-  width:min(100%,1500px);margin:0 auto;padding:26px 34px 46px;height:100%;
+.cn-menu-inner{position:relative;display:flex;flex-direction:column;gap:26px;
+  width:min(100%,1500px);margin:0 auto;padding:20px 34px 46px;height:100%;
   overflow-y:auto;transform:translateY(-10px);
   transition:transform 220ms cubic-bezier(.2,.8,.2,1)}
 .cn-menu[data-open=true] .cn-menu-inner{transform:translateY(0)}
 .cn-menu-head{display:flex;align-items:center;justify-content:space-between;
-  padding-bottom:18px;border-bottom:1px solid var(--border)}
-.cn-menu-kicker{font-family:var(--font-mono);font-size:10px;font-weight:500;
+  padding-bottom:14px;border-bottom:1px solid var(--border)}
+.cn-menu-kicker{font-family:var(--font-mono);font-size:9.5px;font-weight:500;
   letter-spacing:.16em;text-transform:uppercase;color:var(--text-accent)}
 .cn-menu-close{display:inline-flex;align-items:center;justify-content:center;
   width:40px;height:40px;border-radius:10px;border:1px solid var(--border);
   background:none;color:var(--text-muted);cursor:pointer}
 .cn-menu-close:hover{color:var(--text);border-color:var(--text-accent)}
-.cn-menu-close:focus:not(:focus-visible){outline:none}
-.cn-menu-close:focus-visible{outline:none;box-shadow:var(--focus-ring)}
-.cn-menu-grid{display:grid;gap:30px 34px;
-  grid-template-columns:repeat(auto-fit,minmax(210px,1fr));align-items:start}
-.cn-menu-col-title{font-size:12px;font-weight:600;letter-spacing:.14em;
-  text-transform:uppercase;color:var(--text-accent);margin:0 0 12px;
-  padding-bottom:9px;border-bottom:1px solid var(--border)}
-.cn-menu-items{display:flex;flex-direction:column;gap:2px}
-/* Entries stay inert: real text, no pointer, no hover state, not a tab stop. */
-.np-item{display:block;padding:7px 2px;font-size:14.5px;line-height:1.45;
-  color:var(--text-muted)}
-.np-item.inert{cursor:default}
-.cn-menu-foot{margin-top:auto;padding-top:20px;border-top:1px solid var(--border)}
-.cn-menu-home{font-size:14px;color:var(--text-muted)}
-.cn-menu-home:hover{color:var(--text-accent)}
-@media (max-width:640px){
-  .cn-menu-inner{padding:20px 20px 36px;gap:26px}
-  .cn-menu-grid{grid-template-columns:1fr;gap:24px}
+.cn-menu-sections{display:flex;flex-direction:column;gap:30px}
+.cn-menu-block{display:grid;grid-template-columns:minmax(220px,280px) minmax(0,1fr);
+  gap:34px;align-items:start;padding-bottom:26px;border-bottom:1px solid var(--border)}
+.cn-menu-block:last-child{border-bottom:0;padding-bottom:0}
+.cn-menu-intro{padding-right:26px;border-right:1px solid var(--border)}
+.cn-menu-heading{font-size:19px;font-weight:600;margin:8px 0 10px;color:var(--text-bright)}
+.cn-menu-desc{font-size:13.5px;line-height:1.65;color:var(--text-muted);margin:0}
+.cn-menu-entries{display:grid;grid-template-columns:repeat(auto-fit,minmax(252px,1fr));
+  gap:4px 22px;align-items:start}
+.cn-menu-entry{display:flex;align-items:flex-start;gap:11px;padding:9px 10px;
+  border-radius:9px;cursor:default}
+.cme-icon{display:inline-flex;flex:none;margin-top:2px;color:var(--text-accent);opacity:.85}
+.cme-text{display:flex;flex-direction:column;gap:2px;min-width:0}
+.cme-label{font-size:14px;font-weight:600;color:var(--text)}
+.cme-desc{font-size:12.5px;line-height:1.5;color:var(--text-muted)}
+@media (max-width:900px){
+  .cn-menu-block{grid-template-columns:1fr;gap:16px}
+  .cn-menu-intro{padding-right:0;border-right:0;border-bottom:1px solid var(--border);
+    padding-bottom:14px}
+  .cn-menu-inner{padding:16px 20px 36px}
 }
 
 /* ---- Hero: the feature row and the rotating headline (§2, §3) --------------- */
@@ -325,9 +423,14 @@ main,footer,header{position:relative;z-index:1}
 .site-header::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,var(--magenta-500),transparent);background-size:38% 100%;background-repeat:no-repeat;animation:hbeam 5.5s linear infinite;pointer-events:none}
 @keyframes hbeam{0%{background-position:-60% 0}100%{background-position:160% 0}}
 @media (prefers-reduced-motion:reduce){.site-header::after{animation:none;opacity:.4}}
-.nav-link{position:relative}
-.nav-link::after{content:"";position:absolute;left:11px;right:11px;bottom:4px;height:1px;background:var(--cyan-400);opacity:.9;transform:scaleX(0);transition:transform var(--duration-base) var(--ease-out)}
-.nav-link:hover::after,.nav-link.active::after{transform:scaleX(1)}
+/* THE OLD PER-ITEM UNDERLINE IS GONE (CCB-S3-036 1).
+   It drew a cyan 1px ::after under every hovered or active nav item, and the
+   travelling .nav-indicator was added above without removing it, so two bars sat
+   under the same item, cyan and magenta. .nav-link{position:relative} went with
+   it: it existed only to anchor that ::after, and leaving it would have made the
+   absolutely positioned indicator resolve against the ITEM instead of the nav,
+   which is a second bug wearing the first one's clothes. One indicator, nothing
+   else under a nav item. */
 .hdr-iconbtn{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border:1px solid transparent;border-radius:var(--radius-sm);background:none;color:var(--text-muted);cursor:pointer;transition:color .15s,background .15s}
 .hdr-iconbtn:hover{color:var(--text-bright);background:var(--surface-hover)}
 .hdr-iconbtn:focus-visible{outline:none;box-shadow:var(--focus-ring)}

@@ -37,6 +37,17 @@ export interface SiteSection {
   page: SitePage;
   /** Sub-pages, in reading order. Previous/next walks this order. */
   children: SitePage[];
+  /**
+   * Whether the section appears in the main navigation (CCB-S3-036 2).
+   *
+   * Open Source does not. It is an attribute of the product rather than a
+   * destination, the way "written in TypeScript" is: the nav should read as
+   * places you go. Its PAGES are untouched, keep their URLs, stay in the sitemap
+   * and keep their breadcrumbs and previous/next; only the menu entry goes.
+   * Status and roadmap surfaces in the utility rail as Roadmap, Contributing in
+   * the footer, and the AGPL argument lives on the Security page.
+   */
+  inNav?: boolean;
 }
 
 export const HOME: SitePage = { key: 'home', slug: '', navKey: 'nav.home', built: true };
@@ -99,6 +110,7 @@ export const SECTIONS: SiteSection[] = [
   },
   {
     page: p('open-source', 'open-source', 'nav.opensource'),
+    inNav: false,
     children: [
       p('status', 'open-source/status', 'nav.opensource.status'),
       p('contributing', 'open-source/contributing', 'nav.opensource.contributing'),
@@ -129,8 +141,17 @@ export const SITE_PAGES: SitePage[] = [
   ...FOOTER_PAGES,
 ];
 
-/** Top-level nav entries (home plus the five section overviews). */
-export const NAV_PAGES: SitePage[] = [HOME, ...SECTIONS.map((s) => s.page)];
+/**
+ * The sections that appear in the main navigation: Platform, Security, Pro, Docs.
+ *
+ * Separate from SECTIONS, which stays the complete tree that routing, the sitemap,
+ * breadcrumbs and previous/next are built from. A page leaving the nav must not
+ * leave the site.
+ */
+export const NAV_SECTIONS: SiteSection[] = SECTIONS.filter((s) => s.inNav !== false);
+
+/** Top-level nav entries (home plus the navigable section overviews). */
+export const NAV_PAGES: SitePage[] = [HOME, ...NAV_SECTIONS.map((s) => s.page)];
 
 const BY_SLUG = new Map(SITE_PAGES.map((x) => [x.slug, x]));
 const BY_KEY = new Map<string, SitePage>([

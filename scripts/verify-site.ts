@@ -20,7 +20,7 @@ import { SecurityService } from '../src/security/settings.js';
 import { SiteService } from '../src/site/settings.js';
 import { loadLocales, type LocaleSet } from '../src/web/site/i18n.js';
 import { isPublicSitePath } from '../src/web/site/routes.js';
-import { SECTIONS, SITE_PAGES } from '../src/web/site/pages.js';
+import { NAV_SECTIONS, SECTIONS, SITE_PAGES } from '../src/web/site/pages.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
 
@@ -202,7 +202,10 @@ async function main(): Promise<void> {
       // A raw `meta.<key>.title` in a <title> means the page has no authored
       // content and no locale entry: exactly the "stub with a real URL" the
       // briefing forbids.
-      if (res.body.includes(`meta.${page.key}.`) || res.body.includes(locales.t('en', 'stub.badge'))) {
+      // Structural, not textual. This used to look for the stub BADGE TEXT, and
+      // when the Demo control started saying "Coming soon" on every page, every
+      // page looked like a stub (CCB-S3-036).
+      if (res.body.includes(`meta.${page.key}.`) || res.body.includes('class="stub-cta"')) {
         noMeta.push(`/${loc}/${page.slug}`);
       }
     }
@@ -240,14 +243,48 @@ async function main(): Promise<void> {
   // shows the shape of the platform, so nothing is dropped while the individual
   // pages are commissioned; but an entry that goes nowhere must not look like it
   // does, and must not be a tab stop.
+  const menuEntryCount = NAV_SECTIONS.reduce((n, sec) => n + sec.children.length + 1, 0);
   check(
-    'nav: all 28 entries are present in the menu',
-    SECTIONS.every((sec) =>
+    `nav: all ${String(menuEntryCount)} entries of the four nav sections are in the menu`,
+    NAV_SECTIONS.every((sec) =>
       [locales.t('en', 'nav.overview'), ...sec.children.map((c) => locales.t('en', c.navKey))].every(
-        (label) => platform.body.includes(`class="np-item inert">${label}</span>`) ||
-          platform.body.includes(`inert np-overview">${label}</span>`),
+        (label) => platform.body.includes(`class="cme-label">${label}</span>`),
       ),
     ),
+  );
+  check(
+    'nav: Open Source is NOT in the navigation, and its pages still answer',
+    !platform.body.includes('data-section="open-source"') &&
+      (await app.inject({ method: 'GET', url: '/en/open-source/status' })).statusCode === 200 &&
+      (await app.inject({ method: 'GET', url: '/en/open-source/contributing' })).statusCode === 200,
+  );
+  check(
+    'nav: Roadmap is in the utility rail and Contributing in the footer',
+    platform.body.includes(`/en/open-source/status`) &&
+      platform.body.includes(`/en/open-source/contributing`),
+  );
+  check(
+    'header: two tiers, with the rail carrying login and the language switcher',
+    platform.body.includes('class="rail"') &&
+      platform.body.includes('rail-login') &&
+      platform.body.includes('lang-menu'),
+  );
+  check(
+    'header: the Demo control is the only control left in the main bar',
+    /class="hdr-controls">\s*<(a|span) class="dm/.test(platform.body),
+  );
+  check(
+    'demo: clipped, and carries the raster, the scanline and the glitch label',
+    platform.body.includes('dm-raster') &&
+      platform.body.includes('dm-scan') &&
+      platform.body.includes('dm-label'),
+  );
+  check(
+    'menu: the admin three-column shape, with an intro and a description per entry',
+    platform.body.includes('cn-menu-intro') &&
+      platform.body.includes('cn-menu-heading') &&
+      platform.body.includes('cn-menu-desc') &&
+      (platform.body.match(/cme-desc/g) ?? []).length >= menuEntryCount - 4,
   );
   check(
     'nav: entries are inert, so none of them is a link or a tab stop',
@@ -263,8 +300,8 @@ async function main(): Promise<void> {
       !platform.body.includes('nav-panel'),
   );
   check(
-    'nav: the menu groups every section, with all its entries',
-    SECTIONS.every((sec) => platform.body.includes(`data-section="${sec.page.key}"`)),
+    'nav: the menu groups every NAVIGABLE section',
+    NAV_SECTIONS.every((sec) => platform.body.includes(`data-section="${sec.page.key}"`)),
   );
   check(
     'nav: exactly one travelling indicator, not an underline per item',
@@ -272,12 +309,12 @@ async function main(): Promise<void> {
   );
   // Each entry's contents must be plain text: no badge, no "soon", no dimming
   // element. A menu full of pending-labels reads as a product that does not work.
-  const entryInners = [...platform.body.matchAll(/<span class="np-item[^"]*">([\s\S]*?)<\/span>/g)]
-    .map((m) => m[1] ?? '');
+  // The entry is icon + label + description now (the admin shape), so nesting is
+  // expected. What must not appear is a badge or a pending label.
   check(
-    'nav: no badge or "soon" label decorates an entry',
-    entryInners.length > 0 && entryInners.every((t) => !t.includes('<')),
-    entryInners.filter((t) => t.includes('<')).slice(0, 2).join(' | '),
+    'nav: no badge or "soon" label decorates a menu entry',
+    !/cn-menu-entry[\s\S]{0,400}?cn-badge/.test(platform.body) &&
+      !/cme-label[^<]*<[^>]*>\s*(soon|coming|planned|bald)/i.test(platform.body),
   );
   const deep = await app.inject({ method: 'GET', url: '/en/platform/consent-archive' });
   check(

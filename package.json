@@ -55,6 +55,7 @@
     "verify:demo": "tsx scripts/verify-demo.ts",
     "demo:seed": "tsx scripts/demo-seed.ts",
     "encrypt-media": "tsx scripts/encrypt-media.ts",
+    "verify:i18n-keys": "tsx scripts/verify-i18n-keys.ts",
     "verify:no-dashes": "tsx scripts/verify-no-dashes.ts",
     "verify:queue": "tsx scripts/verify-queue.ts",
     "verify:capture-events": "tsx scripts/verify-capture-events.ts",

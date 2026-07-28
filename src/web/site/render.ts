@@ -37,9 +37,9 @@ import type { LocaleSet } from './i18n.js';
 import {
   breadcrumbs,
   HOME,
+  NAV_SECTIONS,
   neighbours,
   pagePath,
-  SECTIONS,
   sectionOf,
   type SitePage,
 } from './pages.js';
@@ -53,6 +53,7 @@ import {
 // Importing the content modules is what REGISTERS their pages: each calls
 // definePage() at module load. Without this the tree would render stubs.
 import './content/platform.js';
+import { localised, menuCopyFor } from './menu-copy.js';
 import { impressumFor, isBindingLocale, privacyFor, type LegalSection } from './legal.js';
 import { shouldLoadAnalytics, type SiteSettings } from '../../site/settings.js';
 import { shareUrl, SHARE_LABELS } from '../share.js';
@@ -229,23 +230,12 @@ function inSection(v: SitePageView, sectionKey: string): boolean {
  */
 
 function navLinks(v: SitePageView): SafeHtml {
-  // FLAT ITEMS, ONE INDICATOR. The dropdown panels are gone: the sections open in
-  // the fullscreen menu instead, which is the admin console's language and removes
-  // the whole class of overlapping-panel bugs as a side effect rather than as the
-  // point. The indicator is a single element that travels between items, so it
-  // reads as one object tracking the cursor rather than as separate underlines
-  // fading in and out (CCB-S3-035 §4b).
-  return html`<a
-      class="nav-link${v.page.key === HOME.key ? ' active' : ''}"
-      href="${pagePath(v.locale, HOME)}"
-      data-nav-item
-      ${v.page.key === HOME.key ? raw('aria-current="page"') : ''}
-      >${v.t('nav.home')}</a
-    >
-    ${SECTIONS.map((sec) => {
+  // FOUR items, each a real destination (CCB-S3-036 2). Open Source left the nav:
+  // it is an attribute of the product, not a place you go, and GitHub sits in the
+  // rail above. Its pages keep their URLs; Roadmap is in the rail and Contributing
+  // in the footer.
+  return html`${NAV_SECTIONS.map((sec) => {
       const current = inSection(v, sec.page.key);
-      // The section names open the fullscreen menu rather than navigating,
-      // because their overview pages are not commissioned yet (CCB-S3-034).
       return html`<button
         type="button"
         class="nav-link nav-section${current ? ' active' : ''}"
@@ -261,26 +251,83 @@ function navLinks(v: SitePageView): SafeHtml {
 }
 
 /**
- * Mobile navigation: a full drawer with expandable sections.
+ * The utility rail: the thin tier above the main bar (CCB-S3-036 3a).
  *
- * NOT the desktop menu at a smaller size. A hover submenu cannot be opened on a
- * phone at all, and members arrive on phones from a link in a chat, so a submenu
- * they cannot reach is a submenu that does not exist. Each section is a `<details>`
- * that expands in place, and the section holding the current page starts open so a
- * reader lands with their surroundings already visible.
+ * Everything secondary lives here, which is the point of the split: moving Login
+ * and the language switcher up clears the main bar so the only control left in it
+ * is the Demo. Small, muted, an icon each, cyan on hover, and nothing else.
  */
+function utilityRail(v: SitePageView): SafeHtml {
+  const l = v.locale;
+  const left: Array<[string, string, string, boolean]> = [
+    ['github', v.t('footer.github'), GITHUB_URL, true],
+    ['book-open', v.t('nav.docs'), `/${l}/docs`, false],
+    // Status and roadmap keeps its URL; only its route into the site changed.
+    ['map', v.t('nav.rail.roadmap'), `/${l}/open-source/status`, false],
+  ];
+  const right: Array<[string, string, string, boolean]> = [
+    ['users', v.t('nav.rail.community'), `${GITHUB_URL}/discussions`, true],
+    // No group invite link is configured, so this points at the member guide,
+    // which is where joining is explained. A rail entry must not lead nowhere.
+    ['message-circle', v.t('nav.rail.simplex'), `/${l}/docs/member-guide`, false],
+  ];
+  const item = ([icon, label, href, ext]: [string, string, string, boolean]): SafeHtml =>
+    html`<a class="rail-link" href="${href}" ${ext ? raw('target="_blank" rel="noopener"') : ''}
+      >${siteIcon(icon, { size: 13 })}<span>${label}</span></a
+    >`;
+  return html`<div class="rail">
+    <div class="wrap rail-row">
+      <div class="rail-side">${left.map(item)}</div>
+      <div class="rail-side rail-right">
+        ${right.map(item)} ${langMenu(v)}
+        <a class="rail-link rail-login" href="/login"
+          >${siteIcon('key-round', { size: 13 })}<span>${v.t('nav.login')}</span></a
+        >
+      </div>
+    </div>
+  </div>`;
+}
+
 /**
- * The fullscreen menu (CCB-S3-035 §4a).
+ * The Demo control: the one real control in the main bar (CCB-S3-036 3c).
  *
- * One menu for every width, built in the admin console's language: the same
- * radial-gradient panel wash over a near-opaque base, the same mono uppercase
- * kicker over each group, the same easing and the same grouping. The operator
- * wanted one design system across both surfaces, so this deliberately does not
- * invent a second one.
+ * Outlined rather than filled, clipped at top-left and bottom-right, and it does
+ * NOT move on hover. Everything that happens on hover happens INSIDE the button:
+ * the label glitches in hard steps, one scanline crosses it, and a fine raster
+ * fades in. Reduced motion keeps the colour change and drops all three.
  *
- * Entries stay inert (CCB-S3-034): real text, no href, not a tab stop, no badges.
- * The menu is what shows the shape of the platform, so nothing is dropped while the
- * individual pages are commissioned one at a time.
+ * The demo does not exist yet, so with no `demoUrl` configured this renders as the
+ * same shape without an href. A control that leads to a 404 is worse than one that
+ * says it is coming.
+ */
+function demoControl(v: SitePageView): SafeHtml {
+  const url = v.site.demoUrl?.trim();
+  const label = v.t('nav.demo');
+  const inner = html`<span class="dm-raster" aria-hidden="true"></span>
+    <span class="dm-scan" aria-hidden="true"></span>
+    <span class="dm-label" data-text="${label}">${label}</span>`;
+  return url
+    ? html`<a class="dm" href="${url}">${inner}</a>`
+    : html`<span class="dm dm-soon" aria-disabled="true" title="${v.t('nav.demo.soon')}"
+        >${inner}</span
+      >`;
+}
+
+/**
+ * The fullscreen menu (CCB-S3-036 4), built to the admin console's shape.
+ *
+ * IT RENDERED AS AN EMPTY BAR, and the cause was not the markup: the content was
+ * always there. `.cn-menu` is `position: fixed; inset: 0`, and it was a child of
+ * `<header>`, which carries `backdrop-filter: blur(16px)`. A backdrop-filter makes
+ * an element the containing block for fixed-position descendants, so `inset: 0`
+ * resolved against the 64px header instead of the viewport. Measured: the menu box
+ * was 64px tall around a 541px grid, which is exactly a bar with a kicker and a
+ * close cross. It is now a sibling of the header, in the body.
+ *
+ * MATCHING THE ADMIN means the three-column structure, not the colours: an intro
+ * column carrying a kicker, the section heading and a description, then entry
+ * columns where each entry has an icon, a label and a one-line description.
+ * Entries stay inert until their pages are commissioned (CCB-S3-034).
  */
 function fullscreenMenu(v: SitePageView): SafeHtml {
   return html`<div class="cn-menu" id="cn-menu" data-menu data-open="false" hidden>
@@ -288,25 +335,46 @@ function fullscreenMenu(v: SitePageView): SafeHtml {
     <div class="cn-menu-inner">
       <div class="cn-menu-head">
         <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
-        <button type="button" class="cn-menu-close" data-menu-close aria-label="${v.t('nav.menu.close')}">
+        <button
+          type="button"
+          class="cn-menu-close"
+          data-menu-close
+          aria-label="${v.t('nav.menu.close')}"
+        >
           ${siteIcon('x', { size: 20 })}
         </button>
       </div>
-      <div class="cn-menu-grid">
-        ${SECTIONS.map(
-          (sec) => html`<section class="cn-menu-col" data-section="${sec.page.key}">
-            <h2 class="cn-menu-col-title">${v.t(sec.page.navKey)}</h2>
-            <div class="cn-menu-items">
-              ${[
-                v.t('nav.overview'),
-                ...sec.children.map((c) => v.t(c.navKey)),
-              ].map((label) => html`<span class="np-item inert">${label}</span>`)}
+      <div class="cn-menu-sections">
+        ${NAV_SECTIONS.map((sec) => {
+          const copy = menuCopyFor(sec.page.key);
+          const rows: Array<[string, string, string]> = [
+            [sec.page.key, v.t('nav.overview'), 'overview'],
+            ...sec.children.map(
+              (c) => [c.key, v.t(c.navKey), c.key] as [string, string, string],
+            ),
+          ];
+          return html`<section class="cn-menu-block" data-section="${sec.page.key}">
+            <div class="cn-menu-intro">
+              <span class="cn-menu-kicker">${v.t('nav.menu.kicker')}</span>
+              <h2 class="cn-menu-heading">${v.t(sec.page.navKey)}</h2>
+              ${copy
+                ? html`<p class="cn-menu-desc">${localised(copy.intro, v.locale)}</p>`
+                : null}
             </div>
-          </section>`,
-        )}
-      </div>
-      <div class="cn-menu-foot">
-        <a class="cn-menu-home" href="${pagePath(v.locale, HOME)}">${v.t('nav.home')}</a>
+            <div class="cn-menu-entries">
+              ${rows.map(([, label, copyKey]) => {
+                const ec = copy?.entries[copyKey];
+                return html`<span class="cn-menu-entry np-item inert">
+                  <span class="cme-icon">${siteIcon(ec?.icon ?? 'circle', { size: 15 })}</span>
+                  <span class="cme-text">
+                    <span class="cme-label">${label}</span>
+                    ${ec ? html`<span class="cme-desc">${localised(ec, v.locale)}</span>` : null}
+                  </span>
+                </span>`;
+              })}
+            </div>
+          </section>`;
+        })}
       </div>
     </div>
   </div>`;
@@ -385,20 +453,14 @@ function langMenu(v: SitePageView): SafeHtml {
   </details>`;
 }
 
-function headerControls(v: SitePageView): SafeHtml {
-  return html`${langMenu(v)}
-    <a class="nav-login" href="/login"
-      >${siteIcon('key-round', { size: 14 })} ${v.t('nav.login')}</a
-    >`;
-}
 
 function header(v: SitePageView): SafeHtml {
   return html`<header class="site-header">
+    ${utilityRail(v)}
     <div class="wrap hdr-row">
       ${wordmark(v)}
       <nav class="nav-desktop hdr-nav" aria-label="Primary">${navLinks(v)}</nav>
-      <span class="nav-desktop hdr-controls">${headerControls(v)}</span>
-      <span class="mobile-menu hdr-spacer"></span>
+      <span class="hdr-controls">${demoControl(v)}</span>
       <button
         type="button"
         id="cn-burger"
@@ -414,7 +476,6 @@ function header(v: SitePageView): SafeHtml {
         })}
       </button>
     </div>
-    ${fullscreenMenu(v)}
   </header>`;
 }
 
@@ -455,6 +516,8 @@ function footer(v: SitePageView): SafeHtml {
       ${footerCol(v.t('footer.opensource'), [
         [v.t('footer.github'), GITHUB_URL, true],
         [v.t('footer.agpl'), `/${l}/open-source`],
+        // Contributing left the nav with Open Source and lands here, URL unchanged.
+        [v.t('nav.opensource.contributing'), `/${l}/open-source/contributing`],
         [v.t('footer.changelog'), `${GITHUB_URL}/commits/main`, true],
       ])}
       ${footerCol(v.t('footer.ecosystem'), [
@@ -706,7 +769,6 @@ function homeBody(v: SitePageView): SafeHtml {
           <div class="pring">
             <img src="${AVATAR_SRC}" alt="${v.t('brand.name')}" width="420" height="420" />
             <span class="pchip c1"><span class="d"></span>${v.t('hero.chip.consent')}</span>
-            <span class="pchip c2"><span class="d"></span>${v.t('hero.chip.csam')}</span>
           </div>
         </div>
       </div>
@@ -1320,7 +1382,7 @@ export function renderSitePage(v: SitePageView): string {
       <body>
         <a class="skip" href="#main">${v.t('a11y.skip')}</a>
         <canvas id="cn-starfield" aria-hidden="true"></canvas>
-        ${header(v)}
+        ${header(v)} ${fullscreenMenu(v)}
         <main id="main"><div class="screen">${body}</div></main>
         ${footer(v)} ${gated ? cookieBanner(v) : null}
         <script nonce="${v.nonce}">
