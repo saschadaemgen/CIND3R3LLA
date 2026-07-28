@@ -37,11 +37,12 @@ function setMenu(open){
    menu showed all four at once. Blocks ship hidden; the trigger reveals the one it
    names, and the burger (which names none) reveals the first. */
 function showSection(key){
-  var blocks=[].slice.call(document.querySelectorAll('[data-menu-block]'));
-  if(!blocks.length)return;
-  var wanted=key&&document.querySelector('[data-menu-block][data-section="'+key+'"]');
-  blocks.forEach(function(b){b.setAttribute('hidden','');});
-  (wanted||blocks[0]).removeAttribute('hidden');
+  var panels=[].slice.call(document.querySelectorAll('[data-mega-panel]'));
+  if(!panels.length)return;
+  var wanted=key&&document.querySelector('[data-mega-panel="'+key+'"]');
+  panels.forEach(function(p){p.setAttribute('hidden','');p.setAttribute('aria-hidden','true');});
+  var show=wanted||panels[0];
+  show.removeAttribute('hidden');show.setAttribute('aria-hidden','false');
 }
 document.querySelectorAll('[data-menu-open]').forEach(function(b){
   b.addEventListener('click',function(e){
