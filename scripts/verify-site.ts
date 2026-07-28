@@ -359,9 +359,12 @@ async function main(): Promise<void> {
       platform.body.includes('cn-menu-demo'),
   );
   check(
-    'sections: panelled with the same 9px clip as the Demo control',
+    // The 9px lives in --clip-corner now (CCB-S3-040), so the assertion follows the
+    // token rather than the literal it replaced.
+    'sections: panelled with the same clipped corner as the Demo control',
     platform.body.includes('sec-panel-in') &&
-      (platform.body.match(/clip-path:polygon\(9px 0/g) ?? []).length >= 2,
+      /--clip-corner:9px/.test(platform.body) &&
+      (platform.body.match(/clip-path:polygon\(var\(--clip-corner\)/g) ?? []).length >= 2,
   );
   check(
     'menu: the admin three-column grid, verbatim',

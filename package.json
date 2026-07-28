@@ -14,7 +14,7 @@
     "connect": "tsx src/bot/connect.ts",
     "avatar": "tsx src/bot/set-avatar.ts",
     "build": "tsc --build && npm run assets",
-    "assets": "tailwindcss -i assets/app.css -o public/assets/app.css --minify && node scripts/copy-assets.mjs",
+    "assets": "tailwindcss -i assets/app.css -o public/assets/app.css --minify && node scripts/copy-assets.mjs && npm run design-system",
     "hash-password": "tsx scripts/hash-password.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
@@ -62,7 +62,8 @@
     "deploy": "bash deploy.sh",
     "media:audit": "tsx scripts/scan-media-metadata.ts",
     "media:remediate": "tsx scripts/remediate-media.ts",
-    "verify:namegen": "tsx scripts/verify-namegen.ts"
+    "verify:namegen": "tsx scripts/verify-namegen.ts",
+    "design-system": "tsx scripts/build-design-system.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
