@@ -376,7 +376,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   }
 
   const security = await SecurityService.load(getPool());
-  const site = await SiteService.load(getPool());
+  const site = SiteService.fromEnv();
   const archive = await ArchiveService.load(getPool());
   const interaction = await InteractionService.load(getPool());
   const plugins = await PluginService.load(getPool());

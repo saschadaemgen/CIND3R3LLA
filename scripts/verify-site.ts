@@ -130,8 +130,8 @@ async function main(): Promise<void> {
   };
   const settings = await SettingsService.load(db, cfg.logLevel);
   const security = await SecurityService.load(db);
-  const site = await SiteService.load(db); // all OFF initially
-  const app = buildServer({
+  const site = SiteService.withDefaults(); // all OFF initially
+  let app = buildServer({
     db,
     adminCfg,
     cfg,
@@ -756,8 +756,8 @@ async function main(): Promise<void> {
   check('off: no share links', !en.body.includes('class="share-links"'));
 
   // --- Turn the three blocks ON (analytics consent-gated behind the banner) ---
-  await site.save(
-    {
+  {
+    const st = SiteService.of({
       analytics: {
         enabled: true,
         provider: 'Plausible',
@@ -765,9 +765,12 @@ async function main(): Promise<void> {
       },
       cookieBanner: { enabled: true, policyUrl: '' },
       socialShare: { enabled: true, networks: ['x', 'reddit', 'email'] },
-    },
-    'verify-site',
-  );
+    });
+    // Settings are read-only at runtime now, so a new state means a new server.
+    await app.close();
+    app = buildServer({ db, adminCfg, cfg, settings, security, site: st, mediaRoot: cfg.mediaRoot });
+    await app.ready();
+  }
   const on = await app.inject({ method: 'GET', url: '/en' });
   const onCsp = String(on.headers['content-security-policy'] ?? '');
   check('on: cookie banner rendered', on.body.includes('id="cin-cookie"'));
@@ -792,14 +795,17 @@ async function main(): Promise<void> {
   );
 
   // --- Analytics requires the banner (consent mechanism) to load ---
-  await site.save(
-    {
+  {
+    const st = SiteService.of({
       analytics: { enabled: true, provider: '', scriptUrl: 'https://stats.example.test/js/s.js' },
       cookieBanner: { enabled: false, policyUrl: '' },
       socialShare: { enabled: false, networks: [] },
-    },
-    'verify-site',
-  );
+    });
+    // Settings are read-only at runtime now, so a new state means a new server.
+    await app.close();
+    app = buildServer({ db, adminCfg, cfg, settings, security, site: st, mediaRoot: cfg.mediaRoot });
+    await app.ready();
+  }
   const noBanner = await app.inject({ method: 'GET', url: '/en' });
   const noBannerCsp = String(noBanner.headers['content-security-policy'] ?? '');
   check(
@@ -810,8 +816,8 @@ async function main(): Promise<void> {
   );
 
   // --- Adversarial: a hostile analytics URL cannot break out of the inline script ---
-  await site.save(
-    {
+  {
+    const st = SiteService.of({
       analytics: {
         enabled: true,
         provider: '',
@@ -819,9 +825,12 @@ async function main(): Promise<void> {
       },
       cookieBanner: { enabled: true, policyUrl: '' },
       socialShare: { enabled: false, networks: [] },
-    },
-    'verify-site',
-  );
+    });
+    // Settings are read-only at runtime now, so a new state means a new server.
+    await app.close();
+    app = buildServer({ db, adminCfg, cfg, settings, security, site: st, mediaRoot: cfg.mediaRoot });
+    await app.ready();
+  }
   const xss = await app.inject({ method: 'GET', url: '/en' });
   check(
     'xss: analytics URL is escaped in the inline bootstrap (no </script> breakout)',

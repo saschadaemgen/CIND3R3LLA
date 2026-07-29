@@ -11,9 +11,6 @@
  * links, so it needs no banner. Values are normalized from untrusted input.
  */
 
-import { getSetting, setSetting } from '../db/settings.js';
-import type { Queryable } from '../db/pool.js';
-import { writeAudit } from '../db/audit.js';
 
 /** Share targets that are pure link builders — no third-party script, no tracking.
  * Kept in step with {@link SHARE_NETWORKS} in src/web/share.ts (the URL/label/icon
@@ -141,35 +138,82 @@ export function shouldLoadAnalytics(s: SiteSettings): boolean {
   return s.analytics.enabled && s.analytics.scriptUrl !== '' && s.cookieBanner.enabled;
 }
 
-const SITE_KEY = 'site';
+/**
+ * The website's settings, read from the ENVIRONMENT rather than the database
+ * (CCB-S3-041).
+ *
+ * They used to live under the `site` key of the product's `settings` table and be
+ * edited on the admin console's `/website` page. That was the only thing tying the
+ * marketing site to the product's PostgreSQL, and it was the dependency that would
+ * have made the repository split cosmetic: a site with a connection to the
+ * product's database has not really been separated from it.
+ *
+ * These are four values that change perhaps twice a year. They do not justify a
+ * database, and the site now has no product dependency beyond two URLs (the
+ * archive iframe and the operator login link).
+ *
+ * Every variable is optional and every default is OFF, which is exactly what
+ * production was already running: no `site` row existed, so the live site had been
+ * serving `DEFAULT_SITE` all along. Carrying the values across therefore changes
+ * nothing a visitor sees.
+ */
+export function siteSettingsFromEnv(env: NodeJS.ProcessEnv = process.env): SiteSettings {
+  const bool = (v: string | undefined): boolean => (v ?? '').trim().toLowerCase() === 'true';
+  const str = (v: string | undefined): string => (v ?? '').trim();
+  const list = (v: string | undefined): string[] =>
+    str(v)
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
+  return normalizeSite({
+    analytics: {
+      enabled: bool(env['SITE_ANALYTICS_ENABLED']),
+      provider: str(env['SITE_ANALYTICS_PROVIDER']),
+      scriptUrl: str(env['SITE_ANALYTICS_SCRIPT_URL']),
+    },
+    cookieBanner: {
+      enabled: bool(env['SITE_COOKIE_BANNER_ENABLED']),
+      policyUrl: str(env['SITE_COOKIE_POLICY_URL']),
+    },
+    socialShare: {
+      enabled: bool(env['SITE_SHARE_ENABLED']),
+      ...(env['SITE_SHARE_NETWORKS'] ? { networks: list(env['SITE_SHARE_NETWORKS']) } : {}),
+    },
+    demoUrl: str(env['SITE_DEMO_URL']),
+  });
+}
 
-/** In-process cache of the website settings, refreshed on write. */
+/**
+ * Read-only holder for the settings.
+ *
+ * No `save`: there is nowhere to save to, and the admin page that used to call it
+ * is gone. Changing a value means changing the environment and restarting, which
+ * for four values that change twice a year is the right trade.
+ */
 export class SiteService {
-  private constructor(
-    private readonly db: Queryable,
-    private current: SiteSettings,
-  ) {}
+  private constructor(private readonly current: SiteSettings) {}
 
-  static async load(db: Queryable): Promise<SiteService> {
-    const stored = await getSetting(db, SITE_KEY);
-    return new SiteService(db, normalizeSite(stored ?? {}));
+  static fromEnv(env: NodeJS.ProcessEnv = process.env): SiteService {
+    return new SiteService(siteSettingsFromEnv(env));
   }
 
-  /** Synchronous all-defaults service — used by buildServer as a fallback and by
-   * harnesses that don't seed a `site` row (everything OFF, matching production's
-   * first boot). */
-  static withDefaults(db: Queryable): SiteService {
-    return new SiteService(db, normalizeSite({}));
+  /**
+   * Build from explicit settings.
+   *
+   * The settings are read-only at runtime now, so a harness that needs to exercise
+   * the analytics or banner state constructs a service in that state and builds a
+   * server around it, rather than mutating one in place.
+   */
+  static of(settings: Partial<SiteSettings>): SiteService {
+    return new SiteService(normalizeSite(settings));
+  }
+
+  /** All-defaults, for harnesses and for `buildServer`'s fallback. */
+  static withDefaults(): SiteService {
+    return new SiteService(normalizeSite({}));
   }
 
   get(): SiteSettings {
     return this.current;
-  }
-
-  async save(next: SiteSettings, actor: string): Promise<void> {
-    const normalized = normalizeSite(next);
-    await setSetting(this.db, SITE_KEY, normalized);
-    await writeAudit(this.db, actor, 'site.update', 'site', normalized);
-    this.current = normalized;
   }
 }

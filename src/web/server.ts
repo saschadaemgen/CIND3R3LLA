@@ -119,7 +119,7 @@ function isSensitive(method: string, path: string): boolean {
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const { db, adminCfg, cfg, settings, security } = deps;
-  const site = deps.site ?? SiteService.withDefaults(db);
+  const site = deps.site ?? SiteService.withDefaults();
   const archive = deps.archive ?? ArchiveService.withDefaults(db);
   const interaction = deps.interaction ?? InteractionService.withDefaults(db);
   const plugins = deps.plugins ?? PluginService.withDefaults(db);
@@ -601,12 +601,6 @@ export function registerNav(): void {
           href: '/embeds',
           label: 'Embeds',
           icon: icon('embed'),
-        },
-        {
-          key: 'site',
-          href: '/website',
-          label: 'Website',
-          icon: icon('site'),
         },
       ],
     },

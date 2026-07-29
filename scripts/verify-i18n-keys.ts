@@ -227,7 +227,7 @@ async function main(): Promise<void> {
   };
   const settings = await SettingsService.load(db, cfg.logLevel);
   const security = await SecurityService.load(db);
-  const site = await SiteService.load(db);
+  const site = SiteService.withDefaults();
   const app = buildServer({ db, adminCfg, cfg, settings, security, site, mediaRoot: cfg.mediaRoot });
   await app.ready();
 
