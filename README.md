@@ -288,6 +288,12 @@ CIND3R3LLA does not hide important behaviour in code while presenting an empty c
 
 ## Architecture
 
+> **The marketing website is not in this repository.** It lives in its own
+> private repository, `cind3r3lla-site`, with its own process, port, systemd unit
+> and deploy script, and is delivered separately. Everything below is the product:
+> the bot, the capture path, the administration console and the public archive
+> front. See `docs/decisions.md` **D-089**.
+
 ```text
 SimpleX network
       |
@@ -303,7 +309,7 @@ CIND3R3LLA deterministic application layer
       |
       +--> Identity, permissions, consent, routing, moderation
       +--> Interaction engine and plugins
-      +--> Archive and public site
+      +--> Archive and public archive front
       +--> Human supervision and audit
       |
       v
@@ -346,7 +352,7 @@ Conversation content is not sent to an external model provider by default.
 |---|---|
 | Embedded SimpleX capture bot | Live |
 | Consent first archive | Live |
-| Public searchable website | Live |
+| Public searchable archive front | Live |
 | Content reports and audited takedowns | Live |
 | Hardened administration | Live |
 | Local Ollama runtime | Live |

@@ -826,11 +826,11 @@ connect-src 'self'` (embeddable anywhere, no external assets; `media-src 'self'`
 
 ### 11.1 The properties (as built, now maintained in `cind3r3lla-site`)
 
-The domain root `/` serves a public SSR marketing site ([`src/web/site/`](../src/web/site/)),
+The domain root `/` serves a public SSR marketing site (`src/pages/` in the site repository),
 a THIRD public surface alongside the archive front and the (private) admin. Its security
 posture:
 
-- **Its own headers (`applySiteHeaders`, [`src/web/site/routes.ts`](../src/web/site/routes.ts)).**
+- **Its own headers (`applySiteHeaders`, `src/pages/routes.ts`, site repository).**
   The same strict, self-contained nonce CSP as the archive front —
   `default-src 'none'; img-src 'self' data:; style-src 'nonce-…'; script-src 'nonce-…';
 connect-src 'self'; base-uri 'none'; form-action 'self'` — but **non-embeddable**:
@@ -851,7 +851,7 @@ connect-src 'self'; base-uri 'none'; form-action 'self'` — but **non-embeddabl
   mutating routes and no session). The admin config page `/website` is NOT public — it
   stays behind auth.
 - **Consent-gated analytics (D-025).** The three building blocks default OFF and are
-  admin-configurable ([`src/site/settings.ts`](../src/site/settings.ts), audited under
+  admin-configurable (`src/settings.ts` in the site repository; no longer admin-configurable since CCB-S3-041 moved them to the environment, audited historically under
   `site.update`). Analytics loads **nothing** until the visitor accepts the cookie banner:
   the operator's HTTPS snippet URL is injected client-side only on `cin-consent=granted`,
   and the analytics origin is added to the site CSP `script-src`/`connect-src` only when

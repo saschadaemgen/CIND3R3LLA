@@ -107,7 +107,7 @@ Parse (`message.ts::parseGroupMessage`, keeps only group + `groupRcv` + `rcvMsgC
 
 ## 7. The admin console
 
-`web/server.ts` builds Fastify with `trustProxy: 'loopback'` (`server.ts:82`), listening on `127.0.0.1:ADMIN_PORT` (default 8787), never a public interface; nginx TLS fronts it at `<admin-host>`. Server-rendered HTML with htmx (`public/assets/htmx.min.js`, vendored by `scripts/copy-assets.mjs`, detected via the `hx-request` header) plus Tailwind (`assets/app.css` → `public/assets/app.css`); no SPA. Since CCB-S3-015 Stage 3 the console wears the **website's dark-neon design system** (cyan accent): `assets/app.css` carries the site design tokens (mirrored from `src/web/site/css.ts`), the self-hosted Source Sans 3 / JetBrains Mono woff2, and un-layered overrides that remap the light Tailwind utilities to the dark palette centrally — so no view was rewritten. Only the admin links `app.css` (the public front and marketing site inline their own CSS), and the theme adds no inline styles and needs no CSP change (same-origin sheet + `default-src 'self'` fonts). Controls enforced in-process: configurable security headers (`applySecurityHeaders`), a global rate limit and IP allow/deny policy (`GlobalRateLimiter`, `ipAllowed`), session read + auth guard, CSRF on all mutations (`csrfOk`), and step-up re-verification for sensitive mutations. Primary auth is passkeys/WebAuthn (`@simplewebauthn`) with an Argon2id break-glass path (+ optional TOTP). Sessions are persisted in PostgreSQL (`admin_sessions`, `007_sessions.sql`).
+`web/server.ts` builds Fastify with `trustProxy: 'loopback'` (`server.ts:82`), listening on `127.0.0.1:ADMIN_PORT` (default 8787), never a public interface; nginx TLS fronts it at `<admin-host>`. Server-rendered HTML with htmx (`public/assets/htmx.min.js`, vendored by `scripts/copy-assets.mjs`, detected via the `hx-request` header) plus Tailwind (`assets/app.css` → `public/assets/app.css`); no SPA. Since CCB-S3-015 Stage 3 the console wears the **website's dark-neon design system** (cyan accent): `assets/app.css` carries the site design tokens (originally mirrored from the site's `css.ts`, which left with the site under D-089; the copy in `assets/app.css` is now the console's own and no longer tracks it), the self-hosted Source Sans 3 / JetBrains Mono woff2, and un-layered overrides that remap the light Tailwind utilities to the dark palette centrally — so no view was rewritten. Only the admin links `app.css` (the public front and marketing site inline their own CSS), and the theme adds no inline styles and needs no CSP change (same-origin sheet + `default-src 'self'` fonts). Controls enforced in-process: configurable security headers (`applySecurityHeaders`), a global rate limit and IP allow/deny policy (`GlobalRateLimiter`, `ipAllowed`), session read + auth guard, CSRF on all mutations (`csrfOk`), and step-up re-verification for sensitive mutations. Primary auth is passkeys/WebAuthn (`@simplewebauthn`) with an Argon2id break-glass path (+ optional TOTP). Sessions are persisted in PostgreSQL (`admin_sessions`, `007_sessions.sql`).
 
 ## 8. Configuration and secrets
 
@@ -275,15 +275,26 @@ preload="metadata" playsinline>` in the card (`itemMedia`,
     [`scripts/verify-public.ts`](../scripts/verify-public.ts) +
     [`scripts/verify-admin-views.ts`](../scripts/verify-admin-views.ts).
 
-## 12. Public marketing site (CCB-S2-012, redesigned CCB-S3-001)
+## 12. Public marketing site — MOVED OUT OF THIS REPOSITORY (CCB-S2-012, redesigned CCB-S3-001, split under D-089)
 
-The domain root `/` is a public, SSR, indexable **marketing site** — the face of the
+> **None of the code described in this section is here any more.** The marketing site is
+> its own repository, process, port `8788`, systemd unit and deploy script (**D-089**).
+> Every `src/web/site/...` path below is a **dead link** and is kept only because the
+> design decisions it records are still true of the site as it runs; they are now
+> maintained in the site repository. `src/site/settings.ts` went with it, having first
+> been cut loose from the product's database under CCB-S3-041.
+>
+> What did **not** move, and is still described correctly elsewhere in this document: the
+> public archive front at `/embed/` (§11), which is a different surface with different
+> rules (embeddable rather than frame-DENY). The domain root `/` on the console origin
+> now redirects to `/dashboard`.
+
+The domain root `/` was a public, SSR, indexable **marketing site** — the face of the
 Cinderella bot suite (the archive is one capability under it), separate from `/embed`
 and from the admin. It is built in the **public-front style** (self-contained, inline
-nonce'd CSS/JS, `html`/`raw` escaping), NOT the Tailwind admin shell. Code lives in
-[`src/web/site/`](../src/web/site/) (`routes.ts`, `render.ts`, `css.ts`, `client.ts`,
-`icons.ts`, `seo.ts`, `i18n.ts`, `pages.ts`) with settings in
-[`src/site/settings.ts`](../src/site/settings.ts).
+nonce'd CSS/JS, `html`/`raw` escaping), NOT the Tailwind admin shell. Code lived in
+`src/web/site/` (`routes.ts`, `render.ts`, `css.ts`, `client.ts`, `icons.ts`, `seo.ts`,
+`i18n.ts`, `pages.ts`) with settings in `src/site/settings.ts`.
 
 - **Design (D-029, amended by D-030).** The operator's approved dark-neon template
   ported 1:1: ink/cyan/magenta token system, **dark-only** (the light theme, its

@@ -443,9 +443,16 @@ Note for whoever documents the seam next: the demo is currently the **only produ
 consumer of `src/adapter/`**, via `FakeChatAdapter` in
 [`routes.ts`](../src/demo/routes.ts). The seam otherwise has no production caller.
 
-### D-082 — A CCB-S3-023 violation in member-facing copy, and the toggle that broke withdrawal
+### D-093 — A CCB-S3-023 violation in member-facing copy, and the toggle that broke withdrawal
 
 **Status: IMPLEMENTED** (CCB-S3-031)
+
+> _Renumbered from a second D-082 under CCB-S3-043. Two entries carried that number:
+> this one and the demo isolation gate. The gate kept it, because it is referenced by
+> number from `feature-backlog.md`, `architecture.md` §30, `SEASON-3-PROTOCOL.md` and
+> the briefing register, while nothing referenced this entry by number at all. This is
+> the second such collision after the D-080 one, which is why `CLAUDE.md` now requires
+> the next free number to be read off the file rather than assumed._
 
 Two defects on the consent path, both found reviewing the privacy policy that had
 just been published describing them as working.

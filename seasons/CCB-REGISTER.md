@@ -1,10 +1,17 @@
 # Cinderella — Claude Code Briefing Register (Seasons 1–4)
 
 *Supersedes the earlier "Season 0" register. Internal and public season numbering
-are now aligned: the first completed block is **Season 1**. Seasons 1 and 2 are complete;
-Season 3 closes with CCB-S3-028; **Season 4 is already underway and has shipped to
-production** (CCB-S4-001). The previous zero-based scheme is retired (see
+are now aligned: the first completed block is **Season 1**. Seasons 1, 2 and 3 are
+complete; **Season 3 closes with CCB-S3-043** (not CCB-S3-028, which was a
+documentation pass fifteen briefings before the end). **Season 4 has not started.**
+The previous zero-based scheme is retired (see
 [`../docs/decisions.md`](../docs/decisions.md) **D-014**, superseding D-011).*
+
+> **This register covers the PRODUCT only.** The marketing site has its own briefings,
+> its own season count starting at site Season 1, and its own register, in its own
+> repository (D-089). A site briefing never appears here. The one exception is
+> **CCB-S3-042**, which was issued in this scheme before the split completed and is
+> recorded below for continuity.
 
 > **Status vocabulary.** *Delivered* = the work is in `main` and deployed, evidenced by at
 > least one commit carrying the briefing's `Briefing:` trailer. *Never received* = no
@@ -127,15 +134,33 @@ trailers under CCB-S3-026.
 | CCB-S3-027 | Erasure covers the SimpleX core's own copy | Briefing | Delivered 2026-07-27 as `cc06cf2` (D-077) |
 | CCB-S3-028 | Final documentation pass; what must survive the planning chat | Briefing | Delivered (this entry) |
 | CCB-S3-029 | Real legal pages, German binding | Briefing | Delivered 2026-07-27 as `db7b83c`, corrected by `2817ebe` (D-079) |
+| CCB-S4-001 | The marketing site on its own domain; demo backend | Briefing | **Misnumbered; it is a Season 3 briefing** (see [`SEASON-INDEX.md`](SEASON-INDEX.md)). **Phase 1 delivered** 2026-07-27 as `3e60c96` and `6769281` (D-080, D-081, D-082). The visitor-facing demo UI is not built. The nginx configuration **is** in the repository now (D-089) |
+| CCB-S3-030 | The section tree, the navigation shell, and the Platform pages | Briefing | Delivered 2026-07-28 as `4b20e29` |
+| CCB-S3-031 | Consent copy that stops telling members their kept archive is gone | Briefing | Delivered 2026-07-28 as `80f26b4` (**D-093**, renumbered from a second D-082 under this briefing) |
+| CCB-S3-032 | *(unknown)* | — | **No evidence in the repository.** No commit, document or code reference. Either never issued or never received |
+| CCB-S3-033 | *(unknown)* | — | **No evidence in the repository.** No commit, document or code reference. Either never issued or never received |
+| CCB-S3-034 | One submenu at a time, inert entries, a home page about the platform; the sticking focus ring | Briefing | Delivered 2026-07-28 as `6cd7ece` and `902efcd` |
+| CCB-S3-035 | Fullscreen menu, travelling indicator, live hero, designed sections | Briefing | Delivered 2026-07-28 as `56f0b7c` |
+| CCB-S3-036 | Two-tier header, one indicator, and a menu that opens | Briefing | Delivered 2026-07-28 as `6bdea87` |
+| CCB-S3-037 | English only; retired locale prefixes 301 to the English page | Briefing | Delivered 2026-07-28 as `e2edccb`, corrected by `073333e` (old locale links were reaching the admin login) |
+| CCB-S3-038 | The admin mega panel, hairline separators, indicator on the label | Briefing | Delivered 2026-07-28 as `a9ee5cc` |
+| CCB-S3-039 | *(unknown)* | — | **No evidence in the repository.** No commit, document or code reference. Either never issued or never received |
+| CCB-S3-040 | The generated design-system package | Briefing | Delivered 2026-07-28 as `a9ee5cc` |
+| CCB-S3-041 | Site settings leave the database; then the site leaves the repository | Briefing | Delivered in two parts: `3da6076` 2026-07-29 (Part A, settings to the environment, `/website` deleted) and `aeb8db7` 2026-07-30 (Part B, the split; D-089, D-090). D-091 and D-092 followed as `8450a12` and `a01161d` |
+| CCB-S3-042 | Hand the site repository over | Handover | **Delivered to the site repository, not executed here.** Committed as `2f3d265` in `cind3r3lla-site` alongside the deployment and design handovers. It briefs work *in that repository*; nothing in it touches this one. Much of it was already satisfied by D-089 (own `CLAUDE.md`, `README.md`, `.env.example`, deploy script, unit, port; harnesses carried across and passing) |
+| CCB-S3-043 | Close Season 3: the season boundary, the duplicate decision number, README, NOTICE, em-dash scope | Briefing | Delivered (this entry) |
 
-## Season 4
+## Season 4 — not started
 
-Season 4 began before Season 3 closed: CCB-S4-001 shipped to production while the Season 3
-close-out was still in progress. The seasons are a numbering scheme, not a gate.
+**Season 4 has not begun.** The claim that it had was based on `CCB-S4-001`, which is a
+misnumbered Season 3 briefing; the boundary and the evidence for it are in
+[`SEASON-INDEX.md`](SEASON-INDEX.md). Fourteen Season 3 briefings were issued and
+delivered after `CCB-S4-001` landed, so the numbering never actually moved.
 
-| Id | Subject | Kind | Status |
-|---|---|---|---|
-| CCB-S4-001 | The marketing site on its own domain; demo backend | Briefing | **Phase 1 delivered** 2026-07-27 as `3e60c96` and `6769281` (D-080, D-081, D-082). The visitor-facing demo UI is not built; the nginx configuration is not in the repository |
+The id is **not rewritten** (it stands in commit messages and in D-080/081/082) and is
+recorded in the Season 3 block above, in the position where it landed.
+
+**Season 4 opens at `CCB-S4-002`.** `CCB-S4-001` is taken.
 
 ### Work in `main` that carries no briefing id
 

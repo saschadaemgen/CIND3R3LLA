@@ -57,7 +57,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   welcome copy, retorts, plugin replies, and any admin copy that reaches a member.
   Use a normal hyphen, a comma, or restructure. Enforced by `verify:no-dashes`,
   which also scans the whole plugins tree so new copy is caught automatically.
-  (Prose comments and docs are out of scope; this is about output.)
+
+  **Scope, settled under CCB-S3-043 so it stops resurfacing: OUTPUT ONLY.** The rule
+  covers what a member or a visitor can read. It does **not** cover prose in this
+  repository: `NOTICE`, `README.md`, the six living documents, the season protocols
+  and the register may all use em-dashes freely, and they do. `verify:no-dashes` is
+  therefore **correct as it stands** and is not under-scoped; a repository-wide sweep
+  would rewrite roughly half a megabyte of documentation to satisfy a typographic
+  preference no member will ever encounter. If a document ever starts being served to
+  members, it moves into scope on that day and not before.
 
 ## Architecture (decided — do not re-litigate)
 
@@ -166,10 +174,31 @@ silently. New decisions get a `D-<n>` entry with a Status (`IMPLEMENTED` /
 `PLANNED` / `Superseded by D-<n>`). Keep the implemented-vs-planned discipline so
 the docs never present planned work as built.
 
+**Read the next free decision number off the file; never assume it.** This has gone
+wrong twice: once when D-080 was allocated to two entries, and again when a second
+D-082 appeared, both renumbered afterwards. The highest number is not always the last
+heading in the file, because entries are ordered newest-first and the planning chat
+allocates in parallel. The check is one command, and it is not optional:
+
+```bash
+grep -oE "^### D-[0-9]+" docs/decisions.md | grep -oE "[0-9]+" | sort -n | tail -1
+```
+
+Same discipline for briefing ids and migration numbers (D-069): allocate from what is
+on disk plus one.
+
 Why this keeps the docs ground truth: the strategy documents (season protocol,
 decisions narrative, season plan) are authored in the planning chat and may run
 ahead of the code; the five technical docs are maintained by Claude Code **from the
 code** and are the corrective.
+
+**Two season counts now run in parallel, and they must never be conflated.** This
+repository has the product's seasons (`CCB-S<n>-<NNN>`, currently closing Season 3).
+The marketing site has its own, starting at **its own Season 1**, in its own
+repository with its own briefings and its own protocol documents. A bare "Season 1"
+is ambiguous from now on: say *product Season 1* or *site Season 1*. Briefing ids are
+not shared across the two, and a site briefing never appears in this repository's
+register.
 
 ## Deploy (VPS) — see [deploy/RUNBOOK.md](deploy/RUNBOOK.md)
 

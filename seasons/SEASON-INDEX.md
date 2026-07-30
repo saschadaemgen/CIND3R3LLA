@@ -1,24 +1,58 @@
 # Cinderella — Season Index
 
-The unit of work is the **Season**, numbered from **1**. Seasons 1, 2 and 3 are complete
-and in production; **Season 4 is already underway and has shipped** (CCB-S4-001 landed
-before Season 3 closed — the seasons are a numbering scheme, not a gate). Each season is
-authorised by numbered briefings
-(`CCB-S<season>-<NNN>`) and closes with a protocol document under `seasons/`. The
-earlier zero-based scheme and the "Stages 0–7" framing are deprecated — see
-[`../docs/decisions.md`](../docs/decisions.md) **D-014**.
+The unit of work is the **Season**, numbered from **1**. Each season is authorised by
+numbered briefings (`CCB-S<season>-<NNN>`) and closes with a protocol document under
+`seasons/`. The earlier zero-based scheme and the "Stages 0–7" framing are deprecated —
+see [`../docs/decisions.md`](../docs/decisions.md) **D-014**.
 
-> **Numbering note.** All briefing ids are renumbered to `CCB-S1-<NNN>` (canonical
-> and authoritative — see [`CCB-REGISTER.md`](CCB-REGISTER.md)). Commit messages for
-> pre-alignment work retain their original `CCB-S0-<NNN>` ids in git history
-> (historical artifacts, not rewritten).
+## The Season 3 / Season 4 boundary, settled
+
+**Season 3 ends with CCB-S3-043. Season 4 has not begun.** `CCB-S4-001` is a
+**misnumbered Season 3 briefing**, not the start of Season 4.
+
+This was genuinely ambiguous and had to be settled from the commit history, because
+until now the index and the register both claimed Season 4 was "already underway".
+The evidence:
+
+- `CCB-S4-001` landed on **2026-07-27** (`3e60c96`, `6769281`).
+- **Fourteen Season 3 briefings were issued and delivered after it**: CCB-S3-030,
+  031, 034, 035, 036, 037, 038 and 040 on 2026-07-28; 041 on 2026-07-29; 042 and 043
+  on 2026-07-30. Three more (027, 028, 029) landed the same day as S4-001.
+- So the numbering never actually moved to Season 4. Reading the boundary the other
+  way (Season 3 ended when S4-001 began) would make **fourteen** ids wrong in order to
+  keep **one** right. One misnumbered id is the parsimonious reading, and it is what
+  the evidence shows.
+- The subject agrees. `CCB-S4-001` delivered the marketing site on its own domain,
+  which is Season 3's own stated scope ("public front polish… the operator's website").
+  Nothing in the Season 4 scope below covers it.
+
+**The id `CCB-S4-001` is not rewritten.** It stands in commit messages, in D-080,
+D-081 and D-082, and in `architecture.md` §29 and §30. This repository already has the
+precedent: pre-alignment `CCB-S0-<NNN>` ids survive in git history as historical
+artifacts and are corrected in the register rather than rewritten. Read `CCB-S4-001`
+as **the fifteenth-from-last briefing of Season 3**, recorded as such in
+[`CCB-REGISTER.md`](CCB-REGISTER.md).
+
+**Season 4 therefore begins with the first briefing issued after CCB-S3-043**, which
+will be `CCB-S4-001`… and that id is taken. **Season 4's first briefing is
+`CCB-S4-002`.** Stated explicitly here so the collision is not rediscovered later.
+
+> **Two season counts run in parallel from now on.** The above is the *product's*
+> count. The marketing site has its own, beginning at **site Season 1**, in its own
+> repository ([D-089](../docs/decisions.md)). They share no briefing ids and no
+> register. Always name which one you mean.
 
 | Season | Title | Status | Close-out |
 |--------|-------|--------|-----------|
 | 1 | Foundation — consent-based SimpleX→web archive | Content-complete, in production | [SEASON-1-PROTOCOL.md](SEASON-1-PROTOCOL.md) |
 | 2 | Public product — archive front, SEO, stream experience, reporting, website foundation | Content-complete, in production | [SEASON-2-PROTOCOL.md](SEASON-2-PROTOCOL.md) |
-| 3 | Interaction layer, plugin framework, public front polish, queue foundation, latent-fault audit | Content-complete, in production | [SEASON-3-PROTOCOL.md](SEASON-3-PROTOCOL.md) |
-| 4 | Consolidate the local AI work, finish the carried briefings, AI brain, categorization, legal, child safety, multi-tenancy, multi-profile runtime | **Underway** — CCB-S4-001 in production | — |
+| 3 | Interaction layer, plugin framework, public front polish, queue foundation, latent-fault audit, the site split | **Closed** by CCB-S3-043 | [SEASON-3-PROTOCOL.md](SEASON-3-PROTOCOL.md) |
+| 4 | Consolidate the local AI work, finish the carried briefings, AI brain, categorization, legal, child safety, multi-tenancy, multi-profile runtime | Not started; opens at `CCB-S4-002` | — |
+
+> **Numbering note.** All briefing ids are renumbered to `CCB-S1-<NNN>` (canonical
+> and authoritative — see [`CCB-REGISTER.md`](CCB-REGISTER.md)). Commit messages for
+> pre-alignment work retain their original `CCB-S0-<NNN>` ids in git history
+> (historical artifacts, not rewritten).
 
 ## Season 1 — Foundation
 
@@ -83,9 +117,10 @@ CCB-S3-029 also landed and were absent from the register entirely. The close-out
 check itself ran before any of this and was stale; CCB-S3-028 re-ran it and found **all six
 living documents out of date, five seriously**.
 
-**Season 4 (underway):** CCB-S4-001 has shipped the marketing site on its own domain and a
-demo backend (D-080/081/082). Still ahead: consolidate the parallel-chat AI work into the
-documents and the architecture; finish the carried briefings, consent-affecting ones first;
+**Season 4 (not started; opens at CCB-S4-002).** The marketing site on its own domain and
+the demo backend shipped under the misnumbered CCB-S4-001 and belong to Season 3
+(D-080/081/082); see the boundary section at the top. Ahead: consolidate the
+parallel-chat AI work into the documents and the architecture; finish the carried briefings, consent-affecting ones first;
 the AI brain behind one configurable endpoint; categorization + media gallery on the queue;
 counsel review of the legal texts; child safety; multi-tenancy & Pro (D-026), where the
 adapter seam pays off; and the **multi-profile runtime** (D-083/084/085), which is design

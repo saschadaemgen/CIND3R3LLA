@@ -293,6 +293,10 @@ documents.
 
 ## Part F — Status
 
+> **Superseded by Part H (CCB-S3-043).** This part was written fifteen briefings before
+> the season actually ended. It is accurate about what it describes; it is not the final
+> state. Part H is.
+
 Season 3 is content-complete for what shipped and **live in production**. The interaction
 layer, the plugin framework, the price plugin, the public front with formatting and
 permalinks, the queue foundation, and the security fixes are all deployed. A substantial
@@ -415,3 +419,70 @@ within each number. Two consequences carry forward, recorded as **D-069**:
    same-numbered sibling would.
 
 Season 4 should allocate from **020** and treat the number as a label, not a sequence.
+
+> **Stale as written.** The highest migration number on disk is **022**, not 019, so the
+> "allocate from 020" instruction has already been overtaken. The rule that survives is
+> the one in `CLAUDE.md`: allocate from **the highest number on disk plus one**, checked
+> rather than assumed. Currently **023**. Stated as a rule because the fixed number went
+> stale twice. (Corrected under CCB-S3-043.)
+
+---
+
+## Part H — The actual close (CCB-S3-043)
+
+Part G was written under CCB-S3-026 and amended under CCB-S3-028. Both ran **before** the
+season's last fifteen briefings. This part is the real end state; where it contradicts an
+earlier part, this one is current.
+
+### §1 The season boundary
+
+**Season 3 ends here, with CCB-S3-043. Season 4 has not begun.** `CCB-S4-001` is a
+misnumbered Season 3 briefing. The evidence and the reasoning are in
+[`SEASON-INDEX.md`](SEASON-INDEX.md); the short version is that fourteen Season 3
+briefings were issued and delivered *after* `CCB-S4-001` landed, so reading it as the
+start of Season 4 would make fourteen ids wrong to keep one right.
+
+Every part of this document that says "Season 4 is underway", including Part D, should be
+read as "Season 4 is **planned**". Nothing in Part D has started.
+
+### §2 What landed after Part G was written
+
+- **CCB-S3-030, 031, 034, 035, 036, 037, 038, 040** — the site build-out: the section
+  tree, the fullscreen menu and travelling indicator, the two-tier header, English-only
+  with 301s from the retired locale prefixes, the admin mega panel, and the generated
+  design-system package. All 2026-07-28.
+- **CCB-S3-031** also fixed a consent-path defect that matters beyond the site: a member
+  who had revoked, chosen *hide*, and then asked to delete was told there was nothing left
+  to destroy, when their archive was intact and restorable. Recorded as **D-093**.
+- **CCB-S3-041** — the site settings left the database (Part A), then the site left the
+  repository (Part B). **D-089** and **D-090**, plus **D-091** and **D-092**.
+- **CCB-S3-042** — the site handover, delivered into the site repository rather than
+  this one.
+
+### §3 The two structural facts this season actually ends on
+
+**The marketing site is gone from this repository.** It has its own repository, process,
+port `8788`, systemd unit and deploy script. What remains here is the product. The nginx
+topology that used to exist only on the running server is committed
+(`deploy/nginx-stream-splitter.conf`, and `deploy/nginx-admin.conf` corrected from a stale
+`listen 443 ssl` that would not have bound).
+
+**The split is pushed but NOT deployed.** Production still serves the marketing site from
+the `:8787` product process at `3da6076`. A product deploy from `main` removes those
+routes, and `cind3r3lla.com` answers 404 the moment it happens unless the site service is
+up on `:8788` and the vhost repointed first. **This is the first operational fact Season 4
+inherits**, and the ordering is not optional.
+
+### §4 Tree health at the close
+
+`npm run build` clean; `npm run lint` clean, no repair needed this time; the harnesses
+pass. The site harnesses (`verify:site`, `verify:i18n-keys`) left with the site and run
+green in its repository; `verify:no-dashes` stayed and no longer scans `locales/`, because
+there is none here any more.
+
+### §5 Numbering hygiene, twice burned
+
+`D-082` was allocated twice and is fixed under this briefing (the second entry became
+**D-093**). `D-080` had been allocated twice before that. Migration numbers collided three
+times (D-069). The rule is now written into `CLAUDE.md`: **read the next free number off
+the file, never assume it**, for decisions, briefing ids and migrations alike.

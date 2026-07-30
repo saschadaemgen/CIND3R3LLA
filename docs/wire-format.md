@@ -395,10 +395,17 @@ name="theme-color">` is `#050A12` (dark) / `#FAFBFD` (light), updated on toggle.
   submission or over the per-IP rate limit. A report never changes publication (visible-until-review).
   The confirmation banner renders on the follow-up `GET /embed/:id?reported=1`.
 
-## 7. Public marketing site — routing & i18n wire contract (CCB-S2-012)
+## 7. Public marketing site — routing & i18n wire contract (CCB-S2-012, moved under D-089)
 
-The domain root is a public SSR site ([`src/web/site/`](../src/web/site/)), separate from
-`/embed` and the admin. Routes and the language contract:
+> **This contract is no longer served by this repository's process.** The marketing site
+> is its own service on `127.0.0.1:8788` (**D-089**) and the wire contract below is now
+> maintained there. It is kept here because it is still an accurate description of what
+> that service serves, and because the *edge* that routes to it is configured from this
+> repository's `deploy/` directory. The domain root on the CONSOLE origin now redirects
+> to `/dashboard`, not to `/<lang>`.
+
+The domain root of the marketing origin is a public SSR site (`src/pages/` in the site
+repository), separate from `/embed` and the admin. Routes and the language contract:
 
 - `GET /` → `302` to `/<lang>`, where `<lang>` is the persisted `cin-lang` cookie if a
   supported locale, else the first supported `Accept-Language`, else the default (`en`).
