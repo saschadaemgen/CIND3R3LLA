@@ -13,6 +13,60 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-091 — The site repository stays private, and is delivered by push rather than pulled from GitHub
+
+**Status: IMPLEMENTED.**
+
+**Decision.** `saschadaemgen/cind3r3lla-site` is a **private** repository and stays
+private. Consequently the production server holds no GitHub credential for it, and
+the site is delivered by **pushing the working tree from the operator's machine over
+SSH** (`deploy/push.sh` in the site repository), which then runs `deploy.sh` on the
+VPS. `deploy.sh` starts from what is already on disk and fetches nothing. This
+supersedes the delivery half of D-089, which assumed a `git pull` on the server; the
+rest of D-089 (separate repository, process, port, unit) is unchanged and now live.
+
+**Rationale.** A faithful clone of a marketing site is a phishing kit. For a product
+whose entire surface is a page that asks people to trust it, the copy *is* the
+product: publishing the source hands an attacker a pixel-perfect `cind3r3lla.com` to
+stand up on any domain, complete with the real copy, the real legal pages and the
+real brand. That is a materially different exposure from publishing the product
+repository, where the sensitive parts are behind authentication and the value is in
+the running system rather than in the appearance.
+
+The delivery mechanism follows from the visibility decision rather than the other way
+round. A private repository could be pulled with a deploy key, but that puts a
+long-lived unattended credential on a shared host to save a step the operator's
+machine can do directly. Push needs no credential on the server at all.
+
+**A second reason the visibility decision is not reversible cheaply.** The site
+repository was split off with this repository's history attached, and the operator's
+console hostname appears in seven product-era commits (`40039f3`, `908b265`,
+`972f789`, `734041e`, `3580b08`, `a001b6f`, `9442d24`). It is absent from the working
+tree - the redaction commit did its job - but no edit to a file removes it from
+history. Making that repository public later is therefore a history-rewrite question,
+not a visibility-toggle question. Recorded here so it is not rediscovered.
+
+**Note on D-001.** D-001 records "public repo" as part of the pre-push grep
+rationale. That remains correct **for this repository**, which is public. It does not
+carry over to the site repository, where the grep is mandatory for a different
+reason: visibility can be flipped in one click and history can never be cleaned, so
+the push is the only reliable moment to catch a leak.
+
+**Evidence.** Site repository: `deploy/push.sh`, `deploy.sh`, `CLAUDE.md`
+(Non-negotiables and Deployment), commits `32f345e` and `a7cba21`. Verified in
+production on 2026-07-30: the site serves from `127.0.0.1:8788` at rev `a7cba21`,
+and a site deploy left the bot's `MainPID` and start time unchanged, which is the
+observable D-089 was aiming at.
+
+**Incidental fix, recorded because it produced a false failure signal.** The site's
+`deploy.sh` render check was written as `curl ... | grep -q '<html'`. `grep -q` exits
+at the first match, curl then dies writing to the closed pipe with error 23, and
+under `set -o pipefail` that failed the deploy of a site that had rendered correctly.
+The home page is ~158 kB, so it overran the pipe buffer every time; this was
+deterministic, not flaky. The check now captures the body and then matches it.
+
+---
+
 ### D-089 — The marketing site is its own repository, process, port, unit and deploy
 
 **Status: IMPLEMENTED.**
