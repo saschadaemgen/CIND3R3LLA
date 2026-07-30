@@ -62,10 +62,24 @@ answers 200 with the height-handshake script present.
 **Decision.** `saschadaemgen/cind3r3lla-site` is a **private** repository and stays
 private. Consequently the production server holds no GitHub credential for it, and
 the site is delivered by **pushing the working tree from the operator's machine over
-SSH** (`deploy/push.sh` in the site repository), which then runs `deploy.sh` on the
-VPS. `deploy.sh` starts from what is already on disk and fetches nothing. This
-supersedes the delivery half of D-089, which assumed a `git pull` on the server; the
-rest of D-089 (separate repository, process, port, unit) is unchanged and now live.
+SSH**: `deploy/push.sh` in the site repository packs the tree, copies it, stamps
+`REVISION`, and then runs every remote step itself over ssh (install, build,
+restart, health, render). This supersedes the delivery half of D-089, which assumed
+a `git pull` on the server; the rest of D-089 (separate repository, process, port,
+unit) is unchanged and now live.
+
+**There is no server-side deploy script, deliberately (amended 2026-07-30).** The
+first cut of this decision kept a `deploy.sh` at the site repository root, copied to
+`/opt/cinderella-site/deploy.sh` and invoked by `push.sh` as its last step. It was
+deleted and its steps folded into `push.sh`, on the operator's instruction, for a
+reason worth recording: a script sitting on the server invites the question *deploy
+from what?*, and the only answers are a git checkout there (which needs a long-lived
+deploy key on a shared host for a private repository, and reinstates the pull path
+this decision removed) or the files already on disk (which is what `push.sh` does
+after copying, so the second script only splits one job across two files that then
+have to be kept honest with each other). `/opt/cinderella-site` is a plain directory
+of files and must stay one. Anyone reading the delivery path and seeing a gap where
+a server-side script "should" be is looking at the design, not at an omission.
 
 **Rationale.** A faithful clone of a marketing site is a phishing kit. For a product
 whose entire surface is a page that asks people to trust it, the copy *is* the
@@ -94,14 +108,16 @@ carry over to the site repository, where the grep is mandatory for a different
 reason: visibility can be flipped in one click and history can never be cleaned, so
 the push is the only reliable moment to catch a leak.
 
-**Evidence.** Site repository: `deploy/push.sh`, `deploy.sh`, `CLAUDE.md`
-(Non-negotiables and Deployment), commits `32f345e` and `a7cba21`. Verified in
-production on 2026-07-30: the site serves from `127.0.0.1:8788` at rev `a7cba21`,
-and a site deploy left the bot's `MainPID` and start time unchanged, which is the
-observable D-089 was aiming at.
+**Evidence.** Site repository: `deploy/push.sh` (the whole path) and `CLAUDE.md`
+(Non-negotiables and Deployment), commits `32f345e` and `a7cba21`, and the deletion
+of `deploy.sh`. Verified in production on 2026-07-30: the site serves from
+`127.0.0.1:8788`, a site deploy left the bot's `MainPID` and start time unchanged
+(the observable D-089 was aiming at), and after the deletion `/opt/cinderella-site`
+holds no deploy script and still no `.git`.
 
 **Incidental fix, recorded because it produced a false failure signal.** The site's
-`deploy.sh` render check was written as `curl ... | grep -q '<html'`. `grep -q` exits
+render check was written as `curl ... | grep -q '<html'` (then in `deploy.sh`, now
+in `push.sh`). `grep -q` exits
 at the first match, curl then dies writing to the closed pipe with error 23, and
 under `set -o pipefail` that failed the deploy of a site that had rendered correctly.
 The home page is ~158 kB, so it overran the pipe buffer every time; this was
@@ -116,7 +132,9 @@ deterministic, not flaky. The check now captures the body and then matches it.
 **Decision.** The public marketing website leaves this repository entirely. It becomes
 [`saschadaemgen/cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site):
 its own `package.json`, its own entrypoint, its own Fastify process on
-`127.0.0.1:8788`, its own `cinderella-site.service`, and its own `deploy.sh`. This
+`127.0.0.1:8788`, its own `cinderella-site.service`, and its own deploy script.
+(That script was later deleted and its steps folded into `deploy/push.sh` on the
+operator's machine; see D-091. The rest of this entry stands.) This
 repository keeps the product: the bot, the capture path, the console and the public
 archive front on `127.0.0.1:8787`.
 
