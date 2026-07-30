@@ -1214,7 +1214,21 @@ opaque `RawItem` is stored in `messages.raw_json` and SQL reads inside it, in mi
 front's `formatted_text`) and the support-scope diagnostic. That is scheduled for removal, not a
 property a second protocol could honour, and Matrix on the roadmap makes it a prerequisite.
 
-## 29. Two origins, one process (CCB-S4-001)
+## 29. Two origins, two processes (CCB-S4-001, then D-089)
+
+> **This section described "two origins, one process" until the site was split out.**
+> The reasoning below is kept because the constraint that produced it has not changed
+> (`PUBLIC_ORIGIN` still cannot move), but the topology has: the marketing site is a
+> separate repository, a separate unit and a separate process on `127.0.0.1:8788`.
+> See **D-089**, and `deploy/nginx-stream-splitter.conf` for the edge, which is now
+> committed here rather than living only on the server.
+>
+> What this means for the paragraphs below: "one Fastify process serves both origins"
+> is **no longer true**. The application still has no host-based routing, because it
+> no longer needs any - each origin has its own process. The vhost allowlist survives
+> as defence in depth rather than as the sole control.
+
+### 29.1 The original reasoning (unchanged where it still applies)
 
 The marketing site has its own domain. The console and the public archive did not move, and
 could not: `PUBLIC_ORIGIN` derives the WebAuthn Relying Party ID, an RP ID is baked into
@@ -1226,11 +1240,13 @@ that does not set it behaves exactly as before. See **D-080**.
 `SITE_ORIGIN` feeds only the marketing site's absolute URLs: canonical, `hreflang`, Open
 Graph, JSON-LD and `/sitemap-site.xml`.
 
-**The application has no host-based routing.** One Fastify process on `127.0.0.1:8787`
-serves both origins, and it is the edge that decides what each hostname may reach. Reading
-the application alone would suggest the console is reachable on the marketing domain; it is
-not, but only because of the vhost allowlist. That division of labour is deliberate and is
-the single most important thing to understand before touching either side.
+**The application has no host-based routing** - and since D-089 it needs none. Each origin
+has its own process: the console and archive front on `127.0.0.1:8787` from this
+repository, the marketing site on `127.0.0.1:8788` from `cind3r3lla-site`. Until the split
+a single process served both, and reading the application alone would have suggested the
+console was reachable on the marketing domain; it was not, but only because of the vhost
+allowlist. That division of labour was deliberate, and it was also the thing that made the
+split worth doing.
 
 At the edge (see **D-081**): public `:443` is an **SNI stream splitter** shared with
 neighbouring services, mapping `$ssl_preread_server_name` to a backend and defaulting to
@@ -1241,10 +1257,13 @@ exposing any admin route added later. Reserved hostnames need an explicit vhost,
 unknown names fall through to the default; the demo hostname therefore has a deliberate
 `return 404` block, and the certificate already carries its SAN.
 
-**This nginx configuration is not in the repository.** `deploy/nginx-admin.conf` still ships
-a single vhost and knows nothing about any of the above. The topology here was read off the
-running server under CCB-S3-028 because that was the only place it existed. Committing a
-sanitised copy is open work.
+**This nginx configuration is now in the repository** (D-089), which closes the open item
+this paragraph used to record. `deploy/nginx-stream-splitter.conf` is the shared SNI
+splitter, and `deploy/nginx-admin.conf` carries the console vhost with the corrected
+`listen 127.0.0.1:4443 ssl proxy_protocol` (it had said `listen 443 ssl`, which was stale
+and would not have bound). The marketing vhost lives in the site repository's
+`deploy/nginx-site.conf` and points at `:8788`. All copies are sanitised: the operator's
+console hostname stays out of a public repository (CCB-S3-028).
 
 ## 30. The public demo (CCB-S4-001, Phase 1)
 

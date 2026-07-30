@@ -55,11 +55,13 @@ function check(where: string, text: string): void {
   report(where, text);
 }
 
-/* ── 1. Locale files ─────────────────────────────────────────────────────── */
-const localesDir = join(ROOT, 'locales');
-for (const f of readdirSync(localesDir).filter((n) => n.endsWith('.json'))) {
-  check(`locales/${f}`, readFileSync(join(localesDir, f), 'utf8'));
-}
+/* ── 1. Locale files: none here any more ─────────────────────────────────────
+ *
+ * `locales/` moved to the marketing-site repository with the rest of the site
+ * (D-089), which runs its own `verify:no-dashes` over those files and over its
+ * rendered pages. What remains member-facing in THIS repository is the bot's own
+ * output, which is what the rest of this harness checks.
+ */
 
 /* ── 2. Runtime member-facing strings ────────────────────────────────────── */
 for (const [lang, p] of Object.entries(DEFAULT_INTERACTION.persona)) {
@@ -106,11 +108,6 @@ const backstopFiles = [
   join(ROOT, 'src/interaction/help.ts'),
   join(ROOT, 'src/interaction/settings.ts'),
   join(ROOT, 'src/consent/commands.ts'),
-  // The legal texts (CCB-S3-029) are the largest body of member-facing copy that
-  // does NOT live in locales/, because a binding legal text cannot be machine
-  // translated. Without this line the whole Impressum and privacy policy sat
-  // outside the check.
-  join(ROOT, 'src/web/site/legal.ts'),
 ];
 walk(join(ROOT, 'src/plugins'), backstopFiles);
 

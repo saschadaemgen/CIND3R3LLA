@@ -1,7 +1,7 @@
 // Copies vendored front-end assets (htmx) into public/assets/.
 // Runs as part of `npm run assets`. No CDN dependencies — everything is
 // served same-origin under the admin console's strict CSP.
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,19 +47,7 @@ copyFileSync(
   join(root, 'public', 'assets', 'admin-model-catalog.js'),
 );
 
-// Marketing-site static assets (CCB-S3-001): self-hosted webfonts + brand avatar,
-// served same-origin under the site's strict CSP (font-src/img-src 'self').
-const siteSrc = join(root, 'assets', 'site');
-const siteOut = join(outDir, 'site');
-mkdirSync(join(siteOut, 'fonts'), { recursive: true });
-copyFileSync(join(siteSrc, 'cinderella-avatar.jpg'), join(siteOut, 'cinderella-avatar.jpg'));
-let fontCount = 0;
-for (const f of readdirSync(join(siteSrc, 'fonts'))) {
-  if (!f.endsWith('.woff2')) continue;
-  copyFileSync(join(siteSrc, 'fonts', f), join(siteOut, 'fonts', f));
-  fontCount++;
-}
-
 console.log(
-  `copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, admin-setup-wizard.js, admin-access-control.js, admin-model-catalog.js, site avatar + ${fontCount} fonts -> public/assets/`,
+  'copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, ' +
+    'admin-setup-wizard.js, admin-access-control.js, admin-model-catalog.js -> public/assets/',
 );

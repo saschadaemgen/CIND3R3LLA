@@ -197,6 +197,48 @@ systemctl restart cinderella   # sessions survive this now
 > seconds on an archive of this size, but check the row count before running it on
 > a large one: `psql "$DATABASE_URL" -tAc 'SELECT count(*) FROM messages'`.
 
+## The marketing site is a SEPARATE service (D-089)
+
+Since D-089 the website is not part of this application. It has its own repository,
+checkout, unit, port and deploy script, and updating one does not touch the other.
+
+| | product (this repo) | marketing site |
+|---|---|---|
+| checkout | `/opt/cinderella` | `/opt/cinderella-site` |
+| unit | `cinderella.service` | `cinderella-site.service` |
+| port | `127.0.0.1:8787` | `127.0.0.1:8788` |
+| env | `/etc/cinderella/cinderella.env` | `/etc/cinderella-site/site.env` |
+| deploy | `cd /opt/cinderella && sudo bash deploy.sh` | `cd /opt/cinderella-site && sudo bash deploy.sh` |
+| database | PostgreSQL | none |
+
+First install of the site:
+
+> **`cind3r3lla-site` is a PRIVATE repository**, so unlike this one the VPS cannot
+> clone it anonymously. Add a read-only deploy key on the VPS and clone over SSH
+> (`git@github.com:saschadaemgen/cind3r3lla-site.git`), or seed the checkout with a
+> bundle: `git bundle create /tmp/site.bundle main` locally → `scp` → `git clone
+> /tmp/site.bundle /opt/cinderella-site`, then set the real remote. Whichever route,
+> `deploy.sh` needs a working `git pull --ff-only` afterwards.
+
+```bash
+git clone https://github.com/saschadaemgen/cind3r3lla-site /opt/cinderella-site
+install -d -m 0755 /etc/cinderella-site
+cp /opt/cinderella-site/.env.example /etc/cinderella-site/site.env   # then edit
+cp /opt/cinderella-site/deploy/cinderella-site.service /etc/systemd/system/
+systemctl daemon-reload && systemctl enable --now cinderella-site
+```
+
+The site runs under systemd's `DynamicUser`, so there is **no account to create** and
+no state directory to own: it reads its code and writes nothing. `site.env` holds no
+secrets (origins, a log level, three feature toggles), but keep it `0640` for
+consistency with the product's env file.
+
+Point the marketing vhost at `:8788` — the current config is committed in the site
+repository at `deploy/nginx-site.conf`. The console vhost
+([`nginx-admin.conf`](nginx-admin.conf)) and the shared SNI splitter
+([`nginx-stream-splitter.conf`](nginx-stream-splitter.conf)) are committed here.
+Reload, never restart, on this shared host.
+
 ## Media remediation — run it AS THE SERVICE USER
 
 `scripts/remediate-media.ts` writes into `MEDIA_ROOT/derived`. Running it as root creates that

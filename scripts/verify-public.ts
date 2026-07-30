@@ -306,18 +306,24 @@ async function main(): Promise<void> {
     smi.statusCode === 200 && smi.body.includes(`/embed/${inst.id}/sitemap.xml`),
   );
 
-  // robots.txt (origin) — allow the public site + front, disallow admin surfaces,
-  // reference the sitemap. Since CCB-S2-012 opened the root to the marketing site,
-  // the root is Allow: / with explicit admin Disallow entries (never a blanket root
-  // disallow, or the marketing pages wouldn't index).
+  // robots.txt (origin) — allow the public archive front, disallow admin surfaces,
+  // reference the sitemap. The root is Allow: / with explicit admin Disallow
+  // entries, never a blanket root disallow, or the embed pages would not index.
   const robots = await app.inject({ method: 'GET', url: '/robots.txt' });
   check(
     'robots.txt: allow root, disallow admin surfaces, sitemap ref',
     robots.body.includes('Allow: /') &&
       robots.body.includes('Disallow: /security') &&
-      robots.body.includes('Disallow: /website') &&
+      robots.body.includes('Disallow: /dashboard') &&
       !/Disallow: \/\n/.test(robots.body) &&
       robots.body.includes('Sitemap:'),
+  );
+  // /website was deleted with the site settings (CCB-S3-041) and the marketing
+  // site itself now lives in another repository and another process (D-089).
+  // Naming either here would describe routes this origin does not have.
+  check(
+    'robots.txt: names no route that no longer exists on this origin',
+    !robots.body.includes('/website'),
   );
 
   // RSS feed — consent-gated.

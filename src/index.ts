@@ -39,7 +39,6 @@ import { assertDbReachable, closePool, getPool } from './db/pool.js';
 import { markInterruptedMediaReceipts, setMemberCategory } from './db/messages.js';
 import { SettingsService } from './settings/service.js';
 import { SecurityService } from './security/settings.js';
-import { SiteService } from './site/settings.js';
 import { ArchiveService } from './archive/settings.js';
 import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
@@ -376,7 +375,6 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   }
 
   const security = await SecurityService.load(getPool());
-  const site = SiteService.fromEnv();
   const archive = await ArchiveService.load(getPool());
   const interaction = await InteractionService.load(getPool());
   const plugins = await PluginService.load(getPool());
@@ -390,7 +388,6 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
     mediaRoot: cfg.mediaRoot,
     settings,
     security,
-    site,
     archive,
     interaction,
     plugins,

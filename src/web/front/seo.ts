@@ -495,8 +495,14 @@ export function buildFeedXml(f: FeedContext): string {
 
 // ---------- robots.txt ----------
 
-/** Admin surfaces that must never be indexed (CCB-S2-012 opened the root to the
- * public marketing site, so the root can no longer be blanket-disallowed). */
+/** Admin surfaces that must never be indexed.
+ *
+ * The root is still not blanket-disallowed: CCB-S2-012 opened it to the marketing
+ * site, and although the site is a separate service on its own origin now (D-089),
+ * this origin's root redirects to the console and the public archive front below
+ * it must stay crawlable. `/website` is gone from the list because the page itself
+ * is gone (CCB-S3-041) - a robots file naming routes that do not exist is a map of
+ * an old building. */
 const ADMIN_DISALLOW = [
   '/login',
   '/logout',
@@ -506,7 +512,6 @@ const ADMIN_DISALLOW = [
   '/settings',
   '/security',
   '/embeds',
-  '/website',
   '/reports',
   '/webauthn/',
   '/healthz',

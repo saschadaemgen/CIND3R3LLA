@@ -448,9 +448,16 @@ The history below records the pre-CCB-S2-003 state.
 
 ---
 
-### 6. Public marketing website — the domain root
+### 6. Public marketing website — SPLIT OUT (D-089)
 
-**Status: REDESIGN SHIPPED (CCB-S3-001, superseding the CCB-S2-012 foundation landing).**
+**Status: SHIPPED, and no longer tracked here.** The website moved to its own repository,
+process, port, systemd unit and deploy script under D-089; its backlog moves with it. The
+record below is the state at the moment of the split and is kept for history, not as
+open work. One correction it did not survive: the building blocks were configurable on
+`/website` in the console, and that page is gone (CCB-S3-041) - they are environment
+variables now.
+
+**Status at split: REDESIGN SHIPPED (CCB-S3-001, superseding the CCB-S2-012 foundation landing).**
 The domain root `/` serves the operator's approved dark-neon design (D-029), SSR and
 indexable, with all template pages real; the admin dashboard stays at `/dashboard` and the
 operator login remains a discreet header button to the unchanged, `noindex`, hardened admin.

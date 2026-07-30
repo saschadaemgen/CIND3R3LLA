@@ -17,7 +17,6 @@ import type { AdminConfig, Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import type { SettingsService } from '../settings/service.js';
 import type { SecurityService } from '../security/settings.js';
-import { SiteService } from '../site/settings.js';
 import { ArchiveService } from '../archive/settings.js';
 import { InteractionService } from '../interaction/settings.js';
 import { PluginService } from '../plugins/service.js';
@@ -43,8 +42,6 @@ import { registerAuthRoutes, STEP_UP_WINDOW_MS } from './security/routes.js';
 import { countCredentials } from '../db/webauthn.js';
 import { SessionStore, csrfOk, readSession, type AuthedSession } from './session.js';
 import { registerPublicEmbed, isPublicFront } from './front/embed.js';
-import { loadLocales } from './site/i18n.js';
-import { registerSiteRoutes, isPublicSitePath } from './site/routes.js';
 import { countOpenReports } from '../db/reports.js';
 import { demoEnabled } from '../demo/guard.js';
 import { registerDemo } from '../demo/routes.js';
@@ -62,7 +59,6 @@ export interface AdminContext {
   cfg: Config;
   settings: SettingsService;
   security: SecurityService;
-  site: SiteService;
   archive: ArchiveService;
   interaction: InteractionService;
   plugins: PluginService;
@@ -77,7 +73,6 @@ export interface ViewContext {
   cfg: Config;
   settings: SettingsService;
   security: SecurityService;
-  site: SiteService;
   archive: ArchiveService;
   interaction: InteractionService;
   plugins: PluginService;
@@ -90,9 +85,6 @@ export interface ServerDeps {
   cfg: Config;
   settings: SettingsService;
   security: SecurityService;
-  /** Website settings (CCB-S2-012). Optional — buildServer falls back to all-OFF
-   * defaults so harnesses need not seed a `site` row. */
-  site?: SiteService;
   /** Archive publication settings (CCB-S3-007). Optional — buildServer falls back
    * to the shipped defaults, which match the SQL view's own defaults. */
   archive?: ArchiveService;
@@ -119,18 +111,12 @@ function isSensitive(method: string, path: string): boolean {
 
 export function buildServer(deps: ServerDeps): FastifyInstance {
   const { db, adminCfg, cfg, settings, security } = deps;
-  const site = deps.site ?? SiteService.withDefaults();
   const archive = deps.archive ?? ArchiveService.withDefaults(db);
   const interaction = deps.interaction ?? InteractionService.withDefaults(db);
   const plugins = deps.plugins ?? PluginService.withDefaults(db);
   const app = Fastify({ trustProxy: 'loopback', logger: false });
 
-  // The public marketing site (CCB-S2-012). Locales are loaded once so the routes
-  // and the public-path predicate (used in the hooks below) share one source of
-  // truth; adding a language is a file in locales/, not code here.
   const projectRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-  const locales = loadLocales(join(projectRoot, 'locales'));
-  const isSite = (path: string): boolean => isPublicSitePath(path, locales.codes);
 
   const sessions = new SessionStore(db, () => {
     const s = security.get().session;
@@ -153,7 +139,6 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     cfg,
     settings,
     security,
-    site,
     archive,
     interaction,
     plugins,
@@ -191,10 +176,11 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // admin strict headers are frame-DENY + noindex + no-store).
   app.addHook('onSend', async (req, reply, payload) => {
     const path = req.url.split('?')[0] ?? req.url;
-    // The public archive front AND the marketing site set their own headers (both are
-    // indexable/self-contained; the site is frame-DENY, the front is embeddable) — the
-    // admin strict header set (frame-DENY + noindex + no-store) must not apply to them.
-    if (isPublicFront(path) || isSite(path)) return payload;
+    // The public archive front sets its own headers (it is indexable and
+    // embeddable) — the admin strict set (frame-DENY + noindex + no-store) must not
+    // apply to it. The marketing site used to be the second exemption here; it is a
+    // separate service now (D-089).
+    if (isPublicFront(path)) return payload;
     // Static assets (fonts, css, vendored js) are public immutable-ish files: cache
     // them instead of the admin no-store set (CCB-S3-001 — the site's webfonts would
     // otherwise re-download on every navigation).
@@ -227,12 +213,10 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
     const path = req.url.split('?')[0] ?? req.url;
 
-    // The public archive front AND the marketing site are public surfaces: exempt
-    // from the admin rate limit, the admin IP allow/deny policy, and the auth guard.
-    // (A public-appropriate rate limit + caching are the flagged follow-up.)
-    const isEmbed = isPublicFront(path);
-    const isPublicMarketing = isSite(path);
-    const isPublicSurface = isEmbed || isPublicMarketing;
+    // The public archive front is a public surface: exempt from the admin rate
+    // limit, the admin IP allow/deny policy, and the auth guard. (A
+    // public-appropriate rate limit + caching are the flagged follow-up.)
+    const isPublicSurface = isPublicFront(path);
 
     // Global request-rate limit (assets + public surfaces excluded).
     if (!path.startsWith('/assets/') && !isPublicSurface && !globalLimiter.allow(req.ip)) {
@@ -283,7 +267,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     // The public front is a deliberately-public surface with no session/cookie to
     // defend; its one mutating route (POST /embed/:id/report, CCB-S2-009) is
     // protected by a rate limit + the published-only gate + a dedup constraint.
-    if (isPublicFront(path) || isSite(path)) return;
+    if (isPublicFront(path)) return;
     if (path === '/login' || path.startsWith('/webauthn/login/')) return; // own guards
     if (!req.session || !csrfOk(req, req.session)) {
       return reply.code(403).send({ error: 'invalid csrf token' });
@@ -304,6 +288,18 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // (which would rotate the login-CSRF cookie mid-login).
   app.get('/favicon.ico', (_req, reply) => reply.code(204).send());
 
+  // The root belongs to the console again (D-089).
+  //
+  // It was the marketing site's from CCB-S2-012 until the site became its own
+  // service. Without this the auth hook sends an unauthenticated visitor to
+  // /login (right by accident) and an already-authenticated operator to a 404
+  // (wrong, and only visible while logged in). Redirect rather than render, so
+  // there is exactly one console landing page.
+  app.get('/', (_req, reply) => {
+    reply.header('cache-control', 'no-store');
+    return reply.redirect('/dashboard', 302);
+  });
+
   // Auth routes (login page, WebAuthn ceremonies, break-glass, logout, step-up).
   registerAuthRoutes(app, ctx);
 
@@ -314,16 +310,12 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     cfg,
     settings,
     security,
-    site,
     archive,
     interaction,
     plugins,
     sessions,
   };
   registerPublicEmbed(app, viewCtx);
-
-  // Public marketing site (CCB-S2-012) — no auth; owns the domain root '/'.
-  registerSiteRoutes(app, viewCtx, locales);
 
   // The public demo (CCB-S4-001). Registered ONLY when the environment flag and
   // the database marker agree; see `src/demo/guard.ts` for why one flag is not
@@ -337,7 +329,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
     deps.registerViews(app, viewCtx);
   } else {
     // Minimal authed landing (used by the foundation harness; production always
-    // registers the full views). Lives at /dashboard — '/' is now the public site.
+    // registers the full views). Lives at /dashboard, with '/' redirecting to it.
     app.get('/dashboard', (req, reply) => {
       reply.type('text/html');
       return page({

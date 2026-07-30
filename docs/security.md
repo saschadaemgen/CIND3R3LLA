@@ -813,7 +813,18 @@ connect-src 'self'` (embeddable anywhere, no external assets; `media-src 'self'`
   admin-surface disallows — see §11 — and the sitemap index also lists the marketing
   site's sitemap.)
 
-## 11. Public marketing site — indexable, non-embeddable, consent-gated add-ons (CCB-S2-012)
+## 11. Public marketing site — MOVED to its own service (CCB-S2-012, then D-089)
+
+> **The marketing site is no longer served by this process.** It is a separate
+> repository, unit and process on `127.0.0.1:8788`
+> ([`cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site)), and its
+> security properties are maintained there. The section below is retained because the
+> properties themselves did not change with the move - the same per-page nonce CSP, the
+> same frame-DENY, the same consent gate on analytics - but the code paths named in it
+> live in the other repository now, and this process no longer exempts any marketing
+> path from the admin header set or the auth guard.
+
+### 11.1 The properties (as built, now maintained in `cind3r3lla-site`)
 
 The domain root `/` serves a public SSR marketing site ([`src/web/site/`](../src/web/site/)),
 a THIRD public surface alongside the archive front and the (private) admin. Its security

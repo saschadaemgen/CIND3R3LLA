@@ -137,7 +137,7 @@ harnesses (real Postgres-in-WASM, no server needed): `verify:db`,
 `verify:consent`, `verify:admin`, `verify:admin-views`, `verify:interaction`
 (natural addressing), `verify:price` (market data; `-- --live` hits the real
 provider), `verify:archive` (her own messages + the consent leak guard), plus
-`verify:security`, `verify:public`, `verify:site`, `verify:revocation`
+`verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
@@ -145,6 +145,13 @@ proves it fails on a violation), `verify:adapter-fake` (the seam driven with no 
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture
 provider proves the quarantine path with no real material).
 `scripts/admin-preview.ts` boots a seeded local admin console for browser checks.
+
+**The marketing site is not in this repository** (D-089). It lives in
+[`cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site) with its own
+process, port (`8788`), systemd unit and deploy script, and it carries its own
+`verify:site`, `verify:i18n-keys` and `verify:no-dashes`. This repository's
+`verify:no-dashes` therefore no longer scans `locales/` (there is none here); it
+covers the bot's own member-facing output, which is what remains.
 
 ## Documentation maintenance (binding on every briefing)
 

@@ -13,6 +13,96 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-089 — The marketing site is its own repository, process, port, unit and deploy
+
+**Status: IMPLEMENTED.**
+
+**Decision.** The public marketing website leaves this repository entirely. It becomes
+[`saschadaemgen/cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site):
+its own `package.json`, its own entrypoint, its own Fastify process on
+`127.0.0.1:8788`, its own `cinderella-site.service`, and its own `deploy.sh`. This
+repository keeps the product: the bot, the capture path, the console and the public
+archive front on `127.0.0.1:8787`.
+
+**Rationale.** D-080/D-081 gave the site its own domain but left it inside the
+product's process, and architecture §29 recorded the result honestly as "two origins,
+one process": the application had no host-based routing, and the ONLY thing keeping
+the admin console off the marketing domain was an nginx allowlist. That is a
+correctly-built edge control carrying a load it should not have to carry alone. A
+marketing copy change also meant restarting the process that holds the SimpleX core
+and the capture worker, and any panic in a page renderer was a panic in the archive's
+process.
+
+What made the split real rather than cosmetic was CCB-S3-041, which moved the site's
+settings out of the product's PostgreSQL. A site holding a connection to the product's
+database has not been separated from it, whatever repository it sits in.
+
+**What actually moved.** `src/web/site/` (12 modules), `src/site/settings.ts`,
+`locales/`, `assets/site/`, `design-system/`, and the `verify-site` /
+`verify-i18n-keys` / `build-design-system` scripts. `log.ts`, the escaping core of
+`html.ts` and `share.ts` were **copied**, not extracted into a shared package: a few
+hundred lines of stable code, against a shared dependency that would have recreated
+the coupling the split removed. `share.ts` in particular is still used here by the
+archive front, so it was never a candidate for moving.
+
+**What the split deleted.** `isPublicSitePath` is gone. It answered "may an
+unauthenticated request reach this path?" for an auth hook the site process does not
+have; a predicate that can only return true is not a guard. The site's `SiteService`
+wrapper is gone with it: a read-only holder whose one method unwrapped the object it
+held, which existed only to satisfy the product's dependency injection.
+
+**Consequences.**
+- `/` on the console origin belongs to the console again and redirects to `/dashboard`.
+  It had been the site's since CCB-S2-012, and without the redirect an authenticated
+  operator would land on a 404.
+- The site's `verify:site` no longer stands up PGlite, runs every migration and builds
+  the console in order to render a marketing page. It builds the site. All 136
+  assertions survived the move.
+- The old harness asserted `/dashboard` **redirected** to a login page. The site
+  harness now asserts those routes **do not exist** (404, never a 302) - a stronger
+  property that only became available once the process was separate.
+- The nginx allowlist stays, now as defence in depth rather than as the only defence.
+
+**Evidence.** `deploy/nginx-admin.conf` (console, `127.0.0.1:4443` → `:8787`);
+`src/web/server.ts:112-119` (no locales, no site registration), `:291-300` (the root
+redirect); the site repository's `deploy/cinderella-site.service` and
+`deploy/nginx-site.conf` (→ `:8788`).
+
+---
+
+### D-090 — The site's login links must be absolute to the console origin
+
+**Status: IMPLEMENTED.**
+
+**Decision.** The marketing site renders its "Login" links as `${CONSOLE_ORIGIN}/login`.
+When `CONSOLE_ORIGIN` is unset the links are **omitted entirely** rather than falling
+back to a relative path.
+
+**Rationale.** Found while splitting, not by a report. The site emitted a relative
+`/login` in the utility rail and on the Pro page. That was correct while the site and
+the console shared an origin, and it silently stopped being correct when D-080 gave
+the site its own domain: the marketing vhost is an allowlist and `/login` is not on
+it, so **both links answered 404 on the live site** and had done since that domain
+went up. Verified against production before the change: `https://cind3r3lla.com/login`
+→ 404, `/en` → 200.
+
+The failure is instructive. It was not a broken link in the ordinary sense: nothing
+threw, no log line appeared, the page rendered perfectly, and the harness passed
+because it asserted `href="/login"` was present - which it was. A relative URL is an
+assertion that two surfaces share an origin, and nothing checked that assertion when
+it stopped being true.
+
+Omitting rather than degrading follows the standing rule on not swallowing failures
+(CCB-S3-023): an absent entry is a visible configuration gap, while a link that leads
+nowhere looks like a working product until someone clicks it.
+
+**Evidence.** `src/config.ts` (`consoleOrigin`, empty is a valid state);
+`src/pages/render.ts` (`loginUrl`, both call sites); `scripts/verify-site.ts` (the
+link is absolute AND no relative `/login` survives; with no console origin the link
+is absent) - all in the site repository.
+
+---
+
 ### D-086 — `apiChatItemReaction` is defective in BOTH directions; reactions are core-only
 
 **Status: IMPLEMENTED** (CCB-S3-028, as a documented limitation. No reaction code exists.)
