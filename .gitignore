@@ -46,6 +46,12 @@ tmp/
 # Season 3 close-out (CCB-S3-026) after the pre-push grep found them sitting
 # untracked and un-ignored, one `git add -A` away from publication.
 local_ai/
+# ...and the inventories generated FROM it, which land at the repo root rather
+# than inside the ignored directory and were therefore not covered by the line
+# above. They list 157 paths out of `local_ai/`. Ignoring the directory but not
+# its manifest is the kind of gap that only shows up when someone else runs
+# `git add -A` (CCB-S3-044).
+local_ai_manifest_*
 
 # Local Claude Code launcher config
 .claude/

@@ -163,10 +163,13 @@ log the operator out.
 
 ## Update
 
-> The repo is **private**: the VPS cannot `git pull` anonymously. Either add a
-> read-only deploy key/token on the VPS, or ship commits with a git bundle:
-> `git bundle create /tmp/x.bundle main` (locally) → `scp` → on the VPS
-> `git pull /tmp/x.bundle main`.
+> **Stale until CCB-S3-044: this repository is PUBLIC and the VPS pulls it
+> anonymously.** `/opt/cinderella` is an ordinary checkout with
+> `https://github.com/saschadaemgen/CIND3R3LLA.git` as its origin, and `deploy.sh`
+> pulls without a credential. The deploy-key and git-bundle workarounds this note
+> used to prescribe are for a private repository and are not needed here. (They *are*
+> the situation for the site repository, which is why it is pushed instead of pulled;
+> see the marketing-site section below.)
 
 **One command** (pull → install → build → migrate → restart → poll `/healthz`
 until it answers, then print one result line). Run as root:
@@ -200,30 +203,40 @@ systemctl restart cinderella   # sessions survive this now
 ## The marketing site is a SEPARATE service (D-089)
 
 Since D-089 the website is not part of this application. It has its own repository,
-checkout, unit, port and deploy script, and updating one does not touch the other.
+directory, unit, port and delivery path, and updating one does not touch the other.
+
+**The two are delivered differently, and that is deliberate.** This repository is
+public, so the VPS clones and pulls it. `cind3r3lla-site` is private on purpose (a
+faithful clone of a marketing site is a phishing kit), the server holds no GitHub
+credential, and `/opt/cinderella-site` is therefore **not a git checkout at all**. The
+site is **pushed** from the operator's machine. Do not try to make it a checkout; that
+route was considered and deliberately dropped.
 
 | | product (this repo) | marketing site |
 |---|---|---|
-| checkout | `/opt/cinderella` | `/opt/cinderella-site` |
+| on the VPS | `/opt/cinderella` (git checkout) | `/opt/cinderella-site` (**not** git; pushed tree) |
 | unit | `cinderella.service` | `cinderella-site.service` |
 | port | `127.0.0.1:8787` | `127.0.0.1:8788` |
 | env | `/etc/cinderella/cinderella.env` | `/etc/cinderella-site/site.env` |
-| deploy | `cd /opt/cinderella && sudo bash deploy.sh` | `cd /opt/cinderella-site && sudo bash deploy.sh` |
+| delivery | `ssh vps "cd /opt/cinderella && bash deploy.sh"` (pull) | `bash deploy/push.sh` **from the site repo on the operator's machine** (push) |
+| what is deployed | `git log -1` on the VPS | the `REVISION` file, written by `push.sh` |
 | database | PostgreSQL | none |
 
-First install of the site:
+`push.sh` packs the working tree, copies it over SSH, stamps `REVISION`, and then runs
+every remote step itself over ssh: install, build, restart, health, and a render check
+that the page actually returns HTML. **There is deliberately no deploy script on the
+server** and none should be written: one would have to deploy *from* something, and
+the only candidates are a git checkout there (a deploy key on a shared host, and the
+pull path back) or the files already on disk, which is what `push.sh` already does
+after copying. See D-091.
 
-> **`cind3r3lla-site` is a PRIVATE repository**, so unlike this one the VPS cannot
-> clone it anonymously. Add a read-only deploy key on the VPS and clone over SSH
-> (`git@github.com:saschadaemgen/cind3r3lla-site.git`), or seed the checkout with a
-> bundle: `git bundle create /tmp/site.bundle main` locally → `scp` → `git clone
-> /tmp/site.bundle /opt/cinderella-site`, then set the real remote. Whichever route,
-> `deploy.sh` needs a working `git pull --ff-only` afterwards.
+First install of the site, from the site repository on the operator's machine:
 
 ```bash
-git clone https://github.com/saschadaemgen/cind3r3lla-site /opt/cinderella-site
-install -d -m 0755 /etc/cinderella-site
-cp /opt/cinderella-site/.env.example /etc/cinderella-site/site.env   # then edit
+install -d -m 0755 /etc/cinderella-site        # on the VPS
+# copy .env.example across, edit it, then from the site repo locally:
+bash deploy/push.sh                            # delivers the tree and runs deploy.sh
+# then, on the VPS, once the tree is there:
 cp /opt/cinderella-site/deploy/cinderella-site.service /etc/systemd/system/
 systemctl daemon-reload && systemctl enable --now cinderella-site
 ```
