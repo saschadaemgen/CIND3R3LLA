@@ -13,6 +13,48 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-092 — The marketing site may frame exactly one thing: the console origin's public embed
+
+**Status: IMPLEMENTED.**
+
+**Decision.** The marketing site's CSP gains a `frame-src <console-origin>` directive
+so the home page can embed the live public archive (the design drop's §06, "Not a
+mockup"). The directive is emitted on ONE page (home), names ONE origin (the runtime
+`CONSOLE_ORIGIN`), and is omitted entirely when no console origin is configured, in
+which case the section itself is omitted too (the D-090 pattern: omit, never
+degrade). Every other response keeps `default-src 'none'` with no `frame-src`, and
+`frame-ancestors` stays `'none'` sitewide: this changes what the site may frame,
+never who may frame the site.
+
+**Rationale.** The standing rule is that the site's CSP must not be weakened, and if
+an effect requires a change, the effect is dropped. This is the considered
+exception, and the reasoning is recorded so it is not mistaken for drift: the
+directive admits a single origin the operator already controls, on a single page,
+for a section whose entire argument is that the archive is real rather than
+mocked up. A same-page screenshot would satisfy the CSP and falsify the claim.
+
+**The counterpart posture already existed.** The product's `/embed/<id>` endpoint is
+designed for exactly this: it serves `frame-ancestors *` (it is the ONE surface that
+may be framed by anyone) and posts `cinderellaEmbedHeight` messages so the framing
+page can size the iframe. The site's handshake listener validates `event.origin`
+against the same configured console origin before honouring a message, and caps the
+height it will accept.
+
+**Boundary note (CCB-S3-028).** The embed URL is composed at runtime as
+`CONSOLE_ORIGIN + '/embed/RQ7nVOPWi0DM'`. The PATH is committed in the site
+repository - it appears verbatim in every served page, so it discloses nothing a
+visitor does not already see. The HOST is not, and must not be.
+
+**Evidence.** Site repository: `src/pages/routes.ts` (`applySiteHeaders`, the
+`frameSrc` parameter), `src/pages/render.ts` (`embedSection`, `EMBED_PATH`),
+`src/pages/client.ts` (`embedHandshakeScript`), `scripts/verify-site.ts` (asserts
+frame-src appears with the console origin on home only, and never without one);
+commit `5b3dd00`. Verified live 2026-07-30: the served home page carries
+`frame-src` naming the console origin, other pages do not, and the embed endpoint
+answers 200 with the height-handshake script present.
+
+---
+
 ### D-091 — The site repository stays private, and is delivered by push rather than pulled from GitHub
 
 **Status: IMPLEMENTED.**
