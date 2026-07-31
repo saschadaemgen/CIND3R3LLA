@@ -1,0 +1,81 @@
+{
+  "_README": [
+    "Recorded output of scripts/coverage-geometry.ts.",
+    "",
+    "BOUND TO THE ARCHETYPE SET VERSION. verify:traits fails when reviewedAgainst does",
+    "not match archetypes.json, because a set can be edited without a rebuild and without",
+    "ever going through solve:archetypes. Re-run with --write whenever the set version",
+    "changes, and READ the output rather than only regenerating it: this finds unnamed",
+    "gaps, which by definition nobody has decided about yet."
+  ],
+  "reviewedAgainst": "archetypes-11-2026-07-31",
+  "directions": 40000,
+  "probes": 200000,
+  "medianReach": 1.5972,
+  "leastReachedDirections": [
+    {
+      "reach": 0.4148,
+      "ratioToMedian": 0.26,
+      "loadings": "-0.54 honesty  -0.54 conscientiousness  +0.40 openness  -0.35 extraversion  -0.28 neuroticism  -0.23 agreeableness"
+    },
+    {
+      "reach": 0.4348,
+      "ratioToMedian": 0.272,
+      "loadings": "+0.81 neuroticism  -0.46 honesty  +0.26 openness"
+    },
+    {
+      "reach": 0.4369,
+      "ratioToMedian": 0.274,
+      "loadings": "+0.64 neuroticism  +0.44 openness  -0.42 agreeableness  -0.38 honesty  +0.24 conscientiousness"
+    },
+    {
+      "reach": 0.4598,
+      "ratioToMedian": 0.288,
+      "loadings": "+0.73 neuroticism  -0.41 agreeableness  +0.39 openness  -0.35 honesty"
+    },
+    {
+      "reach": 0.4637,
+      "ratioToMedian": 0.29,
+      "loadings": "-0.66 honesty  +0.51 openness  +0.35 neuroticism  -0.32 agreeableness  -0.25 extraversion"
+    }
+  ],
+  "negativeHonestyShareOfLeastReached": 0.891,
+  "largestHole": {
+    "distance": 5.3894,
+    "nearest": "reserved",
+    "point": [
+      -3.054,
+      -2.381,
+      -1.981,
+      2.792,
+      1.719,
+      -2.091
+    ]
+  },
+  "namedProbes": [
+    {
+      "key": "ordinary-calm",
+      "why": "the modal person: emotionally stable, unremarkable elsewhere",
+      "distance": 1.6055,
+      "nearest": "average"
+    },
+    {
+      "key": "ordinary-anxious",
+      "why": "its mirror, for comparison",
+      "distance": 0.7599,
+      "nearest": "average"
+    },
+    {
+      "key": "ordinary-extravert",
+      "why": "a second comparison",
+      "distance": 0.691,
+      "nearest": "average"
+    },
+    {
+      "key": "origin",
+      "why": "the exact centre the background owns",
+      "distance": 0.7599,
+      "nearest": "average"
+    }
+  ]
+}

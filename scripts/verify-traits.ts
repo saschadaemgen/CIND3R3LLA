@@ -258,7 +258,7 @@ section('Region coverage (standing check, D-097)');
     key: string;
     predicate: Record<string, number>;
     describes: string;
-    status: 'occupied' | 'covered-with-caveat' | 'known-gap';
+    status: 'occupied' | 'covered-with-caveat' | 'known-gap' | 'background-owned';
     note?: string;
   }
   const coverage = JSON.parse(
@@ -336,6 +336,11 @@ section('Region coverage (standing check, D-097)');
     } else if (r.status === 'covered-with-caveat' && corroborating.length === 0) {
       verdict = ' <-- empty even at the corroborating threshold';
       wrongStatus++;
+    } else if (r.status === 'background-owned') {
+      // Never a failure in either direction. The background owns this region, and an
+      // archetype drifting into it is not a defect either; it is only a signal that the
+      // set has moved somewhere the background was meant to cover alone.
+      verdict = primary.length > 0 ? ' (background-owned; an archetype now sits here)' : '';
     }
     console.log(
       `         ${r.key.padEnd(24)}${String(primary.length).padStart(3)}` +
@@ -348,6 +353,35 @@ section('Region coverage (standing check, D-097)');
     wrongStatus === 0,
     wrongStatus === 0 ? `${coverage.regions.length} regions` : `${wrongStatus} mismatched`,
   );
+
+  // The geometric sweep is bound to the set version, not to the commit and not to
+  // solve time: archetypes.json is editable without a rebuild, so a set can move without
+  // ever going through solve:archetypes. This is the case that binding closes - someone
+  // edits the file, bumps the version, and every named region still reports healthy while
+  // a new UNNAMED hole has opened. The sweep is what finds unnamed holes; nothing here can.
+  const geometry = JSON.parse(
+    readFileSync(join(ROOT, 'src/generator/traits/data/coverage-geometry.json'), 'utf8'),
+  ) as { reviewedAgainst: string; namedProbes: { key: string; distance: number }[]; negativeHonestyShareOfLeastReached: number };
+  check(
+    'the geometric sweep was run against the archetype set in use',
+    geometry.reviewedAgainst === archetypes.version,
+    geometry.reviewedAgainst === archetypes.version
+      ? geometry.reviewedAgainst
+      : `sweep ${geometry.reviewedAgainst} vs set ${archetypes.version}; run npm run coverage:geometry -- --write`,
+  );
+  measure(
+    'least-reached directions carrying a negative honesty loading',
+    `${(geometry.negativeHonestyShareOfLeastReached * 100).toFixed(1)}% of the worst 5%`,
+  );
+  const calm = geometry.namedProbes.find((p) => p.key === 'ordinary-calm');
+  const anxious = geometry.namedProbes.find((p) => p.key === 'ordinary-anxious');
+  if (calm && anxious) {
+    measure(
+      'the modal person (calm, unremarkable elsewhere)',
+      `${calm.distance.toFixed(3)} from any archetype, against ${anxious.distance.toFixed(3)} for its mirror. ` +
+        `Background-owned: an argument for abstention, not for an archetype.`,
+    );
+  }
 
   const singles = coverage.regions.filter(
     (r) => r.status === 'occupied' && occupants(r, coverage.threshold).length === 1,

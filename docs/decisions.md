@@ -13,6 +13,33 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-098 — Classification must support abstention, and forced nearest-archetype assignment is a defect
+
+**Status: IMPLEMENTED as a recorded design requirement** (CCB-S4-003). Nothing classifies yet; that is precisely why it is settled now.
+
+**Decision.** Any component that assigns an avatar to an archetype **must be able to return "no archetype"** rather than a nearest match. A classifier that must return one of eleven labels is a defect wherever it appears, not a reasonable default.
+
+**What this follows from.** The coverage work established that an empty region is a gap in what the archetype set can **name**, not in what the generator can **produce**: those avatars are generated normally and are simply classified to the wrong nearest archetype. That isolates when the harm occurs, and it is exactly **at the moment something forces an assignment**. An avatar in `cold-systematic`, about 2.8% of the population, is a perfectly valid person; nothing about generating them is wrong.
+
+**The measured case that makes it concrete, and it is not an edge case.** The geometric sweep puts the modal person - emotionally stable, unremarkable on everything else, `(0,0,0,0,-1,0)` - at **1.605 from any archetype**, against 0.760 for its anxious mirror and 0.760 for the origin. Every low-neuroticism archetype is also far out on conscientiousness or honesty, so **the set says calm implies competent**. Under forced assignment the modal person is labelled `roleModel` or `professionalSupport` and the system reads "calm" as "exemplary". With abstention available they are unclassified, which is the correct answer.
+
+**Three reasons to settle it before anything classifies rather than after.** It converts every coverage gap from latent harm to no harm: an unnamed region with abstention available is just a region whose occupants are unclassified. The validation approach already assumes it, since the classifiability curve `C(t) = P(max_k p(C = k | X) >= t)` is abstention below the threshold by construction, so validation presumes a property the product has never committed to. And it is nearly free now and awkward later: retrofitting a null return through a call chain that assumed totality is the kind of change that gets deferred indefinitely.
+
+**Already true of the generator, and now required of consumers.** `TraitResult.archetype` is `string | null`, and briefing §4.4 required that the unclassified case be representable rather than encoded as a special string. This extends that from the producer to every consumer.
+
+**TWO KINDS OF COVERAGE GAP, WITH OPPOSITE ANSWERS.** Recorded because without it the coverage check eventually reads as a demand to fill every empty region, and the set grows archetypes for regions that should have none:
+
+| Kind | Example | Correct response |
+|---|---|---|
+| The set cannot express a region the design intends to represent | `covert-bad-faith` | author an archetype when the trigger fires |
+| The set has no archetype for a region the **background** properly owns | `ordinary-calm` | **abstention, never an archetype** |
+
+`coverage-regions.json` carries a `background-owned` status for the second kind, so the distinction is structural rather than prose. `ordinary-calm` is filed under it, and it is the case that distinguishes them.
+
+**THE GEOMETRIC SWEEP IS BOUND TO THE SET VERSION.** `npm run coverage:geometry` finds **unnamed** gaps that no sign predicate can express; the standing check finds **named** regions degrading. Neither substitutes for the other, and the largest hole in the set was found by the sweep because nothing had named that region. It stays off the per-commit path (its output is weighted directions that need a person to translate back into people), but binding it to solve time would miss the case that matters: `archetypes.json` is editable without a rebuild, so someone can move the set, bump the version, and have every named region report healthy while a new unnamed hole has opened. `verify:traits` therefore fails when the recorded sweep names a different set version than the one in use. Same binding as the region taxonomy, same reason.
+
+The sweep's own headline, independent of any named region: **89.1% of the least-reached 5% of directions carry a negative honesty loading.** The low-honesty hole is visible in the geometry without anyone having named it.
+
 ### D-097 — Honesty-Humility sits outside the validated distribution, and the archetype set cannot currently express manipulative agreeableness
 
 **Status: IMPLEMENTED** as a recorded position and a reported diagnostic (CCB-S4-003). No code behaviour changes; the sampler still draws six dimensions exactly as before.

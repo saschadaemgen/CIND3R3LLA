@@ -64,7 +64,8 @@
     "verify:traits": "tsx scripts/verify-traits.ts",
     "calibrate:traits": "tsx scripts/calibrate-traits.ts",
     "surface:traits": "tsx scripts/ridge-traits.ts",
-    "solve:archetypes": "tsx scripts/solve-archetypes.ts"
+    "solve:archetypes": "tsx scripts/solve-archetypes.ts",
+    "coverage:geometry": "tsx scripts/coverage-geometry.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

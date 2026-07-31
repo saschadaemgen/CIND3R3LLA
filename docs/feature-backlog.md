@@ -687,6 +687,13 @@ briefings. Architecture §31 has the detail; the state of it is:
       leaving that region empty. Every correlation now within 0.12 of the model;
       spectrum condition ratio 2.77 against roughly 3000 originally. Set version
       `archetypes-11-2026-07-31`. See D-097.
+- [ ] **Abstention in every classifier (D-098).** Settled as a requirement before
+      anything classifies: a component that assigns an avatar to an archetype must be
+      able to return "no archetype". Forced nearest-archetype assignment is a defect.
+      The modal person sits 1.605 from any archetype and would be labelled `roleModel`.
+- [x] **Geometric coverage sweep** — `npm run coverage:geometry`, bound to the archetype
+      set version rather than to the commit or to solve time. Finds UNNAMED gaps the
+      standing check cannot; `verify:traits` fails if the set moved without it re-running.
 - [x] **Standing coverage check** — `data/coverage-regions.json` names sixteen regions
       with a status each; `verify:traits` checks all of them every run, counts occupancy
       rather than asserting booleans, and flags weakly-occupied regions the sign
