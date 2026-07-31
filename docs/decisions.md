@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-028**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,148 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-095 — The trait sampler's two quality bounds are starting points, and one of them is already crossed inside the valid range
+
+**Status: IMPLEMENTED** (CCB-S4-003; as measurement and reporting, the bounds themselves
+being the briefing's, unchanged).
+
+**Decision.** `verify:traits` prints its two quality measurements on every run, passing
+or failing, and prints a third the briefing did not ask for: the same measurement at both
+ends of the valid `sigma` range. The trait-sampler briefing §7 sets adjusted mutual
+information between k-means clusters and true archetype labels at above 0.2 ("structure is
+present") and below 0.9 ("archetypes are not caricatures"), and states in terms that these
+"are starting points, not established values" to be calibrated once real output exists.
+The same treatment is given to the pairwise-distance spread ratio, where §7 asks only that
+the sampler be "meaningfully higher" than an independent baseline and fixes no number.
+
+**What is measured today**, on the shipped archetype set:
+
+| Measure | Value |
+|---|---|
+| Adjusted mutual information, `sigma` 0.6 (default) | **0.822** |
+| Adjusted mutual information, `sigma` 0.5 (bottom of valid range) | **0.917** |
+| Adjusted mutual information, `sigma` 0.7 (top of valid range) | **0.731** |
+| Pairwise-distance spread, this sampler vs independent | **1.18x** (1.16 to 1.20 across disjoint seed ranges) |
+| Same sampler, archetypes switched off | **1.02x** |
+
+**The finding, which is why this is an entry and not a comment.** At `sigma` 0.5, which
+briefing §4.3 calls valid, the measure is 0.917 and so **crosses the 0.9 caricature
+bound**. The default of 0.6 sits comfortably inside the band, but the low end of the range
+the briefing declares valid does not. That is a real tension between two of the briefing's
+own numbers, and it is surfaced rather than resolved: resolving it means either moving the
+bound or narrowing the valid range, and both are calibration decisions for whoever owns
+the personality model, not for the implementer. The harness prints the note automatically
+whenever the low-sigma measurement crosses 0.9, so it cannot quietly stop being true.
+
+**The 1.02x line is the one to read before retuning anything.** It is the sampler with the
+correlation structure intact and the archetype means switched off, and it says the
+correlations contribute almost nothing to the spread. That is not a defect: the
+correlations exist to fix the briefing's *second* failure mode (combinations that do not
+occur in people), and the archetype means exist to fix the *first* (everything equidistant
+from everything). Anyone who retunes §4.1's correlations hoping to move the anti-mush
+number is tuning the wrong knob.
+
+**Rationale.** A test that asserts an uncalibrated bound and prints nothing teaches nobody
+anything the day it starts failing, and worse, teaches nobody anything on all the days it
+passes. Briefing §7 asked for the number to be reported "even when the test passes"; this
+extends that to the two neighbouring configurations, because the cost is one more line of
+output and the alternative is discovering the `sigma` 0.5 tension the hard way.
+
+---
+
+### D-094 — The trait sampler fails loudly on a bad covariance matrix, and has no path that could quietly sample independently
+
+**Status: IMPLEMENTED** (CCB-S4-003). `src/generator/traits/`, proven by `npm run verify:traits`
+(66 checks).
+
+**Decision.** Six decisions, taken together because they are one posture.
+
+1. **A non-positive-definite correlation matrix raises**, naming the matrix and the trait
+   whose Cholesky pivot went non-positive ([`covariance.ts`](../src/generator/traits/covariance.ts)).
+   There is no repair on the sampling path and no fallback to independent draws.
+   Positive-*semi*-definite is rejected too: a singular matrix yields a pivot around 1e-17
+   rather than zero, and dividing by its square root produces an enormous factor instead of
+   an error, so the accepted pivot floor is 1e-10 rather than `> 0`.
+2. **The repair briefing §4.2 permits exists, opt-in and quarantined.** `ridgeRepair` is a
+   tuning aid for a human retuning the matrix by hand. It is capped at blending half the
+   identity in, because blending all the way to the identity *is* independent sampling, and
+   it returns how much it changed rather than swallowing it. `verify:traits` reads
+   [`sample.ts`](../src/generator/traits/sample.ts) with comments stripped and asserts it
+   contains no `catch` at all and never references `ridgeRepair`.
+3. **Symmetry and a unit diagonal are required, not normalised away.** Cholesky reads the
+   lower triangle only, so an asymmetric matrix would sample from half of what its author
+   wrote without complaint; that is the transposition typo, and it now raises. The diagonal
+   must be 1 because per-trait scale belongs to `sigma`, and accepting a non-unit diagonal
+   would silently compound the two.
+4. **Archetype means are authored by name, never as positional arrays.** The file is
+   hand-edited by design (briefing §5: "data, not code, editable without a rebuild"), and a
+   bare array of six decimals is the one place an index-order mistake would enter this
+   component silently. The loader converts names to `TRAIT_ORDER` positions in one place
+   and rejects a positional array outright.
+5. **Briefing §9 is answered: the archetype file lives beside the sampler**, at
+   `src/generator/traits/data/archetypes.json`, matching what the name generator did with
+   its grammar metadata. §9 leaves this open pending a decision about interface editing, so
+   it was decided on the cost of being wrong instead: the injection seam means only
+   `loadArchetypes` knows where the file is, and `LoadArchetypesOptions.path` already points
+   it anywhere, so moving to a shared configuration location later is a one-line change plus
+   a `git mv`. Starting shared and being wrong means a shared surface with one tenant.
+6. **`archetypeSeparation` is validated, never applied** (briefing §4.3), and it is checked
+   **on load** rather than left for a caller to remember. "Separated on their defining
+   traits" is read as the Euclidean distance restricted to the **union** of the two
+   archetypes' defining traits: the union rather than the intersection, because `reserved`
+   and `quietLurker` are both low on extraversion and an intersection rule would call every
+   pair sharing a defining trait a collision; restricted rather than all six, because the
+   traits a §5 sketch leaves free are authored rather than specified, and a pair should not
+   pass on the strength of numbers nobody chose. The shipped set's closest pair is
+   `roleModel` / `professionalSupport` at **2.074** against a required 2.0.
+
+**One constant was not free, and is pinned by a property.** Briefing §4.4 specifies the
+unclassified background only as "a wider sigma". `UNCLASSIFIED_SIGMA_FACTOR` is **1.25**
+(0.75 at the default sigma) because briefing §3 declares the six values to be z-scores on a
+population with mean 0 and standard deviation 1, and that is a claim about the *realised*
+population: the classified 55% already carries the variance of the archetype means plus
+`sigma` squared, and 0.75 is the background spread that brings the whole population to unit
+variance. `verify:traits` asserts the realised spread rather than trusting the arithmetic
+(measured: per-trait sd 0.915 to 1.136). The first value tried was 1.5, which is also
+"wider" and which measurably dissolved the structure, dropping the anti-mush ratio from
+1.18x to 1.10x. The **centring** is deliberately not asserted tightly: the population mean
+depends on `archetypeMix`, which is a per-request input, and choosing mixes is a
+population-layer question briefing §8 puts out of scope.
+
+**Rationale.** This component exists because the obvious approach produces a population
+where everything is equidistant from everything. Every failure mode above shares one
+shape: the sampler keeps running and produces output that looks entirely plausible.
+A matrix that stops decomposing after a retune, a transposed cell, a reordered mean vector,
+two archetypes that have quietly collapsed onto each other, a background so wide it swamps
+the archetypes. None of them throws on its own, none is visible downstream, and none would
+be caught by eye. So each is converted into something that raises at configuration time,
+which is the same reasoning as the repository's standing rule against swallowing failures
+(CCB-S3-023) applied to a component with no runtime and no admin dashboard to alert to.
+
+**Determinism is structural, not a discipline.** The archetype set is injected, so
+[`archetypes.ts`](../src/generator/traits/archetypes.ts) is the only file in the module that
+touches the filesystem and nothing on the sampling path calls it. The archetype draw and the
+latent draw take **separate named RNG streams**, so the archetype decision cannot shift the
+sequence the vector sees; without that, adding a stage later would silently change every
+vector previously generated from every seed, and a seed would no longer reconstruct a
+profile. `verify:traits` proves the property directly by recovering `L @ z` from a
+classified and an unclassified draw of the same seed and showing they match.
+
+**One refactor came with this.** `src/generator/names/rng.ts` moved to
+`src/generator/rng.ts`. The trait sampler's briefing §2 says the name generator's RNG "can
+be reused", and `names/` and `traits/` are siblings that should not depend on each other.
+`names/index.ts` still re-exports `Rng`, so the name generator's public surface is
+unchanged, and `verify:namegen` still passes at 42 checks.
+
+**This narrows D-082's "No generator".** That entry recorded personality as a reference
+only, `{ personalityId, seed, configVersion }`, with no generator behind it. Two of the
+generator's components now exist. The **schema position is unchanged** and D-082 stands:
+nothing in `migrations/` writes a personality, `personality_profile` is still never written,
+and neither generator has any runtime caller. What has changed is that the seed in that
+tuple now has something to reconstruct.
 
 ---
 

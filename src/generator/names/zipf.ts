@@ -17,7 +17,7 @@
  * would then rank by the real figure and change nothing else.
  */
 
-import { Rng } from './rng.js';
+import { Rng } from '../rng.js';
 
 /**
  * Precomputed cumulative weights for one pool size, so a draw is a binary search

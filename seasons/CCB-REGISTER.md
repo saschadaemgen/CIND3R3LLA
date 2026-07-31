@@ -150,17 +150,27 @@ trailers under CCB-S3-026.
 | CCB-S3-042 | Hand the site repository over | Handover | **Delivered to the site repository, not executed here.** Committed as `2f3d265` in `cind3r3lla-site` alongside the deployment and design handovers. It briefs work *in that repository*; nothing in it touches this one. Much of it was already satisfied by D-089 (own `CLAUDE.md`, `README.md`, `.env.example`, deploy script, unit, port; harnesses carried across and passing) |
 | CCB-S3-043 | Close Season 3: the season boundary, the duplicate decision number, README, NOTICE, em-dash scope | Briefing | Delivered (this entry) |
 
-## Season 4 — not started
+## Season 4 — open
 
-**Season 4 has not begun.** The claim that it had was based on `CCB-S4-001`, which is a
-misnumbered Season 3 briefing; the boundary and the evidence for it are in
-[`SEASON-INDEX.md`](SEASON-INDEX.md). Fourteen Season 3 briefings were issued and
-delivered after `CCB-S4-001` landed, so the numbering never actually moved.
-
+**`CCB-S4-001` is not a Season 4 briefing.** It is a misnumbered Season 3 one; the boundary
+and the evidence for it are in [`SEASON-INDEX.md`](SEASON-INDEX.md). Fourteen Season 3
+briefings were issued and delivered after it landed, so the numbering never actually moved.
 The id is **not rewritten** (it stands in commit messages and in D-080/081/082) and is
 recorded in the Season 3 block above, in the position where it landed.
 
-**Season 4 opens at `CCB-S4-002`.** `CCB-S4-001` is taken.
+**Season 4 therefore opened at `CCB-S4-002`.** `CCB-S4-001` is taken.
+
+| Briefing | Title | Type | Status |
+|---|---|---|---|
+| CCB-S4-002 | Profile generator, component 1: the name generator | Briefing | **Delivered** 2026-07-28 as `0e0a3d9`. **Id allocated retroactively** at the delivery of CCB-S4-003: the briefing was issued without one, so the commit carries no `Briefing:` trailer. `npm run verify:namegen`, 42 checks. **"Culturally coherent names" is NOT delivered** — the shipped corpus carries no culture labels, so the grammar engine runs against hand-authored fixtures; the swap point is documented in `corpus.ts` |
+| CCB-S4-003 | Profile generator, component 2: the trait sampler | Briefing | **Delivered** 2026-07-31 (D-094, D-095). `npm run verify:traits`, 66 checks. Includes the shared-RNG move to `src/generator/rng.ts` (`verify:namegen` still passes). **Finding carried forward:** at `sigma` 0.5, the bottom of the range the briefing calls valid, the adjusted-mutual-information measure is 0.917 and crosses the briefing's own 0.9 caricature bound. Surfaced, not resolved: it is a calibration decision for the personality model's owner |
+
+**Both ids were allocated at delivery rather than at issue**, which is the exception rather
+than the practice. The register's own rule is that ids are allocated at the moment a
+briefing is issued; these two briefings arrived without them, and the trait-sampler briefing
+said so in terms ("No CCB id assigned. Needs one before it can be recorded against the
+register"). Recorded here so the gap is visible rather than inferred from the missing
+trailer on `0e0a3d9`.
 
 ### Work in `main` that carries no briefing id
 

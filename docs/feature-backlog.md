@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -661,6 +661,33 @@ they consented to does not. That answer changes the urgency and has not been est
 **Standing constraint (not an open question):** quarantine material must never reach a private machine.
 Suspect material on a personal computer is a materially different legal position from the same material
 under a documented custody process on a server. No restore or debugging procedure may pull it locally.
+
+## The profile generator — two components built, no runtime caller
+
+Offline tooling under `src/generator/`, built component by component against its own
+briefings. Architecture §31 has the detail; the state of it is:
+
+- [x] **Shared deterministic RNG** — SplitMix32, named per-stage streams, no `Math.random`
+      and no clock ([`src/generator/rng.ts`](../src/generator/rng.ts)).
+- [x] **Name generator** (CCB-S4-002) — pipeline, culture-grammar engine, population statistics and
+      SimpleX sanitisation. `npm run verify:namegen`, 42 checks. **"Culturally coherent
+      names" is not delivered**: the shipped corpus carries no culture labels, so the
+      grammar engine runs against hand-authored fixtures, and the swap point for a real
+      labelled corpus is documented in `corpus.ts`.
+- [x] **Trait sampler** (CCB-S4-003) — six-dimensional correlated personality vectors around archetype
+      means, with a deliberate 45% unclassified background. `npm run verify:traits`,
+      66 checks. See D-094 and D-095.
+- [ ] **Surface derivation** — tone, verbosity, emoji affinity, reaction weights, derived
+      from the latent vector. Explicitly out of scope of the trait sampler's briefing (§8)
+      and the obvious next component.
+- [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
+      mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
+      input and deliberately makes no claim about what a realistic one is.
+- [ ] **Validation layer, bios, avatars, persistence** — none started.
+- [ ] **Wiring any of it to the runtime.** Nothing outside `src/generator/` imports it and
+      no migration writes its output; D-082's schema position is unchanged. Note before
+      starting: the build does not copy the modules' `data/` JSON into `dist/`, which has
+      never mattered because both harnesses run from source through `tsx`.
 
 ## Carried into Season 4 (recorded under CCB-S3-028)
 

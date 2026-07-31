@@ -1,0 +1,158 @@
+{
+  "_README": [
+    "Archetype mean vectors for the trait sampler (briefing section 5).",
+    "",
+    "DATA, NOT CODE. Editable without a rebuild: the sampler reads this file through",
+    "archetypes.ts and nothing here is compiled. Values are z-scores on a population",
+    "with mean 0 and standard deviation 1, so +1.4 is 'high' and -1.4 is 'low'.",
+    "",
+    "MEANS ARE NAMED, NOT POSITIONAL. Author each trait by name. A bare array of six",
+    "decimals is the one place an index-order mistake could enter this component by",
+    "hand, and it would produce plausible-looking output that is wrong in a way no",
+    "eye would catch.",
+    "",
+    "'sketch' is the briefing section 5 latent sketch the vector was authored against.",
+    "Keep it beside the numbers: it is the only record of what they were aiming at.",
+    "",
+    "'defining' lists the traits the sketch actually pins. It is load-bearing, not",
+    "documentation: the separation constraint (briefing section 4.3) compares two",
+    "archetypes on the union of their defining traits, and traits the sketch leaves",
+    "free are deliberately excluded so a pair cannot pass on the strength of numbers",
+    "nobody chose. quietLurker is 'low E, moderate elsewhere', so extraversion is the",
+    "only thing that defines it.",
+    "",
+    "AFTER EDITING, RUN 'npm run verify:traits'. Every pair of archetypes must sit at",
+    "least archetypeSeparation apart on the union of their defining traits, and the",
+    "loader enforces it on startup. Two archetypes closer than that are one archetype",
+    "with two names."
+  ],
+  "archetypes": [
+    {
+      "key": "average",
+      "label": "Average",
+      "sketch": "moderate throughout, slightly high E and N",
+      "defining": ["extraversion", "neuroticism"],
+      "mean": {
+        "openness": 0.05,
+        "conscientiousness": 0.0,
+        "extraversion": 0.55,
+        "agreeableness": 0.15,
+        "neuroticism": 0.5,
+        "honesty": 0.0
+      }
+    },
+    {
+      "key": "roleModel",
+      "label": "Role model",
+      "sketch": "low N, high on everything else",
+      "defining": [
+        "openness",
+        "conscientiousness",
+        "extraversion",
+        "agreeableness",
+        "neuroticism",
+        "honesty"
+      ],
+      "mean": {
+        "openness": 1.45,
+        "conscientiousness": 1.35,
+        "extraversion": 1.5,
+        "agreeableness": 1.25,
+        "neuroticism": -1.35,
+        "honesty": 1.2
+      }
+    },
+    {
+      "key": "reserved",
+      "label": "Reserved",
+      "sketch": "low N, low O, low E, moderate A and C",
+      "defining": ["openness", "extraversion", "neuroticism"],
+      "mean": {
+        "openness": -1.25,
+        "conscientiousness": 0.2,
+        "extraversion": -1.45,
+        "agreeableness": 0.15,
+        "neuroticism": -1.15,
+        "honesty": 0.25
+      }
+    },
+    {
+      "key": "selfCentered",
+      "label": "Self-centred",
+      "sketch": "high E, low O, low A, low C",
+      "defining": ["openness", "conscientiousness", "extraversion", "agreeableness"],
+      "note": "Honesty-Humility is authored, not sketched. The sixth dimension separates good-faith from manipulative disposition, so leaving it at zero for the one archetype named for self-interest would waste the dimension. It is excluded from 'defining' because the briefing did not pin it.",
+      "mean": {
+        "openness": -1.1,
+        "conscientiousness": -1.25,
+        "extraversion": 1.3,
+        "agreeableness": -1.5,
+        "neuroticism": 0.45,
+        "honesty": -1.45
+      }
+    },
+    {
+      "key": "enthusiasticNewcomer",
+      "label": "Enthusiastic newcomer",
+      "sketch": "high E, high A, high O, low C",
+      "defining": ["openness", "conscientiousness", "extraversion", "agreeableness"],
+      "mean": {
+        "openness": 1.25,
+        "conscientiousness": -1.2,
+        "extraversion": 1.4,
+        "agreeableness": 1.3,
+        "neuroticism": 0.35,
+        "honesty": 0.55
+      }
+    },
+    {
+      "key": "terseExpert",
+      "label": "Terse expert",
+      "sketch": "high C, low E, moderate A, low N",
+      "defining": ["conscientiousness", "extraversion", "agreeableness", "neuroticism"],
+      "mean": {
+        "openness": 0.45,
+        "conscientiousness": 1.45,
+        "extraversion": -1.3,
+        "agreeableness": -0.05,
+        "neuroticism": -1.25,
+        "honesty": 0.4
+      }
+    },
+    {
+      "key": "quietLurker",
+      "label": "Quiet lurker",
+      "sketch": "low E, moderate elsewhere",
+      "defining": ["extraversion"],
+      "mean": {
+        "openness": 0.2,
+        "conscientiousness": 0.1,
+        "extraversion": -1.55,
+        "agreeableness": 0.2,
+        "neuroticism": 0.35,
+        "honesty": 0.1
+      }
+    },
+    {
+      "key": "professionalSupport",
+      "label": "Professional support",
+      "sketch": "high C, high A, moderate E, low N, high H",
+      "defining": [
+        "conscientiousness",
+        "extraversion",
+        "agreeableness",
+        "neuroticism",
+        "honesty"
+      ],
+      "note": "The production-facing archetype for support avatars. Its moderate E and moderate O are what hold it apart from roleModel, which is high on both.",
+      "mean": {
+        "openness": -0.1,
+        "conscientiousness": 1.4,
+        "extraversion": 0.15,
+        "agreeableness": 1.35,
+        "neuroticism": -1.3,
+        "honesty": 1.45
+      }
+    }
+  ]
+}

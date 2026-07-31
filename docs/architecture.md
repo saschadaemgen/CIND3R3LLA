@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -1299,6 +1299,57 @@ used as free compute.
 
 Note for the seam: the demo is currently the **only production consumer of `src/adapter/`**,
 through `FakeChatAdapter`. Section 28's seam otherwise has no production caller.
+
+## 31. The profile generator (CCB-S4-002, CCB-S4-003)
+
+`src/generator/` holds the profile generator: standalone, deterministic, and **not wired
+into the running bot**. Nothing in `src/` outside the module imports it, no migration
+writes its output, and no admin page exposes it. It is built component by component against
+its own briefings; two of them exist.
+
+| Component | Location | Proven by |
+|---|---|---|
+| Shared RNG | [`generator/rng.ts`](../src/generator/rng.ts) | both harnesses |
+| Name generator (CCB-S4-002) | [`generator/names/`](../src/generator/names/) | `verify:namegen` (42 checks) |
+| Trait sampler (CCB-S4-003) | [`generator/traits/`](../src/generator/traits/) | `verify:traits` (66 checks) |
+
+**The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
+stream rather than globally. Every stage of every component derives its own stream from
+`(seed, streamName)`, so stages are insertable and reorderable without changing what
+previously-generated seeds produce. `Math.random` appears nowhere, and neither does a clock.
+This lives one level above both components because they are siblings and neither should
+depend on the other; `names/index.ts` re-exports `Rng` so its public surface is unchanged.
+
+**The trait sampler** (CCB-S4-003, D-094/D-095) turns a seed plus a
+configuration into six z-scores and an archetype label. The five Big Five dimensions plus
+HEXACO Honesty-Humility, drawn as `mu + sigma * (L @ z)` where `L @ Lt` is the correlation
+matrix from the briefing's §4.1 and `mu` is an archetype mean or the zero vector. 45% of
+avatars fall into an unclassified background by default, because a population where everyone
+is a clean archetype is itself detectable as artificial. `archetype` is `null` for those,
+never a sentinel string.
+
+Two properties are the point of it, and both are measured rather than asserted in prose:
+the spread of pairwise distances is **1.18x** an independently-drawn baseline (independent
+draws in six dimensions are nearly equidistant from one another, which is the failure the
+component exists to prevent), and clustering recovers the archetypes at an adjusted mutual
+information of **0.822**, inside the briefing's 0.2-to-0.9 band for "structure exists but is
+not clean". See D-095 for the calibration table and for the one place those bounds already
+conflict with the valid parameter range.
+
+**Both components inject their data rather than reading it.** `loadCorpus` and
+`loadArchetypes` are the only files that touch the filesystem, and nothing on a generation
+path calls them. That is what makes "no filesystem at call time" structural.
+
+**A note for whoever wires this into the runtime.** The build does **not** copy `data/`
+and `fixtures/` JSON into `dist/`, so both loaders resolve against a path that does not
+exist in a built tree. This has never mattered because both components are exercised through
+`tsx` from source by their harnesses, and neither has a runtime caller. It becomes a real
+defect on the day one does: either extend `scripts/copy-assets.mjs` or pass an explicit path.
+
+**Not built:** surface derivation (tone, verbosity, emoji affinity, reaction weights), the
+population layer, the validation layer, bios, avatars, and persistence of any of it. See
+D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
+writes nothing.
 
 ## Appendix: divergences (code wins)
 

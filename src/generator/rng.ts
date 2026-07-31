@@ -1,10 +1,18 @@
 /**
- * Deterministic pseudo-random number generation.
+ * Deterministic pseudo-random number generation. SHARED BY EVERY COMPONENT OF THE
+ * PROFILE GENERATOR.
  *
- * Briefing §2: the same seed plus the same configuration must always produce the
- * identical result, including the culture drawn, the pattern chosen and the final
- * string. "This is not a nicety. A seed is the only thing needed to reconstruct a
- * profile later, and a whole later feature depends on it."
+ * It began beside the name generator, which was the first component to need it.
+ * The trait sampler's briefing §2 restates the same determinism requirement and
+ * says the name generator's RNG "can be reused", so it moved up one level rather
+ * than being copied or reached into sideways: `names/` and `traits/` are siblings
+ * and neither should depend on the other. `names/index.ts` still re-exports `Rng`,
+ * so the name generator's public surface is unchanged by the move.
+ *
+ * Name generator briefing §2: the same seed plus the same configuration must always
+ * produce the identical result, including the culture drawn, the pattern chosen and
+ * the final string. "This is not a nicety. A seed is the only thing needed to
+ * reconstruct a profile later, and a whole later feature depends on it."
  *
  * Consequences, all of them load-bearing:
  *

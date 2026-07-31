@@ -10,7 +10,7 @@
  */
 
 import type { NameCase, NamePart } from './types.js';
-import type { Rng } from './rng.js';
+import type { Rng } from '../rng.js';
 
 /**
  * Apply casing to the assembled parts.

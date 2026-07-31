@@ -20,7 +20,7 @@
  * worth nothing.
  */
 
-import { Rng } from './rng.js';
+import { Rng } from '../rng.js';
 import { zipfPick, rankShuffled } from './zipf.js';
 import { grammarFor } from './grammars.js';
 import { applyCasing, capitaliseName } from './casing.js';

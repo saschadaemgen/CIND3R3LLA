@@ -21,7 +21,7 @@
 export { generateName } from './generate.js';
 export { loadCorpus, verifyCorpus, type LoadCorpusOptions } from './corpus.js';
 export { CULTURE_GRAMMARS, grammarFor } from './grammars.js';
-export { Rng } from './rng.js';
+export { Rng } from '../rng.js';
 export { sanitiseForSimplex, isSimplexSafe } from './sanitise.js';
 
 export {
