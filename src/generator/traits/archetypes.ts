@@ -53,6 +53,7 @@ const DEFAULT_PATH = './data/archetypes.json';
 /** The raw shape of the authored file. */
 interface RawArchetypeFile {
   _README?: unknown;
+  version?: unknown;
   archetypes?: unknown;
 }
 
@@ -168,7 +169,14 @@ export function parseArchetypes(raw: unknown, source: string): ArchetypeSet {
     byKey.set(archetype.key, archetype);
   }
 
-  return { list, byKey, source };
+  if (typeof file.version !== 'string' || file.version.length === 0) {
+    fail(
+      source,
+      `has no "version". Quality measures are properties of a specific archetype set, ` +
+        `so a set that cannot be named cannot have a bound written against it.`,
+    );
+  }
+  return { list, byKey, source, version: file.version };
 }
 
 export interface LoadArchetypesOptions {

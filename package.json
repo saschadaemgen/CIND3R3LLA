@@ -63,7 +63,8 @@
     "verify:namegen": "tsx scripts/verify-namegen.ts",
     "verify:traits": "tsx scripts/verify-traits.ts",
     "calibrate:traits": "tsx scripts/calibrate-traits.ts",
-    "surface:traits": "tsx scripts/ridge-traits.ts"
+    "surface:traits": "tsx scripts/ridge-traits.ts",
+    "solve:archetypes": "tsx scripts/solve-archetypes.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

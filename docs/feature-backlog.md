@@ -681,14 +681,17 @@ briefings. Architecture §31 has the detail; the state of it is:
       `principledContrarian` fill the two unoccupied quadrants. A/H falls 0.935 to 0.173
       and the near-null direction closes (smallest whitened eigenvalue 0.0011 to 0.1089).
       Ten archetypes now, all 45 pairs clearing the separation floor. See D-097.
-- [ ] **Break the rest of the moral halo.** Filling the A/H quadrants moved the
-      collinearity rather than removing it: neuroticism/honesty sits at -0.614 and
-      openness/honesty at 0.463, both against a model value of 0.00. Every calm,
-      organised, open archetype is still also honest. The missing vector is the
-      anxious-but-scrupulous type, high N and high H. Deliberately NOT tuned further,
-      because adjusting vectors until a diagnostic reads well is the failure the
-      report-do-not-gate posture exists to prevent; authoring archetypes is a product
-      decision. `verify:traits` prints the divergence on every run.
+- [x] **Break the rest of the moral halo** — closed by a joint solve rather than more
+      patching (`npm run solve:archetypes`), plus an eleventh archetype
+      (`anxiousScrupulous`) added for COVERAGE after the solve met the N/H target while
+      leaving that region empty. Every correlation now within 0.12 of the model;
+      spectrum condition ratio 2.77 against roughly 3000 originally. Set version
+      `archetypes-11-2026-07-31`. See D-097.
+- [ ] **A calm, organised, low-honesty archetype.** The one region still unoccupied;
+      `ingratiator` is adjacent but emotionally moderate rather than calm. Deliberately
+      not added: the correlation targets are met without it, and adding an archetype to
+      occupy a region no measure asks for weakens each one's meaning. Revisit if
+      reference data says such a type is common.
 - [ ] **Reference data layer** — raw file hashes, per-artefact licence text, exclusion
       rules, scoring keys, frozen train/validation/holdout indices. Everything downstream
       of validation depends on this existing and being immutable, and it is not code.

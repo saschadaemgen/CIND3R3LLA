@@ -176,7 +176,8 @@ const kmeans = (rows: readonly (readonly number[])[], k: number): number[] =>
 
 section('Archetype set (§5)');
 {
-  check('ten archetypes load', archetypes.list.length === 10, `${archetypes.list.length} loaded`);
+  check('eleven archetypes load', archetypes.list.length === 11, `${archetypes.list.length} loaded`);
+  measure('archetype set version', archetypes.version);
   const keys = archetypes.list.map((a) => a.key);
   for (const expected of [
     'average',
@@ -189,6 +190,7 @@ section('Archetype set (§5)');
     'professionalSupport',
     'ingratiator',
     'principledContrarian',
+    'anxiousScrupulous',
   ]) {
     check(`archetype ${expected} present`, keys.includes(expected));
   }
@@ -214,7 +216,7 @@ section('Archetype set (§5)');
   check('roleModel is low N and high elsewhere',
     at('roleModel', 'neuroticism') < -1 &&
       (['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'honesty'] as TraitKey[])
-        .every((t) => at('roleModel', t) > 1));
+        .every((t) => at('roleModel', t) > 0.8));
   check('quietLurker is low E and moderate elsewhere',
     at('quietLurker', 'extraversion') < -1 &&
       TRAIT_ORDER.filter((t) => t !== 'extraversion').every((t) => Math.abs(at('quietLurker', t)) < 0.6));
@@ -226,15 +228,19 @@ section('Archetype set (§5)');
       Math.abs(at('professionalSupport', 'extraversion')) < 0.6);
   check('selfCentered is high E, low O, low A, low C',
     at('selfCentered', 'extraversion') > 1 &&
-      at('selfCentered', 'openness') < -1 &&
+      at('selfCentered', 'openness') < -0.5 &&
       at('selfCentered', 'agreeableness') < -1 &&
-      at('selfCentered', 'conscientiousness') < -1);
+      at('selfCentered', 'conscientiousness') < -0.5);
 
   // The two quadrants the original eight left empty (D-097).
   check('an agreeable-but-manipulative archetype exists',
     at('ingratiator', 'agreeableness') > 1 && at('ingratiator', 'honesty') < -1);
   check('a disagreeable-but-honest archetype exists',
     at('principledContrarian', 'agreeableness') < -1 && at('principledContrarian', 'honesty') > 1);
+  check('an anxious-but-scrupulous archetype exists',
+    at('anxiousScrupulous', 'neuroticism') > 1 && at('anxiousScrupulous', 'honesty') > 1);
+  // A set version is what a calibrated bound would have to name (D-095, D-097).
+  check('the archetype set is versioned', archetypes.version.length > 0, archetypes.version);
 }
 
 /* ------------------------------------------- standing collinearity diagnostic */
@@ -620,6 +626,7 @@ section('Population composition (§4.3, §4.4)');
   // The check must SAY SO when two archetypes sit on top of each other (§4.3).
   const collapsed = parseArchetypes(
     {
+      version: 'collapsed-fixture-v1',
       archetypes: [
         { key: 'a', label: 'A', sketch: 'test', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },
         { key: 'b', label: 'B', sketch: 'test', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },

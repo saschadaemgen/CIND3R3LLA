@@ -89,6 +89,17 @@ export interface ArchetypeSet {
   byKey: ReadonlyMap<string, Archetype>;
   /** Where it came from, for error messages. */
   source: string;
+  /**
+   * Names this set of vectors.
+   *
+   * Load-bearing for calibration: the quality measures are properties of a SPECIFIC
+   * archetype set, not of the generator in the abstract. A legitimate improvement to the
+   * set moves them - filling the agreeableness/honesty quadrants moved the pairwise
+   * spread ratio from 1.183 to 1.152, which would have read as a regression against a
+   * fixed bound. Any bound written against measured numbers must name the version those
+   * numbers came from.
+   */
+  version: string;
 }
 
 /** Input, per briefing §6. */
@@ -214,5 +225,6 @@ export const DEFAULT_ARCHETYPE_MIX: Readonly<Record<string, number>> = Object.fr
   quietLurker: 1,
   ingratiator: 1,
   principledContrarian: 1,
+  anxiousScrupulous: 1,
   professionalSupport: 1,
 });

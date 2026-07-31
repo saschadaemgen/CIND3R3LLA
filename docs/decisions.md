@@ -54,6 +54,24 @@ The durable reason is the one that was already true before any of this was measu
 
 That is left to the operator rather than tuned here, for the reason the interim posture exists: continuing to adjust vectors until a diagnostic reads well is exactly the "change correct code to satisfy a gate" failure the report-do-not-gate decision was taken to prevent. Authoring archetypes changes the product surface, and these are explicitly product-driven rather than empirically derived.
 
+**AMENDED AGAIN: the halo is closed by a JOINT SOLVE, not by more patching.** Filling the A/H quadrants moved the collinearity onto C/H and N/H, which demonstrated that sequential patching cannot converge here: the fifteen correlations across the points are coupled, so every fix redistributes the others. `npm run solve:archetypes` places them together instead - sixty-six parameters against fifteen targets, comfortably under-determined - targeting **the model's own specified correlation matrix**, never the diagnostic. `average`, `quietLurker` and `professionalSupport` are pinned because their positions carry product meaning; the rest were free to move.
+
+**Labels followed positions, not the reverse.** The solver writes nothing. It prints a proposal, and every solved vector was read back as a description of a person before any of it was accepted. All eleven remained recognisable, so there was no finding of the kind that would have mattered most: a solved position with no coherent description would have meant the target correlation matrix and the personality space disagree.
+
+| | before the solve | after |
+|---|---|---|
+| agreeableness / honesty | 0.173 (0.935 originally) | **0.050** |
+| largest between-archetype correlation | C/N -0.718 | **C/N -0.297** (model says -0.22) |
+| largest divergence from the model | N/H -0.614 against 0.00 | **O/H 0.120 against 0.00** |
+| total squared correlation error | 1.0002 | **0.0856** |
+| spectrum condition ratio | ~3000, then 25 | **2.77** |
+
+Every between-archetype correlation now sits within 0.12 of what the model specifies, and the largest is *inside* the model's own range. The whitened spectrum runs `1.686, 1.418, 1.132, 1.043, 0.892, 0.610`: the between-variance is spread almost evenly across all six directions rather than collapsing into five.
+
+**An eleventh archetype was added, and the reason is coverage rather than a number.** The ten-point solve met the N/H target by rebalancing and left the anxious-and-scrupulous region **empty** - correlation near zero without coverage. That is the distinction: a repaired correlation is not a populated space. `anxiousScrupulous` (N +1.73, H +1.70) is the worrier who is meticulously fair, and its absence had encoded the proposition that anxious people are less honest.
+
+**One gap remains and was deliberately not patched.** No archetype is calm, organised AND low-honesty; `ingratiator` is adjacent (C +1.18, H -1.59) but emotionally moderate at N +0.13 rather than calm. The correlation targets are met without it, and adding a twelfth archetype to occupy a region no measure is asking for would weaken each one's meaning.
+
 **Made visible rather than left latent.** `verify:traits` now prints the between-archetype correlation table on **every run** (not only `surface:traits`), naming both the largest absolute correlation and the largest **divergence from the model**. The divergence is the number to watch, and the distinction is load-bearing: archetypes correlating on a pair the model already asserts is the factor structure showing through (C, A and low N are one factor, §4.1, so C and N anti-tracking is the model working), while archetypes correlating on a pair the model says is **zero** manufactures structure the model explicitly denies. That is what A/H was, and what N/H and O/H still are.
 
 `surface:traits` also prints the between-archetype correlation table alongside the spectrum (`agreeableness/honesty 0.935`, `conscientiousness/neuroticism -0.836`, `conscientiousness/honesty 0.713`), so if the gap is filled the direction closes where someone can see it.
@@ -74,7 +92,11 @@ That is left to the operator rather than tuned here, for the reason the interim 
 
 **A second breach was found at the other end of the valid range, and the original entry missed it.** Measured against the analytic baseline, the full-population spread ratio falls from 1.276x at sigma 0.5 to **1.137x at sigma 0.7**, below the withdrawn 1.15. AMI failed at the bottom of the documented range and spread fails at the top. This was invisible because the harness swept AMI across sigma but measured spread at `DEFAULT_SIGMA` only.
 
-**Interim posture: report, do not gate.** `verify:traits` prints every quality measurement and fails the run on none of them. Correctness is still gated: determinism, the sampling maths, the covariance index order, failure behaviour, population composition and archetype separation all still fail the run, and so does the AMI measure's own null-labelling calibration. A gate that is wrong is worse than no gate, because it invites someone to change correct code to satisfy it.
+**Interim posture: report, do not gate.** `verify:traits` prints every quality measurement and fails the run on none of them.
+
+**The cleanest evidence for this posture arrived after it was taken, and is recorded here rather than left in a delivery report.** Filling the agreeableness/honesty quadrants was an unambiguous improvement to the archetype set, and it moved the pairwise-spread ratio from 1.183 to 1.152 - which would have **tripped the 1.15 bound** at the default sigma had it still been enforced. A legitimate improvement would have read as a regression, and the obvious response would have been to revert correct work to satisfy a number. That is a better argument for the posture than any of the reasoning that established it.
+
+**It also constrains whatever replaces these bounds.** An acceptance region derived from replication noise and negative controls will still move when the archetype set legitimately changes, so **a bound must be stated against a NAMED archetype set version, never against the generator in the abstract.** `data/archetypes.json` therefore carries a `version` field, the loader refuses a set without one (a set that cannot be named cannot have a bound written against it), and `verify:traits` prints it. The current set is **`archetypes-11-2026-07-31`**. Correctness is still gated: determinism, the sampling maths, the covariance index order, failure behaviour, population composition and archetype separation all still fail the run, and so does the AMI measure's own null-labelling calibration. A gate that is wrong is worse than no gate, because it invites someone to change correct code to satisfy it.
 
 **Four harness defects fixed with this amendment.** The spread is swept across sigma rather than measured at one point; the independent baseline is now **analytic** (`sd(chi_6)/E[chi_6]` = 0.29410) rather than drawn, because the drawn baseline carried the dominant noise term of a pass/fail ratio; every AMI cell uses **one n** (4,000), since the expectation term is n-dependent and the previous 6,000-against-4,000 split confounded sigma with n by about 0.005; and the caricature wording is corrected. The statistics moved to `scripts/trait-metrics.ts`, shared by the gate and the calibration pass so a bound written from one implementation cannot be enforced by another.
 

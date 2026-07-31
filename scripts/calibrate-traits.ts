@@ -104,6 +104,7 @@ function scaledSet(factor: number): ArchetypeSet {
     list,
     byKey: new Map(list.map((a) => [a.key, a])),
     source: `${base.source} scaled x${factor.toFixed(4)}`,
+    version: base.version,
   };
 }
 
