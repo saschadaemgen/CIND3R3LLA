@@ -13,6 +13,38 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-097 — Honesty-Humility sits outside the validated distribution, and the archetype set cannot currently express manipulative agreeableness
+
+**Status: IMPLEMENTED** as a recorded position and a reported diagnostic (CCB-S4-003). No code behaviour changes; the sampler still draws six dimensions exactly as before.
+
+> **Numbering note, because the gap is deliberate.** **D-096 is allocated on `feature/multi-profile-core-foundation` and does not exist on `main`.** This entry takes D-097 so the two cannot collide when that branch lands. Reading the highest number off `main` alone would have produced a second D-096, which is the duplicate-allocation failure `CLAUDE.md` records having happened twice already.
+
+**The question.** The spectrum of `W^(-1/2) B W^(-1/2)` at the shipped configuration is `3.253, 1.897, 0.789, 0.462, 0.154, 0.001`. The last value is three orders of magnitude below the first, so the eight archetype centres span roughly five dimensions and one direction carries no archetype structure at all. The hypothesis put to it was that the flat direction is Honesty-Humility.
+
+**Measured, not reasoned** (`npm run surface:traits`, section 7). The smallest generalised eigenvector of `(B, W)` in trait coordinates is
+
+```
++0.786 honesty   -0.581 agreeableness   -0.201 conscientiousness
+```
+
+Honesty carries 61.8% of the squared length and agreeableness 33.8%. It is an **H-against-A contrast**, not a single trait.
+
+**Two premises of the hypothesis were wrong, and both are corrected here rather than dropped.** All eight archetypes carry an H value, not two: `professionalSupport` 1.45, `roleModel` 1.20, `selfCentered` -1.45, and five smaller ones. Briefing §5's sketches named H only for `professionalSupport`; the rest were authored, and `selfCentered`'s is recorded in the data file as authored beyond its sketch. And H's between-archetype variance is **not** effectively zero: 0.675, the smallest of six but only 56% below extraversion's 1.547 and within 5% of neuroticism's 0.706.
+
+**The cause is collinearity in the authored set, not a property of the model.** Across the eight means, **H correlates with agreeableness at r = 0.935**, so **87.4% of H's between-archetype variance is already carried by A**. The archetypes vary in H only insofar as they vary in A, which is exactly why the H-against-A contrast has nothing left in it. What is missing is not H's variance but H's *independent* variance. One archetype where the two diverge closes the direction immediately.
+
+**Decision, the operator's: H sits outside the validated distribution.** The five Big Five dimensions are validated against public-domain IPIP reference data; H is a documented reserved dimension whose correlation row stays an explicit assumption (see `covariance.ts`); it enters the validated distribution when either a joint Big Five plus H sample exists or the behaviour layer actually uses it.
+
+**With one correction to the reasoning, which matters for how durable the decision is.** The proposal justified deferring the HEXACO-versus-IPIP licensing fork on the grounds that H is currently inert. It is not inert, and the near-inertness that does exist is an **authoring artefact of a file explicitly designed to be edited without a rebuild**. Resting a licensing decision on that couples it to `data/archetypes.json`, and the day someone authors an agreeable-but-manipulative archetype the justification evaporates.
+
+The durable reason is the one that was already true before any of this was measured: **H's cross-correlations with the Big Five are unvalidatable without a joint sample measured on one instrument**, because Big Five plus H is not HEXACO and assembling the row from two instruments would be methodologically wrong. That holds whatever the archetype file says. The five-dimension IPIP validation is right on that basis, and the licensing fork defers on that basis.
+
+**A coverage gap this exposed, and it is a product gap rather than a statistical one.** No archetype in the set is agreeable and manipulative, or blunt and honest. `terseExpert` (A -0.05, H +0.40) is the only one that leans that way and it leans weakly. Briefing §3 says the sixth dimension exists to separate good-faith from manipulative disposition, "which later matters for distinguishing actor types" - and **the shipped set cannot express that distinction at all**, because every agreeable archetype is also honest. The sycophant is the missing vector.
+
+**Made visible rather than left latent.** `surface:traits` now prints the between-archetype correlation table alongside the spectrum (`agreeableness/honesty 0.935`, `conscientiousness/neuroticism -0.836`, `conscientiousness/honesty 0.713`), so if the gap is filled the direction closes where someone can see it.
+
+---
+
 ### D-095 — The trait sampler's two quality bounds are starting points, and one of them is already crossed inside the valid range
 
 **Status: AMENDED. Both bounds are WITHDRAWN and neither gates the harness.** The original entry stands below as the record of how it looked; this block records what measurement then showed and what the operator decided.

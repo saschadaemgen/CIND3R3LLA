@@ -677,6 +677,18 @@ briefings. Architecture §31 has the detail; the state of it is:
 - [x] **Trait sampler** (CCB-S4-003) — six-dimensional correlated personality vectors around archetype
       means, with a deliberate 45% unclassified background. `npm run verify:traits`,
       66 checks. See D-094 and D-095.
+- [ ] **An agreeable-but-manipulative archetype.** The set has none, and none that is
+      blunt-but-honest either, so Honesty-Humility carries no variance independent of
+      Agreeableness (r = 0.935 across the eight means, D-097). Briefing §3 gives the sixth
+      dimension precisely the job of separating good-faith from manipulative disposition,
+      so this is a coverage gap rather than a tuning question. `npm run surface:traits`
+      shows the direction closing when it is filled.
+- [ ] **Reference data layer** — raw file hashes, per-artefact licence text, exclusion
+      rules, scoring keys, frozen train/validation/holdout indices. Everything downstream
+      of validation depends on this existing and being immutable, and it is not code.
+      Note the licensing fork it must resolve: IPIP material is public domain and usable
+      commercially; the official HEXACO-PI-R forms are free only for non-commercial
+      academic research. D-097 defers that fork rather than removing it.
 - [ ] **Surface derivation** — tone, verbosity, emoji affinity, reaction weights, derived
       from the latent vector. Explicitly out of scope of the trait sampler's briefing (§8)
       and the obvious next component.
