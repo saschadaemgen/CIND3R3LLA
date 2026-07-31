@@ -176,7 +176,7 @@ const kmeans = (rows: readonly (readonly number[])[], k: number): number[] =>
 
 section('Archetype set (§5)');
 {
-  check('eight archetypes load', archetypes.list.length === 8, `${archetypes.list.length} loaded`);
+  check('ten archetypes load', archetypes.list.length === 10, `${archetypes.list.length} loaded`);
   const keys = archetypes.list.map((a) => a.key);
   for (const expected of [
     'average',
@@ -187,6 +187,8 @@ section('Archetype set (§5)');
     'terseExpert',
     'quietLurker',
     'professionalSupport',
+    'ingratiator',
+    'principledContrarian',
   ]) {
     check(`archetype ${expected} present`, keys.includes(expected));
   }
@@ -227,6 +229,85 @@ section('Archetype set (§5)');
       at('selfCentered', 'openness') < -1 &&
       at('selfCentered', 'agreeableness') < -1 &&
       at('selfCentered', 'conscientiousness') < -1);
+
+  // The two quadrants the original eight left empty (D-097).
+  check('an agreeable-but-manipulative archetype exists',
+    at('ingratiator', 'agreeableness') > 1 && at('ingratiator', 'honesty') < -1);
+  check('a disagreeable-but-honest archetype exists',
+    at('principledContrarian', 'agreeableness') < -1 && at('principledContrarian', 'honesty') > 1);
+}
+
+/* ------------------------------------------- standing collinearity diagnostic */
+
+section('Between-archetype collinearity (standing diagnostic, D-097): REPORTED, NOT GATED');
+{
+  // WHY THIS PRINTS ON EVERY RUN. A correlation of 0.935 between agreeableness and
+  // honesty across the archetype means was found by accident, off a spectrum eigenvalue
+  // three orders of magnitude below the largest. `data/archetypes.json` is explicitly
+  // editable without a rebuild, so any future edit can reintroduce it silently. This is
+  // the line that makes the next occurrence visible on the day it happens.
+  //
+  // THE INTERESTING QUANTITY IS NOT THE LARGEST CORRELATION, IT IS THE LARGEST
+  // DIVERGENCE FROM THE MODEL. Archetypes correlating on a pair the model already says
+  // is correlated is the factor structure showing through: C, A and low N are one factor
+  // (§4.1), so C and N anti-tracking across the means is the model working. Archetypes
+  // correlating on a pair the model says is ZERO is different in kind: it manufactures
+  // structure the model explicitly denies, which is exactly what A against H was.
+  function betweenCorr(i: number, j: number): number {
+    const x = archetypes.list.map((a) => a.mean[i]!);
+    const y = archetypes.list.map((a) => a.mean[j]!);
+    const mx = mean(x);
+    const my = mean(y);
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    for (let k = 0; k < x.length; k++) {
+      sxy += (x[k]! - mx) * (y[k]! - my);
+      sxx += (x[k]! - mx) ** 2;
+      syy += (y[k]! - my) ** 2;
+    }
+    return sxy / Math.sqrt(sxx * syy);
+  }
+
+  const target = defaultCovariance();
+  const rows = [];
+  for (let i = 0; i < TRAIT_COUNT; i++) {
+    for (let j = i + 1; j < TRAIT_COUNT; j++) {
+      const between = betweenCorr(i, j);
+      const model = target[i]![j]!;
+      rows.push({
+        pair: `${TRAIT_ORDER[i]} / ${TRAIT_ORDER[j]}`,
+        between,
+        model,
+        divergence: Math.abs(between - model),
+      });
+    }
+  }
+
+  const byAbs = [...rows].sort((a, b) => Math.abs(b.between) - Math.abs(a.between));
+  const byDiv = [...rows].sort((a, b) => b.divergence - a.divergence);
+
+  measure(
+    'largest between-archetype correlation',
+    `${byAbs[0]!.pair} at ${byAbs[0]!.between.toFixed(3)} (model says ${byAbs[0]!.model.toFixed(2)})`,
+  );
+  measure(
+    'largest divergence from the model',
+    `${byDiv[0]!.pair}: model ${byDiv[0]!.model.toFixed(2)}, archetypes ${byDiv[0]!.between.toFixed(3)}`,
+  );
+  const ah = rows.find((r) => r.pair === 'agreeableness / honesty')!;
+  measure('agreeableness / honesty, the D-097 pair', `${ah.between.toFixed(3)} (was 0.935 across the original eight)`);
+
+  console.log('         top four between-archetype correlations, against what the model claims:');
+  for (const r of byAbs.slice(0, 4)) {
+    console.log(
+      `         ${r.pair.padEnd(38)}archetypes ${r.between >= 0 ? ' ' : ''}${r.between.toFixed(3)}   model ${r.model.toFixed(2)}`,
+    );
+  }
+  console.log('         NOT GATED. The largest divergence is the number to watch: a pair');
+  console.log('         the model says is ZERO and the archetypes correlate strongly on is');
+  console.log('         manufactured structure, which is what agreeableness against honesty');
+  console.log('         was before the two missing quadrants were authored.');
 }
 
 /* ============================================================ §2 determinism */

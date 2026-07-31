@@ -41,7 +41,22 @@ The durable reason is the one that was already true before any of this was measu
 
 **A coverage gap this exposed, and it is a product gap rather than a statistical one.** No archetype in the set is agreeable and manipulative, or blunt and honest. `terseExpert` (A -0.05, H +0.40) is the only one that leans that way and it leans weakly. Briefing §3 says the sixth dimension exists to separate good-faith from manipulative disposition, "which later matters for distinguishing actor types" - and **the shipped set cannot express that distinction at all**, because every agreeable archetype is also honest. The sycophant is the missing vector.
 
-**Made visible rather than left latent.** `surface:traits` now prints the between-archetype correlation table alongside the spectrum (`agreeableness/honesty 0.935`, `conscientiousness/neuroticism -0.836`, `conscientiousness/honesty 0.713`), so if the gap is filled the direction closes where someone can see it.
+**AMENDED, same session: the gap is filled and the direction is closed.** Two archetypes were authored into the unoccupied quadrants, product-driven and recorded as such in the data file:
+
+- **`ingratiator`** (A +1.40, H -1.40, E +1.40, C +0.90): organised, warm, socially skilled, self-serving. The member who is pleasant to everyone and is working the room.
+- **`principledContrarian`** (A -1.35, H +1.45, C -0.30): blunt, argumentative, sincere and fair, and disorganised with it.
+
+**Result.** Agreeableness against honesty falls from **0.935 to 0.173**, inside the range of the correlations the model itself specifies (largest, E-A, is 0.29). The near-null direction is genuinely closed: the smallest eigenvalue of `W^(-1/2) B W^(-1/2)` rises from **0.0011 to 0.1089**, a hundredfold, and the condition ratio across the spectrum falls from roughly 3000 to 25. The archetype set now spans six dimensions rather than five. All 45 pairs still clear the separation floor; the closest is `average` / `ingratiator` at 2.070.
+
+**THE DIAGNOSTIC CAUGHT THE FIX'S OWN SIDE EFFECT, on its first run.** Filling the A/H quadrants pushed the collinearity onto conscientiousness/honesty (0.671) and neuroticism/honesty (-0.614), both pairs the model says are **zero**. One further authoring change followed, coherent in the archetypes' own terms rather than fitted to the number: a successful ingratiator is organised (C -0.20 to +0.90) and a contrarian who argues on principle need not be tidy (C +0.80 to -0.30). That took C/H out of the top five entirely.
+
+**WHAT REMAINS, AND WHY THE TUNING STOPPED THERE.** Neuroticism/honesty sits at **-0.614** and openness/honesty at **0.463**, both against a model value of 0.00. This is the same phenomenon as A/H on other pairs: **the set encodes a moral halo**, in which every calm, organised, agreeable, open archetype is also honest and every anxious, disorganised, disagreeable one is not. Two archetypes do not fix a halo; deliberately breaking it does, and the obvious missing vector is an anxious-but-scrupulous type (high N, high H) - the worrier who will not cut a corner.
+
+That is left to the operator rather than tuned here, for the reason the interim posture exists: continuing to adjust vectors until a diagnostic reads well is exactly the "change correct code to satisfy a gate" failure the report-do-not-gate decision was taken to prevent. Authoring archetypes changes the product surface, and these are explicitly product-driven rather than empirically derived.
+
+**Made visible rather than left latent.** `verify:traits` now prints the between-archetype correlation table on **every run** (not only `surface:traits`), naming both the largest absolute correlation and the largest **divergence from the model**. The divergence is the number to watch, and the distinction is load-bearing: archetypes correlating on a pair the model already asserts is the factor structure showing through (C, A and low N are one factor, §4.1, so C and N anti-tracking is the model working), while archetypes correlating on a pair the model says is **zero** manufactures structure the model explicitly denies. That is what A/H was, and what N/H and O/H still are.
+
+`surface:traits` also prints the between-archetype correlation table alongside the spectrum (`agreeableness/honesty 0.935`, `conscientiousness/neuroticism -0.836`, `conscientiousness/honesty 0.713`), so if the gap is filled the direction closes where someone can see it.
 
 ---
 

@@ -194,6 +194,18 @@ grep -oE "^### D-[0-9]+" docs/decisions.md | grep -oE "[0-9]+" | sort -n | tail 
 Same discipline for briefing ids and migration numbers (D-069): allocate from what is
 on disk plus one.
 
+**Allocation reads EVERY OPEN BRANCH, not `main` alone**, for as long as any branch carries
+decision entries. `D-096` was allocated on `feature/multi-profile-core-foundation` and does
+not exist on `main`; reading the highest number off `main` would have produced a second
+D-096 the moment that branch landed, which is the duplicate-allocation failure this file
+already records happening twice. The check when a branch is open:
+
+```bash
+git log --all -p -- docs/decisions.md | grep -oE "^\+### D-[0-9]+" | grep -oE "[0-9]+" | sort -n | tail -1
+```
+
+A deliberate gap is fine and should be stated in the entry that skips it.
+
 Why this keeps the docs ground truth: the strategy documents (season protocol,
 decisions narrative, season plan) are authored in the planning chat and may run
 ahead of the code; the five technical docs are maintained by Claude Code **from the

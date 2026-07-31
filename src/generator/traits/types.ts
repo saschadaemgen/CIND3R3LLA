@@ -212,5 +212,7 @@ export const DEFAULT_ARCHETYPE_MIX: Readonly<Record<string, number>> = Object.fr
   enthusiasticNewcomer: 1,
   terseExpert: 1,
   quietLurker: 1,
+  ingratiator: 1,
+  principledContrarian: 1,
   professionalSupport: 1,
 });

@@ -677,12 +677,18 @@ briefings. Architecture §31 has the detail; the state of it is:
 - [x] **Trait sampler** (CCB-S4-003) — six-dimensional correlated personality vectors around archetype
       means, with a deliberate 45% unclassified background. `npm run verify:traits`,
       66 checks. See D-094 and D-095.
-- [ ] **An agreeable-but-manipulative archetype.** The set has none, and none that is
-      blunt-but-honest either, so Honesty-Humility carries no variance independent of
-      Agreeableness (r = 0.935 across the eight means, D-097). Briefing §3 gives the sixth
-      dimension precisely the job of separating good-faith from manipulative disposition,
-      so this is a coverage gap rather than a tuning question. `npm run surface:traits`
-      shows the direction closing when it is filled.
+- [x] **An agreeable-but-manipulative archetype** — `ingratiator` and
+      `principledContrarian` fill the two unoccupied quadrants. A/H falls 0.935 to 0.173
+      and the near-null direction closes (smallest whitened eigenvalue 0.0011 to 0.1089).
+      Ten archetypes now, all 45 pairs clearing the separation floor. See D-097.
+- [ ] **Break the rest of the moral halo.** Filling the A/H quadrants moved the
+      collinearity rather than removing it: neuroticism/honesty sits at -0.614 and
+      openness/honesty at 0.463, both against a model value of 0.00. Every calm,
+      organised, open archetype is still also honest. The missing vector is the
+      anxious-but-scrupulous type, high N and high H. Deliberately NOT tuned further,
+      because adjusting vectors until a diagnostic reads well is the failure the
+      report-do-not-gate posture exists to prevent; authoring archetypes is a product
+      decision. `verify:traits` prints the divergence on every run.
 - [ ] **Reference data layer** — raw file hashes, per-artefact licence text, exclusion
       rules, scoring keys, frozen train/validation/holdout indices. Everything downstream
       of validation depends on this existing and being immutable, and it is not code.

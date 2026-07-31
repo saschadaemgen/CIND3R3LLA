@@ -134,6 +134,36 @@
       }
     },
     {
+      "key": "ingratiator",
+      "label": "Ingratiator",
+      "sketch": "high C, high E, high A, low H; organised, warm, socially skilled, and self-serving with it",
+      "defining": ["extraversion", "agreeableness", "honesty"],
+      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven rather than read off any data. It fills a quadrant the original eight left empty: every agreeable archetype in that set was also honest, so Honesty-Humility carried no variation independent of Agreeableness (r = 0.935 across the eight means) and the set could not express the good-faith versus manipulative distinction the sixth dimension exists to make. In a room this is the member who is pleasant to everyone and is working it. When reference data lands, whether real populations contain a type resembling this becomes an answerable question and the answer may revise it.",
+      "mean": {
+        "openness": 0.3,
+        "conscientiousness": 0.9,
+        "extraversion": 1.4,
+        "agreeableness": 1.4,
+        "neuroticism": 0.3,
+        "honesty": -1.4
+      }
+    },
+    {
+      "key": "principledContrarian",
+      "label": "Principled contrarian",
+      "sketch": "low A, high H, low C; blunt and argumentative, sincere and fair, and disorganised with it",
+      "defining": ["agreeableness", "honesty"],
+      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven. The opposite unoccupied quadrant to ingratiator: disagreeable but straight. terseExpert gestured at this (A -0.05, H 0.40) and gestured weakly. Together the two make Honesty-Humility carry information Agreeableness does not, which is what the sixth dimension was added for.",
+      "mean": {
+        "openness": 0.6,
+        "conscientiousness": -0.3,
+        "extraversion": -0.2,
+        "agreeableness": -1.35,
+        "neuroticism": -0.3,
+        "honesty": 1.45
+      }
+    },
+    {
       "key": "professionalSupport",
       "label": "Professional support",
       "sketch": "high C, high A, moderate E, low N, high H",
