@@ -64,6 +64,13 @@ import type { CulturePool, NameCorpus, WordPools } from './types.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 /** The raw shape of the shipped, unlabelled corpus file. */
+/**
+ * Names the shipped bulk corpus. A constant rather than a field in the file, because
+ * `names_data.json` is a dataset this project did not author: five flat arrays with no
+ * provenance of its own. Bump it if the file is ever replaced.
+ */
+const BULK_CORPUS_VERSION = 'names-data-36162';
+
 interface RawNamesData {
   firstNames: string[];
   lastNames: string[];
@@ -87,8 +94,8 @@ function readJson<T>(relativePath: string): T {
 }
 
 /** Strip the `_README` documentation key that fixture files carry. */
-function withoutReadme<T extends object>(raw: T): Omit<T, '_README'> {
-  const { _README: _ignored, ...rest } = raw as T & { _README?: unknown };
+function withoutReadme<T extends object>(raw: T): Omit<T, '_README' | 'version'> {
+  const { _README: _ignored, version: _v, ...rest } = raw as T & { _README?: unknown; version?: unknown };
   return rest;
 }
 
@@ -102,11 +109,13 @@ export interface LoadCorpusOptions {
  */
 export function loadCorpus(options: LoadCorpusOptions = {}): NameCorpus {
   const raw = readJson<RawNamesData>('./data/names_data.json');
-  const words = withoutReadme(readJson<WordPools & { _README?: string }>('./data/word-pools.json'));
+  const wordFile = readJson<WordPools & { _README?: string; version?: string }>('./data/word-pools.json');
+  const cultureFile = readJson<Record<string, CulturePool> & { _README?: string; version?: string }>(
+    options.culturePoolsPath ?? './fixtures/culture-pools.fixture.json',
+  );
+  const words = withoutReadme(wordFile);
   const cultureRaw = withoutReadme(
-    readJson<Record<string, CulturePool> & { _README?: string }>(
-      options.culturePoolsPath ?? './fixtures/culture-pools.fixture.json',
-    ),
+    cultureFile,
   );
 
   // The unlabelled bulk corpus. Everything goes in `givenNeutral` because the file
@@ -119,7 +128,19 @@ export function loadCorpus(options: LoadCorpusOptions = {}): NameCorpus {
     family: Object.freeze(raw.lastNames),
   };
 
+  // CCB-S4-007 §5: a review records the versions of all four component data sets and
+  // fails if any is missing. Composed from the two authored inputs plus the constant
+  // naming the shipped bulk corpus, which this project did not author.
+  if (typeof wordFile.version !== 'string' || typeof cultureFile.version !== 'string') {
+    throw new Error(
+      `Name generator: a corpus input carries no "version". A data set that cannot be ` +
+        `named cannot be recorded in a review, and CCB-S4-007 requires all four.`,
+    );
+  }
+  const version = `${BULK_CORPUS_VERSION}+${wordFile.version}+${cultureFile.version}`;
+
   return Object.freeze({
+    version,
     cultures: Object.freeze(cultureRaw as Record<string, CulturePool>),
     general,
     words: Object.freeze(words as WordPools),

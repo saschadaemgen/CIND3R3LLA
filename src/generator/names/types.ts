@@ -104,6 +104,18 @@ export interface CultureGrammar {
  */
 export interface NameCorpus {
   /**
+   * Names this corpus composition.
+   *
+   * ADDED UNDER CCB-S4-007, which requires a review to record the versions of all four
+   * component data sets and to fail if any is missing. Three of the four carried one;
+   * this was the gap, and it was found by the requirement rather than by anyone looking.
+   *
+   * Composed from the two AUTHORED inputs plus a constant naming the shipped bulk
+   * corpus, because that file is a dataset this project did not author and cannot
+   * meaningfully version.
+   */
+  version: string;
+  /**
    * Per-culture name pools. A culture absent from this map falls back to
    * `general`, which is the unlabelled corpus.
    */

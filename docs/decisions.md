@@ -13,6 +13,32 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-103 — Profile assembly and review, and what the crowd view found on its first run
+
+**Status: IMPLEMENTED** (CCB-S4-007). `src/generator/assemble/`, `npm run assemble`, proven by `npm run verify:assemble` (22 checks).
+
+**Why it exists, in one sentence the previous briefing wrote:** every population statistic passed while the text was wrong. That is the general case for anything a person will read, and the validation approach this workstream is heading toward is entirely statistical - fidelity, coverage, dependence and classifiability would all pass a population whose text is nonsense. This component exists so that reading is a **step** rather than an act of conscientiousness.
+
+**It generates nothing.** §2 is explicit, and it decided what happened when the crowd view found a defect: it was recorded as a gap in a component, not patched here.
+
+**Three views, three different questions.** Detail traces a handful of profiles back to their inputs. Crowd renders a few hundred **as a member list, not a table of fields** - the distinction is the whole requirement, because a table shows the same characters and conceals the same faults, since a table is read as data and a member list is read as people. Distribution gathers the statistics and **carries its caveat at the top**, so nobody reads a green distribution view as a verdict.
+
+**Every profile carries its own seed, in all three views.** §4 and §9.1 pull against each other here: a real client would show no such thing, so the crowd view renders it small and dim, out of the way of reading but present. The reason is that a profile that looks wrong must be reproducible in isolation, which is the difference between "something is off in this run" and a bug report. `verify:assemble` proves it: a profile regenerated from its own seed alone is identical to the one in the population, because one seed drives every component and there is no per-population state.
+
+**THE FIRST RUN FOUND SOMETHING, WHICH IS THE POINT.** Reading the member list, the sixth entry was `crispin sinclair` - origin `de`, drawn for culture `de`, writing a German bio under an English name. That is §5's "names and bios that do not belong to the same person", and it is CCB-S4-002's **documented** gap: "culturally coherent names" is not delivered, because the shipped corpus carries no culture labels and the grammar engine runs against small hand-authored fixtures, so a `de` request falls back to the unlabelled bulk pool.
+
+The gap was on record for months and cost nothing until names and bios were rendered side by side, at which point it was the first thing visible. Filed against the name generator rather than fixed here. Also visible in the same reading: five surnames repeat across 200 profiles, which is the fixture pools being small.
+
+**A measurement that returns zero and is kept anyway.** "Bios whose labelled culture differs from the name's" is **0**, and that is not reassurance. Both culture labels are correct; what is wrong is that the `de` pool returns an English-looking name. **No measurement taken from inside this generator can see that**, because seeing it needs the labelled corpus whose absence is the defect. The metric is kept so the zero is explained rather than mistaken for health, and it is the sharpest illustration available of why the crowd view exists.
+
+**§5's review record is pre-filled with everything mechanical** - population seed, configuration, all four component data set versions, which seeds were read - and a person adds only what they found. It asks for "nothing found" to be written explicitly, because an empty findings section and a clean review are indistinguishable later and only one of them is a fact.
+
+**The name corpus had no version, and the requirement found it.** §5 requires a review to record all four data sets; three carried a version and `NameCorpus` did not. It now composes one from its two authored inputs plus a constant naming the shipped bulk corpus, which is a dataset this project did not author and cannot meaningfully version.
+
+**§9's three questions, answered.** (1) The crowd view shows a **letter-tile avatar placeholder** beyond name and bio, because a member list without avatars does not look like a member list and that is the only question the view exists to answer; no timestamp, which would imply activity this view does not render. (2) The distribution view **re-derives** rather than embedding harness output, for the same reason every version binding in this workstream exists: an artefact that might describe something else is worse than no artefact. (3) A missing version **both** marks the gap in `review.md` and exits non-zero - §9.3 framed these as alternatives and they are not, because destroying the evidence to enforce the rule would be the worse half of each option.
+
+**What this harness cannot check** is whether the population looks real, and it says so in its own final line. That question is answered by a person opening `crowd.html`.
+
 ### D-102 — The bio generator, and the defects only reading the output found
 
 **Status: IMPLEMENTED** (CCB-S4-006). `src/generator/bio/`, proven by `npm run verify:bio` (26 checks). Template set `bio-templates-2026-07-31b`.

@@ -1313,7 +1313,8 @@ its own briefings; two of them exist.
 | Name generator (CCB-S4-002) | [`generator/names/`](../src/generator/names/) | `verify:namegen` (42 checks) |
 | Trait sampler (CCB-S4-003) | [`generator/traits/`](../src/generator/traits/) | `verify:traits` |
 | Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` |
-| Bio generator (CCB-S4-006) | [`generator/bio/`](../src/generator/bio/) | `verify:bio` (26 checks) |
+| Bio generator (CCB-S4-006) | [`generator/bio/`](../src/generator/bio/) | `verify:bio` |
+| Assembly and review (CCB-S4-007) | [`generator/assemble/`](../src/generator/assemble/) | `verify:assemble` (22 checks) |
 
 **The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
 stream rather than globally. Every stage of every component derives its own stream from
@@ -1365,6 +1366,17 @@ every profile carries a bio is detectable on sight. Structural variety comes fro
 mechanisms rather than a skeleton list, giving 279 distinct patterns with the most common
 at 4.6 percent. Language follows `originBlend`; English and German are authored and the
 39.9 percent falling back to English is counted and printed rather than hidden.
+
+**Assembly and review** (CCB-S4-007, D-103) brings the four components together and makes
+the result readable. `npm run assemble -- --count 200 --seed 42 --out ./review` writes
+three views: a traced **detail** view, a **crowd** view rendered as a member list rather
+than a table of fields, and a **distribution** view whose caveat sits at the top because it
+is the view that would pass while the text is wrong. Plus a review record pre-filled with
+the population seed and all four component data set versions. It generates nothing; a
+missing property is a gap in a component. **Its first run found one**: `crispin sinclair`,
+drawn for culture `de`, writing a German bio under an English name, which is the name
+generator's documented fixture-corpus gap made visible for the first time by rendering
+names beside bios.
 
 **Not built:** the model-backed text path, the
 population layer, the validation layer, bios, avatars, and persistence of any of it. See

@@ -763,6 +763,16 @@ briefings. Architecture §31 has the detail; the state of it is:
 - [x] **Bio generator** (CCB-S4-006) — `npm run verify:bio`, 26 checks. See D-102,
       including the three defects that every population statistic passed and only
       reading twenty-six actual bios found.
+- [x] **Profile assembly and review** (CCB-S4-007) — `npm run assemble`, three views plus
+      a pre-filled review record. `npm run verify:assemble`, 22 checks. See D-103.
+- [ ] **FIRST FINDING FROM THE CROWD VIEW: names do not look like their culture.**
+      `crispin sinclair`, origin `de`, drawn for culture `de`, writing a German bio under
+      an English name. This is CCB-S4-002's documented gap — "culturally coherent names"
+      needs a labelled corpus and the fixtures stand in for one — but it was abstract
+      until names and bios were rendered side by side, and then it was the first thing a
+      reader noticed. Needs the labelled corpus; `corpus.ts` documents the swap point.
+      Related: five surnames repeat across 200 profiles (dalgleish, draywood, Brannigan,
+      de Jong, Blackwood), which is the fixture pools being small.
 - [ ] **Author bio templates for the remaining origins.** 39.9 percent of avatars fall
       back to English because their origin has no pool. The mechanism is in place
       (`originLanguages`) and the number is printed every run; es, fr and nl are the ones

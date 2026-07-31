@@ -67,7 +67,9 @@
     "solve:archetypes": "tsx scripts/solve-archetypes.ts",
     "coverage:geometry": "tsx scripts/coverage-geometry.ts",
     "verify:surface": "tsx scripts/verify-surface.ts",
-    "verify:bio": "tsx scripts/verify-bio.ts"
+    "verify:bio": "tsx scripts/verify-bio.ts",
+    "assemble": "tsx scripts/assemble.ts",
+    "verify:assemble": "tsx scripts/verify-assemble.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
