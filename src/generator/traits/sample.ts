@@ -11,18 +11,32 @@
  * WHY IT IS BUILT THIS WAY AND NOT THE OBVIOUS WAY
  * ---------------------------------------------------------------------------
  *
- * Sampling each trait independently fails twice, and this file is the answer to
- * both failures at once.
+ * Sampling each trait independently fails at least once, and this file was built to
+ * answer two failures. One of those two is now WITHDRAWN as a justification, and the
+ * correction is recorded here rather than quietly dropped, because a reason that does
+ * not hold is worse than no reason: it looks settled.
  *
- * The first failure is geometric. For independently drawn vectors the expected
- * pairwise distance grows with the square root of the dimension while its variance
- * stays roughly constant, so relative spread collapses and every avatar ends up
- * equidistant from every other. That is not a tuning problem and no amount of
- * widening fixes it. The archetype means are what break it: they put mass in
- * distinct places, so some pairs are close and others are far.
+ * WITHDRAWN: THE DISTANCE-CONCENTRATION ARGUMENT. The original reasoning was that in
+ * high dimensions independently drawn vectors become roughly equidistant, so relative
+ * spread collapses and every avatar ends up average. **That effect is weak at six
+ * dimensions.** The pairwise distance between two draws from N(0, I_6) is a scaled
+ * chi-6 variable with a coefficient of variation of about 0.294, which is nowhere near
+ * zero; distance concentration becomes empirically problematic somewhere around ten to
+ * fifteen dimensions depending on the distribution. The argument does not carry at
+ * d = 6 and is not a reason for anything here.
  *
- * The second failure is that real personality traits co-vary, and independent
- * draws produce combinations that do not occur in people. `L` is what fixes that.
+ * STANDING: real personality traits co-vary, and independent draws produce combinations
+ * that do not occur in people. `L` is what fixes that, and that reason is unaffected.
+ *
+ * WHAT THE ARCHETYPE MEANS ARE NOW JUSTIFIED BY: nothing measured, yet. They demonstrably
+ * add spread (1.02x without them against 1.18x with, against an independent baseline),
+ * but "more spread" has no established desired direction, so that is a description and
+ * not a justification. Whether real personality populations contain cluster structure
+ * beyond their marginals and correlations is an open empirical question, answerable
+ * against a covariance-matched null on public data, and not yet answered. The archetype
+ * layer is therefore **unjustified rather than refuted**, and if real excess
+ * clusterability turns out to be low the right response is fewer archetypes, a larger
+ * unstructured share, or both.
  *
  * ---------------------------------------------------------------------------
  * THERE IS NO `catch` IN THIS FILE, AND THERE MUST NOT BE

@@ -39,10 +39,30 @@ import { TRAIT_COUNT, TRAIT_INDEX, TRAIT_ORDER, type TraitKey } from './types.js
  * explicit statement that the pair was considered and found uncorrelated, not
  * overlooked, so it is kept.
  *
- * Honesty-Humility appears in no pair. That is the HEXACO position: the sixth
- * dimension is close to orthogonal to the Big Five by construction, which is what
- * makes it able to separate good-faith from manipulative disposition independently
- * of the other five.
+ * ── HONESTY-HUMILITY: AN UNVALIDATED MODEL ASSUMPTION, NOT "THE HEXACO POSITION" ──
+ *
+ * H appears in no pair, so it is currently uncorrelated with everything. An earlier
+ * version of this comment called that "the HEXACO position". THAT WAS WRONG and the
+ * correction matters more than the error did.
+ *
+ * **Big Five plus H is not HEXACO.** HEXACO's Emotionality and Agreeableness are not
+ * renamings of Big Five Neuroticism and Agreeableness: the content areas are partly
+ * rotated, with HEXACO Emotionality carrying more sentimental and empathic content from
+ * Big Five Agreeableness and less of the anger component. So this six-dimensional space
+ * is an ENGINEERING MODEL, five Big Five dimensions plus a sixth H-shaped one, and not
+ * the HEXACO model.
+ *
+ * The consequence is a trap that was avoided by accident rather than foresight. Taking
+ * five traits from a Big Five source and filling H's correlation row from a HEXACO
+ * source would assemble every cross-correlation from incompatible instruments. It was
+ * the obvious next step and it would have been methodologically wrong. A meta-analysis
+ * of nearly 400 studies further shows H's relationships to Big Five and HEXACO
+ * dimensions depend on the instrument and on facet operationalisation, so there is no
+ * single universal row to adopt even if one wanted to.
+ *
+ * A zero row is therefore an ASSUMPTION rather than a finding, and it is kept precisely
+ * because it is explicit and visible. It stands until a joint sample measured with one
+ * instrument exists. Do not fill it in from a second dataset.
  */
 export const DEFAULT_CORRELATIONS: readonly (readonly [TraitKey, TraitKey, number])[] =
   Object.freeze([

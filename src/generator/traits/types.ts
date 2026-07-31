@@ -143,9 +143,32 @@ export const ARCHETYPE_SEPARATION_MIN = 1.5;
 export const ARCHETYPE_SEPARATION_MAX = 2.5;
 
 /**
- * Briefing §4.4. Not arbitrary: in real populations only around 42 percent of
- * people can be assigned to any personality type at all, and a population where
- * everyone is a clean archetype is itself detectable as artificial.
+ * Briefing §4.4, and a DESIGN HEURISTIC rather than a population constant.
+ *
+ * The reasoning was that only around 42 percent of people can be assigned to any
+ * personality type at all, so a population where everyone is a clean archetype is
+ * itself detectable as artificial. The second half of that stands. The 42 percent does
+ * not carry the weight it was given: it comes from one reanalysis with one definition
+ * of when a person counts as assigned, and it moves with the questionnaire, the trait
+ * estimation, the standardisation, the number and shape of mixture components, the
+ * clustering used, what counts as a meaningful cluster, the confidence criterion for
+ * an individual assignment, and the reference null model.
+ *
+ * It is a defensible starting point. It is not a constant, and this constant should not
+ * be defended as though it were measured.
+ *
+ * WHAT REPLACES IT: a classifiability CURVE compared against real data across all
+ * confidence levels rather than a single share at one arbitrary threshold,
+ *
+ *     C(t) = P( max_k p(C = k | X) >= t )
+ *
+ * with an entropy curve alongside, because two populations can both reach 55 percent
+ * classifiable and have entirely different uncertainty profiles. The clustering has to
+ * be fitted on a real training split with the assignment and abstention rules frozen
+ * before either population is scored, or every synthetic population is allowed to
+ * invent the typology that flatters it.
+ *
+ * Not built. It needs the reference data layer, which does not exist yet.
  */
 export const DEFAULT_UNCLASSIFIED_SHARE = 0.45;
 
