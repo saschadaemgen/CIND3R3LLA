@@ -213,10 +213,14 @@ section('Archetype set (§5)');
   // Spot-check that the authored vectors actually say what their sketch says.
   const by = (k: string) => archetypes.byKey.get(k)!;
   const at = (k: string, t: TraitKey) => by(k).mean[TRAIT_INDEX[t]]!;
-  check('roleModel is low N and high elsewhere',
+  // Checks the REVISED sketch. The mean constraint moved this archetype from "high on
+  // everything else" to "above average on everything else, strongly high E", and the
+  // sketch was corrected to match rather than this threshold being lowered to hide it.
+  check('roleModel is low N, strongly high E, above average elsewhere',
     at('roleModel', 'neuroticism') < -1 &&
-      (['openness', 'conscientiousness', 'extraversion', 'agreeableness', 'honesty'] as TraitKey[])
-        .every((t) => at('roleModel', t) > 0.8));
+      at('roleModel', 'extraversion') > 1.5 &&
+      (['openness', 'conscientiousness', 'agreeableness', 'honesty'] as TraitKey[])
+        .every((t) => at('roleModel', t) > 0.4));
   check('quietLurker is low E and moderate elsewhere',
     at('quietLurker', 'extraversion') < -1 &&
       TRAIT_ORDER.filter((t) => t !== 'extraversion').every((t) => Math.abs(at('quietLurker', t)) < 0.6));
@@ -226,8 +230,9 @@ section('Archetype set (§5)');
       at('professionalSupport', 'neuroticism') < -1 &&
       at('professionalSupport', 'honesty') > 1 &&
       Math.abs(at('professionalSupport', 'extraversion')) < 0.6);
-  check('selfCentered is high E, low O, low A, low C',
-    at('selfCentered', 'extraversion') > 1 &&
+  // Revised sketch, same reason as roleModel's.
+  check('selfCentered is moderately high E, low O, low A, low C',
+    at('selfCentered', 'extraversion') > 0.5 &&
       at('selfCentered', 'openness') < -0.5 &&
       at('selfCentered', 'agreeableness') < -1 &&
       at('selfCentered', 'conscientiousness') < -0.5);

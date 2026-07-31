@@ -45,10 +45,18 @@
     "      -> abstention, never an archetype.              example: ordinary-calm",
     "",
     "The second is why classification must support abstention (D-098). A forced",
-    "nearest-archetype assignment labels the modal person 'roleModel' at distance 1.61."
+    "nearest-archetype assignment labels the modal person 'roleModel' at distance 1.61.",
+    "",
+    "THREE GAPS CLOSED WITHOUT AUTHORSHIP. cold-systematic, calm-bad-faith and",
+    "covert-bad-faith were all recorded as deliberate gaps. Constraining the population MEAN",
+    "to zero required honest weight to come down across the set, and it came down into",
+    "exactly those regions. The version binding is what surfaced it: the taxonomy refused to",
+    "re-evaluate against a set nobody had re-read, and the re-read found three statuses",
+    "wrong. Had the check silently re-evaluated, three closed gaps would have looked like",
+    "three gaps that were never there."
   ],
-  "version": "coverage-regions-2026-07-31",
-  "reviewedAgainst": "archetypes-11-2026-07-31",
+  "version": "coverage-regions-2026-07-31b",
+  "reviewedAgainst": "archetypes-11-2026-07-31b",
   "threshold": 0.5,
   "corroboratingThreshold": 0.3,
   "regions": [
@@ -147,8 +155,8 @@
         "honesty": -1
       },
       "describes": "Calm, organised, self-serving; works the process rather than the room",
-      "status": "known-gap",
-      "note": "Recorded before this taxonomy existed. Nearest is terseExpert at 0.370, contributed ENTIRELY by honesty: it already satisfies calm and organised. Filling it is a joint re-solve rather than an edit, and pushing terseExpert's H down would make one archetype the sole occupant of four regions at once."
+      "status": "occupied",
+      "note": "CLOSED by the MEAN constraint, not by authorship. terseExpert moved to N -0.84, C 1.32, H -0.73 when the population mean was constrained to zero, which required honest weight to come down somewhere. This was recorded as the most consequential low-honesty gap and as needing a joint re-solve rather than an edit; the re-solve that fixed a different problem fixed this one too."
     },
     {
       "key": "calm-bad-faith",
@@ -157,8 +165,8 @@
         "honesty": -1
       },
       "describes": "Cold, unbothered, self-serving",
-      "status": "known-gap",
-      "note": "The two-trait parent of cold-systematic. Named separately so the recorded gap is not mistaken for one isolated cell when it is a corner of a band."
+      "status": "occupied",
+      "note": "CLOSED by the mean constraint. The two-trait parent of cold-systematic, filled by the same movement."
     },
     {
       "key": "covert-bad-faith",
@@ -167,8 +175,8 @@
         "honesty": -1
       },
       "describes": "Reads everything, contributes little, not in good faith",
-      "status": "known-gap",
-      "note": "THE FIRST REGION TO FILL if and when a feature consumes actor typing. A covert automated account, a scraper or a lurking bad actor is low-visibility by definition, and the set currently encodes the proposition that bad faith announces itself."
+      "status": "occupied",
+      "note": "CLOSED by the mean constraint. It was named as THE FIRST REGION TO FILL if a feature ever consumed actor typing, and it filled itself: terseExpert at E -1.26, H -0.73 is exactly the low-visibility bad actor the set could not previously express. Nobody authored it."
     },
     {
       "key": "anxious-bad-faith",

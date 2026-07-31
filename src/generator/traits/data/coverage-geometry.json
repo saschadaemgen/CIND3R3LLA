@@ -8,48 +8,48 @@
     "changes, and READ the output rather than only regenerating it: this finds unnamed",
     "gaps, which by definition nobody has decided about yet."
   ],
-  "reviewedAgainst": "archetypes-11-2026-07-31",
+  "reviewedAgainst": "archetypes-11-2026-07-31b",
   "directions": 40000,
   "probes": 200000,
-  "medianReach": 1.5972,
+  "medianReach": 1.685,
   "leastReachedDirections": [
     {
-      "reach": 0.4148,
-      "ratioToMedian": 0.26,
-      "loadings": "-0.54 honesty  -0.54 conscientiousness  +0.40 openness  -0.35 extraversion  -0.28 neuroticism  -0.23 agreeableness"
+      "reach": 0.6747,
+      "ratioToMedian": 0.4,
+      "loadings": "-0.65 openness  +0.52 extraversion  +0.52 agreeableness"
     },
     {
-      "reach": 0.4348,
-      "ratioToMedian": 0.272,
-      "loadings": "+0.81 neuroticism  -0.46 honesty  +0.26 openness"
+      "reach": 0.7179,
+      "ratioToMedian": 0.426,
+      "loadings": "-0.83 neuroticism  -0.39 conscientiousness  -0.27 honesty  +0.21 openness  -0.21 agreeableness"
     },
     {
-      "reach": 0.4369,
-      "ratioToMedian": 0.274,
-      "loadings": "+0.64 neuroticism  +0.44 openness  -0.42 agreeableness  -0.38 honesty  +0.24 conscientiousness"
+      "reach": 0.7279,
+      "ratioToMedian": 0.432,
+      "loadings": "+0.76 openness  +0.42 neuroticism  +0.34 extraversion  +0.28 conscientiousness  -0.22 agreeableness"
     },
     {
-      "reach": 0.4598,
-      "ratioToMedian": 0.288,
-      "loadings": "+0.73 neuroticism  -0.41 agreeableness  +0.39 openness  -0.35 honesty"
+      "reach": 0.7313,
+      "ratioToMedian": 0.434,
+      "loadings": "-0.85 neuroticism  -0.39 conscientiousness  -0.23 agreeableness  -0.23 honesty"
     },
     {
-      "reach": 0.4637,
-      "ratioToMedian": 0.29,
-      "loadings": "-0.66 honesty  +0.51 openness  +0.35 neuroticism  -0.32 agreeableness  -0.25 extraversion"
+      "reach": 0.7442,
+      "ratioToMedian": 0.442,
+      "loadings": "-0.78 openness  +0.50 extraversion  +0.32 agreeableness"
     }
   ],
-  "negativeHonestyShareOfLeastReached": 0.891,
+  "negativeHonestyShareOfLeastReached": 0.64,
   "largestHole": {
-    "distance": 5.3894,
-    "nearest": "reserved",
+    "distance": 4.968,
+    "nearest": "selfCentered",
     "point": [
-      -3.054,
-      -2.381,
-      -1.981,
-      2.792,
-      1.719,
-      -2.091
+      0.113,
+      -3.144,
+      -2.093,
+      -1.812,
+      -0.958,
+      -3.834
     ]
   },
   "namedProbes": [

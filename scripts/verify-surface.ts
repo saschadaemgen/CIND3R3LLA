@@ -303,8 +303,14 @@ section('The coherence cap (§5) and overrides (§9)');
       console.log('         made impossible. It needs an explanation either way.');
     }
   }
-  check('no enabled coherence rule fires on nothing', zeroFiring === 0,
-    zeroFiring === 0 ? `${loadings.coherence.length} rule(s)` : `${zeroFiring} never fire`);
+  // THE GATE STATES THE SAMPLE SIZE IT REQUIRES rather than assuming it. At small n a
+  // legitimate rule can fire on zero by chance; at n = 20,000 a rule with a true rate
+  // above roughly 1 in 4,000 fires with probability over 99 percent, so a zero here is a
+  // statement about the rule and not about the sample.
+  check(`no enabled coherence rule fires on nothing (n=${N.toLocaleString()})`, zeroFiring === 0,
+    zeroFiring === 0
+      ? `${loadings.coherence.length} rule(s); at this n a zero is a property of the rule`
+      : `${zeroFiring} never fire`);
   const share = population.filter((p) => p.surface.capped.includes('emojiAffinity')).length / N;
   console.log(
     '         §5: a cap firing on two percent is a coherence rule; a cap firing on forty',
@@ -416,6 +422,10 @@ section('Style collinearity (§8): REPORTED, NOT GATED');
   // Reported so the gap is visible rather than mistaken for an error in either.
   measure('analytic realised vs empirical after the percentile map',
     `differ by at most ${Math.max(...rows.map((r) => Math.abs(r.realised - r.empirical))).toFixed(3)}`);
+  console.log('         That gap is comparable to the largest artefact, and the two numbers');
+  console.log('         answer ADJACENT questions rather than the same one: the artefact split');
+  console.log('         lives in raw-sum space, while the values an operator actually sees live');
+  console.log('         in mapped space. Neither is wrong; they are about different quantities.');
   console.log('         NOT GATED. A pair correlating because the MODEL says its traits do is');
   console.log('         intended, in exactly the sense C/N was intended in the archetype');
   console.log('         diagnostic. The artefact column is what the archetypes add on top, and');

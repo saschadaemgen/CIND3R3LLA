@@ -704,7 +704,11 @@ briefings. Architecture §31 has the detail; the state of it is:
       with a status each; `verify:traits` checks all of them every run, counts occupancy
       rather than asserting booleans, and flags weakly-occupied regions the sign
       predicate cannot see. Threshold 0.5 non-strict with a 0.3 corroborating pass.
-- [ ] **The low-honesty pole is two points**, both strongly extraverted and both
+- [x] **The low-honesty pole** — closed by constraining the population MEAN (D-100), not
+      by authorship. `cold-systematic`, `calm-bad-faith` and `covert-bad-faith` are all
+      occupied; `covert-bad-faith`, recorded as the first region to fill if a feature
+      ever consumed actor typing, filled itself. The version binding is what surfaced it.
+- [ ] ~~The low-honesty pole is two points~~ (superseded by the line above)**, both strongly extraverted and both
       emotionally average: bad faith in this set is always loud and never rattled. No
       introverted, calm or anxious bad actor exists. **The correlation matrix cannot see
       this** — every pair involving honesty is now within 0.12 of the model. Second

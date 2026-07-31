@@ -56,6 +56,12 @@ import {
   type TraitKey,
 } from '../src/generator/traits/index.js';
 import { Rng } from '../src/generator/rng.js';
+import {
+  DEFAULT_ARCHETYPE_MIX,
+  DEFAULT_SIGMA,
+  DEFAULT_UNCLASSIFIED_SHARE,
+  populationMoments,
+} from '../src/generator/traits/index.js';
 
 /** Positions that carry product meaning. These do not move. */
 const PINNED = new Set(['average', 'quietLurker', 'professionalSupport']);
@@ -82,6 +88,44 @@ const FREE = base.list.map((a) => !PINNED.has(a.key));
  */
 const DRIFT_WEIGHT = 0.06;
 const SEPARATION_WEIGHT = 40;
+
+/**
+ * The z-score claim has TWO halves and the solve now carries both.
+ *
+ * The specification says population mean 0 and standard deviation 1. Only the sd half was
+ * ever constrained, and it was constrained indirectly, by choosing the background spread
+ * factor rather than by the solve. The mean half was never checked at all, and when it
+ * was measured it came out at +0.213 on honesty, positive on five traits of six.
+ *
+ * The argument is the one already accepted for the sd, applied to the other moment: a
+ * realised mean of 0.213 does not make the population worse, it makes the STATED
+ * REPRESENTATION FALSE. A latent honesty of zero is then not population-average honesty,
+ * it is a fifth of a standard deviation below it, and every threshold, percentile and
+ * downstream reading inherits the offset.
+ *
+ * ── WHAT THIS COMMITS TO, STATED SO IT IS A CHOICE AND NOT A SURPRISE ───────
+ *
+ * A weighted mean of zero on honesty means that for every honest archetype there is
+ * dishonest weight to balance it. If that is not wanted, the honest answer is to stop
+ * claiming z-scores rather than to leave the claim standing while it is false.
+ *
+ * ── AND IT IS A PROPERTY OF (SET x MIX), NOT OF THE SET ALONE ──────────────
+ *
+ * The population mean is the weighted archetype mean diluted by the background at the
+ * origin, so the constraint is on the WEIGHTED means. It is solved against the DEFAULT
+ * equal mix; a different `archetypeMix` reintroduces an offset, exactly as it does for
+ * the sd. Both constraints are properties of a named set under a named mix.
+ */
+const MEAN_WEIGHT = 12;
+const SD_WEIGHT = 4;
+
+/** The configuration both moments are constrained against. */
+const MOMENT_CONFIG = {
+  archetypeMix: DEFAULT_ARCHETYPE_MIX,
+  unclassifiedShare: DEFAULT_UNCLASSIFIED_SHARE,
+  sigma: DEFAULT_SIGMA,
+  covariance: TARGET as number[][],
+};
 
 type Config = number[][];
 
@@ -124,6 +168,9 @@ function restrictedDistance(cfg: Config, a: number, b: number): number {
 interface Score {
   total: number;
   corrError: number;
+  meanError: number;
+  worstMean: number;
+  sdError: number;
   worstPair: string;
   worstError: number;
   separationPenalty: number;
@@ -166,9 +213,35 @@ function score(cfg: Config): Score {
     }
   }
 
+  // Both moments of the z-score claim, under the default mix.
+  const trial = base.list.map((arch, a) => ({ ...arch, mean: cfg[a]! }));
+  const moments = populationMoments(
+    { list: trial, byKey: new Map(trial.map((t) => [t.key, t])), source: 'solve', version: base.version },
+    MOMENT_CONFIG,
+  );
+  let meanError = 0;
+  let worstMean = 0;
+  for (let i = 0; i < TRAIT_COUNT; i++) {
+    meanError += moments.mean[i]! * moments.mean[i]!;
+    worstMean = Math.max(worstMean, Math.abs(moments.mean[i]!));
+  }
+  let sdError = 0;
+  for (let i = 0; i < TRAIT_COUNT; i++) {
+    const sd = Math.sqrt(moments.covariance[i]![i]!);
+    sdError += (sd - 1) * (sd - 1);
+  }
+
   return {
-    total: corrError + SEPARATION_WEIGHT * separationPenalty + DRIFT_WEIGHT * drift,
+    total:
+      corrError +
+      SEPARATION_WEIGHT * separationPenalty +
+      DRIFT_WEIGHT * drift +
+      MEAN_WEIGHT * meanError +
+      SD_WEIGHT * sdError,
     corrError,
+    meanError,
+    worstMean,
+    sdError,
     worstPair,
     worstError,
     separationPenalty,
@@ -235,6 +308,7 @@ Separation floor ${DEFAULT_ARCHETYPE_SEPARATION}, aiming for ${SEPARATION_TARGET
 const before = score(ORIGINAL);
 console.log(`Before: correlation error ${before.corrError.toFixed(4)}, worst pair ` +
   `${before.worstPair} off by ${before.worstError.toFixed(3)}, min separation ${before.minSeparation.toFixed(3)}.`);
+console.log(`        worst population mean ${before.worstMean.toFixed(4)}, sd error ${before.sdError.toFixed(4)}.`);
 
 let best: Config = ORIGINAL.map((r) => [...r]);
 let bestScore = before.total;
@@ -254,6 +328,7 @@ for (let restart = 0; restart < 8; restart++) {
 const after = score(best);
 console.log(`After:  correlation error ${after.corrError.toFixed(4)}, worst pair ` +
   `${after.worstPair} off by ${after.worstError.toFixed(3)}, min separation ${after.minSeparation.toFixed(3)}.`);
+console.log(`        worst population mean ${after.worstMean.toFixed(4)}, sd error ${after.sdError.toFixed(4)}.`);
 
 /* --------------------------------------------------------- what it produced */
 

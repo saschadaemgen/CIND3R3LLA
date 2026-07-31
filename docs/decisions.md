@@ -13,6 +13,40 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-100 — The population mean is a constraint, and constraining it closed three coverage gaps nobody authored for
+
+**Status: IMPLEMENTED** (CCB-S4-003, amending D-094/D-097). Archetype set `archetypes-11-2026-07-31b`, coverage taxonomy `coverage-regions-2026-07-31b`.
+
+**Decision.** The z-score claim has two halves and the solve now carries both. The specification says population mean **0** and standard deviation **1**; only the sd was ever constrained, and it was constrained indirectly by choosing the background spread factor rather than by the solve. The mean was never checked at all until the percentile transform needed it, and it came out at **+0.213 on honesty**, positive on five traits of six.
+
+The argument is the one already accepted for the sd, applied to the other moment: a realised mean of 0.213 does not make the population worse, it makes the **stated representation false**. A latent honesty of zero is then not population-average honesty, it is a fifth of a standard deviation below it, and every threshold, percentile and downstream reading inherits the offset.
+
+| | before | after |
+|---|---|---|
+| worst population mean | 0.213 (honesty) | **0.046** (honesty) |
+| population sd error | 0.021 | **0.004** |
+| correlation error | 0.086 | **0.018** |
+| minimum separation | 2.072 | 2.069, 0 of 55 below the floor |
+
+The correlation error improved as well, which was not the objective; the extra targets happened to pull the configuration somewhere better on all three.
+
+**Both moments are properties of (SET x MIX), not of the set alone.** They are solved against the default equal mix, and a different `archetypeMix` reintroduces an offset in both. Stated because it is easy to read "the population is z-scored" as a property of the archetype file.
+
+**THE FINDING THAT WAS THREE FINDINGS.** The same property had now appeared on three unrelated measures: the A/H correlation at 0.935, the low-honesty coverage hole (two archetypes, both loud, both calm), and the population mean at +0.213. One underlying property - **the archetype set was morally optimistic** - and repairing the correlation and recording the coverage gaps had not moved the *location*. Recorded as one finding rather than three, because that is what predicted where the next instance would appear.
+
+**Constraining the mean moved the location, and three recorded gaps closed without anyone authoring for them.** `cold-systematic`, `calm-bad-faith` and `covert-bad-faith` are all now occupied. A mean of zero requires honest weight to come down somewhere, and it came down into exactly the regions the coverage work had named as missing. `covert-bad-faith` had been recorded as **the first region to fill if a feature ever consumed actor typing**; it filled itself, `terseExpert` landing at E -1.26, H -0.73, which is precisely the low-visibility bad actor the set could not previously express.
+
+**The version binding is what surfaced it.** The taxonomy refused to re-evaluate against a set nobody had re-read, and the re-read found three statuses wrong. Had the check silently re-evaluated, three *closed* gaps would have been indistinguishable from three gaps that were never there.
+
+**THE COST, RECORDED RATHER THAN ABSORBED.** For every honest archetype there has to be dishonest weight to balance it, and two archetypes lost sketch strength paying for it:
+
+- `roleModel` was "low N, high on everything else"; it now sits at O 0.58, A 0.62, H 0.70, which is **above average** rather than high.
+- `selfCentered` was "high E"; extraversion is now 0.83.
+
+Both sketches were **corrected to what the vectors say**, and the harness spot-checks were re-pointed at the corrected sketches rather than having their thresholds lowered to accept the drift. Labels follow positions. Three archetypes also now sit beyond |z| = 2 (`ingratiator` H -2.07, `enthusiasticNewcomer` C -2.08, `anxiousScrupulous` N +2.16), which sharpens the outward-push hypothesis already recorded in D-097 for the reference layer to test.
+
+**Two smaller refinements, both from the same review.** The zero-firing coherence gate now **states the sample size it requires** rather than assuming it: at n = 20,000 a rule with a true rate above roughly 1 in 4,000 fires with probability over 99 percent, so a zero is a statement about the rule and not about the sample. And the harness now says plainly that the artefact split lives in **raw-sum space** while the values an operator sees live in **mapped space**, so the two numbers answer adjacent questions rather than the same one - the transform gap of 0.060 is comparable to the largest artefact of 0.085, and reading them as commensurable would be a mistake.
+
 ### D-099 — Surface derivation: style is a pure function, identity is drawn, and the diagnostic caught the loadings on its first run
 
 **Status: IMPLEMENTED** (CCB-S4-005). `src/generator/surface/`, proven by `npm run verify:surface` (28 checks).

@@ -46,9 +46,16 @@
     "was always a product role') and lets a product decision be defended as empirical. The",
     "split happens to match the pinned/free split used by solve:archetypes, and that is not a",
     "coincidence: 'this position carries product meaning' and 'this archetype survives",
-    "whatever the data says' are the same question in different words."
+    "whatever the data says' are the same question in different words.",
+    "",
+    "BOTH MOMENTS OF THE z-SCORE CLAIM ARE NOW SOLVED FOR, not just the standard deviation.",
+    "The specification says population mean 0 AND sd 1; only the sd was ever constrained, and",
+    "the mean was measured at +0.213 on honesty once anyone looked. Worst mean is now 0.045.",
+    "",
+    "Both are properties of (SET x MIX), not of the set alone: they are solved against the",
+    "DEFAULT equal mix, and a different archetypeMix reintroduces an offset in both."
   ],
-  "version": "archetypes-11-2026-07-31",
+  "version": "archetypes-11-2026-07-31b",
   "archetypes": [
     {
       "key": "average",
@@ -72,7 +79,7 @@
     {
       "key": "roleModel",
       "label": "Role model",
-      "sketch": "low N, high on everything else",
+      "sketch": "low N, strongly high E, above average on everything else",
       "defining": [
         "openness",
         "conscientiousness",
@@ -82,14 +89,14 @@
         "honesty"
       ],
       "mean": {
-        "openness": 0.87,
-        "conscientiousness": 1.26,
-        "extraversion": 1.94,
-        "agreeableness": 1.07,
-        "neuroticism": -1.48,
-        "honesty": 1.11
+        "openness": 0.58,
+        "conscientiousness": 0.84,
+        "extraversion": 1.92,
+        "agreeableness": 0.62,
+        "neuroticism": -1.37,
+        "honesty": 0.7
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies. SKETCH REVISED, NOT THE VECTOR. Briefing CCB-S4-003 §5 sketched this as 'low N, high on everything else'. After the mean constraint it sits at O 0.58, A 0.62 and H 0.70, which is above average rather than high. The label follows the position, so the sketch is corrected to what the vector now says rather than the check being relaxed to accept it. This is the cost the mean constraint was accepted with: for every honest archetype there has to be dishonest weight to balance it, and some of that balance came out of this one.",
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
@@ -103,35 +110,35 @@
         "neuroticism"
       ],
       "mean": {
-        "openness": -1.33,
-        "conscientiousness": -0.02,
-        "extraversion": -1.21,
-        "agreeableness": 0.42,
-        "neuroticism": -1.14,
-        "honesty": 0.38
+        "openness": -1.88,
+        "conscientiousness": -0.51,
+        "extraversion": -1.25,
+        "agreeableness": 0.13,
+        "neuroticism": -0.93,
+        "honesty": -0.05
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "selfCentered",
       "label": "Self-centred",
-      "sketch": "high E, low O, low A, low C",
+      "sketch": "moderately high E, low O, low A, low C",
       "defining": [
         "openness",
         "conscientiousness",
         "extraversion",
         "agreeableness"
       ],
-      "note": "Honesty-Humility is authored, not sketched. The sixth dimension separates good-faith from manipulative disposition, so leaving it at zero for the one archetype named for self-interest would waste the dimension. It is excluded from 'defining' because the briefing did not pin it. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "Honesty-Humility is authored, not sketched. The sixth dimension separates good-faith from manipulative disposition, so leaving it at zero for the one archetype named for self-interest would waste the dimension. It is excluded from 'defining' because the briefing did not pin it. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies. SKETCH REVISED with roleModel's and for the same reason: extraversion sits at 0.83 after the mean constraint, which is above average rather than high. Two of eleven archetypes lost sketch strength to the constraint; that is its cost and it is recorded rather than absorbed.",
       "mean": {
-        "openness": -0.87,
-        "conscientiousness": -0.77,
-        "extraversion": 1.17,
-        "agreeableness": -1.35,
-        "neuroticism": 0.03,
-        "honesty": -0.84
+        "openness": -1.23,
+        "conscientiousness": -0.93,
+        "extraversion": 0.83,
+        "agreeableness": -1.5,
+        "neuroticism": 0.16,
+        "honesty": -0.99
       },
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
@@ -147,14 +154,14 @@
         "agreeableness"
       ],
       "mean": {
-        "openness": 1.31,
-        "conscientiousness": -1.6,
-        "extraversion": 1.03,
-        "agreeableness": 1.56,
-        "neuroticism": 0.01,
-        "honesty": 0.55
+        "openness": 1.41,
+        "conscientiousness": -2.08,
+        "extraversion": 0.64,
+        "agreeableness": 1.25,
+        "neuroticism": 0.16,
+        "honesty": 0.1
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
@@ -169,14 +176,14 @@
         "neuroticism"
       ],
       "mean": {
-        "openness": 0.77,
-        "conscientiousness": 1.54,
-        "extraversion": -1.24,
-        "agreeableness": -0.35,
-        "neuroticism": -1.0,
-        "honesty": -0.13
+        "openness": 0.75,
+        "conscientiousness": 1.32,
+        "extraversion": -1.26,
+        "agreeableness": -0.93,
+        "neuroticism": -0.84,
+        "honesty": -0.73
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
@@ -207,14 +214,14 @@
         "agreeableness",
         "honesty"
       ],
-      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven rather than read off any data. It fills a quadrant the original eight left empty: every agreeable archetype in that set was also honest, so Honesty-Humility carried no variation independent of Agreeableness (r = 0.935 across the eight means) and the set could not express the good-faith versus manipulative distinction the sixth dimension exists to make. In a room this is the member who is pleasant to everyone and is working it. When reference data lands, whether real populations contain a type resembling this becomes an answerable question and the answer may revise it. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven rather than read off any data. It fills a quadrant the original eight left empty: every agreeable archetype in that set was also honest, so Honesty-Humility carried no variation independent of Agreeableness (r = 0.935 across the eight means) and the set could not express the good-faith versus manipulative distinction the sixth dimension exists to make. In a room this is the member who is pleasant to everyone and is working it. When reference data lands, whether real populations contain a type resembling this becomes an answerable question and the answer may revise it. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "mean": {
-        "openness": 0.51,
-        "conscientiousness": 1.18,
-        "extraversion": 1.16,
-        "agreeableness": 1.43,
-        "neuroticism": 0.13,
-        "honesty": -1.59
+        "openness": 0.45,
+        "conscientiousness": 0.88,
+        "extraversion": 0.81,
+        "agreeableness": 1.1,
+        "neuroticism": 0.38,
+        "honesty": -2.07
       },
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
@@ -227,14 +234,14 @@
         "agreeableness",
         "honesty"
       ],
-      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven. The opposite unoccupied quadrant to ingratiator: disagreeable but straight. terseExpert gestured at this (A -0.05, H 0.40) and gestured weakly. Together the two make Honesty-Humility carry information Agreeableness does not, which is what the sixth dimension was added for. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven. The opposite unoccupied quadrant to ingratiator: disagreeable but straight. terseExpert gestured at this (A -0.05, H 0.40) and gestured weakly. Together the two make Honesty-Humility carry information Agreeableness does not, which is what the sixth dimension was added for. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "mean": {
-        "openness": 0.74,
-        "conscientiousness": -0.28,
-        "extraversion": -0.22,
-        "agreeableness": -1.52,
-        "neuroticism": -0.13,
-        "honesty": 1.53
+        "openness": 0.68,
+        "conscientiousness": -0.67,
+        "extraversion": -0.39,
+        "agreeableness": -1.85,
+        "neuroticism": 0.19,
+        "honesty": 1.15
       },
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
@@ -248,14 +255,14 @@
         "neuroticism",
         "honesty"
       ],
-      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven. Added for COVERAGE rather than to reach a number: the joint solve satisfied the neuroticism/honesty correlation target by rebalancing the other archetypes and left this region empty, so the correlation was repaired while the population gap remained. Frets about doing the right thing, apologises more than necessary, entirely trustworthy. Its absence encoded the proposition that anxious people are less honest, which nothing supports and the model explicitly denies. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "note": "AUTHORED, NOT SKETCHED IN THE BRIEFING, and product-driven. Added for COVERAGE rather than to reach a number: the joint solve satisfied the neuroticism/honesty correlation target by rebalancing the other archetypes and left this region empty, so the correlation was repaired while the population gap remained. Frets about doing the right thing, apologises more than necessary, entirely trustworthy. Its absence encoded the proposition that anxious people are less honest, which nothing supports and the model explicitly denies. POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round. RE-SOLVED under the MEAN constraint: the z-score claim has two halves and only the standard deviation was ever constrained, so the population mean sat at +0.213 on honesty. Constraining it moved honest weight downward across the set, which is the balance the constraint necessarily implies.",
       "mean": {
-        "openness": -0.16,
-        "conscientiousness": 0.82,
-        "extraversion": 0.02,
-        "agreeableness": 0.71,
-        "neuroticism": 1.73,
-        "honesty": 1.7
+        "openness": -0.49,
+        "conscientiousness": 0.48,
+        "extraversion": -0.14,
+        "agreeableness": 0.22,
+        "neuroticism": 2.16,
+        "honesty": 1.26
       },
       "provenance": "empirical-candidate",
       "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
