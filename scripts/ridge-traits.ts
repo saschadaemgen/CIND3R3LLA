@@ -395,4 +395,112 @@ console.log('-'.repeat(78));
   );
 }
 
+/* ------------------------------------------- what the near-null direction is */
+
+console.log('\n7. THE NEAR-NULL DIRECTION: WHICH TRAITS CARRY NO ARCHETYPE VARIATION');
+console.log('-'.repeat(78));
+{
+  const d = decompose(base, DEFAULT_SIGMA, DEFAULT_UNCLASSIFIED_SHARE);
+
+  // Between-archetype variance per trait, over the EIGHT archetype means alone. The
+  // background is excluded here on purpose: this asks what the archetype set spans, not
+  // what the population does.
+  console.log('  between-archetype variance per trait (the 8 means alone, background excluded)');
+  const perTrait: { trait: string; v: number }[] = [];
+  for (let i = 0; i < TRAIT_COUNT; i++) {
+    const col = base.list.map((a) => a.mean[i]!);
+    const m = mean(col);
+    perTrait.push({
+      trait: TRAIT_ORDER[i]!,
+      v: col.reduce((s, x) => s + (x - m) * (x - m), 0) / col.length,
+    });
+  }
+  for (const { trait, v } of [...perTrait].sort((a, b) => b.v - a.v)) {
+    console.log(`    ${trait.padEnd(20)}${pad(v, 4)}`);
+  }
+
+  // The generalized eigenvector. v solves W^(-1/2) B W^(-1/2) v = lambda v, so
+  // a = W^(-1/2) v solves B a = lambda W a: the trait-space direction whose
+  // between-over-within ratio is lambda. That is the direction being asked about.
+  const wInvSqrt = inverseSqrt(d.W);
+  const whitened = multiply(multiply(wInvSqrt, d.B), wInvSqrt);
+  const { values, vectors } = jacobiEigen(whitened);
+  let minIdx = 0;
+  for (let i = 1; i < values.length; i++) if (values[i]! < values[minIdx]!) minIdx = i;
+
+  const vMin = Array.from({ length: TRAIT_COUNT }, (_, i) => vectors[i]![minIdx]!);
+  const aRaw = Array.from({ length: TRAIT_COUNT }, (_, i) => {
+    let s = 0;
+    for (let j = 0; j < TRAIT_COUNT; j++) s += wInvSqrt[i]![j]! * vMin[j]!;
+    return s;
+  });
+  const norm = Math.sqrt(aRaw.reduce((s, x) => s + x * x, 0));
+  const a = aRaw.map((x) => x / norm);
+
+  console.log(`\n  smallest whitened eigenvalue: ${values[minIdx]!.toExponential(3)}`);
+  console.log('  that direction, in trait coordinates (unit vector, sorted by weight):');
+  const loadings = a
+    .map((w, i) => ({ trait: TRAIT_ORDER[i]!, w }))
+    .sort((x, y) => Math.abs(y.w) - Math.abs(x.w));
+  for (const { trait, w } of loadings) {
+    const bar = '#'.repeat(Math.round(Math.abs(w) * 40));
+    console.log(`    ${trait.padEnd(20)}${(w >= 0 ? ' ' : '') + w.toFixed(4)}  ${bar}`);
+  }
+
+  const dominant = loadings[0]!;
+  const share = dominant.w * dominant.w;
+  console.log(`
+  Largest single-trait share of that direction: ${dominant.trait} at ${(share * 100).toFixed(1)}%
+  of the squared length. A direction aligned with one trait would be near 100%.`);
+
+  // The H values as actually authored, because the hypothesis rests on a claim about them.
+  console.log('\n  Honesty-Humility and Agreeableness, as authored across the eight archetypes:');
+  console.log(`    ${'archetype'.padEnd(22)}${'H'.padStart(7)}${'A'.padStart(7)}`);
+  for (const arch of [...base.list].sort((x, y) => y.mean[5]! - x.mean[5]!)) {
+    console.log(`    ${arch.key.padEnd(22)}${pad(arch.mean[5]!, 2, 7)}${pad(arch.mean[3]!, 2, 7)}`);
+  }
+
+  // Between-archetype correlation of every pair, so the collinearity is measured rather
+  // than eyeballed off the table above.
+  function betweenCorr(i: number, j: number): number {
+    const x = base.list.map((a) => a.mean[i]!);
+    const y = base.list.map((a) => a.mean[j]!);
+    const mx = mean(x);
+    const my = mean(y);
+    let sxy = 0;
+    let sxx = 0;
+    let syy = 0;
+    for (let k = 0; k < x.length; k++) {
+      sxy += (x[k]! - mx) * (y[k]! - my);
+      sxx += (x[k]! - mx) ** 2;
+      syy += (y[k]! - my) ** 2;
+    }
+    return sxy / Math.sqrt(sxx * syy);
+  }
+
+  console.log('\n  strongest between-archetype trait correlations (over the 8 means):');
+  const pairs: { a: string; b: string; r: number }[] = [];
+  for (let i = 0; i < TRAIT_COUNT; i++)
+    for (let j = i + 1; j < TRAIT_COUNT; j++)
+      pairs.push({ a: TRAIT_ORDER[i]!, b: TRAIT_ORDER[j]!, r: betweenCorr(i, j) });
+  for (const p of pairs.sort((x, y) => Math.abs(y.r) - Math.abs(x.r)).slice(0, 4)) {
+    console.log(
+      `    ${(p.a + ' / ' + p.b).padEnd(40)}r = ${p.r >= 0 ? ' ' : ''}${p.r.toFixed(3)}   R2 = ${(p.r * p.r).toFixed(3)}`,
+    );
+  }
+  const ah = betweenCorr(3, 5);
+  console.log(`
+  THE CAUSE. H is not flat across the archetypes: its between-archetype variance is
+  ${perTrait[5]!.v.toFixed(3)}, the smallest of six but only ${((1 - perTrait[5]!.v / perTrait[2]!.v) * 100).toFixed(0)}% below extraversion's and within
+  ${(((perTrait[4]!.v - perTrait[5]!.v) / perTrait[5]!.v) * 100).toFixed(0)}% of neuroticism's. What is nearly absent is H's INDEPENDENT variation:
+  across these eight means H correlates with agreeableness at r = ${ah.toFixed(3)}, so
+  ${(ah * ah * 100).toFixed(1)}% of its between-archetype variance is already carried by A. The archetypes
+  vary in H only insofar as they vary in A, which is why the contrast direction above
+  (H against A) has almost no between-variance left in it.
+
+  This is a property of HOW THESE EIGHT VECTORS WERE AUTHORED, not of the model. An
+  archetype where H and A diverge (agreeable but manipulative, or blunt but honest)
+  would make H informative immediately and would close this direction.`);
+}
+
 console.log('\nNothing here passes or fails. Nothing here proposes a bound.');
