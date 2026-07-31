@@ -1312,7 +1312,8 @@ its own briefings; two of them exist.
 | Shared RNG | [`generator/rng.ts`](../src/generator/rng.ts) | both harnesses |
 | Name generator (CCB-S4-002) | [`generator/names/`](../src/generator/names/) | `verify:namegen` (42 checks) |
 | Trait sampler (CCB-S4-003) | [`generator/traits/`](../src/generator/traits/) | `verify:traits` |
-| Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` (28 checks) |
+| Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` |
+| Bio generator (CCB-S4-006) | [`generator/bio/`](../src/generator/bio/) | `verify:bio` (26 checks) |
 
 **The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
 stream rather than globally. Every stage of every component derives its own stream from
@@ -1357,7 +1358,15 @@ empirical one, so the transform never depends on how many avatars happened to be
 loadings are versioned data (`loadings-2026-07-31b`), and the collinearity diagnostic caught
 them correlating two fields at 0.983 on its first run.
 
-**Not built:** the
+**The bio generator** (CCB-S4-006, D-102) produces the short text a profile carries. Its
+governing requirement is that **most profiles have none**: 66.7 percent empty against a 68
+percent target, skewed by activity tier and conscientiousness, because a population where
+every profile carries a bio is detectable on sight. Structural variety comes from six
+mechanisms rather than a skeleton list, giving 279 distinct patterns with the most common
+at 4.6 percent. Language follows `originBlend`; English and German are authored and the
+39.9 percent falling back to English is counted and printed rather than hidden.
+
+**Not built:** the model-backed text path, the
 population layer, the validation layer, bios, avatars, and persistence of any of it. See
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.

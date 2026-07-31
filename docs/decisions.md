@@ -13,6 +13,32 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-102 — The bio generator, and the defects only reading the output found
+
+**Status: IMPLEMENTED** (CCB-S4-006). `src/generator/bio/`, proven by `npm run verify:bio` (26 checks). Template set `bio-templates-2026-07-31b`.
+
+**§3 is the requirement everything else serves, and it is met.** Realised empty rate **66.7 percent** against a 68 percent target, inside the 60 to 75 band research puts real platforms at. Skewed as §3's table requires rather than flat: lurkers **73.3 percent** empty, contributors 41.8, superusers **28.1**; high-conscientiousness avatars 49.5 against low at 81.3. A `none` theme always yields `null`. The tier adjustment is share-weighted to be mean-zero, so it moves *who* is empty rather than *how many*.
+
+**§6 is the hard part, and six mechanisms answer it.** "Multiple skeletons is one mechanism and is not enough on its own", so the pool holds CLAUSES rather than whole-bio skeletons and a bio composes 1 to 3 of them, then varies the separator, the capitalisation habit, the terminal punctuation and the emoji. Each on its own named RNG stream. Result: **279 distinct structural patterns across 6,658 written bios, most common at 4.6 percent.** Four mechanisms measurably vary, not just the skeleton.
+
+**§12's three open questions, answered.** (1) `pattern` is a **derived structural signature**, not a template identifier: §12.1 answers itself, since an identifier only catches template reuse while a signature also catches two different templates converging on one shape, and a reader cannot see which template was used. Proven directly - two different texts with the same shape share a signature. (2) **Both** English and German are authored rather than one, because shipping one and asserting the mechanism works is the kind of unverified claim this workstream has repeatedly punished. (3) **Own harness**, for the reason D-099 settled: folding it into `verify:surface` means editing `templates.json` can fail a harness about the style loadings.
+
+**THE PART THAT MATTERS MOST: THE STATISTICS PASSED WHILE THE TEXT WAS WRONG.** Every population check was green - empty rate, length distribution, pattern share, four varying mechanisms - and then reading twenty-six actual bios found three defects a reader would notice immediately:
+
+- **doubled terminal punctuation.** `"i peaked during a hiking conversation in 2019.. i am legally required to mention hiking"`, and commas following full stops. Clauses carried their own punctuation while terminal punctuation was also a variety mechanism. Clauses are now stripped before joining and it is applied once at the end.
+- **German bios naming English interests.** `"arbeite an cooking"`, `"Ueber astronomy rede ich jederzeit gern"`. §7 says language follows `originBlend`; an untranslated interest is the same failure one layer down, and no numeric check could see it. Interests now carry a per-language label map.
+- **slots the avatar could not fill.** `"languages und languages"` from a two-interest template given one interest; `"Working on things"` from an interest template given none. Templates are now filtered to what an avatar can fill, falling back to the unfiltered pool rather than returning nothing.
+
+**All three are now gated**, because reading the output is what found them and a future change cannot be relied on to read it again. This is the fourth authored set in a row to acquire structure nobody intended, and the first where the defect was in the *text* rather than in the numbers.
+
+**§7's remaining gap is counted, not absorbed.** Two languages are authored and the origin-to-language map is the mechanism §7 requires. **39.9 percent of avatars still fall back to English** because their origin has no authored pool, and that number is printed every run: every origin still falling back is a language somebody has to write, and the figure is what says how many. German origins do write German (n=4,044), so the mechanism is demonstrated rather than claimed. Nothing simulates non-native speech; the register was withdrawn for drifting into caricature, and the check scans the templates with the file's own README stripped, since the sentence forbidding the thing otherwise trips the scan.
+
+**§4:** log-normal and short. Median written bio **9 words**, p90 18, max 34, 33 distinct lengths. A long tail rather than one length, which is the same failure as every profile having a bio.
+
+**§5 holds:** two avatars differing only in `tone`, from the same theme and interests, produced different text on 102 of 200 seeds.
+
+**Not delivered, per §11:** the model-backed text path, avatar images, names (the name generator produces those), the population layer, the validation layer, persistence.
+
 ### D-101 — The latent output is standardised at draw time, so the z-score claim survives the mix slider
 
 **Status: IMPLEMENTED** (CCB-S4-003, superseding the calibration half of D-100).

@@ -760,6 +760,13 @@ briefings. Architecture §31 has the detail; the state of it is:
       into origin, age or gender. See D-099, including the §8 diagnostic catching
       `tone`/`emojiAffinity` at 0.983 on its first run, which had also left the coherence
       cap firing on 0 of 20,000 avatars.
+- [x] **Bio generator** (CCB-S4-006) — `npm run verify:bio`, 26 checks. See D-102,
+      including the three defects that every population statistic passed and only
+      reading twenty-six actual bios found.
+- [ ] **Author bio templates for the remaining origins.** 39.9 percent of avatars fall
+      back to English because their origin has no pool. The mechanism is in place
+      (`originLanguages`) and the number is printed every run; es, fr and nl are the ones
+      outstanding (D-102).
 - [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
       mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
       input and deliberately makes no claim about what a realistic one is.
