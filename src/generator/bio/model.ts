@@ -125,22 +125,50 @@ export interface BioConditioning {
  * inputs instead of expressing them. Nobody describes themselves as organised and warm;
  * being organised and warm is what the writing is supposed to show.
  */
-const CONDITIONING_WORDS = [
+const CONDITIONING_STEMS = [
   // English, as the prompt states them.
-  'conventional', 'curious', 'casual', 'organised', 'organized', 'reserved', 'outgoing',
+  'conventional', 'curious', 'casual', 'organis', 'organiz', 'reserved', 'outgoing',
   'blunt', 'warm', 'unflappable', 'highly strung', 'formal', 'neutral', 'terse',
-  'moderate', 'talkative', 'cool', 'serious', 'dry', 'playful', 'lurker', 'contributor',
-  'superuser',
+  'moderate', 'talkative', 'serious', 'playful', 'lurker', 'contributor', 'superuser',
   // AND THE TRANSLATIONS, because the recitation survives translation. The conditioning
   // is written in English and the bio is not: "Ich bin geordnet, doch warmherzig" is the
-  // same defect as "I am organised and warm", and an English-only list would have called
-  // it clean. Every language the model is asked to write gets its own entries.
-  'geordnet', 'ordentlich', 'strukturiert', 'warmherzig', 'neugierig', 'zurückhaltend',
-  'gesellig', 'direkt', 'gelassen', 'förmlich', 'wortkarg', 'gesprächig', 'verspielt',
-  'organizado', 'curioso', 'reservado', 'cálido', 'sociable', 'formal', 'parco',
-  'organisé', 'curieux', 'réservé', 'chaleureux', 'sociable', 'ludique',
+  // same defect as "I am organised and warm", and an English-only list called it clean.
+  'geordnet', 'ordentlich', 'strukturier', 'warmherzig', 'neugierig', 'zurückhaltend',
+  'gesellig', 'gelassen', 'förmlich', 'wortkarg', 'gesprächig', 'verspielt', 'ungeduldig',
+  'organizad', 'curios', 'reservad', 'cálid', 'sociable', 'parc',
+  'organisé', 'curieu', 'réservé', 'chaleureu', 'ludique',
   'georganiseerd', 'nieuwsgierig', 'teruggetrokken', 'hartelijk', 'spraakzaam',
 ] as const;
+
+/**
+ * Match a stem plus up to four more letters, on Unicode letter boundaries.
+ *
+ * NOT `` AND NOT WHOLE WORDS, and both halves of that were learned the hard way.
+ *
+ * Whole words under-catch, because these languages inflect: the list held
+ * `strukturiert` and the model wrote `strukturiere`, so the recitation slipped through as
+ * a finite verb and took a dangling object with it ("meinen Kaffee genieße und
+ * strukturiere", which reads as "I enjoy and structure my coffee"). A German or Romance
+ * word list that matches only the citation form is a list that mostly does not fire.
+ *
+ * `` is the wrong boundary, because it is ASCII-derived: `cálido` behaves
+ * unpredictably around the accented letter. `(?<![\p{L}])` is the boundary that means
+ * what it says in every language this generator writes.
+ *
+ * Four letters is the bound, so `organis` reaches `organised` and `organising` but stops
+ * short of `organisation`, which is a noun a real bio may legitimately contain.
+ */
+function stemPattern(stem: string): RegExp {
+  // String.raw, NOT a plain template literal. This is the third escaping fault in this
+  // one function: `\p` in a plain template literal is an identity escape yielding `p`, so
+  // `[\p{L}]` silently became the character class [p{L}] and matched braces and the
+  // letters p and L. It still "worked" well enough to look right and gated the wrong
+  // things. String.raw makes the pattern mean what it reads as.
+  return new RegExp(
+    String.raw`(?<![\p{L}])` + stem + String.raw`[\p{L}]{0,4}(?![\p{L}])`,
+    'iu',
+  );
+}
 
 /** Percentiles read as words. A model handles "quite formal" better than `tone: 23`. */
 function band(v: number, low: string, mid: string, high: string): string {
@@ -274,12 +302,13 @@ export function validateBio(text: string, c: BioConditioning): BioRejection | nu
   // containing two of the exact adjectives its own conditioning used is reciting the
   // input, which is what the first real model run did in roughly half its output.
   const lower = text.toLocaleLowerCase();
-  // `\\b`, NOT `\b`. In a template literal `\b` is U+0008, the backspace character, so
-  // the first version of this line built the regex /organised/ and matched
-  // nothing at all. It read correctly, type-checked, and silently gated nothing; the
-  // 53-bio run that followed went out unfiltered. Found by testing the validator against
-  // the actual output rather than by reading it.
-  const recited = CONDITIONING_WORDS.filter((w) => new RegExp(`\\b${w}\\b`, 'u').test(lower));
+  // Two silent failures are compressed into `stemPattern`, and NEITHER of them ever
+  // showed up as a failing check. First, `\b` inside a template literal is U+0008,
+  // the backspace character, so the original built /organised/ and matched nothing at
+  // all while the harness reported green. Second, whole-word matching then missed every
+  // inflected form: the list held `strukturiert`, the model wrote `strukturiere`, and
+  // the recitation walked straight through as a finite verb.
+  const recited = CONDITIONING_STEMS.filter((stem) => stemPattern(stem).test(lower));
   if (recited.length >= 2) return 'recites-traits';
   return null;
 }

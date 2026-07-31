@@ -792,6 +792,27 @@ briefings. Architecture §31 has the detail; the state of it is:
       percent for the large pool that produced the bad text (D-104). That is the accepted
       trade: plainly correct and repetitive beats varied and wrong. If the template path
       ever becomes something a person reads, this is the number that has to move.
+- [ ] **NO PROPER NOUNS ANYWHERE. The deepest defect a read has found, and it survives
+      fixing everything else.** Five independent readers over 82 bios (D-107): not one
+      city, year, employer, band, book or URL in the whole population. No real set of
+      self-written profiles could look like that. Neither engine can produce it, because
+      the deterministic layer has nothing specific to hand over: it draws origins, age
+      bands and interests, and never a place or a job or a date. This is a CONDITIONING
+      gap, so it belongs to the surface layer rather than to the bio writer, and it is
+      probably the highest-leverage single item left in the workstream.
+- [ ] **DECIDE: which languages the model may be asked for.** `qwen3.5:9b` makes outright
+      grammatical errors outside German and English, at six of eighteen bios: `horne` for
+      `horneo`, `je parcoure` for `je parcours`, `cocinador` (not a Spanish word). Not a
+      prompt defect and not fixable by prompting; tightening the recitation gate merely
+      swapped one Spanish recitation for a conjugation error (D-107). Three options, none
+      taken yet: restrict the model path to de and en, run a larger model, or accept the
+      errors. Recorded rather than decided, because it is the operator's call.
+- [ ] **The two engines fail differently, and the comparison is not one axis.** The model
+      path is caught by a SINGLE bio read in isolation (coined compounds, simile, matched
+      couplets, drift into third person); the template path is only caught ACROSS the
+      corpus (repetition). So "which is better" depends on whether one profile or a whole
+      member list is being looked at, and the model path's per-bio tells are the ones to
+      work on next (D-107).
 - [ ] **Emoji are drawn independently of the interests, on the template path only.** A
       telescope turned up on a baking profile. The model path has no such defect by
       construction, since the model writes its own emoji into the text; fixing it in the

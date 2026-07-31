@@ -345,10 +345,32 @@ section('Model output is sanitised and validated before it can be read');
   // word boundary. It read correctly, type-checked, and matched nothing, so it gated
   // nothing and a 53-bio run went out unfiltered. A check that silently does nothing is
   // worse than no check, because the harness reports it as passing.
-  check('the word-boundary regex is a word boundary, not a backspace character',
-    validateBio('organised and warm', base) === 'recites-traits'
-      && validateBio('disorganisedly warmish', base) === null,
-    'substrings must not match');
+  check('the boundary is a boundary, not a backspace character',
+    validateBio('organised and warm', base) === 'recites-traits');
+
+  // INFLECTION. Found by a reader who went and read this file: the list held the citation
+  // form `strukturiert` and the model wrote `strukturiere`, so the recitation walked
+  // through as a finite verb. A word list matching only citation forms is a list that
+  // mostly does not fire in any language that inflects, which is every language here
+  // except English.
+  check('inflected German forms are caught',
+    validateBio('Ich bin geordnete und warmherzige Person.', base) === 'recites-traits');
+  check('inflected Spanish forms are caught',
+    validateBio('Curiosa y organizada, nada mas.', base) === 'recites-traits');
+  check('inflected French forms are caught',
+    validateBio('Curieuse et organisee, voila.', base) === 'recites-traits');
+  check('and inflected English forms',
+    validateBio('organising things and warm about it', base) === 'recites-traits');
+
+  // The bound exists so the stems do not swallow longer words that a real bio may carry.
+  check('stems do not over-match longer words',
+    validateBio('I work for a large organisation. Bread needs a warm oven.', base) === null,
+    '"organisation" is not "organised"');
+
+  // The accented case is why the boundary is a Unicode lookaround rather than , which
+  // is ASCII-derived and behaves unpredictably next to an accented letter.
+  check('accented stems match on Unicode letter boundaries',
+    validateBio('Persona cálida y sociable.', base) === 'recites-traits');
   rmSync(dir, { recursive: true, force: true });
 }
 

@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-106**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-107**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -13,6 +13,73 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-107 - Five readers on the first model population, and what they settled
+
+**Status: IMPLEMENTED** (the code changes). **REPORTED** (the findings that are decisions
+for the operator rather than defects to fix).
+
+Twenty-five agents, five independent lenses over the same 82 bios (53 model, 29 template):
+a native German reader, a native Spanish/French/Dutch reader, a native English reader, a
+"what gives away the machine" reader, and a recitation reader. Every finding was then
+attacked by a separate verifier told to REFUTE it and to default to refuting when unsure.
+
+**5 confirmed, 15 refuted.** The refutation rate is the reason to trust the five. Killed
+findings included "perfectly balanced tricolon" ("I love X, Y and Z" is the most common bio
+construction there is), "personality trait stated outright" for *"Quiet observer with cats
+and coffee; prone to worrying"* (people write that constantly), and "Arbeitsblöcke is an
+invented Denglish compound" (both halves are German). A single-lens read would have
+recorded all three as defects.
+
+**ALL FIVE LENSES SAID NO.** Neither engine passes as human-written yet. That is a harder
+verdict than the quick read that preceded it, which called the model output "real language"
+on the strength of it having correct umlauts and no repetition.
+
+**Finding 1: the model path fails PER BIO; the template path fails only PER CORPUS.**
+This is the most useful thing the read produced and it refines D-104 rather than
+overturning it. Individual template lines (*"Mostly sailing."*, *"Archives, vinyl"*) read
+as genuinely human; their weakness is repetition visible only across many profiles. The
+model path is caught by a single line in isolation: coined compounds in a profile field
+(*"Buchstabenjäger"*), simile (*"wie die Sonne im Herbstlicht"*), matched couplets, drift
+into third person. So the two engines are not on one quality axis, and which is worse
+depends on whether one bio or the whole list is being looked at.
+
+**Finding 2: qwen3.5:9b makes outright grammatical errors outside German and English, and
+this is a model-capability limit rather than a prompt defect.** Six of eighteen: `horne`
+for `horneo` (Spanish 1sg), `je parcoure` for `je parcours` (French, and the single most
+visible error a French reader can hit), `cocinador` for `cocinero` (not a word; the -ador
+suffix applied to a stem that does not take it), `Ambo`, `Ik vaar de zee`.
+
+Demonstrated rather than argued: after the recitation gate was tightened, one Spanish bio
+was rewritten from *"Curioso por idiomas y carpintero, organizo mis herramientas"* to
+*"Cursó lenguas, trabajo en madera con calma"*, which swaps a recitation for a
+**conjugation error** (3rd person preterite for 1st person present). Fixing one defect in
+Spanish moved it rather than removing it. **This is an operator decision, not a fix:**
+restrict the model to the languages it is competent in, run a larger model, or accept the
+errors. It is deliberately not decided here.
+
+**Finding 3, the deepest, and it survives fixing everything else: there is not one proper
+noun, year, place, employer or URL across all 82 bios.** No real population of self-written
+profiles could exhibit that. Neither engine can produce it, because the deterministic layer
+has no specifics to hand over: it draws origins, age bands and interests, and never a city,
+a job, a year or a band. This is a CONDITIONING gap rather than a wording gap, so it lands
+on the layer the whole workstream has been building, not on the model.
+
+**Code changes the read forced.** The recitation gate matched citation forms only, so every
+inflected form walked through: the list held `strukturiert` and the model wrote
+`strukturiere`. Found by a verifier that went and read `model.ts` rather than by any
+harness. Now stem matching on Unicode letter boundaries, bounded to four trailing letters
+so `organis` reaches `organised` but stops short of `organisation`.
+
+**THREE ESCAPING FAULTS IN ONE FUNCTION, none of which failed a check.** `` in a
+template literal is U+0008 and matched nothing. Whole-word matching then under-caught every
+inflection. And `[\p{L}]` in a plain template literal silently became the character class
+`[p{L}]`, matching braces and the letters p and L, which still looked close enough to
+working to pass a casual test. The function now uses `String.raw`, and the harness asserts
+inflection is caught in four languages, that stems do not over-match, and that accented
+stems match. A check that silently does nothing reports as coverage, which is the same
+lesson as D-105(a) one layer down.
+
+---
 ### D-106 - What reading the first model population found
 
 **Status: IMPLEMENTED.** `qwen3.5:9b` (ollama 0.32.3, family qwen35, 9.7B, Q4_K_M),
