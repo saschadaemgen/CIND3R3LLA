@@ -172,4 +172,25 @@ export function assemblePopulation(
   return Array.from({ length: count }, (_, i) => assembler(firstSeed + i));
 }
 
+/**
+ * Names the conditioning exactly, for the bio cache key.
+ *
+ * The four data set versions verbatim, plus a short digest of the configuration. Both
+ * halves matter: swapping the archetype set and nudging the theme mix both change who the
+ * person is, and cached text written for a different person is the one failure a
+ * seed-keyed cache could otherwise hide.
+ */
+export function conditioningVersion(components: Components, config: AssembleConfig): string {
+  const versions = Object.values(componentVersions(components)).join('+');
+  // FNV-1a over the configuration. A digest rather than the config itself, because this
+  // ends up in every cache key and only needs to CHANGE when the configuration does.
+  let h = 0x811c9dc5;
+  for (const ch of JSON.stringify(config)) {
+    h ^= ch.charCodeAt(0);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `${versions}#${h.toString(16).padStart(8, '0')}`;
+}
+
 export { renderDetail, renderCrowd, renderDistribution, renderReview } from './render.js';
+export { runModelPass, type ModelPassReport, type ModelPassOptions } from './model-pass.js';

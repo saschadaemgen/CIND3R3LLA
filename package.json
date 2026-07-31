@@ -68,6 +68,7 @@
     "coverage:geometry": "tsx scripts/coverage-geometry.ts",
     "verify:surface": "tsx scripts/verify-surface.ts",
     "verify:bio": "tsx scripts/verify-bio.ts",
+    "verify:bio-model": "tsx scripts/verify-bio-model.ts",
     "assemble": "tsx scripts/assemble.ts",
     "verify:assemble": "tsx scripts/verify-assemble.ts"
   },

@@ -1,43 +1,45 @@
 {
   "_README": [
-    "Bio clause templates (CCB-S4-006). VERSIONED DATA; the loader refuses a set without",
-    "a version. This is the FOURTH authored set after the archetypes, the style loadings",
-    "and the coverage regions, and the previous three all acquired structure nobody",
-    "intended. Assume this one has too until verify:bio says otherwise.",
+    "Bio clause templates. THIS IS THE FALLBACK PATH, NOT THE PRIMARY ONE.",
     "",
-    "CLAUSES, NOT WHOLE-BIO SKELETONS. A fixed set of skeletons with substituted words is",
-    "the obvious implementation and the obvious failure: it passes line by line and",
-    "collapses in aggregate, which is what a reader scrolling a member list actually",
-    "notices. A bio here composes 1 to 3 clauses from a pool and then varies the",
-    "separator, the capitalisation, the terminal punctuation and the emoji. Composition is",
-    "only the first of those mechanisms, which is what section 6 asks for.",
+    "The primary engine for bio text is a language model conditioned on the personality the",
+    "deterministic layer produces. This pool exists so the tool keeps working when no model",
+    "is reachable, and so load-test populations at scale do not need one.",
     "",
-    "FRAGMENTS ARE FIRST-CLASS. Real bios are frequently not sentences at all, so each",
-    "theme carries both fragment clauses and sentence clauses and the generator chooses",
-    "between them rather than always producing prose.",
+    "IT IS DELIBERATELY SMALL AND DELIBERATELY PLAIN, and that is the whole design.",
+    "A read of two hundred generated profiles found ten defect classes, every one of them a",
+    "property of this file rather than of the composition code: calqued German idiom",
+    "('arbeite an Kochen'), compounds no German speaker forms ('Buchbinden-Verteidiger'),",
+    "ASCII stand-ins for umlauts, lower-cased German nouns, conversational replies used as",
+    "self-descriptions ('Zurzeit keine Fragen'), meaningless fragments ('orbit', 'null',",
+    "'echo'), and register whiplash inside one language. Making a template set produce good",
+    "varied prose in two languages is the part that failed, and it is not attempted again.",
     "",
-    "LANGUAGE FOLLOWS originBlend, NOT A GLOBAL SETTING (section 7). English and German",
-    "are authored. An origin mapping to a language with no pool falls back, and the",
-    "fallback rate is COUNTED and reported rather than hidden, because a population with a",
-    "German-Spanish origin mix having uniformly English bios is exactly the failure the",
-    "requirement names.",
+    "RULES FOR ANYONE EDITING THIS FILE:",
+    "  1. Every clause is a SELF-DESCRIPTION. Not a greeting, not a reply, not a mood.",
+    "     'Not currently accepting questions' is a chat message; nobody's profile says it.",
+    "  2. Each language is AUTHORED IN THAT LANGUAGE, never translated from the English set.",
+    "     If a form does not exist naturally in the target language, it does not go in.",
+    "  3. Plain over clever. No idiom, no register experiments, no jokes that date.",
+    "  4. NO EM-DASH, EN-DASH OR HORIZONTAL BAR, and no separator a phone keyboard cannot",
+    "     produce. This was already the standing rule (CCB-S3-021) when an em-dash was",
+    "     authored into the separator pool anyway. A generated bio is member-facing output,",
+    "     so the rule always covered it; what did not cover it was verify:no-dashes, which",
+    "     scanned the bot's own copy and not this tree. It does now.",
+    "     The reason is not typographic taste: a member cannot type an em-dash on a phone,",
+    "     so a profile containing one advertises that the text was machine written, which is",
+    "     exactly what this generator exists to avoid. The middle dot went the same way for",
+    "     the same reason rather than by the same rule. The test is what a member can type,",
+    "     not which characters a list happens to name.",
+    "  5. A WRONG BIO IS WORSE THAN NO BIO. Two thirds of real profiles have none, so",
+    "     silence is always available and always realistic. When in doubt, leave it out:",
+    "     the template path runs at a raised empty rate for exactly this reason.",
     "",
-    "NO SIMULATED NON-NATIVE SPEECH. The specification withdrew that register because it",
-    "drifts into caricature and has no empirical support. Every avatar writes its language",
-    "plainly and sentenceComplexity carries whatever variation is needed.",
-    "",
-    "EMOJI HERE ARE NOT THE EIGHT VERIFIED REACTION EMOJI. Those constrain what the core",
-    "accepts as a reaction, not what a profile description may contain (section 8).",
-    "",
-    "INTERESTS ARE TRANSLATED PER LANGUAGE. An English interest inside a German sentence is",
-    "the same failure section 7 names one layer down, and the numeric checks passed while",
-    "the text said 'arbeite an cooking'. Reading the output is what caught it.",
-    "",
-    "CLAUSES CARRY NO TERMINAL PUNCTUATION OF THEIR OWN. It is stripped before joining and",
-    "reapplied once at the end, because terminal punctuation is one of the six variety",
-    "mechanisms and a clause supplying its own produced 'in 2019.. i am legally required'."
+    "`allowLowercase` is per language because the lower-case habit is an English habit.",
+    "German capitalises nouns, so lower-casing a German bio is not a style but a spelling",
+    "error, and the mechanism was applied to German unchanged."
   ],
-  "version": "bio-templates-2026-07-31b",
+  "version": "bio-templates-2026-07-31d",
   "fallbackLanguage": "en",
   "originLanguages": {
     "en": "en",
@@ -46,267 +48,70 @@
     "fr": "fr",
     "nl": "nl"
   },
-  "emoji": [
-    "✨",
-    "🌱",
-    "☕",
-    "📷",
-    "🎧",
-    "🚲",
-    "📚",
-    "🐈",
-    "🛠",
-    "🌊",
-    "🔭",
-    "🍞"
-  ],
+  "emoji": ["✨", "🌱", "☕", "📷", "🎧", "🚲", "📚", "🐈", "🔧", "🔭"],
   "languages": {
     "en": {
       "language": "en",
-      "separators": [
-        " · ",
-        " | ",
-        ". ",
-        ", ",
-        " — ",
-        "\n"
-      ],
+      "allowLowercase": true,
+      "separators": [" | ", ". ", ", ", "\n", " / ", "; "],
       "themes": {
         "professional": {
-          "fragments": [
-            "{noun} by trade",
-            "working on {interest}",
-            "{interest} and {interest2}",
-            "mostly {noun} these days",
-            "{noun}, {interest}",
-            "ten years of {noun}",
-            "here for the {interest} threads"
-          ],
-          "sentences": [
-            "I work in {noun}.",
-            "I spend most of my time on {interest}.",
-            "Currently building things around {interest}.",
-            "Happy to talk about {interest} with anyone.",
-            "I have opinions about {interest} and will share them."
-          ],
-          "nouns": [
-            "ops",
-            "infra",
-            "design",
-            "research",
-            "logistics",
-            "support",
-            "archives",
-            "print"
-          ]
+          "fragments": ["{noun} by trade", "working on {interest}", "{noun}, {interest}", "ten years in {noun}"],
+          "sentences": ["I work in {noun}.", "I spend most of my time on {interest}.", "Happy to talk about {interest}."],
+          "nouns": ["ops", "infrastructure", "design", "research", "logistics", "support", "archives", "print"]
         },
         "personal": {
-          "fragments": [
-            "{interest}, {interest2}, not much else",
-            "here for {interest}",
-            "{interest} mostly",
-            "somewhere between {interest} and {interest2}",
-            "slow mornings and {interest}",
-            "{interest} enthusiast, badly"
-          ],
-          "sentences": [
-            "I like {interest} more than is reasonable.",
-            "Most of my evenings go to {interest}.",
-            "Trying to get better at {interest}.",
-            "I came for {interest} and stayed for the arguments.",
-            "Ask me about {interest}."
-          ],
-          "nouns": [
-            "nonsense",
-            "quiet",
-            "noise",
-            "weekends"
-          ]
+          "fragments": ["here for {interest}", "{interest} mostly", "{interest} and {interest2}"],
+          "sentences": ["I like {interest} more than is reasonable.", "Most of my evenings go to {interest}.", "Trying to get better at {interest}."],
+          "nouns": ["weekends", "long evenings", "quiet mornings"]
         },
         "quirky": {
-          "fragments": [
-            "professional {noun}, amateur everything",
-            "{interest} apologist",
-            "chaos, {interest}, snacks",
-            "will trade {interest} for {interest2}",
-            "{noun} enjoyer",
-            "wrong about {interest} since forever"
-          ],
-          "sentences": [
-            "I am legally required to mention {interest}.",
-            "Ask me about {interest}, or do not, I will bring it up anyway.",
-            "I peaked during a {interest} conversation in 2019.",
-            "Here to lower the tone.",
-            "My {noun} opinions are load-bearing."
-          ],
-          "nouns": [
-            "gremlin",
-            "lurker",
-            "menace",
-            "goblin",
-            "correspondent"
-          ]
+          "fragments": ["{interest} enthusiast, badly", "too much {interest}", "{interest}, obviously"],
+          "sentences": ["I will bring up {interest} unprompted.", "I have too many opinions about {interest}."],
+          "nouns": ["enthusiasm", "opinions", "spare time"]
         },
         "minimal": {
-          "fragments": [
-            "{interest}",
-            "{noun}",
-            "{interest}, {interest2}",
-            "here"
-          ],
-          "sentences": [
-            "Hello.",
-            "That is it.",
-            "Not much to say."
-          ],
-          "nouns": [
-            "hi",
-            "yes",
-            "reading",
-            "listening"
-          ]
+          "fragments": ["{interest}", "{interest}, {interest2}", "{noun}"],
+          "sentences": ["Mostly {interest}."],
+          "nouns": ["reading", "listening", "building things"]
         },
         "cryptic": {
-          "fragments": [
-            "{noun} // {interest}",
-            "in transit",
-            "{interest}, eventually",
-            "ask later",
-            "[{noun}]",
-            "signal only"
-          ],
-          "sentences": [
-            "You will work it out.",
-            "I am mostly here to read.",
-            "Not currently accepting questions."
-          ],
-          "nouns": [
-            "orbit",
-            "static",
-            "drift",
-            "null",
-            "echo"
-          ]
+          "fragments": ["{interest}, eventually", "mostly {noun}", "{interest} in the background"],
+          "sentences": ["I am mostly here to read."],
+          "nouns": ["reading", "the archives", "night shifts"]
         }
       },
       "interestLabels": {}
     },
     "de": {
       "language": "de",
-      "separators": [
-        " · ",
-        " | ",
-        ". ",
-        ", ",
-        " — ",
-        "\n"
-      ],
+      "allowLowercase": false,
+      "separators": [" | ", ". ", ", ", "\n", " / ", "; "],
       "themes": {
         "professional": {
-          "fragments": [
-            "{noun} von Beruf",
-            "arbeite an {interest}",
-            "{interest} und {interest2}",
-            "zurzeit vor allem {noun}",
-            "{noun}, {interest}",
-            "zehn Jahre {noun}"
-          ],
-          "sentences": [
-            "Ich arbeite im Bereich {noun}.",
-            "Der Grossteil meiner Zeit geht in {interest}.",
-            "Ich baue gerade etwas rund um {interest}.",
-            "Ueber {interest} rede ich jederzeit gern."
-          ],
-          "nouns": [
-            "Betrieb",
-            "Infrastruktur",
-            "Gestaltung",
-            "Forschung",
-            "Logistik",
-            "Archiv",
-            "Druck"
-          ]
+          "fragments": ["beruflich: {noun}", "{noun} und {interest}", "seit zehn Jahren {noun}", "zurzeit vor allem {noun}"],
+          "sentences": ["Ich arbeite im Bereich {noun}.", "Der Großteil meiner Zeit geht in {interest}.", "Über {interest} rede ich jederzeit gern."],
+          "nouns": ["Betrieb", "Infrastruktur", "Gestaltung", "Forschung", "Logistik", "Archiv", "Druck"]
         },
         "personal": {
-          "fragments": [
-            "{interest}, {interest2}, mehr nicht",
-            "wegen {interest} hier",
-            "hauptsaechlich {interest}",
-            "irgendwo zwischen {interest} und {interest2}",
-            "lange Morgen und {interest}"
-          ],
-          "sentences": [
-            "Ich mag {interest} mehr als vernuenftig ist.",
-            "Meine Abende gehen fast alle fuer {interest} drauf.",
-            "Ich versuche, in {interest} besser zu werden.",
-            "Frag mich nach {interest}."
-          ],
-          "nouns": [
-            "Unsinn",
-            "Ruhe",
-            "Krach",
-            "Wochenenden"
-          ]
+          "fragments": ["hauptsächlich {interest}", "{interest} und {interest2}", "{noun} und {interest}"],
+          "sentences": ["Ich mag {interest} mehr, als vernünftig ist.", "Meine Abende gehen fast alle für {interest} drauf.", "Ich versuche, in {interest} besser zu werden."],
+          "nouns": ["Wochenenden", "lange Abende", "ruhige Vormittage"]
         },
         "quirky": {
-          "fragments": [
-            "beruflich {noun}, sonst Amateur",
-            "{interest}-Verteidiger",
-            "Chaos, {interest}, Kekse",
-            "tausche {interest} gegen {interest2}",
-            "{noun} aus Ueberzeugung"
-          ],
-          "sentences": [
-            "Ich bin gesetzlich verpflichtet, {interest} zu erwaehnen.",
-            "Frag mich nach {interest}, oder auch nicht, ich fange trotzdem davon an.",
-            "Ich bin hier, um das Niveau zu senken."
-          ],
-          "nouns": [
-            "Gremlin",
-            "Lauerer",
-            "Plage",
-            "Korrespondent"
-          ]
+          "fragments": ["zu viel {interest}", "{interest}, natürlich", "{interest}, aber schlecht"],
+          "sentences": ["Zu {interest} habe ich leider eine Meinung.", "Ich fange ungefragt von {interest} an."],
+          "nouns": ["Begeisterung", "Meinungen", "Freizeit"]
         },
         "minimal": {
-          "fragments": [
-            "{interest}",
-            "{noun}",
-            "{interest}, {interest2}",
-            "da"
-          ],
-          "sentences": [
-            "Hallo.",
-            "Das war es.",
-            "Viel mehr gibt es nicht."
-          ],
-          "nouns": [
-            "hi",
-            "ja",
-            "lese mit",
-            "hoere zu"
-          ]
+          "fragments": ["{interest}", "{interest}, {interest2}", "{noun}"],
+          "sentences": ["Hauptsächlich {interest}."],
+          "nouns": ["Lesen", "Zuhören", "Basteln"]
         },
         "cryptic": {
-          "fragments": [
-            "{noun} // {interest}",
-            "unterwegs",
-            "{interest}, irgendwann",
-            "spaeter fragen",
-            "[{noun}]",
-            "nur Signal"
-          ],
-          "sentences": [
-            "Das findest du schon raus.",
-            "Ich lese hier vor allem mit.",
-            "Zurzeit keine Fragen."
-          ],
-          "nouns": [
-            "Orbit",
-            "Rauschen",
-            "Drift",
-            "Echo"
-          ]
+          "fragments": ["{interest}, irgendwann", "meistens {noun}", "{interest} nebenbei"],
+          "sentences": ["Ich lese hier vor allem mit."],
+          "nouns": ["Lesen", "Archiv", "Randzeiten"]
         }
       },
       "interestLabels": {
@@ -315,7 +120,7 @@
         "cooking": "Kochen",
         "linux": "Linux",
         "privacy": "Datenschutz",
-        "gardening": "Gaertnern",
+        "gardening": "Gärtnern",
         "chess": "Schach",
         "synthesizers": "Synthesizer",
         "hiking": "Wandern",

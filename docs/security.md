@@ -1056,3 +1056,26 @@ in [`architecture.md`](architecture.md) §24; the provenance is **D-068**.
 
 Until that review happens, treat this subsystem as **unreviewed attack surface on a
 hostile-facing console**.
+
+## 13. The generator's model path sends no member data (D-104)
+
+**Separate from the runtime AI subsystem in §12, and much smaller in surface.** The profile
+generator can write bio text with a local model (`--engine model`, D-104). Three facts bound
+its exposure:
+
+- **It is offline tooling with no runtime caller.** Nothing in the running bot invokes it,
+  no migration writes its output, and no admin page exposes it. It runs when an operator
+  runs `npm run assemble` by hand.
+- **Nothing it sends is member data.** The request carries only synthetic conditioning that
+  the generator itself produced moments earlier: drawn trait bands, style bands, an
+  interest list from a fixed pool, an age band and an activity tier. There is no message
+  content, no consent state, no display name of any real person, and no database read
+  anywhere on the path.
+- **The endpoint defaults to loopback** (`http://127.0.0.1:11434`) and is only ever what the
+  operator passes on the command line. Model output is treated as untrusted text on its way
+  to being read: fences, control characters, the three forbidden dashes and the middle dot
+  are stripped, wrapping quotes removed, and the result is rejected outright if it is
+  meta-text, over-length, contains a link, or names the avatar it belongs to.
+
+The generated bio cache is written to a git-ignored directory and contains only that
+synthetic text.

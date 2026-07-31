@@ -773,10 +773,29 @@ briefings. Architecture §31 has the detail; the state of it is:
       reader noticed. Needs the labelled corpus; `corpus.ts` documents the swap point.
       Related: five surnames repeat across 200 profiles (dalgleish, draywood, Brannigan,
       de Jong, Blackwood), which is the fixture pools being small.
-- [ ] **Author bio templates for the remaining origins.** 39.9 percent of avatars fall
-      back to English because their origin has no pool. The mechanism is in place
-      (`originLanguages`) and the number is printed every run; es, fr and nl are the ones
-      outstanding (D-102).
+- [x] **Bio text moved to a model; the template pool is now the fallback** (D-104) —
+      `--engine model`, conditioned on the personality the deterministic layer produces,
+      cached on seed + conditioning version + model identity so a seed still reproduces
+      its bio. `npm run verify:bio-model`, 33 checks with the transport faked. Ten defect
+      classes found by reading, of which nine were language and one was not a defect at
+      all. Three were engine-independent and fixed regardless (shared slot pool, per-
+      language lower-case gate, em-dash out of the separator pool), each with a named
+      regression gate in `verify:bio`.
+- [ ] **Author bio templates for the remaining origins.** Avatars whose origin has no pool
+      fall back to English. Language now walks the WHOLE origin blend and takes the first
+      authored language rather than the top origin only (D-104), so a real second language
+      is no longer discarded, but es, fr and nl are still outstanding (D-102). Lower
+      priority than it was: the model path writes any language it knows, so this only
+      matters for the fallback, which is meant to be used when nobody is reading.
+- [ ] **The fallback pool is visibly repetitive, by design and worth watching.** After the
+      shrink the most common clause form is 12.1 percent of all clauses, against 4.6
+      percent for the large pool that produced the bad text (D-104). That is the accepted
+      trade: plainly correct and repetitive beats varied and wrong. If the template path
+      ever becomes something a person reads, this is the number that has to move.
+- [ ] **Emoji are drawn independently of the interests, on the template path only.** A
+      telescope turned up on a baking profile. The model path has no such defect by
+      construction, since the model writes its own emoji into the text; fixing it in the
+      template path means tying the emoji pool to the interest, which is pool authoring.
 - [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
       mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
       input and deliberately makes no claim about what a realistic one is.

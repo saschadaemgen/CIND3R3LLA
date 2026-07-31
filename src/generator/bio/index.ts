@@ -88,9 +88,22 @@ export function parseTemplates(raw: unknown, source: string): TemplateSet {
  * `bioEmpty` sits at 0.68, mid-range of the 0.60 to 0.75 research puts real platforms
  * at. §3 calls this the single property that most determines whether a member list
  * reads as real, and it is higher still on privacy-focused platforms, which this is.
+ *
+ * `engine` DEFAULTS TO THE TEMPLATE PATH, and that is a default about availability rather
+ * than about quality. Every one of the ten defect classes a read of two hundred profiles
+ * found was a language defect, and language is the thing a model does not get wrong in
+ * those ways, so `model` is the better text. But a default that needs a reachable model
+ * would make the generator stop working when there is none, and load-test populations at
+ * scale neither need good bios nor want the inference. Callers that want quality ask for
+ * it; `scripts/assemble.ts` does, because its whole purpose is being read.
+ *
+ * `templateEmptyFloor` at 0.86 is the honest fallback: when the engine cannot write well,
+ * silence is the realistic output, and most real profiles are silent anyway.
  */
 export const DEFAULT_BIO_POPULATION: BioPopulationConfig = Object.freeze({
+  engine: 'template',
   bioEmpty: 0.68,
+  templateEmptyFloor: 0.86,
   bioLength: { empty: 0.68, short: 0.2, medium: 0.09, long: 0.03 },
   lengthMedians: { short: 4, medium: 9, long: 18 },
 });

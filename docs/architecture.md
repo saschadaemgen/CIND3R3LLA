@@ -1315,6 +1315,21 @@ its own briefings; two of them exist.
 | Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` |
 | Bio generator (CCB-S4-006) | [`generator/bio/`](../src/generator/bio/) | `verify:bio` |
 | Assembly and review (CCB-S4-007) | [`generator/assemble/`](../src/generator/assemble/) | `verify:assemble` (22 checks) |
+| Model bio path (D-104) | [`generator/bio/model.ts`](../src/generator/bio/model.ts), [`assemble/model-pass.ts`](../src/generator/assemble/model-pass.ts) | `verify:bio-model` (33 checks, transport faked) |
+
+**Bio text has two engines, and the line between them is STRUCTURE versus LANGUAGE** (D-104).
+Traits and surface derivation are mathematics; names are corpus statistics, where a model
+would invent plausible-sounding names with wrong frequencies. Bios are language, and a read
+of two hundred profiles found ten defect classes that every statistical check had passed,
+every one of them a language defect. `engine: 'model'` is therefore the quality path and
+`engine: 'template'` the availability fallback, deliberately small, plain and quiet.
+
+The deterministic layer still decides **who the person is** and the model only phrases them:
+whether a profile has a bio, how long, what theme, which language, how formal, how playful
+are all fixed before `runModelPass` is called, and it changes exactly one field. Determinism
+survives by caching, keyed on **seed + conditioning version + model identity**, so swapping
+the model or editing a data set regenerates visibly rather than serving text written for a
+different person. Failures are counted by reason and never absorbed.
 
 **The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
 stream rather than globally. Every stage of every component derives its own stream from

@@ -55,3 +55,6 @@ local_ai_manifest_*
 
 # Local Claude Code launcher config
 .claude/
+
+# Generator bio cache (offline tooling; model output keyed on seed + conditioning + model)
+.generator-cache/

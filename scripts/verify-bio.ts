@@ -139,13 +139,21 @@ section('Determinism (§10)');
 section('The empty share (§3): REPORTED AGAINST TARGET');
 {
   const emptyRate = (N - written.length) / N;
-  measure('realised empty rate', `${(emptyRate * 100).toFixed(1)}% against a target of ${(DEFAULT_BIO_POPULATION.bioEmpty * 100).toFixed(0)}%`);
+  // THE TARGET DEPENDS ON THE ENGINE, and this harness runs the template one. A fallback
+  // that produces wrong text is worse than one that produces none, so the template path
+  // deliberately runs above the realistic band: an empty bio is ordinary, a calqued
+  // German fragment is a tell. The 60 to 75 band is what the MODEL path aims at, and
+  // asserting it here would gate the fallback against a target it is designed to miss.
+  const engineTarget = Math.max(DEFAULT_BIO_POPULATION.bioEmpty, DEFAULT_BIO_POPULATION.templateEmptyFloor);
+  measure('realised empty rate', `${(emptyRate * 100).toFixed(1)}% against a target of ${(engineTarget * 100).toFixed(0)}% (template engine)`);
   console.log('         §3: research puts real platforms at 60 to 75 percent, higher on');
   console.log('         privacy-focused ones. A population where every profile carries a bio is');
   console.log('         detectable on sight, and this is the single property that most');
-  console.log('         determines whether a member list reads as real.');
-  check('the empty share sits in the 60 to 75 percent band §3 names',
-    emptyRate >= 0.6 && emptyRate <= 0.75, `${(emptyRate * 100).toFixed(1)}%`);
+  console.log('         determines whether a member list reads as real. The model path aims');
+  console.log('         at that band; this path stays above it on purpose.');
+  check('the empty share tracks the target this engine aims at',
+    Math.abs(emptyRate - engineTarget) <= 0.05,
+    `${(emptyRate * 100).toFixed(1)}% against ${(engineTarget * 100).toFixed(0)}%`);
 
   // §3's table: the share must be skewed by tier and by conscientiousness, not flat.
   for (const tier of ['lurker', 'contributor', 'superuser'] as const) {
@@ -337,6 +345,98 @@ section('Coherence (§10)');
   }
   check('two avatars differing only in tone write visibly differently',
     differing > 20, `${differing} of 200 seeds produced different text from the same theme`);
+}
+
+/* ================================= the defects a read found, now gated (§11) */
+
+section('The ten defect classes: REGRESSION GATES');
+{
+  // A READ OF TWO HUNDRED PROFILES FOUND ALL OF THESE AND EVERY CHECK ABOVE PASSED.
+  // 279 distinct structural patterns, most common at 4.6 percent, six varying mechanisms,
+  // all green, while the text said "ask me about synthesizers, trying to get better at
+  // synthesizers, i came for synthesizers and stayed for the arguments".
+  //
+  // The measure above counts STRUCTURAL variety. Every defect below is SEMANTIC. A pool
+  // of meaningless clauses combined by six mechanisms produces excellent structural
+  // variety and unreadable text, so these are gated separately and by name.
+
+  // §1: clauses draw from a shared slot pool. The single most visible defect, at roughly
+  // one bio in eight. Nobody writes their own hobby three times in one line.
+  const labelsFor = (lang: string): Record<string, string> =>
+    templates.languages[lang]?.interestLabels ?? {};
+  let repeated = 0;
+  let worst = '';
+  for (const p of written) {
+    const labels = labelsFor(p.bio.language);
+    const lower = p.bio.text!.toLocaleLowerCase();
+    for (const key of DEFAULT_POPULATION.interestPool) {
+      const label = (labels[key] ?? key).toLocaleLowerCase();
+      let from = 0;
+      let hits = 0;
+      for (;;) {
+        const at = lower.indexOf(label, from);
+        if (at < 0) break;
+        hits++;
+        from = at + label.length;
+      }
+      if (hits > 1) {
+        repeated++;
+        if (worst === '') worst = p.bio.text!;
+        break;
+      }
+    }
+  }
+  check('§1 no bio names the same interest twice', repeated === 0,
+    repeated === 0 ? `${written.length} bios` : `${repeated} do, e.g. "${worst}"`);
+
+  // §3 and §8: the German set is authored in German. A regression list rather than a
+  // pattern, because "ue" is legitimate in German ("neue", "Steuer") and a pattern would
+  // either miss the fault or fire on correct words.
+  const germanSource = JSON.stringify(templates.languages.de);
+  const asciiStandIns = ['Ueber', 'fuer', 'vernuenftig', 'gaertnern', 'Gaertnern', 'hauptsaechlich',
+    'Grossteil', 'erwaehnen', 'spaeter', 'hoere', 'Buchbinden-Verteidiger', 'Arbeite an'];
+  const found = asciiStandIns.filter((w) => germanSource.includes(w));
+  check('§3 the German set spells German rather than substituting ASCII', found.length === 0, found.join(', '));
+  check('§3 and it actually contains umlauts', /[äöüßÄÖÜ]/u.test(germanSource));
+
+  // §4: the lower-case habit is an English habit, and it was applied to German unchanged.
+  const germanBios = written.filter((p) => p.bio.language === 'de');
+  const lowercased = germanBios.filter((p) => p.bio.text! === p.bio.text!.toLocaleLowerCase());
+  check('§4 no German bio is lower-cased', lowercased.length === 0,
+    lowercased.length === 0
+      ? `${germanBios.length} German bios`
+      : `${lowercased.length} are, e.g. "${lowercased[0]!.bio.text}"`);
+
+  // §5: the standing rule (CCB-S3-021), which was already binding when an em-dash was
+  // authored into the separator pool. verify:no-dashes now covers this tree too; the
+  // check is repeated here so a bio defect fails the bio harness.
+  const dashed = written.filter((p) => /[—–―·]/u.test(p.bio.text!));
+  check('§5 no forbidden dash and no middle dot', dashed.length === 0,
+    dashed.length === 0 ? '' : `e.g. "${dashed[0]!.bio.text}"`);
+
+  // §7: a bio says who someone is. Roughly one written bio in six said nothing at all,
+  // and not in the way a terse real bio says little.
+  const notSelfDescriptions = ['Zurzeit keine Fragen', 'Das war es', 'You will work it out',
+    'Ask later', 'spaeter fragen', 'Not much to say', 'Hello.', 'Hallo.', 'orbit', 'null', 'echo',
+    'static', 'drift', 'signal only', 'in transit'];
+  const poolSource = JSON.stringify(templates.languages);
+  const survivors = notSelfDescriptions.filter((w) => poolSource.includes(w));
+  check('§7 no clause is a greeting, a reply or a meaningless fragment',
+    survivors.length === 0, survivors.join(', '));
+
+  // §2: `lurker` in "my lurker opinions are load-bearing" read like an activityTier enum
+  // leaking into text. It was not: it was an authored noun that happened to collide with
+  // the enum name. Nothing substitutes runtime values into a bio, and this proves it
+  // rather than asserting it, because the reasoning that it "cannot happen" is exactly
+  // what a leak would survive.
+  const runtimeValues = ['lurker', 'contributor', 'superuser', 'professional', 'cryptic',
+    'minimal', 'quirky', 'personal'];
+  const leaked = written.filter((p) => {
+    const lower = p.bio.text!.toLocaleLowerCase();
+    return runtimeValues.some((v) => new RegExp(`\b${v}\b`, 'u').test(lower));
+  });
+  check('§2 no internal enum value appears in any bio', leaked.length === 0,
+    leaked.length === 0 ? `${written.length} bios checked against ${runtimeValues.length} enum values` : `e.g. "${leaked[0]!.bio.text}"`);
 }
 
 /* -------------------------------------------------------------------- done */

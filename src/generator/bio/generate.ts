@@ -64,19 +64,55 @@ const TIER_MEAN = Object.keys(TIER_ADJUSTMENT).reduce(
   0,
 );
 
-/** Which language this avatar writes in. Follows `originBlend`, never a global default. */
+/**
+ * Which language this avatar writes in. Follows `originBlend`, never a global default.
+ *
+ * WALKS THE WHOLE BLEND, not only its strongest origin. Taking the top origin and going
+ * straight to English discarded a real second language: an avatar of Dutch and German
+ * origin whose Dutch weight was marginally higher wrote English, although German was
+ * authored and is a language that person actually has. Falling back to English is correct
+ * ONLY when no origin in the blend has an authored set.
+ *
+ * The residue this cannot fix is the NAME. An Irish-looking name writing German is not a
+ * missing language, it is the wrong one, and the cause is upstream: the shipped name
+ * corpus carries no culture labels (CCB-S4-002), so a `de` request returns whatever the
+ * unlabelled bulk pool gives. Nothing decided here can see that.
+ */
 export function languageFor(
   personality: Personality,
   templates: TemplateSet,
 ): { language: string; fellBack: boolean } {
-  const primary = Object.entries(personality.identity.originBlend).sort((a, b) => b[1] - a[1])[0]?.[0];
-  const mapped = primary === undefined ? undefined : templates.originLanguages[primary];
-  if (mapped !== undefined && templates.languages[mapped] !== undefined) {
-    return { language: mapped, fellBack: false };
+  const byWeight = Object.entries(personality.identity.originBlend).sort((a, b) => b[1] - a[1]);
+  for (const [origin] of byWeight) {
+    const mapped = templates.originLanguages[origin];
+    if (mapped !== undefined && templates.languages[mapped] !== undefined) {
+      return { language: mapped, fellBack: false };
+    }
   }
   // COUNTED, not hidden. §7's whole point is that a German-Spanish origin mix must not
   // produce uniformly English bios, so a fallback is a gap to report rather than absorb.
   return { language: templates.fallbackLanguage, fellBack: true };
+}
+
+/** Everything a clause can be split on, when the caller does not supply the real list. */
+const FALLBACK_SEPARATORS = [' | ', '. ', ', ', '\n', ' / ', '; '];
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+}
+
+/**
+ * Build the clause splitter FROM the separators actually in use.
+ *
+ * This used to be a hand-written regex listing the separators a second time, and the two
+ * lists drifted: the data file was corrected and the regex kept an em-dash nobody could
+ * reach. Deriving it means there is one list, so the drift is not possible rather than
+ * merely unlikely.
+ */
+export function clauseSplitter(separators: readonly string[] = FALLBACK_SEPARATORS): RegExp {
+  // Longest first, so ", " never pre-empts a longer separator that contains it.
+  const alts = [...separators].sort((a, b) => b.length - a.length).map(escapeRe);
+  return new RegExp(alts.join('|'), 'u');
 }
 
 /**
@@ -86,9 +122,13 @@ export function languageFor(
  * catches template reuse; this also catches two different templates converging on the
  * same shape, which is what a reader actually perceives.
  */
-export function structuralSignature(text: string, emojiCount: number): string {
+export function structuralSignature(
+  text: string,
+  emojiCount: number,
+  separators?: readonly string[],
+): string {
   const trimmed = text.trim();
-  const clauseCount = trimmed.split(/[·|\n]|(?:\.\s)|(?:,\s)|(?:\s—\s)/u).filter((c) => c.trim().length > 0).length;
+  const clauseCount = trimmed.split(clauseSplitter(separators)).filter((c) => c.trim().length > 0).length;
   const endsWithStop = /[.!?]$/u.test(trimmed);
   const startsUpper = /^\p{Lu}/u.test(trimmed);
   const allLower = trimmed === trimmed.toLowerCase();
@@ -106,10 +146,16 @@ export function structuralSignature(text: string, emojiCount: number): string {
   ].join('|');
 }
 
+/** How many distinct interests a template consumes. */
+function slotsNeeded(template: string): number {
+  return (template.includes('{interest}') ? 1 : 0) + (template.includes('{interest2}') ? 1 : 0);
+}
+
 function fill(
   template: string,
   pool: ClausePool,
-  interests: string[],
+  /** The interests THIS CLAUSE may use, already reserved by the caller. */
+  claimed: string[],
   labels: Record<string, string>,
   rng: Rng,
 ): string {
@@ -117,8 +163,8 @@ function fill(
   // §7's failure one layer down, and it passed every numeric check while producing
   // "arbeite an cooking".
   const label = (k: string | undefined): string | undefined => (k === undefined ? undefined : (labels[k] ?? k));
-  const i1 = label(interests[0]) ?? 'things';
-  const i2 = label(interests[1]) ?? i1;
+  const i1 = label(claimed[0]) ?? 'things';
+  const i2 = label(claimed[1]) ?? i1;
   return template
     .replace(/\{interest2\}/gu, i2)
     .replace(/\{interest\}/gu, i1)
@@ -169,8 +215,16 @@ export function generateBio(
   // its share of it, so the draw for the rest is the remainder. Approximated from the
   // configured theme mix rather than the realised one, which is why the harness reports
   // realised against target rather than asserting they match.
+  //
+  // THE TEMPLATE PATH RUNS QUIETER THAN THE POPULATION IT STANDS IN FOR. A fallback that
+  // produces wrong text is worse than one that produces none: an empty bio is realistic,
+  // a calqued German fragment is a tell. So the template engine takes the raised floor
+  // and the model engine takes the realistic target.
   const noneShare = 0.16;
-  const remainder = Math.min(0.98, Math.max(0.02, (population.bioEmpty - noneShare) / (1 - noneShare)));
+  const target = population.engine === 'template'
+    ? Math.max(population.bioEmpty, population.templateEmptyFloor)
+    : population.bioEmpty;
+  const remainder = Math.min(0.98, Math.max(0.02, (target - noneShare) / (1 - noneShare)));
   const adjusted = sigmoid(
     logit(remainder) +
       (TIER_ADJUSTMENT[personality.rhythm.activityTier] ?? 0) -
@@ -209,18 +263,42 @@ export function generateBio(
   const labels = lang.interestLabels ?? {};
   const parts: string[] = [];
   const used = new Set<string>();
+
+  // CLAUSES DRAW FROM A SHARED SLOT POOL. Each clause used to name an interest chosen
+  // independently, so an avatar with one interest named it in every clause: "ask me about
+  // synthesizers, trying to get better at synthesizers, i came for synthesizers and
+  // stayed for the arguments". Nobody writes their own hobby three times in one line, and
+  // it was the most visible defect in a read of two hundred profiles.
+  //
+  // The interests are consumed rather than re-read, so a second clause either takes a
+  // different one or takes a form that names none.
+  const remaining = [...interests];
+
   for (let i = 0; i < clauseCount; i++) {
     const useSentence = clauseRng.chance(sentenceBias) && sentences.length > 0;
-    const source = useSentence ? sentences : fragments;
+    const preferred = useSentence ? sentences : fragments;
+    // Only forms this clause can still fill from what is LEFT. Falling back to the
+    // other register, and only then to interest-free forms, keeps a bio composable when
+    // the interests run out before the clauses do.
+    const affordable = (src: string[]): string[] => src.filter((t) => slotsNeeded(t) <= remaining.length);
+    let source = affordable(preferred);
+    if (source.length === 0) source = affordable(useSentence ? fragments : sentences);
+    if (source.length === 0) source = [...preferred, ...(useSentence ? fragments : sentences)].filter((t) => slotsNeeded(t) === 0);
+    if (source.length === 0) break; // Nothing left that says anything; a shorter bio is correct.
+
     let pick = source[clauseRng.int(source.length)]!;
     // One redraw against repeating a clause inside one bio; not a loop, because a small
     // pool plus a high clause count must not spin.
     if (used.has(pick)) pick = source[clauseRng.int(source.length)]!;
     used.add(pick);
+    const claimed = remaining.splice(0, slotsNeeded(pick));
     // Terminal punctuation is STRIPPED here and reapplied once at the end. A clause
     // carrying its own produced "i peaked during a hiking conversation in 2019.. i am
     // legally required to mention hiking", and a comma separator after a full stop.
-    parts.push(fill(pick, pool, interests, labels, clauseRng).replace(/[.]+$/u, ''));
+    parts.push(fill(pick, pool, claimed, labels, clauseRng).replace(/[.]+$/u, ''));
+  }
+  if (parts.length === 0) {
+    return { text: null, theme: null, length: 'empty', pattern: 'empty', language, emojiCount: 0, fellBack };
   }
 
   // Mechanism 3: separator.
@@ -228,9 +306,15 @@ export function generateBio(
   let text = parts.join(separator);
 
   // Mechanism 4: capitalisation habit. Casual avatars lower-case more.
+  //
+  // GATED PER LANGUAGE. This is an English habit; German capitalises nouns, so lowercasing
+  // a German bio is not a casual style but a spelling error, and the mechanism was applied
+  // to German unchanged ("zehn jahre logistik", "meine abende gehen fast alle fuer
+  // gaertnern drauf"). A language that opts out varies on five mechanisms rather than six,
+  // and the harness reports that rather than inventing a sixth to hit the number.
   const caseRng = new Rng(seed, STREAM_CASE);
   const lowerHabit = 0.12 + (personality.style.tone / 100) * 0.4;
-  if (caseRng.chance(lowerHabit)) text = text.toLowerCase();
+  if (lang.allowLowercase && caseRng.chance(lowerHabit)) text = text.toLowerCase();
   else text = text.charAt(0).toUpperCase() + text.slice(1);
 
   // Mechanism 5: terminal punctuation. Frequently absent in real bios.
@@ -254,7 +338,7 @@ export function generateBio(
     text,
     theme,
     length: bucketFor(words, population.lengthMedians),
-    pattern: structuralSignature(text, emojiCount),
+    pattern: structuralSignature(text, emojiCount, templates.languages[language]?.separators),
     language,
     emojiCount,
     fellBack,

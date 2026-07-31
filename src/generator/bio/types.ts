@@ -67,6 +67,16 @@ export interface LanguageTemplates {
   interestLabels: Record<string, string>;
   /** Separators used to join clauses. Variety here is one of the §6 mechanisms. */
   separators: string[];
+  /**
+   * Whether the lower-case habit may be applied to this language.
+   *
+   * PER LANGUAGE BECAUSE IT IS AN ENGLISH HABIT. German capitalises nouns, so a
+   * lower-cased German bio is not a casual style but a spelling error, and the mechanism
+   * was applied to German unchanged: "meine abende gehen fast alle fuer gaertnern drauf".
+   * A language that opts out varies on five mechanisms rather than six, which the harness
+   * reports rather than papering over with an invented sixth.
+   */
+  allowLowercase: boolean;
   themes: Record<Exclude<BioTheme, 'none'>, ClausePool>;
 }
 
@@ -83,9 +93,35 @@ export interface TemplateSet {
   emoji: string[];
 }
 
+/**
+ * Which engine writes the words.
+ *
+ * `model` is the quality default. Every defect class the read of two hundred profiles
+ * found was a language defect, and language is what a model does not get wrong in those
+ * ways: it writes German that is German, does not calque idiom, does not repeat itself,
+ * writes umlauts, capitalises nouns, and holds a register.
+ *
+ * `template` is the fallback, so the tool keeps working with no model reachable and so
+ * load-test populations at scale do not need one. It is deliberately plain and quiet.
+ */
+export type TextEngine = 'template' | 'model';
+
 export interface BioPopulationConfig {
+  /** Which engine writes the text. Per run, because the expensive case and the quality
+   *  case barely overlap: nobody reads a hundred thousand load-test bios. */
+  engine: TextEngine;
   /** §3's target. Research puts real platforms at 0.60 to 0.75, higher on privacy-focused ones. */
   bioEmpty: number;
+  /**
+   * The empty rate the TEMPLATE path runs at, which is deliberately above `bioEmpty`.
+   *
+   * A fallback that produces wrong text is worse than one that produces none. An empty
+   * bio is realistic, since most real profiles have one; a calqued German fragment is a
+   * tell. Given the choice between an incorrect bio and no bio, the honest fallback for
+   * "I cannot write this well" is silence, so the template path stays quieter than the
+   * population it is standing in for. Ignored by the model path.
+   */
+  templateEmptyFloor: number;
   /** §4's configuration surface, including `empty`. Shares over the whole population. */
   bioLength: Record<BioLength, number>;
   /** Median word counts per length bucket, before the log-normal draw. */

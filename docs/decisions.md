@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-104**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -13,6 +13,75 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-104 - Bio text moves to a model, and the template pool becomes a fallback
+
+**Status: IMPLEMENTED.** `src/generator/bio/model.ts`, `src/generator/bio/cache.ts`,
+`src/generator/assemble/model-pass.ts`, `npm run assemble -- --engine model`, proven by
+`npm run verify:bio-model` (33 checks, transport faked so no model need be running).
+
+**What forced it.** A read of two hundred generated profiles produced ten defect classes.
+The structural diagnostic passed all of them: 279 distinct patterns, most common at 4.6
+percent, six varying mechanisms, entirely green, while the text said `arbeite an Kochen`,
+`Buchbinden-Verteidiger`, and "ask me about synthesizers, trying to get better at
+synthesizers, i came for synthesizers and stayed for the arguments". The measure counted
+STRUCTURAL variety and every defect was SEMANTIC. Six independent mechanisms multiply the
+number of ways a line can be wrong while the diagnostic governing them counts only how many
+distinct shapes appear.
+
+**The line is not hard versus easy, it is structure versus language.** Traits and surface
+derivation are mathematics. Names are corpus statistics, where a model would produce
+plausible-sounding names with wrong frequencies, so the deterministic corpus stays. Bios are
+language, and the specification put them on the wrong side of that line with `template` as
+the default and the model as "optional reinforcement".
+
+**The deterministic layer was never meant to write the text; its job is to decide who the
+person is.** Latent traits, archetype, style percentiles, interests, activity tier, culture
+and name are the conditioning a model needs to write the bio of a specific person rather
+than of nobody. That work is the input to this decision, not written off by it: the model
+writes wording and decides nothing, which leaves the project's standing boundary (identity,
+permissions, disclosure, actor type are never a model's call) exactly where it was.
+
+**Determinism survives by caching, keyed on three things.** Seed, conditioning version, and
+model identity. Keying on the seed alone would be worse than not caching at all: swapping
+the model or editing the archetype set would silently keep serving text written for a
+different person, and the failure would be invisible precisely because the seed still
+"reproduced". `verify:bio-model` proves each of the three regenerates on its own.
+
+**A fallback that produces wrong text is worse than one that produces none.** The template
+pool was cut to a small set of plainly correct clauses authored in their own language, with
+no idiom and no register experiments, and it runs at a raised empty rate (0.86 against the
+population's realistic 0.68). An empty bio is realistic since most real profiles have one;
+a calqued German fragment is a tell. `assemble` therefore defaults to `--on-failure empty`,
+because a population that is about to be READ takes silence over a wrong bio.
+
+**What the shrunken pool costs, measured rather than assumed.** Re-reading the regenerated
+population: the most common clause form is now **12.1 percent** of all clauses against 4.6
+percent before. That is the honest price of a small pool and it is the strongest evidence
+for the decision, since the fallback is now visibly repetitive at exactly the scale where a
+person would notice. It is meant to be used when nobody is reading.
+
+**Three defects were engine-independent and were fixed regardless.** Clauses now draw from a
+shared slot pool so an interest is named once (the most visible defect, roughly one bio in
+eight); the lower-case habit is gated per language, because German capitalises nouns and
+lower-casing it is a spelling error rather than a style; and the em-dash is gone from the
+separator pool. `verify:bio` gained seven named regression gates so a re-run fails on each.
+
+**One reported defect was not a defect, and saying so mattered.** `my lurker opinions are
+load-bearing` read like the `activityTier` enum leaking into text. It was an authored noun
+in the quirky pool that collided with the enum name; nothing substitutes runtime values into
+a bio. The gate added proves it across 20,000 bios rather than asserting it, because
+"it cannot happen" is exactly the reasoning a real leak would survive.
+
+**What remains, and is not fixable here.** `crispin sinclair` still writes German under an
+English-looking name. Bio language now walks the whole origin blend and takes the first
+authored language rather than the top origin only, so a real second language is no longer
+discarded; but the residue is CCB-S4-002's documented gap, since the shipped name corpus
+carries no culture labels and a `de` request falls back to the unlabelled bulk pool. Under
+the template engine the emoji are drawn independently of the interests, which put a
+telescope on a baking profile; the model path removes that by construction, since the model
+writes its own.
+
+---
 ### D-103 — Profile assembly and review, and what the crowd view found on its first run
 
 **Status: IMPLEMENTED** (CCB-S4-007). `src/generator/assemble/`, `npm run assemble`, proven by `npm run verify:assemble` (22 checks).

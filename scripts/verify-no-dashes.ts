@@ -16,6 +16,21 @@
  *      automatically rather than being remembered. After stripping comments, any of
  *      these characters can only be inside a string literal (no identifier or
  *      operator uses them), so a bare character scan is enough.
+ *   4. GENERATED MEMBER-FACING OUTPUT — the profile generator's authored data sets, and
+ *      an actual generated population's bios and names.
+ *
+ * FRONT 4 EXISTS BECAUSE THE RULE WAS BINDING AND THE CHECK DID NOT COVER IT. An em-dash
+ * was authored into the bio separator pool and shipped, and a member list came back
+ * reading "Ueber Astronomie rede ich jederzeit gern — Ich arbeite im Bereich Druck". The
+ * rule always covered it: a generated bio is text a member reads. What did not cover it
+ * was this harness, which scanned the bot's own copy and stopped there. A generator whose
+ * entire purpose is output that does not look machine written is the LAST place the
+ * check should have been missing, since an em-dash is one of the plainest tells there is:
+ * a member cannot type one on a phone keyboard.
+ *
+ * Generating a population rather than only reading the data files is deliberate. The
+ * separator was correct in isolation and only became member-facing text after
+ * composition, which is the same reason front 2 exists for the bot's own copy.
  *
  *   npx tsx scripts/verify-no-dashes.ts
  */
@@ -27,6 +42,12 @@ import { DEFAULT_INTERACTION } from '../src/interaction/settings.js';
 import { buildHelpReply, buildHelpTopic } from '../src/interaction/help.js';
 import { welcomeMessage } from '../src/consent/commands.js';
 import type { Intent } from '../src/interaction/intent.js';
+import {
+  DEFAULT_ASSEMBLE_CONFIG,
+  assemblePopulation,
+  loadComponents,
+  prepareAssembler,
+} from '../src/generator/assemble/index.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -114,6 +135,49 @@ walk(join(ROOT, 'src/plugins'), backstopFiles);
 for (const file of backstopFiles) {
   const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/');
   check(`${rel} (string literal)`, stripComments(readFileSync(file, 'utf8')));
+}
+
+/* ── 4. Generated member-facing output ───────────────────────────────────── */
+
+// 4a. The authored data sets. `_README` blocks are repository prose, not output, and
+// CCB-S3-043 settled that scope: the rule covers what a member can read. Every other
+// string in these files can reach a profile.
+function scanJson(node: unknown, where: string): void {
+  if (typeof node === 'string') check(where, node);
+  else if (Array.isArray(node)) node.forEach((v, i) => scanJson(v, `${where}[${i}]`));
+  else if (node !== null && typeof node === 'object') {
+    for (const [k, v] of Object.entries(node)) {
+      if (k === '_README') continue;
+      scanJson(v, `${where}.${k}`);
+    }
+  }
+}
+
+const dataFiles: string[] = [];
+function walkJson(dir: string): void {
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) walkJson(p);
+    // The shipped bulk name corpus is a third-party data set of ~100k names and is
+    // covered by 4b instead, which scans what actually comes out of it.
+    else if (name.endsWith('.json') && name !== 'names_data.json') dataFiles.push(p);
+  }
+}
+walkJson(join(ROOT, 'src/generator'));
+for (const file of dataFiles) {
+  scanJson(JSON.parse(readFileSync(file, 'utf8')), file.slice(ROOT.length + 1).replace(/\\/g, '/'));
+}
+
+// 4b. A real population. The separator that shipped was correct in isolation and only
+// became member-facing text after composition, so the data files alone are not enough.
+const assembled = assemblePopulation(
+  prepareAssembler(loadComponents(), DEFAULT_ASSEMBLE_CONFIG),
+  400,
+  1,
+);
+for (const p of assembled) {
+  if (p.bio.text !== null) check(`generated bio (seed ${p.seed})`, p.bio.text);
+  check(`generated name (seed ${p.seed})`, p.name.displayName);
 }
 
 /* ── Result ──────────────────────────────────────────────────────────────── */

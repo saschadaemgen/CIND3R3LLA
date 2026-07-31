@@ -116,7 +116,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   Components: `names/` (CCB-S4-002), `traits/` (CCB-S4-003), `surface/` (CCB-S4-005), `bio/` (CCB-S4-006), `assemble/` (CCB-S4-007)).
   `npm run assemble` renders a population for a person to READ: the statistics can all be
   green while the text is wrong, which is how CCB-S4-006 and CCB-S4-007 each found a
-  defect no number could show),
+  defect no number could show. **Bio text has two engines** (D-104): `--engine model` is
+  the quality path, because every defect a read of two hundred profiles found was a
+  LANGUAGE defect, and the template pool is the availability fallback, deliberately small,
+  plain and quiet. The deterministic layer decides who the person is; the model only
+  phrases them. Determinism survives by caching on seed + conditioning version + model
+  identity),
   `profiles/` (profile/group/authority config, runtime policy, bot onboarding —
   configuration and policy only, they never drive the SDK; unconsolidated, D-068),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
@@ -155,8 +160,9 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
-`verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio` and `verify:assemble` (the profile generator; pure
-computation, no DB.
+`verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
+`verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
+the model transport, so no Ollama need be running.
 `verify:traits` gates CORRECTNESS and only REPORTS the two quality measures: both bounds
 were withdrawn under D-095 after measurement showed they named the wrong properties.
 `npm run calibrate:traits` prints the surface replacements get written from),
