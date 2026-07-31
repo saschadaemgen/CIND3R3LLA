@@ -61,7 +61,8 @@
     "media:audit": "tsx scripts/scan-media-metadata.ts",
     "media:remediate": "tsx scripts/remediate-media.ts",
     "verify:namegen": "tsx scripts/verify-namegen.ts",
-    "verify:traits": "tsx scripts/verify-traits.ts"
+    "verify:traits": "tsx scripts/verify-traits.ts",
+    "calibrate:traits": "tsx scripts/calibrate-traits.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

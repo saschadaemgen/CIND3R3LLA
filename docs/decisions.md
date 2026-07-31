@@ -15,6 +15,30 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ### D-095 — The trait sampler's two quality bounds are starting points, and one of them is already crossed inside the valid range
 
+**Status: AMENDED. Both bounds are WITHDRAWN and neither gates the harness.** The original entry stands below as the record of how it looked; this block records what measurement then showed and what the operator decided.
+
+**The 0.9 bound was measuring the wrong population, and is withdrawn rather than moved.** It was scored over the **classified subset only** (k = 8, unclassified draws skipped), which measures how separable eight archetypes are from one another. That is a different property from population realism, and 0.917 is unremarkable for it. The measure is now **reading (b)**: the **full population** with the unclassified carried in under their own null label, k = the archetype count. Under that measure the entire documented (sigma x separation) box scores between **0.277 and 0.763** and nothing comes near 0.9.
+
+**Reading (b) has a structural ceiling of 0.937, measured.** The unclassified share has no cluster of its own by construction, so k-means must shred it across the archetype clusters and those points can never be recovered. Pushing the archetypes apart saturates the measure at 0.9373 (identical at separation x4 and x8). **Any upper bound must be read against that ceiling, not against 1.0** — which is also why the old 0.9 would have been very nearly non-binding had it simply been carried across.
+
+**The claim that archetypes "become caricatures" is withdrawn as unsupported.** Nothing measured is a measurement of caricature. AMI is label recoverability; within-archetype per-trait sd at sigma 0.5 is 0.4998, half a population standard deviation of variation on every one of six traits, which is not a caricature by any reading. The corrected wording, operator's own: *"The measure crossed its bound. AMI is label recoverability, not a measure of distinctiveness within an archetype."*
+
+**The 1.15 spread bound had no specified origin.** The trait-sampler briefing asked for a relative comparison and left "meaningfully higher" without a number; one was chosen during implementation. That is a gap in the briefing rather than a fault in the implementation, and it is recorded as such. It is withdrawn pending calibration.
+
+**A second breach was found at the other end of the valid range, and the original entry missed it.** Measured against the analytic baseline, the full-population spread ratio falls from 1.276x at sigma 0.5 to **1.137x at sigma 0.7**, below the withdrawn 1.15. AMI failed at the bottom of the documented range and spread fails at the top. This was invisible because the harness swept AMI across sigma but measured spread at `DEFAULT_SIGMA` only.
+
+**Interim posture: report, do not gate.** `verify:traits` prints every quality measurement and fails the run on none of them. Correctness is still gated: determinism, the sampling maths, the covariance index order, failure behaviour, population composition and archetype separation all still fail the run, and so does the AMI measure's own null-labelling calibration. A gate that is wrong is worse than no gate, because it invites someone to change correct code to satisfy it.
+
+**Four harness defects fixed with this amendment.** The spread is swept across sigma rather than measured at one point; the independent baseline is now **analytic** (`sd(chi_6)/E[chi_6]` = 0.29410) rather than drawn, because the drawn baseline carried the dominant noise term of a pass/fail ratio; every AMI cell uses **one n** (4,000), since the expectation term is n-dependent and the previous 6,000-against-4,000 split confounded sigma with n by about 0.005; and the caricature wording is corrected. The statistics moved to `scripts/trait-metrics.ts`, shared by the gate and the calibration pass so a bound written from one implementation cannot be enforced by another.
+
+**`npm run calibrate:traits` produces the surface the replacements get written from.** It measures AMI(b) and spread over a (sigma x separation) grid, plus the z-score property across the same grid, and asserts nothing. The dials are **not independent**: AMI here is close to a pure readout of separation-over-noise, so a bound fixed on one while the others sit at defaults breaks the moment anyone moves a different dial. The z-score constraint of §3 is a third constraint on the same two dials and is the one most easily forgotten.
+
+**Nothing shipped changes.** The default configuration (sigma 0.6, separation 2.0) measures AMI(b) 0.548, spread 1.19x, mean per-trait sd 0.966, and sits comfortably inside every reading.
+
+---
+
+**Original entry, as delivered under CCB-S4-003:**
+
 **Status: IMPLEMENTED** (CCB-S4-003; as measurement and reporting, the bounds themselves
 being the briefing's, unchanged).
 

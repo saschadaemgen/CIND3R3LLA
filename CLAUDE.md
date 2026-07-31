@@ -151,7 +151,10 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
-`verify:namegen` and `verify:traits` (the profile generator; pure computation, no DB),
+`verify:namegen` and `verify:traits` (the profile generator; pure computation, no DB.
+`verify:traits` gates CORRECTNESS and only REPORTS the two quality measures: both bounds
+were withdrawn under D-095 after measurement showed they named the wrong properties.
+`npm run calibrate:traits` prints the surface replacements get written from),
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
 proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture
