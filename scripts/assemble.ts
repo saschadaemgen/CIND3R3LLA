@@ -86,6 +86,10 @@ if (engine === 'model') {
       `(${report.keptTemplateText} kept template text, ${report.emptied} emptied)`,
   );
   for (const [reason, n] of Object.entries(report.failures)) console.log(`    ${n}x ${reason}`);
+  if (report.retried > 0) console.log(`  ${report.retried} needed a second attempt`);
+  if (report.cacheRejected > 0) {
+    console.log(`  ${report.cacheRejected} cached bios were rejected by today's rules and rewritten`);
+  }
   if (report.cache.stale > 0) console.log(`  ${report.cache.stale} cache entries this run did not ask for`);
   // A model path that silently wrote nothing is the failure this reports rather than
   // absorbs: the files would still be written and would still look green.

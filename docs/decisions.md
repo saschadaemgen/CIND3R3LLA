@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-104**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-106**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,98 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-106 - What reading the first model population found
+
+**Status: IMPLEMENTED.** `qwen3.5:9b` (ollama 0.32.3, family qwen35, 9.7B, Q4_K_M),
+53 bios over 200 profiles in 32 seconds, zero transport failures.
+
+**The model default named a model that was not installed.** `qwen2.5:7b-instruct` was a
+plausible guess and was absent. A default that cannot run turns "not configured" into "the
+model is failing", which is the exact distinction the standing rule asks to be kept, so the
+default now names a model verified against `GET /api/tags` and says when it was checked.
+
+**Defect 1: the model recited its own conditioning.** "I am a very organised, warm Linux
+enthusiast who finds quiet moments", "curious gardener. blunt cook.", "Organised typography
+enthusiast with a curious mind": `organised`, `warm`, `curious`, `blunt` are the exact trait
+band words the prompt uses. Nobody describes themselves as organised and warm; being
+organised and warm is what the writing is supposed to SHOW. Now a named rejection
+(`recites-traits`) at two or more matches, because one is coincidence, plus a prompt clause
+saying the person description is never vocabulary.
+
+**The rejection list carries translations**, because the recitation survives translation.
+The conditioning is English and the bio is not: "Ich bin geordnet, doch warmherzig" is the
+same defect as "I am organised and warm", and an English-only list called it clean.
+
+**Defect 2: bio language was gated on a template pool the model never uses.** `languageFor`
+requires an authored clause pool, which is right for the fallback and wrong for a model that
+writes Spanish without one. `Juan García Hernández` wrote English for no reason at all. The
+model path now follows the origin blend directly (`originLanguageFor`), which closes the
+reported "language does not follow the name's culture" defect **for this path outright**:
+the run afterwards wrote Spanish, Dutch, French and German from origins with no pools.
+
+**A CHECK THAT SILENTLY DID NOTHING, which is worse than no check.** The recitation gate was
+built as ``new RegExp(`${w}`)`` inside a template literal, where `` is U+0008
+backspace rather than a word boundary. It read correctly, type-checked, gated nothing, and
+53 bios shipped unfiltered while the harness reported green. Found by running the validator
+against the actual output rather than by reading it, and now gated on itself: the harness
+asserts both that the boundary matches and that substrings do not.
+
+**Cached text is re-validated on read, not trusted.** The cache key names seed, conditioning
+and model, deliberately not the validator, which is code rather than conditioning. Without
+re-validation the tightened gate would have kept serving the 53 bios written before it
+existed. Re-checking on read costs nothing and makes every future gate retroactive; the run
+after the fix rejected and rewrote exactly the two bios that recited.
+
+**One retry before a bio is dropped, counted.** A rejection is usually a bad sample rather
+than a bad model, so a second attempt at a perturbed seed costs one local inference and
+saves an empty bio. Counted, so a model needing two attempts every time is visible rather
+than merely slow.
+
+---
+### D-105 - Three consequences of the first real model run
+
+**Status: IMPLEMENTED.** Follows D-104, after `qwen3.5:9b` actually wrote a population and
+it was read.
+
+**(a) A new source tree does not inherit the existing checks. STANDING RULE.**
+
+The em-dash finding generalises and is the most useful thing in the previous delivery. The
+rule held (CCB-S3-021), the check ran, the check was green, and the output violated the
+rule, because `verify:no-dashes` was written before `src/generator/` existed and nothing
+announced that its scope had gone stale. **Every standing check in this repository has the
+same exposure to every directory added after it.** So when a source tree is added, the
+standing checks are walked and each one is decided on rather than assumed; a green run over
+a scope that excludes the new code is worse than no check, because it reads as coverage.
+Recorded in `CLAUDE.md` beside the rule it failed to enforce.
+
+**(b) The generator-owned model transport is a TEMPORARY boundary, recorded now so the
+convergence is a decision rather than a discovery.**
+
+Building the model path generator-owned answered three open questions by construction:
+separate from the AI runtime's routing rather than reusing it, batch rather than
+interactive, and outside the AI administration surface. That is right for what this is
+today: the generator is offline tooling that must run without production infrastructure,
+and batch bio generation competing with live bot replies would be a poor trade.
+
+It stops being right at a specific point that is already on the roadmap. The configuration
+design puts the generator in the administration console, and that console already has
+panels for the local runtime, the model catalogue and routing. On the day the generator
+becomes an admin feature rather than offline tooling, a second model transport means two
+places to configure a model, two audit trails, and two ways for a model to be unreachable.
+Nothing changes now. What changes is that the convergence is expected.
+
+**(c) Emoji are withdrawn from the fallback rather than fixed.**
+
+They drew from a flat pool with no view of the interests and put a telescope on a baking
+profile. Coupling the pool to the interests would work and is more machinery for the one
+path whose job is to have less. The fallback's job is to be plainly correct or silent, and
+emoji are decorative variety, which is what it stopped trying to do. `emojiAffinity` still
+reaches the model path, where the personality is in front of the writer. The check that
+asserted emoji track affinity was **inverted rather than deleted**, because a silently
+removed check reads afterwards as a property nobody tested rather than one withdrawn.
 
 ---
 

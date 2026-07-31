@@ -52,15 +52,37 @@ export interface ModelBioConfig {
    * absent one is ordinary, since most real profiles have none.
    */
   onFailure: 'template' | 'empty';
+  /**
+   * How many times to ask before the bio is treated as failed.
+   *
+   * A rejection is usually a bad SAMPLE rather than a bad model: the same conditioning
+   * that recited its own adjectives once often does not the second time. Retrying costs
+   * one local inference and saves an empty bio, and the retry is counted so a model that
+   * needs two attempts every time is visible rather than merely slow.
+   */
+  attempts: number;
 }
 
+/**
+ * The default names a model that is ACTUALLY INSTALLED, checked rather than guessed.
+ *
+ * The first version of this file defaulted to `qwen2.5:7b-instruct`, which was a plausible
+ * name and was not present on the machine. A default that cannot run is worse than no
+ * default: it turns "no model configured" into "the model is failing", which is exactly
+ * the distinction the standing rule asks to be kept.
+ *
+ * Verified against `GET /api/tags` on 2026-07-31: ollama 0.32.3 serving `qwen3.5:9b`
+ * (family qwen35, 9.7B, Q4_K_M, 262144 context). Re-check when the host changes; the
+ * model identity is part of the bio cache key, so a change regenerates visibly.
+ */
 export const DEFAULT_MODEL_BIO_CONFIG: ModelBioConfig = Object.freeze({
   baseUrl: 'http://127.0.0.1:11434',
-  model: 'qwen2.5:7b-instruct',
+  model: 'qwen3.5:9b',
   timeoutMs: 30_000,
   temperature: 0.9,
   concurrency: 4,
   onFailure: 'template',
+  attempts: 2,
 });
 
 /**
@@ -93,6 +115,32 @@ export interface BioConditioning {
    */
   displayName: string;
 }
+
+/**
+ * Every adjective the conditioning can contain.
+ *
+ * Kept as one list because the validator has to know what the prompt said. The first real
+ * model run wrote "I am a very organised, warm Linux enthusiast who finds quiet moments"
+ * and "Organised typography enthusiast with a curious mind": the model RECITED its own
+ * inputs instead of expressing them. Nobody describes themselves as organised and warm;
+ * being organised and warm is what the writing is supposed to show.
+ */
+const CONDITIONING_WORDS = [
+  // English, as the prompt states them.
+  'conventional', 'curious', 'casual', 'organised', 'organized', 'reserved', 'outgoing',
+  'blunt', 'warm', 'unflappable', 'highly strung', 'formal', 'neutral', 'terse',
+  'moderate', 'talkative', 'cool', 'serious', 'dry', 'playful', 'lurker', 'contributor',
+  'superuser',
+  // AND THE TRANSLATIONS, because the recitation survives translation. The conditioning
+  // is written in English and the bio is not: "Ich bin geordnet, doch warmherzig" is the
+  // same defect as "I am organised and warm", and an English-only list would have called
+  // it clean. Every language the model is asked to write gets its own entries.
+  'geordnet', 'ordentlich', 'strukturiert', 'warmherzig', 'neugierig', 'zurückhaltend',
+  'gesellig', 'direkt', 'gelassen', 'förmlich', 'wortkarg', 'gesprächig', 'verspielt',
+  'organizado', 'curioso', 'reservado', 'cálido', 'sociable', 'formal', 'parco',
+  'organisé', 'curieux', 'réservé', 'chaleureux', 'sociable', 'ludique',
+  'georganiseerd', 'nieuwsgierig', 'teruggetrokken', 'hartelijk', 'spraakzaam',
+] as const;
 
 /** Percentiles read as words. A model handles "quite formal" better than `tone: 23`. */
 function band(v: number, low: string, mid: string, high: string): string {
@@ -153,6 +201,12 @@ function systemPrompt(c: BioConditioning): string {
     `- No hashtags, no contact details, no links, no quotation marks around the whole bio.`,
     `- Do not explain yourself. Return only the bio text.`,
     ``,
+    `THE PERSON DESCRIPTION IS NOT VOCABULARY. It says how this person writes and what`,
+    `they care about. It is never a list of words to use, and never something to state.`,
+    `Someone organised writes an organised bio; they do not write "I am organised".`,
+    `Someone warm sounds warm; they do not say "warm". Never describe your own`,
+    `personality, and never use the words from the person description in the bio.`,
+    ``,
     `Match the person and the writing style given. The point is that this reads as one`,
     `specific person rather than as a generic profile.`,
   ].join('\n');
@@ -197,7 +251,13 @@ const META = /^(here(?: is|'s)\b|sure[,!]|certainly[,!]|bio:|profile:|okay[,!]|o
  * template output, so the failure modes that CAN be named mechanically are named here and
  * the rest is what the reading step in the review views is for.
  */
-export type BioRejection = 'empty' | 'meta-text' | 'too-long' | 'names-self' | 'has-link';
+export type BioRejection =
+  | 'empty'
+  | 'meta-text'
+  | 'too-long'
+  | 'names-self'
+  | 'has-link'
+  | 'recites-traits';
 
 export function validateBio(text: string, c: BioConditioning): BioRejection | null {
   if (text.length === 0) return 'empty';
@@ -210,6 +270,17 @@ export function validateBio(text: string, c: BioConditioning): BioRejection | nu
   if (first !== undefined && first.length >= 3 && text.toLocaleLowerCase().includes(first.toLocaleLowerCase())) {
     return 'names-self';
   }
+  // TWO OR MORE, not one. A bio may legitimately contain "curious" or "dry"; a bio
+  // containing two of the exact adjectives its own conditioning used is reciting the
+  // input, which is what the first real model run did in roughly half its output.
+  const lower = text.toLocaleLowerCase();
+  // `\\b`, NOT `\b`. In a template literal `\b` is U+0008, the backspace character, so
+  // the first version of this line built the regex /organised/ and matched
+  // nothing at all. It read correctly, type-checked, and silently gated nothing; the
+  // 53-bio run that followed went out unfiltered. Found by testing the validator against
+  // the actual output rather than by reading it.
+  const recited = CONDITIONING_WORDS.filter((w) => new RegExp(`\\b${w}\\b`, 'u').test(lower));
+  if (recited.length >= 2) return 'recites-traits';
   return null;
 }
 
@@ -244,6 +315,11 @@ export async function writeBioWithModel(
         stream: false,
         temperature: config.temperature,
         max_tokens: 200,
+        // The installed model has a `thinking` capability, and a profile description is
+        // the last thing that needs one. Left on it spends most of its latency and most
+        // of its token budget reasoning about a sentence, and a population is thousands
+        // of these. Ignored by models that do not support the field.
+        reasoning_effort: 'none',
         // The same seed must give the same text from the same model. The cache is the
         // real guarantee, but asking costs nothing and makes a cold run reproducible too.
         seed: c.seed,

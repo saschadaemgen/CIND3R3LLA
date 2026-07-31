@@ -51,6 +51,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   dashboard, not only a log file. Distinguish **"not configured"** (a choice) from
   **"configured but failing"** (a fault). A fallback that can mask a fault is counted and
   the count shown in the admin. Do not add noise: alert on real faults, not normal states.
+- **A new source tree does not inherit the existing checks; their scopes are reviewed**
+  (standing rule, D-105). A check written before a subtree existed does not cover that
+  subtree, and **nothing announces it**: the rule held, the check ran, the check was green,
+  and the output violated the rule. That is exactly how an em-dash reached generated member
+  facing text while `verify:no-dashes` passed, because it scanned the bot's own copy and
+  the generator did not exist when it was written. Every standing check has the same
+  exposure to every directory added after it. So when a source tree is added, walk the
+  standing checks and decide **per check** whether it now applies, rather than assuming the
+  green run means covered.
 - **No em-dashes in member-facing output** (standing rule, CCB-S3-021). The em-dash
   (`—`), en-dash (`–`), and horizontal bar (`―`) must never appear in any string a
   member can read, in any language: persona strings, locale files, the help and

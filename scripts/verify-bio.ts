@@ -240,11 +240,22 @@ section('Structure (§6): the hard part');
   const caps = new Set(written.map((p) => (p.bio.text! === p.bio.text!.toLowerCase() ? 'lower' : 'mixed')));
   const clauseCounts = new Set(written.map((p) => p.bio.pattern.split('|')[0]));
   const fragOrSent = new Set(written.map((p) => p.bio.pattern.split('|')[1]));
+  const emojiUsed = new Set(written.map((p) => p.bio.emojiCount));
   measure('mechanisms actually varying',
     `clause counts ${clauseCounts.size}, fragment/sentence ${fragOrSent.size}, ` +
-      `capitalisation ${caps.size}, terminal punctuation ${endings.size}`);
-  check('at least four mechanisms vary, not just the skeleton',
+      `capitalisation ${caps.size}, terminal punctuation ${endings.size}, ` +
+      `emoji ${emojiUsed.size} (withdrawn, so 1 is correct)`);
+  // FOUR, NOT SIX, AND THE NUMBER WAS NEVER THE GOAL. Emoji were withdrawn from this path
+  // because they drew from a flat pool with no view of the interests and put a telescope
+  // on a baking profile, and the lower-case habit is English-only because German
+  // capitalises nouns. A path whose job is to be plainly correct or silent buys nothing by
+  // hitting a mechanism count, and §6's six coexisted with text bad enough to move bio
+  // generation to a model.
+  check('the mechanisms that remain do actually vary',
     clauseCounts.size > 1 && fragOrSent.size > 1 && caps.size > 1 && endings.size > 1);
+  check('emoji are gone from the fallback, not merely rare',
+    emojiUsed.size === 1 && emojiUsed.has(0),
+    'the model path writes its own, with the personality in front of it');
 }
 
 /* ================================================================== §7 language */
@@ -313,17 +324,19 @@ section('Language (§7)');
 
 section('Coherence (§10)');
 {
+  // EMOJI ARE NO LONGER A PROPERTY OF THIS PATH, so `emojiAffinity` correctly has no
+  // effect here and asserting one would be asserting a defect. The check is not deleted
+  // but INVERTED, because a silently removed check reads afterwards as a property nobody
+  // tested rather than one deliberately withdrawn.
+  //
+  // `emojiAffinity` still reaches the model path, where it belongs: the model is told how
+  // often this person uses emoji and writes them into the text itself, so they land on
+  // the interest the person actually has instead of being drawn from a flat pool.
   const highEmoji = written.filter((p) => p.personality.style.emojiAffinity > 70);
-  const lowEmoji = written.filter((p) => p.personality.style.emojiAffinity < 30);
   const highRate = highEmoji.reduce((s, p) => s + p.bio.emojiCount, 0) / Math.max(1, highEmoji.length);
-  const lowRate = lowEmoji.reduce((s, p) => s + p.bio.emojiCount, 0) / Math.max(1, lowEmoji.length);
-  measure('emoji per bio', `${highRate.toFixed(2)} at high affinity, ${lowRate.toFixed(2)} at low`);
-  check('high emojiAffinity produces measurably more emoji', highRate > lowRate + 0.1);
-
-  const overall = written.reduce((s, p) => s + p.bio.emojiCount, 0) / written.length;
-  measure('emoji across all written bios', `${overall.toFixed(2)} per bio`);
-  check('most bios in most populations contain none (§8)',
-    written.filter((p) => p.bio.emojiCount === 0).length / written.length > 0.6);
+  measure('emoji per bio at high affinity', `${highRate.toFixed(2)} (withdrawn from this path, so 0.00 is correct)`);
+  check('emojiAffinity has no effect on the fallback, because emoji were withdrawn',
+    highRate === 0, 'it reaches the model path instead, where the personality is in front of it');
 
   const highV = written.filter((p) => p.personality.style.verbosity > 70);
   const lowV = written.filter((p) => p.personality.style.verbosity < 30);

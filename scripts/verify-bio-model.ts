@@ -177,6 +177,63 @@ section('A seed reproduces its bio (decision §4)');
     `${Object.keys(stored.entries).length} entries across three keyings`);
 
   const key = BioCache.key(7, CONDITIONING, modelIdentity(MODEL_CONFIG));
+  // A TIGHTENED GATE MUST REACH TEXT THAT IS ALREADY CACHED. The validator is code, not
+  // conditioning, so it is deliberately absent from the key; without re-validation on
+  // read, the run that tightened the recitation gate would have kept serving all 53 bios
+  // written before it existed.
+  //
+  // The cache is written BY HAND here, because bad text cannot get in through the normal
+  // path: `writeBioWithModel` validates before `cache.set` is reached. That is the real
+  // scenario exactly, though. The entry is what an OLDER, laxer validator wrote.
+  {
+    const dir2 = mkdtempSync(join(tmpdir(), 'biomodel-'));
+    const path2 = join(dir2, 'c.json');
+    const seeded = population();
+    const identity2 = modelIdentity(MODEL_CONFIG);
+    const stale = Object.fromEntries(
+      seeded
+        .filter((p) => p.bio.text !== null)
+        .map((p) => [
+          BioCache.key(p.seed, CONDITIONING, identity2),
+          { text: 'organised and warm, mostly reading', at: '2020-01-01T00:00:00.000Z' },
+        ]),
+    );
+    writeFileSync(path2, JSON.stringify({ format: 1, entries: stale }, null, 2));
+
+    const r5 = await runModelPass(seeded, {
+      config: MODEL_CONFIG, templates: components.templates, conditioningVersion: CONDITIONING,
+      cachePath: path2,
+      fetchImpl: fakeModel(() => 'linux, slowly').fetch,
+      now: () => '2026-07-31T00:00:00.000Z',
+    });
+    check('cached text the current validator rejects is regenerated, not served',
+      r5.cacheRejected === r5.attempted && r5.fromCache === 0,
+      `${r5.cacheRejected} of ${r5.attempted} rejected, ${r5.fromCache} served`);
+    check('and the replacement is what the population ends up with',
+      seeded.filter((p) => p.bio.text !== null).every((p) => p.bio.text === 'linux, slowly'));
+
+    // The converse: text that still passes is still served, so this is a targeted
+    // rejection rather than a cache that has quietly stopped working.
+    const good = population();
+    const fresh = Object.fromEntries(
+      good.filter((p) => p.bio.text !== null).map((p) => [
+        BioCache.key(p.seed, CONDITIONING, identity2),
+        { text: 'linux, slowly', at: '2020-01-01T00:00:00.000Z' },
+      ]),
+    );
+    const path3 = join(dir2, 'd.json');
+    writeFileSync(path3, JSON.stringify({ format: 1, entries: fresh }, null, 2));
+    const r6 = await runModelPass(good, {
+      config: MODEL_CONFIG, templates: components.templates, conditioningVersion: CONDITIONING,
+      cachePath: path3,
+      fetchImpl: fakeModel(() => new Error('the model must not be called')).fetch,
+    });
+    check('cached text that still passes is still served without calling the model',
+      r6.fromCache === r6.attempted && r6.cacheRejected === 0 && r6.generated === 0,
+      `${r6.fromCache} served`);
+    rmSync(dir2, { recursive: true, force: true });
+  }
+
   check('the key names all three inputs',
     key.includes('7|') && key.includes(CONDITIONING) && key.includes(MODEL_CONFIG.model));
   rmSync(dir, { recursive: true, force: true });
@@ -268,6 +325,30 @@ section('Model output is sanitised and validated before it can be read');
   check('a runaway length is rejected', validateBio('word '.repeat(60), base) === 'too-long');
   check('empty is rejected', validateBio('', base) === 'empty');
   check('a plain bio passes', validateBio('Cycling, mostly. Slow about it.', base) === null);
+
+  // THE MODEL RECITES ITS OWN INPUTS unless stopped. The first real run against
+  // qwen3.5:9b wrote "I am a very organised, warm Linux enthusiast who finds quiet
+  // moments" and "curious gardener. blunt cook.": the conditioning adjectives, verbatim.
+  // Nobody describes themselves as organised and warm; being organised and warm is what
+  // the writing is supposed to SHOW.
+  check('reciting two conditioning adjectives is rejected',
+    validateBio('I am a very organised, warm Linux enthusiast who finds quiet moments.', base) === 'recites-traits');
+  check('and it survives translation, which an English-only list would have missed',
+    validateBio('Ich bin geordnet, doch warmherzig, und lese viel.', base) === 'recites-traits',
+    'the conditioning is English and the bio is not');
+  // ONE is coincidence. A real bio may well contain "curious" or "dry".
+  check('a single conditioning word is left alone',
+    validateBio('Curious gardener who binds books badly.', base) === null);
+
+  // A REGRESSION GATE ON THE CHECK ITSELF. The first version of this validator built its
+  // regex with `` inside a template literal, which is U+0008 backspace rather than a
+  // word boundary. It read correctly, type-checked, and matched nothing, so it gated
+  // nothing and a 53-bio run went out unfiltered. A check that silently does nothing is
+  // worse than no check, because the harness reports it as passing.
+  check('the word-boundary regex is a word boundary, not a backspace character',
+    validateBio('organised and warm', base) === 'recites-traits'
+      && validateBio('disorganisedly warmish', base) === null,
+    'substrings must not match');
   rmSync(dir, { recursive: true, force: true });
 }
 

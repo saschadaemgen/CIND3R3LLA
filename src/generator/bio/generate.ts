@@ -1,23 +1,30 @@
 /**
  * Bio generation, and the structural signature that makes §6 measurable.
  *
- * ── THE SIX MECHANISMS §6 REQUIRES ─────────────────────────────────────────
+ * ── THIS IS THE FALLBACK PATH. THE MODEL PATH IS THE PRIMARY ONE (D-104) ───
  *
- * "Structural variety must come from more than one mechanism. Multiple skeletons is one
- * mechanism and is not enough on its own." So there are six, each on its own named RNG
- * stream so adding a seventh cannot shift the sequence the others see:
+ * §6 asked for six mechanisms, and six were built, and the result read badly enough to
+ * move bio text to a model. Six independent mechanisms multiply the ways a line can be
+ * wrong while the diagnostic governing them counts only how many distinct SHAPES appear,
+ * which is why 279 patterns at 4.6 percent coexisted with "arbeite an Kochen".
  *
- *   1. clause composition   1 to 3 clauses drawn from a themed pool
- *   2. fragment or sentence  chosen per clause, not per bio; real bios are often neither
- *                            wholly one nor the other
- *   3. separator             six of them, including a newline
- *   4. capitalisation        sentence case or all-lower, a habit rather than a rule
+ * So this path no longer optimises variety. Its job is to be PLAINLY CORRECT OR SILENT,
+ * and two of the six mechanisms have been withdrawn on that ground rather than fixed:
+ *
+ *   1. clause composition   1 to 3 clauses drawn from a themed pool, sharing a slot pool
+ *                           so one interest is never named twice
+ *   2. fragment or sentence  chosen per clause, not per bio
+ *   3. separator             six of them, all typeable on a phone keyboard
+ *   4. capitalisation        English only. German capitalises nouns, so lower-casing it is
+ *                           a spelling error rather than a habit
  *   5. terminal punctuation  present or absent
- *   6. emoji                 count and position
+ *   6. emoji                 WITHDRAWN. Drawn from a flat pool with no view of the
+ *                           interests, it put a telescope on a baking profile. Coupling it
+ *                           to the interests is more machinery for the one path whose job
+ *                           is to have less; the model path writes its own, coherently.
  *
- * The pool is modest on purpose. Six mechanisms over a small pool produce a far larger
- * structural space than a large pool of whole-bio skeletons would, and the space is the
- * thing a reader perceives.
+ * Four varying mechanisms in English, three in German. `verify:bio` reports the realised
+ * count rather than asserting six, because the number was never the goal.
  */
 
 import { Rng } from '../rng.js';
@@ -36,7 +43,6 @@ const STREAM_CLAUSES = 'bio:clauses';
 const STREAM_SEPARATOR = 'bio:separator';
 const STREAM_CASE = 'bio:case';
 const STREAM_PUNCT = 'bio:punct';
-const STREAM_EMOJI = 'bio:emoji';
 
 function logit(p: number): number {
   const c = Math.min(0.999, Math.max(0.001, p));
@@ -78,6 +84,27 @@ const TIER_MEAN = Object.keys(TIER_ADJUSTMENT).reduce(
  * corpus carries no culture labels (CCB-S4-002), so a `de` request returns whatever the
  * unlabelled bulk pool gives. Nothing decided here can see that.
  */
+/**
+ * The language this avatar's ORIGIN implies, with no template requirement.
+ *
+ * The model path needs this rather than `languageFor`. A model writes Spanish without
+ * anyone authoring a Spanish clause pool, so gating its language on the existence of a
+ * template set imported the fallback path's limitation into the path that does not have
+ * it: `Juan García Hernández` wrote English on the first real model run, for no reason
+ * except that `es` had no pool the model was never going to use.
+ *
+ * Returns `null` when the origin maps to no language tag at all, which is the only case
+ * where the caller has nothing better than the fallback language.
+ */
+export function originLanguageFor(personality: Personality, templates: TemplateSet): string | null {
+  const byWeight = Object.entries(personality.identity.originBlend).sort((a, b) => b[1] - a[1]);
+  for (const [origin] of byWeight) {
+    const mapped = templates.originLanguages[origin];
+    if (mapped !== undefined) return mapped;
+  }
+  return null;
+}
+
 export function languageFor(
   personality: Personality,
   templates: TemplateSet,
@@ -323,15 +350,21 @@ export function generateBio(
   if (wantsStop && !/[.!?]$/u.test(text)) text += '.';
   if (!wantsStop) text = text.replace(/[.]+$/u, '');
 
-  // Mechanism 6: emoji. Most bios in most populations contain none (§8).
-  const emojiRng = new Rng(seed, STREAM_EMOJI);
-  const affinity = personality.style.emojiAffinity / 100;
-  let emojiCount = 0;
-  if (emojiRng.chance(Math.max(0, affinity - 0.45) * 1.3)) {
-    emojiCount = emojiRng.chance(affinity * 0.5) ? 2 : 1;
-    const picked = Array.from({ length: emojiCount }, () => templates.emoji[emojiRng.int(templates.emoji.length)]!);
-    text = emojiRng.chance(0.25) ? `${picked.join('')} ${text}` : `${text} ${picked.join('')}`;
-  }
+  // MECHANISM 6, EMOJI, IS GONE FROM THIS PATH ON PURPOSE.
+  //
+  // It drew from a flat pool with no view of the interests, so a telescope landed on a
+  // baking profile. Tying the pool to the interests would work, and it is more machinery
+  // for the one path whose entire job is to have less: this path is the fallback, and its
+  // job is now to be plainly correct or silent. Emoji are decorative variety, and variety
+  // is exactly what this path stopped trying to do.
+  //
+  // The model path keeps them and keeps them coherent, because it has the personality in
+  // front of it and writes its own into the text. `templates.emoji` therefore survives as
+  // the set the model pass RECOGNISES when counting, not as a set anything draws from.
+  //
+  // The cost, stated rather than hidden: this path now varies on four mechanisms in
+  // English and three in German, not six. `verify:bio` reports the realised count.
+  const emojiCount = 0;
 
   const words = text.trim().split(/\s+/u).filter(Boolean).length;
   return {

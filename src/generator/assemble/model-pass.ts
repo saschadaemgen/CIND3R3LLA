@@ -15,12 +15,13 @@
 import { BioCache } from '../bio/cache.js';
 import {
   modelIdentity,
+  validateBio,
   writeBioWithModel,
   type BioConditioning,
   type FetchLike,
   type ModelBioConfig,
 } from '../bio/model.js';
-import { structuralSignature } from '../bio/generate.js';
+import { originLanguageFor, structuralSignature } from '../bio/generate.js';
 import type { TemplateSet } from '../bio/types.js';
 import type { AssembledProfile } from './index.js';
 
@@ -34,6 +35,10 @@ export interface ModelPassReport {
   failures: Record<string, number>;
   keptTemplateText: number;
   emptied: number;
+  /** Bios that needed more than one attempt. A model always needing two is visible. */
+  retried: number;
+  /** Cached bios today's validator rejects, so they were regenerated rather than served. */
+  cacheRejected: number;
   cache: BioCache['stats'];
 }
 
@@ -84,15 +89,29 @@ export async function runModelPass(
     failures: {},
     keptTemplateText: 0,
     emptied: 0,
+    retried: 0,
+    cacheRejected: 0,
     cache: cache.stats,
   };
   let done = 0;
 
   await pooled(work, config.concurrency, async (profile) => {
+    // THE MODEL PATH IS NOT LIMITED TO THE AUTHORED TEMPLATE LANGUAGES. `languageFor`
+    // requires a clause pool to exist, which is right for the fallback and wrong here: a
+    // model writes Spanish with no Spanish pool authored. On the first real model run
+    // `Juan García Hernández` wrote English for no reason except that `es` had no pool
+    // the model was never going to use. Following the origin directly fixes the reported
+    // defect "language does not follow the name's culture" for this path outright.
+    const language = originLanguageFor(
+      { latent: profile.latent, style: profile.surface.style, identity: profile.surface.identity,
+        rhythm: profile.surface.rhythm, content: profile.surface.content },
+      templates,
+    ) ?? profile.bio.language;
+
     const key = BioCache.key(profile.seed, conditioningVersion, identity);
     const conditioning: BioConditioning = {
       seed: profile.seed,
-      language: profile.bio.language,
+      language,
       theme: profile.bio.theme as BioConditioning['theme'],
       latent: profile.latent,
       style: profile.surface.style,
@@ -103,14 +122,42 @@ export async function runModelPass(
       displayName: profile.name.displayName,
     };
 
+    // CACHED TEXT IS RE-VALIDATED, NOT TRUSTED. The cache key names the seed, the
+    // conditioning and the model, and deliberately not the validator, which is code
+    // rather than conditioning. Without this the cache would keep serving text that
+    // today's rules reject: the recitation gate was tightened after a run had already
+    // cached 53 bios written without it, and every one of them would have survived
+    // untouched. Re-checking on read costs nothing and makes the gate retroactive.
     const cached = cache.get(key);
-    if (cached !== null) {
+    if (cached !== null && validateBio(cached, conditioning) === null) {
+      profile.bio.language = language;
       applyText(profile, cached, templates);
       report.fromCache++;
     } else {
+      if (cached !== null) report.cacheRejected++;
       try {
-        const text = await writeBioWithModel(conditioning, config, options.fetchImpl);
+        // A rejection is usually a bad sample, not a bad model. Every attempt after the
+        // first perturbs the seed so the model does not simply repeat itself.
+        let text: string | null = null;
+        let lastError: unknown = null;
+        for (let attempt = 0; attempt < Math.max(1, config.attempts); attempt++) {
+          try {
+            text = await writeBioWithModel(
+              attempt === 0 ? conditioning : { ...conditioning, seed: conditioning.seed + attempt * 1_000_003 },
+              config,
+              options.fetchImpl,
+            );
+            if (attempt > 0) report.retried++;
+            break;
+          } catch (err) {
+            lastError = err;
+          }
+        }
+        if (text === null) throw lastError;
         cache.set(key, text, now());
+        // The record must say which language it was WRITTEN in, not which one the
+        // fallback would have used, or the review views describe the wrong population.
+        profile.bio.language = language;
         applyText(profile, text, templates);
         report.generated++;
       } catch (error) {
