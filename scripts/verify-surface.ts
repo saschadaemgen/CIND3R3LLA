@@ -29,6 +29,7 @@ import {
   TRAIT_ORDER,
   defaultCovariance,
   loadArchetypes,
+  linearCombinationCorrelation,
   populationMoments,
   prepareTraitSampler,
   type Latent,
@@ -186,6 +187,20 @@ section('Derivation correctness (§11)');
     worstMean = Math.max(worstMean, Math.abs(mean(raws) - norm[field]!.mean));
   }
   measure('analytic vs empirical', `sd differs by at most ${worstSd.toFixed(4)}, mean by ${worstMean.toFixed(4)}`);
+
+  // THE OTHER MOMENT. The specification calls the traits z-scores: population mean 0 AND
+  // standard deviation 1. The calibration work constrained the sd and reached 0.984;
+  // nobody had checked the mean, so the z-score claim was half established. It is free
+  // here, because populationMoments already computes it for the percentile transform.
+  const absMean = moments.mean.map(Math.abs);
+  const worstTrait = TRAIT_ORDER[absMean.indexOf(Math.max(...absMean))];
+  measure('population MEAN per trait (analytic)',
+    TRAIT_ORDER.map((t, i) => `${t.slice(0, 4)} ${moments.mean[i]!.toFixed(3)}`).join('  '));
+  measure('largest mean magnitude', `${Math.max(...absMean).toFixed(3)} on ${worstTrait}`);
+  console.log('         REPORTED. The z-score claim has two halves and only the sd half was ever');
+  console.log('         constrained. If the mean is materially non-zero the same question arises');
+  console.log('         as it did for the sd: a constraint the archetype solve should carry, or a');
+  console.log('         documented property of the set.');
   check('the analytic standard deviation matches a large sample within 0.02',
     worstSd < 0.02, worstSd.toFixed(4));
   check('the analytic mean matches a large sample within 0.02', worstMean < 0.02, worstMean.toFixed(4));
@@ -272,9 +287,25 @@ section('Reaction weights (§6, §11)');
 
 section('The coherence cap (§5) and overrides (§9)');
 {
-  const cappedCount = population.filter((p) => p.surface.capped.includes('emojiAffinity')).length;
-  const share = cappedCount / N;
-  measure('avatars whose emojiAffinity the cap changed', `${cappedCount} of ${N} (${(share * 100).toFixed(2)}%)`);
+  // Every rule reports, and ZERO IS A FINDING rather than a pass: a rule that never
+  // fires is either decoration, or it guards against something a defect elsewhere has
+  // made impossible. The second was the live case here, and a report asking only
+  // whether a rule fired too often could not have seen it.
+  let zeroFiring = 0;
+  for (const rule of loadings.coherence) {
+    const fired = population.filter((p) => p.surface.firedRules.includes(rule.id)).length;
+    measure(`rule ${rule.id}`,
+      `${rule.enabled ? 'enabled' : 'DISABLED'}, fired on ${fired} of ${N} (${((fired / N) * 100).toFixed(2)}%)`);
+    if (rule.enabled && fired === 0) {
+      zeroFiring++;
+      console.log(`         ZERO FIRINGS is a FINDING, not a pass. Either ${rule.id} is`);
+      console.log('         decoration, or it guards against something a defect elsewhere has');
+      console.log('         made impossible. It needs an explanation either way.');
+    }
+  }
+  check('no enabled coherence rule fires on nothing', zeroFiring === 0,
+    zeroFiring === 0 ? `${loadings.coherence.length} rule(s)` : `${zeroFiring} never fire`);
+  const share = population.filter((p) => p.surface.capped.includes('emojiAffinity')).length / N;
   console.log(
     '         §5: a cap firing on two percent is a coherence rule; a cap firing on forty',
   );
@@ -292,10 +323,10 @@ section('The coherence cap (§5) and overrides (§9)');
   // exactly the cap, not a value that went through Phi afterwards.
   const cappedOnes = population.filter((p) => p.surface.capped.length > 0);
   check('the cap runs after the percentile mapping, provably',
-    cappedOnes.every((p) => p.surface.style.emojiAffinity === loadings.coherence.emojiAffinityCap),
-    `${cappedOnes.length} capped, all exactly at ${loadings.coherence.emojiAffinityCap}`);
+    cappedOnes.every((p) => p.surface.style.emojiAffinity === loadings.coherence[0]!.cap.at),
+    `${cappedOnes.length} capped, all exactly at ${loadings.coherence[0]!.cap.at}`);
   check('every capped avatar has a formal tone', cappedOnes.every(
-    (p) => p.surface.style.tone <= loadings.coherence.formalToneBelow));
+    (p) => p.surface.style.tone <= loadings.coherence[0]!.when.below));
 
   // Overrides bypass derivation, not the cap.
   const latent = population[3]!.latent;
@@ -309,10 +340,10 @@ section('The coherence cap (§5) and overrides (§9)');
     forced.overrides.includes('emojiAffinity'));
   check('and in capped[], rather than being silently altered',
     forced.capped.includes('emojiAffinity'));
-  check('and the value is the cap', forced.style.emojiAffinity === loadings.coherence.emojiAffinityCap);
+  check('and the value is the cap', forced.style.emojiAffinity === loadings.coherence[0]!.cap.at);
 
   // The cap is individually switchable (specification §12).
-  const off = { ...loadings, coherence: { ...loadings.coherence, enabled: false } };
+  const off = { ...loadings, coherence: loadings.coherence.map((r) => ({ ...r, enabled: false })) };
   const noCap = prepareSurface(archetypes, traitConfig, off)({ seed: 3, latent, overrides: { tone: 5, emojiAffinity: 99 } });
   check('the cap is individually switchable', noCap.style.emojiAffinity === 99 && noCap.capped.length === 0);
 }
@@ -339,54 +370,58 @@ section('Style collinearity (§8): REPORTED, NOT GATED');
     return sxy / Math.sqrt(sxx * syy);
   }
 
-  /** Cosine between two loading vectors: how much structure the weights SHARE. */
-  function loadingOverlap(a: StyleField, b: StyleField): number {
-    const va = TRAIT_ORDER.map((t) => loadings.style[a][t] ?? 0);
-    const vb = TRAIT_ORDER.map((t) => loadings.style[b][t] ?? 0);
-    let dot = 0, na = 0, nb = 0;
-    for (let i = 0; i < va.length; i++) {
-      dot += va[i]! * vb[i]!;
-      na += va[i]! ** 2;
-      nb += vb[i]! ** 2;
-    }
-    return dot / Math.sqrt(na * nb);
-  }
+  // THE SPLIT IS EXACT, not a heuristic. Loading overlap under-explains by a knowable
+  // amount: two fields loading on entirely different traits still correlate when those
+  // traits do, and the model specifies E-A at 0.29 and C-A at 0.15. Both quantities are
+  // closed form, so:
+  //
+  //   realised   correlation under the POPULATION covariance, W + B
+  //   implied    correlation under the MODEL correlation matrix, Sigma, alone
+  //   artefact   realised - implied
+  //
+  // W is proportional to Sigma and a correlation is scale-free, so the constant cancels:
+  // if B were zero the two would be identical. The difference is therefore attributable
+  // ENTIRELY to B, which is the archetype set's structure leaking into the style layer.
+  // That may be wanted or not, but it should be a decision rather than a surprise.
+  const model = defaultCovariance();
+  const vec = (f: StyleField): number[] => TRAIT_ORDER.map((t) => loadings.style[f][t] ?? 0);
 
-  const rows: { pair: string; r: number; overlap: number; artefact: number }[] = [];
+  const rows: { pair: string; realised: number; implied: number; artefact: number; empirical: number }[] = [];
   for (let i = 0; i < STYLE_FIELDS.length; i++) {
     for (let j = i + 1; j < STYLE_FIELDS.length; j++) {
       const a = STYLE_FIELDS[i]!;
       const b = STYLE_FIELDS[j]!;
-      const r = corr(a, b);
-      const overlap = loadingOverlap(a, b);
-      rows.push({ pair: `${a} / ${b}`, r, overlap, artefact: Math.abs(r) - Math.abs(overlap) });
+      const realised = linearCombinationCorrelation(vec(a), vec(b), populationMoments(archetypes, traitConfig).covariance);
+      const implied = linearCombinationCorrelation(vec(a), vec(b), model);
+      rows.push({ pair: `${a} / ${b}`, realised, implied, artefact: realised - implied, empirical: corr(a, b) });
     }
   }
-  const byR = [...rows].sort((x, y) => Math.abs(y.r) - Math.abs(x.r));
-  const byArtefact = [...rows].sort((x, y) => y.artefact - x.artefact);
+  const byR = [...rows].sort((x, y) => Math.abs(y.realised) - Math.abs(x.realised));
+  const byArtefact = [...rows].sort((x, y) => Math.abs(y.artefact) - Math.abs(x.artefact));
 
-  measure('largest style correlation', `${byR[0]!.pair} at ${byR[0]!.r.toFixed(3)} (loadings share ${byR[0]!.overlap.toFixed(3)})`);
-  measure('largest UNEXPLAINED correlation', `${byArtefact[0]!.pair}: r ${byArtefact[0]!.r.toFixed(3)} against loading overlap ${byArtefact[0]!.overlap.toFixed(3)}`);
+  measure('largest realised correlation',
+    `${byR[0]!.pair} at ${byR[0]!.realised.toFixed(3)}, model alone implies ${byR[0]!.implied.toFixed(3)}`);
+  measure('largest ARTEFACT, archetype structure reaching the style layer',
+    `${byArtefact[0]!.pair}: realised ${byArtefact[0]!.realised.toFixed(3)} against implied ${byArtefact[0]!.implied.toFixed(3)}`);
 
-  console.log('         pair                                     r   loadings   unexplained');
+  console.log('         pair                             realised   implied  artefact  empirical');
   for (const row of byR.slice(0, 6)) {
     console.log(
-      `         ${row.pair.padEnd(38)}${row.r.toFixed(3).padStart(6)}${row.overlap.toFixed(3).padStart(11)}${row.artefact.toFixed(3).padStart(14)}`,
+      `         ${row.pair.padEnd(32)}${row.realised.toFixed(3).padStart(9)}${row.implied.toFixed(3).padStart(10)}` +
+        `${row.artefact.toFixed(3).padStart(10)}${row.empirical.toFixed(3).padStart(11)}`,
     );
   }
-  console.log(
-    '         NOT GATED. tone, warmth and humor sharing a loading on extraversion is',
-  );
-  console.log(
-    '         INTENDED and must not read as a defect. What would be the archetype problem',
-  );
-  console.log(
-    '         on a new layer is two fields correlating strongly when their loadings share',
-  );
-  console.log(
-    '         little, which is the "unexplained" column. See verify:traits for the same',
-  );
-  console.log('         diagnostic on the archetype means (D-097).');
+  // The percentile transform is monotone but not linear, so the empirical correlation of
+  // the mapped values differs slightly from the analytic correlation of the raw sums.
+  // Reported so the gap is visible rather than mistaken for an error in either.
+  measure('analytic realised vs empirical after the percentile map',
+    `differ by at most ${Math.max(...rows.map((r) => Math.abs(r.realised - r.empirical))).toFixed(3)}`);
+  console.log('         NOT GATED. A pair correlating because the MODEL says its traits do is');
+  console.log('         intended, in exactly the sense C/N was intended in the archetype');
+  console.log('         diagnostic. The artefact column is what the archetypes add on top, and');
+  console.log('         it is the number to watch. See verify:traits for the same split on the');
+  console.log('         archetype means themselves (D-097).');
+
 }
 
 /* -------------------------------------------------------------------- done */

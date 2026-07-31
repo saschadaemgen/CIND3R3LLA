@@ -41,7 +41,7 @@ import {
   type TraitConfig,
 } from '../traits/index.js';
 import { deriveStyle, styleNormalisation, type StyleNormalisation } from './style.js';
-import { drawIdentity, drawRhythm, timezoneFor } from './draw.js';
+import { drawContent, drawIdentity, drawRhythm, timezoneFor } from './draw.js';
 import { REACTIONS, STYLE_FIELDS, type LoadingSet, type PopulationConfig, type Surface, type SurfaceRequest } from './types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,7 +92,18 @@ export function parseLoadings(raw: unknown, source: string): LoadingSet {
   for (const r of REACTIONS) {
     if (typeof file.reactions![r] !== 'object') fail(`has no score weights for reaction ${r}.`);
   }
-  if (typeof file.coherence !== 'object' || file.coherence === null) fail('has no "coherence".');
+  if (!Array.isArray(file.coherence)) {
+    fail('has no "coherence" ARRAY. It is a list so every rule can report a firing rate.');
+  }
+  const ids = new Set<string>();
+  for (const rule of file.coherence ?? []) {
+    if (typeof rule.id !== 'string' || rule.id.length === 0) fail('has a coherence rule with no id.');
+    if (ids.has(rule.id)) fail(`has two coherence rules called "${rule.id}".`);
+    ids.add(rule.id);
+    if (rule.kind !== 'cap-when-below') {
+      fail(`coherence rule "${rule.id}" has unknown kind ${JSON.stringify(rule.kind)}.`);
+    }
+  }
   if (typeof file.temperature !== 'number' || !(file.temperature > 0)) {
     fail('has no positive "temperature"; at 1.0 the reaction distribution barely discriminates.');
   }
@@ -120,6 +131,12 @@ export const DEFAULT_POPULATION: PopulationConfig = Object.freeze({
   activityTiers: { superuser: 0.01, contributor: 0.19, lurker: 0.8 },
   sessionPatterns: { steady: 0.34, bursty: 0.4, sporadic: 0.26 },
   interEventAlpha: 1.5,
+  interestPool: [
+    'photography', 'cycling', 'cooking', 'linux', 'privacy', 'gardening', 'chess',
+    'synthesizers', 'hiking', 'typography', 'coffee', 'bookbinding', 'astronomy',
+    'running', 'woodworking', 'languages', 'cats', 'vinyl', 'baking', 'sailing',
+  ],
+  bioThemeMix: { professional: 0.2, personal: 0.24, quirky: 0.16, minimal: 0.16, cryptic: 0.08, none: 0.16 },
 });
 
 export interface PreparedSurface {
@@ -145,7 +162,7 @@ export function prepareSurface(
 
   const derive = (request: Omit<SurfaceRequest, 'population' | 'loadings'>): Surface => {
     const overrides = request.overrides ?? {};
-    const { style, capped } = deriveStyle(request.latent, loadings, normalisation, overrides);
+    const { style, capped, firedRules } = deriveStyle(request.latent, loadings, normalisation, overrides);
     const identity = drawIdentity(request.seed, population);
     const rhythm = drawRhythm(
       request.seed,
@@ -154,7 +171,8 @@ export function prepareSurface(
       population,
       timezoneFor(identity, population),
     );
-    return { style, identity, rhythm, capped, overrides: Object.keys(overrides) };
+    const content = drawContent(request.seed, request.latent, style, population);
+    return { style, firedRules, identity, rhythm, content, capped, overrides: Object.keys(overrides) };
   };
 
   return Object.assign(derive, { normalisation });
@@ -182,5 +200,5 @@ export {
   type FieldNormalisation,
   type StyleNormalisation,
 } from './style.js';
-export { drawIdentity, drawRhythm, timezoneFor } from './draw.js';
+export { drawContent, drawIdentity, drawRhythm, timezoneFor } from './draw.js';
 export * from './types.js';

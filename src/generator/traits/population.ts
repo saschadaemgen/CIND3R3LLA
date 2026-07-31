@@ -121,6 +121,49 @@ export function linearCombinationVariance(
   return sum;
 }
 
+/**
+ * Correlation between two weighted sums of latent traits under a given covariance.
+ *
+ *     corr(w_a . X, w_b . X) = w_a' C w_b / sqrt( (w_a' C w_a)(w_b' C w_b) )
+ *
+ * ── WHY THIS MAKES THE INTENDED/ARTEFACT SPLIT EXACT ────────────────────────
+ *
+ * Evaluate it twice. Under the POPULATION covariance `W + B` it gives the correlation
+ * two derived fields actually have. Under the MODEL correlation matrix `Sigma` alone it
+ * gives the correlation they would have from the model's own trait structure and
+ * nothing else. The difference is attributable ENTIRELY to `B`.
+ *
+ * That last step is exact rather than approximate, and the reason is that `W` is
+ * proportional to `Sigma`:
+ *
+ *     W = ( sum_c pi_c sigma_c^2 ) * Sigma
+ *
+ * A correlation is scale-free, so the proportionality constant cancels. If `B` were
+ * zero the two evaluations would be identical. So `realised - implied` is precisely the
+ * archetype set's structure leaking into the layer above, which may be wanted or not
+ * but should be a decision rather than a surprise.
+ *
+ * This REPLACES the loading-overlap heuristic it was first written with. Overlap
+ * under-explains by a knowable amount: two fields loading on entirely different traits
+ * still correlate when those traits do, and the model specifies E-A at 0.29 and C-A at
+ * 0.15, so part of any such correlation is intended in exactly the sense C/N was
+ * intended in the archetype diagnostic.
+ */
+export function linearCombinationCorrelation(
+  a: readonly number[],
+  b: readonly number[],
+  covariance: readonly (readonly number[])[],
+): number {
+  let ab = 0;
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) ab += a[i]! * b[j]! * covariance[i]![j]!;
+  }
+  const va = linearCombinationVariance(a, covariance);
+  const vb = linearCombinationVariance(b, covariance);
+  if (!(va > 0) || !(vb > 0)) return 0;
+  return ab / Math.sqrt(va * vb);
+}
+
 /** Mean of a weighted sum of latent traits: `w . mu`. */
 export function linearCombinationMean(
   weights: readonly number[],

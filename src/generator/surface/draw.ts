@@ -20,6 +20,7 @@ import { Rng } from '../rng.js';
 import type { Latent } from '../traits/types.js';
 import type {
   ActivityTier,
+  Content,
   HourRange,
   Identity,
   LogNormalParams,
@@ -37,6 +38,8 @@ const STREAM_NAME = 'surface:name';
 const STREAM_ACTIVITY = 'surface:activity';
 const STREAM_SESSION = 'surface:session';
 const STREAM_CIRCADIAN = 'surface:circadian';
+const STREAM_THEME = 'surface:theme';
+const STREAM_INTERESTS = 'surface:interests';
 
 /**
  * Draw the identity block. NO LATENT VECTOR: see the header.
@@ -168,6 +171,45 @@ export function drawRhythm(
     responseLatency,
     messageLength,
   };
+}
+
+/**
+ * What an avatar is about (CCB-S4-006 §5). MIXED, like rhythm: drawn from population
+ * weights, biased by style.
+ *
+ * The theme decides what a bio is ABOUT; the style decides how it is WRITTEN. Keeping
+ * them separate is what makes a professional bio by a playful avatar differ visibly
+ * from one by a terse avatar, which §5 requires.
+ */
+export function drawContent(
+  seed: number,
+  latent: Latent,
+  style: Style,
+  population: PopulationConfig,
+): Content {
+  const themes = { ...population.bioThemeMix };
+  // Formal and conscientious leans professional; casual and playful leans quirky or
+  // personal; low verbosity leans minimal or cryptic. All tilts, never certainties.
+  const casual = (style.tone - 50) / 50;
+  const wordy = (style.verbosity - 50) / 50;
+  const playful = (style.humor - 50) / 50;
+  themes.professional *= Math.exp(-0.7 * casual + 0.5 * latent.conscientiousness);
+  themes.personal *= Math.exp(0.5 * casual + 0.4 * wordy);
+  themes.quirky *= Math.exp(0.9 * playful + 0.3 * latent.openness);
+  themes.minimal *= Math.exp(-0.8 * wordy);
+  themes.cryptic *= Math.exp(-0.5 * wordy + 0.4 * latent.openness - 0.4 * latent.extraversion);
+  themes.none *= Math.exp(-0.5 * wordy - 0.4 * latent.conscientiousness);
+  const bioTheme = new Rng(seed, STREAM_THEME).pickWeighted(themes);
+
+  const rng = new Rng(seed, STREAM_INTERESTS);
+  // Openness widens the range of things an avatar is interested in.
+  const count = Math.max(0, Math.min(4, Math.round(1.4 + 0.7 * latent.openness + rng.float())));
+  const pool = [...population.interestPool];
+  const interests: string[] = [];
+  for (let i = 0; i < count && pool.length > 0; i++) {
+    interests.push(pool.splice(rng.int(pool.length), 1)[0]!);
+  }
+  return { bioTheme, interests };
 }
 
 /** Timezone follows origin (briefing §7), never personality. */

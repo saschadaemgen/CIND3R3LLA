@@ -41,6 +41,34 @@ export type StyleField = (typeof STYLE_FIELDS)[number];
 export const REACTIONS = ['👍', '👎', '😀', '😂', '😢', '❤', '🚀', '✅'] as const;
 export type Reaction = (typeof REACTIONS)[number];
 
+/**
+ * One coherence rule.
+ *
+ * ── A FIRING RATE OF ZERO IS A FINDING, NOT A PASS ──────────────────────────
+ *
+ * Briefing §5 anticipates a rule firing on 2 percent (a coherence rule) and on 40
+ * percent (a weighting problem wearing a rule's clothing). It does not anticipate ZERO,
+ * and zero is the reading that looks healthiest in a report while being the most
+ * suspicious. Two possibilities, and the second is why this matters:
+ *
+ *   - the rule guards against something that cannot happen, so it is decoration;
+ *   - the rule guards against something that cannot happen BECAUSE OF A DEFECT
+ *     ELSEWHERE. That was the live case: `tone` and `emojiAffinity` correlated at 0.983,
+ *     so two fields could never disagree enough for a rule about their disagreement to
+ *     have anything to do. A report asking only "did this fire too often" cannot see it.
+ *
+ * `verify:surface` therefore reports every rule's firing rate and treats zero as
+ * requiring an explanation.
+ */
+export interface CoherenceRule {
+  id: string;
+  /** The only kind implemented. Others in the specification arrive as data plus a case. */
+  kind: 'cap-when-below';
+  when: { field: StyleField; below: number };
+  cap: { field: StyleField; at: number };
+  enabled: boolean;
+}
+
 /** One style field's weights over the latent traits. */
 export type LoadingVector = Partial<Record<TraitKey, number>>;
 
@@ -51,17 +79,13 @@ export interface LoadingSet {
   /** Score weights per reaction, before the softmax (briefing §6). */
   reactions: Record<Reaction, LoadingVector>;
   /**
-   * The coherence cap (briefing §5): emoji affinity is capped when tone is formal.
-   * Applied LAST, after the percentile mapping, so the mapping stays interpretable.
+   * Individually switchable coherence rules (specification §12).
+   *
+   * A LIST rather than one hardcoded rule, so the specification's other seven can be
+   * added as data, and so the firing-rate report below is generic over all of them
+   * rather than special-cased for the one that happens to exist.
    */
-  coherence: {
-    /** Tone at or below this counts as formal. */
-    formalToneBelow: number;
-    /** Emoji affinity is clamped to at most this for a formal tone. */
-    emojiAffinityCap: number;
-    /** Individually switchable, per specification §12. */
-    enabled: boolean;
-  };
+  coherence: CoherenceRule[];
   /**
    * Reactions whose softmax probability falls below this are zeroed and the rest
    * renormalised. Without it every avatar has some probability of every reaction, which
@@ -110,6 +134,10 @@ export interface PopulationConfig {
   sessionPatterns: Record<SessionPattern, number>;
   /** Population parameter, not per-avatar personality. */
   interEventAlpha: number;
+  /** Pool the interest draw selects from (CCB-S4-006 §5). */
+  interestPool: string[];
+  /** Base weights over bio themes, before the style bias. */
+  bioThemeMix: Record<BioTheme, number>;
 }
 
 export interface Style {
@@ -133,6 +161,36 @@ export interface Identity {
   nameCase: NameCase;
 }
 
+/** Themes a bio can take (CCB-S4-006 §5). `none` always yields an empty bio. */
+export const BIO_THEMES = ['professional', 'personal', 'quirky', 'minimal', 'cryptic', 'none'] as const;
+export type BioTheme = (typeof BIO_THEMES)[number];
+
+/**
+ * What an avatar is ABOUT, as opposed to how it writes.
+ *
+ * ── ADDED UNDER CCB-S4-006, WHICH EXPOSED A GAP BETWEEN TWO BRIEFINGS ───────
+ *
+ * CCB-S4-006 §5 says `bioTheme` comes "from the surface" and lists `interests` as a
+ * bio input, but CCB-S4-005 §10's interface specified neither, so the surface component
+ * shipped without them. Recorded rather than quietly patched, because the gap is between
+ * two specifications and not inside one.
+ *
+ * ── WHY A FOURTH BLOCK RATHER THAN INSIDE `identity` ───────────────────────
+ *
+ * Both are biased by personality, and `identity` is the block whose whole guarantee is
+ * that it is NOT: `drawIdentity` takes no latent vector, which is what makes "origin,
+ * age and gender cannot be derived from personality" structural rather than a rule
+ * (D-099). Putting a personality-biased field in there would quietly break the one
+ * property that block exists to hold, and the test that asserts it would have had to be
+ * weakened to accommodate it. So this is a MIXED block, like rhythm.
+ */
+export interface Content {
+  /** Which angle a bio takes. Drawn, biased by style. */
+  bioTheme: BioTheme;
+  /** What a bio may mention. Drawn from the population pool; count biased by openness. */
+  interests: string[];
+}
+
 export interface Rhythm {
   activityTier: ActivityTier;
   interEventAlpha: number;
@@ -144,8 +202,11 @@ export interface Rhythm {
 
 export interface Surface {
   style: Style;
+  /** Ids of the coherence rules that fired for this avatar. */
+  firedRules: string[];
   identity: Identity;
   rhythm: Rhythm;
+  content: Content;
   /** Fields the coherence cap changed. Reported, never silent (briefing §5). */
   capped: string[];
   /** Fields supplied as overrides, so a hand-adjusted avatar stays distinguishable. */

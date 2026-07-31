@@ -167,8 +167,10 @@ export function deriveReactionWeights(
 
 export interface StyleResult {
   style: Style;
-  /** Fields the coherence cap changed. */
+  /** Fields a coherence rule changed. */
   capped: string[];
+  /** Ids of the rules that fired, so a per-rule firing rate can be reported. */
+  firedRules: string[];
 }
 
 /**
@@ -188,6 +190,7 @@ export function deriveStyle(
   norm: StyleNormalisation,
   overrides: Partial<Record<StyleField, number>> = {},
 ): StyleResult {
+  const firedRules: string[] = [];
   const values = {} as Record<StyleField, number>;
   for (const field of STYLE_FIELDS) {
     values[field] = Object.prototype.hasOwnProperty.call(overrides, field)
@@ -195,17 +198,21 @@ export function deriveStyle(
       : derivePercentile(loadings.style[field], latent, norm[field]);
   }
 
+  // Every enabled rule, in order. `capped` records the RULE id rather than only the
+  // field, so a firing rate can be reported per rule (see CoherenceRule).
   const capped: string[] = [];
-  if (loadings.coherence.enabled) {
-    const { formalToneBelow, emojiAffinityCap } = loadings.coherence;
-    if (values.tone <= formalToneBelow && values.emojiAffinity > emojiAffinityCap) {
-      values.emojiAffinity = emojiAffinityCap;
-      capped.push('emojiAffinity');
+  for (const rule of loadings.coherence) {
+    if (!rule.enabled) continue;
+    if (values[rule.when.field] <= rule.when.below && values[rule.cap.field] > rule.cap.at) {
+      values[rule.cap.field] = rule.cap.at;
+      capped.push(rule.cap.field);
+      firedRules.push(rule.id);
     }
   }
 
   return {
     style: { ...values, reactionWeights: deriveReactionWeights(latent, loadings) },
     capped,
+    firedRules,
   };
 }

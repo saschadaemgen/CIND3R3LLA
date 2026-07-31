@@ -40,6 +40,33 @@ Re-authored so formality is mostly conscientiousness and expressiveness is mostl
 
 **Gates correctness, reports quality**, the split D-095 settled. Determinism, the derived-versus-drawn separation, direction of effect, cap and override behaviour and the reaction invariants all fail the run. The percentile uniformity deviation (worst 0.081) and the collinearity matrix are reported: §11 says a perfectly uniform marginal would mean the archetype structure had washed out entirely, so some non-uniformity is the archetypes surviving into the visible layer, which is the point of having them.
 
+**AMENDED: three refinements, and two of them changed what the diagnostic says.**
+
+**1. A firing rate of zero is a FINDING, not a pass, and the rule set is now a list.** §5 anticipates a rule firing on 2 percent and on 40 percent; it does not anticipate zero, and zero is the reading that looks healthiest in a report. Two possibilities, and the second is why it matters: the rule guards against something that cannot happen, so it is decoration; or it guards against something that cannot happen **because of a defect elsewhere**, which was the live case here. A report asking only whether a rule fired too often cannot see it. `coherence` is therefore a list of identified, individually switchable rules, every one reports its firing rate, and an enabled rule that never fires **fails the run**. The specification lists eight such rules; one is implemented and the rest arrive as data. The live rule fires on 6.35 percent.
+
+**2. The intended-versus-artefact split is now EXACT, and it replaces the loading-overlap heuristic rather than supplementing it.** Overlap under-explains by a knowable amount: two fields loading on entirely different traits still correlate when those traits do, and the model specifies E-A at 0.29 and C-A at 0.15. Both quantities are closed form:
+
+```
+realised   correlation under the population covariance, W + B
+implied    correlation under the model correlation matrix, Sigma, alone
+artefact   realised - implied
+```
+
+`W` is proportional to `Sigma` and a correlation is scale-free, so the constant cancels: were `B` zero, the two would be identical. **The difference is therefore attributable entirely to `B`** - the archetype set's structure reaching the style layer, which may be wanted or not but should be a decision rather than a surprise.
+
+**It reversed the reading.** Under the heuristic, `verbosity`/`warmth` at 0.652 against a 0.394 overlap looked like the pair to watch. Exactly: realised 0.661, implied **0.610**, artefact **0.051**. Almost entirely the model's own trait structure, and there is nothing to watch there. Meanwhile `warmth`/`emojiAffinity` at 0.942, which the heuristic flagged loudest, has an artefact of **-0.003** and is fully explained. The largest artefact anywhere is `verbosity`/`humor` at **0.085**, so the archetype structure barely reaches the style layer at all.
+
+The percentile transform is monotone but not linear, so the empirical correlation of mapped values differs from the analytic correlation of the raw sums by up to 0.060. Reported, so the gap is visible rather than mistaken for an error in either.
+
+**3. The z-score claim was half established, and the other half is now measured.** The specification says population mean 0 **and** standard deviation 1. Calibration constrained the sd and reached 0.984; nobody had checked the mean. It is free, because `populationMoments` already computes it for the percentile transform.
+
+Measured, per trait: openness 0.100, conscientiousness 0.181, extraversion 0.090, agreeableness 0.184, neuroticism -0.115, **honesty 0.213**.
+
+**Not negligible.** The mean is systematically positive on five of six traits, and honesty sits a fifth of a standard deviation above the nominal zero, which is the archetype set being net-honest showing up as a moment. The same question arises as it did for the sd: a constraint the archetype solve should carry, or a documented property of the set. Recorded rather than decided, and it is one more reason the percentile transform subtracts the mean rather than assuming it away.
+
+
+**A GAP BETWEEN TWO BRIEFINGS, closed here.** CCB-S4-006 §5 says `bioTheme` comes "from the surface" and lists `interests` as a bio input; CCB-S4-005 §10's interface specified neither, so this component shipped without them. Both now live in a fourth block, `Surface.content`, drawn and biased by style like `rhythm` is. **Not in `identity`**, whose entire guarantee is that `drawIdentity` cannot see the latent vector: putting a personality-biased field there would have quietly broken the one property that block exists to hold, and the test asserting it would have had to be weakened to accommodate it.
+
 **Not delivered, per §12:** bios, avatar images, name generation itself (this feeds it), the population layer, the behaviour layer, persistence. The loadings are **authored, not read off any data**, and carry the same open question as the archetype set.
 
 ### D-098 — Classification must support abstention, and forced nearest-archetype assignment is a defect

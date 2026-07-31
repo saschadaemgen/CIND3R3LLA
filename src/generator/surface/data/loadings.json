@@ -48,9 +48,15 @@
     "conscientiousness property; expressiveness is mostly extraversion and agreeableness.",
     "The coherence cap was inert at 0 of 20,000 avatars before this, because two fields",
     "that correlate at 0.983 can never disagree enough for a coherence rule to have",
-    "anything to do."
+    "anything to do.",
+    "",
+    "COHERENCE IS A LIST, and every rule's firing rate is reported. A rate of ZERO is a",
+    "finding requiring an explanation, not a pass: a rule that never fires is either",
+    "decoration, or it is guarding against something a defect elsewhere has made",
+    "impossible. The second was the live case here. The specification lists eight such",
+    "rules; one is implemented, and the others arrive as data once their shapes are known."
   ],
-  "version": "loadings-2026-07-31b",
+  "version": "loadings-2026-07-31c",
   "temperature": 1.6,
   "style": {
     "tone": {
@@ -119,10 +125,20 @@
       "extraversion": -0.35
     }
   },
-  "coherence": {
-    "formalToneBelow": 30,
-    "emojiAffinityCap": 45,
-    "enabled": true
-  },
+  "coherence": [
+    {
+      "id": "formal-tone-caps-emoji",
+      "kind": "cap-when-below",
+      "when": {
+        "field": "tone",
+        "below": 30
+      },
+      "cap": {
+        "field": "emojiAffinity",
+        "at": 45
+      },
+      "enabled": true
+    }
+  ],
   "reactionFloor": 0.04
 }
