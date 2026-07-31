@@ -680,6 +680,12 @@ briefings. Architecture §31 has the detail; the state of it is:
 - [ ] **Surface derivation** — tone, verbosity, emoji affinity, reaction weights, derived
       from the latent vector. Explicitly out of scope of the trait sampler's briefing (§8)
       and the obvious next component.
+- [ ] **Profile creation, when it arrives, must not call `apiCreateActiveUser` directly.**
+      The SDK's `mkBotProfile` mutates the profile to set `peerType = Bot` and allow
+      files; skipping it produces profiles that silently cannot receive media, and nothing
+      surfaces until someone posts a picture. Use `botProfileFor` from
+      [`src/bot/runtime/core.ts`](../src/bot/runtime/core.ts). Recorded now because the
+      generator is the workstream most likely to hit it.
 - [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
       mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
       input and deliberately makes no claim about what a realistic one is.
@@ -711,9 +717,14 @@ briefings. Architecture §31 has the detail; the state of it is:
 - [ ] **Wiring `startBot()` onto the runtime**, per-profile `status`, `deleteFromCore`
       taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
       on `runtime-policy.ts`.
-- [ ] **Live-core verification.** Whether `/_start` subscribes every user in a shared
-      database rather than only the active one is the single most load-bearing unverified
-      assumption behind the whole design.
+- [x] **`/_start` subscribes every user in a shared database** — verified two ways, and
+      it is the assumption the whole design rests on. 26 of 26 non-active profiles
+      received one message with the active user parked on a non-participant; and the
+      core's startup path calls `subscribeUsers` over the full user list. Architecture
+      §32 carries the evidence. This is what made profile rotation unnecessary.
+- [ ] **Live-core verification of the remaining items** — the *timing* of those
+      measurements, the 10 s / 120 s constants, `degraded`, and whether `fileId` is unique
+      across users in one core database.
 
 ## Carried into Season 4 (recorded under CCB-S3-028)
 

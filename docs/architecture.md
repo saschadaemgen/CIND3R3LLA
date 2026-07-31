@@ -1346,6 +1346,15 @@ exist in a built tree. This has never mattered because both components are exerc
 `tsx` from source by their harnesses, and neither has a runtime caller. It becomes a real
 defect on the day one does: either extend `scripts/copy-assets.mjs` or pass an explicit path.
 
+**A constraint on this module's FUTURE creation path, recorded before it is built.** The
+generator will eventually create SimpleX profiles. If it calls `apiCreateActiveUser`
+directly it will produce profiles that **cannot receive media**, because the SDK's
+`mkBotProfile` mutates the profile it is given to set `peerType = Bot` and force
+`preferences.files`, and nothing raises when that is skipped: the failure surfaces only
+when someone posts a picture into a room full of generated avatars. Use
+[`botProfileFor`](../src/bot/runtime/core.ts) (architecture §32) or reproduce it exactly.
+Neither CCB-S4-002 nor CCB-S4-003 is affected, because neither creates anything.
+
 **Not built:** surface derivation (tone, verbosity, emoji affinity, reaction weights), the
 population layer, the validation layer, bios, avatars, and persistence of any of it. See
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
@@ -1413,12 +1422,28 @@ ids across N participating profiles, and `UNIQUE (group_id, group_msg_id)` permi
 rows, so widening capture without conversation canonicalisation would store N copies of
 every message with N consent derivations. See D-096 for the full deferral list.
 
-**Untested against a live core**, and listed rather than implied: that `/_start` subscribes
-every user in a shared database rather than only the active one (the single most
-load-bearing unverified assumption); that the 10 s quiet period and 120 s ceiling are the
-right constants; that a live core misroutes without the scheduler (the harness reproduces
-the mechanism, not the core); `degraded` in any form; and whether `fileId` is unique across
-users in one core database.
+**`/_start` subscribes EVERY user in a shared database, not only the active one.**
+Verified, and it is the assumption the whole design rests on, so the evidence is recorded
+rather than referenced. Measured: 200 profiles in one database, 27 joined to one group,
+**one** `startChat()` and no per-profile activation, the active user then deliberately
+moved to a profile that is not in the group, one message sent. **26 of 26 other profiles
+received, each carrying its own `userId`, zero duplicates** (first at 153 ms, last at
+1771 ms). Had `/_start` subscribed only the active user, none of the 26 would have
+received anything. Independently, the core's startup path loads all profiles with
+`getUsers` and calls `subscribeUsers False users` over the full list; the active user id
+is passed additionally and prioritises rather than filters, and pending file transfers
+resume for all profiles. `apiSetActiveUser` changes the stored active user and
+`currentUser` only, and starts or stops no subscription. A profile that is both a member
+and the active user receives normally: no preference, no penalty.
+
+This is also why no profile-rotation design exists here. It was made unnecessary by this
+finding and deleted rather than shipped.
+
+**Untested against a live core**, and listed rather than implied: the *timing* of the
+measurements above (153 ms / 1771 ms), as distinct from the behaviour they demonstrate;
+that the 10 s quiet period and 120 s ceiling are the right constants; that a live core
+misroutes without the scheduler (the harness reproduces the mechanism, not the core);
+`degraded` in any form; and whether `fileId` is unique across users in one core database.
 
 ## Appendix: divergences (code wins)
 
