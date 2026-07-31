@@ -689,6 +689,32 @@ briefings. Architecture §31 has the detail; the state of it is:
       starting: the build does not copy the modules' `data/` JSON into `dist/`, which has
       never mattered because both harnesses run from source through `tsx`.
 
+## The multi-profile runtime — on a branch, not merged (CCB-S4-004, D-096)
+
+`feature/multi-profile-core-foundation`. Architecture §32 has the detail.
+
+- [x] **Runtime, scheduler, router, state machine, benign-noise allowlist** —
+      `src/bot/runtime/`. `npm run verify:multi-profile`, 80 checks.
+- [x] **Persistent bot registry** — migration 023 + `src/profiles/bot-registry.ts`. Actor
+      types, automation modes, avatar sources, disclosure labels, the three-part
+      personality reference, and the §14 safety invariants split between CHECK
+      constraints and audited application logic.
+- [x] **Two SDK workarounds** — the reactions defect (both directions throw although the
+      operation succeeded) and `apiSendMessages` discarding the sending user.
+- [ ] **Multi-profile capture.** THE significant deferral. `registerCapture` is bound to
+      one profile; widening it without conversation canonicalisation stores N copies of
+      every message with N consent derivations and an N-times FTS index. Needs
+      `via_group_link_uri_hash` canonicalisation first (D-083).
+- [ ] **Conversation canonicalisation** via `groups.via_group_link_uri_hash`. Do not make
+      the column `NOT NULL` until the group-*creator* path has been checked against a
+      database containing one; all 27 sampled profiles had joined via a link.
+- [ ] **Wiring `startBot()` onto the runtime**, per-profile `status`, `deleteFromCore`
+      taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
+      on `runtime-policy.ts`.
+- [ ] **Live-core verification.** Whether `/_start` subscribes every user in a shared
+      database rather than only the active one is the single most load-bearing unverified
+      assumption behind the whole design.
+
 ## Carried into Season 4 (recorded under CCB-S3-028)
 
 Findings that existed only in the planning chat. Verified against code first; several turned out to be

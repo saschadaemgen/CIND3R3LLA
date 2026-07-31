@@ -110,6 +110,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
+  `bot/runtime/` (**the multi-profile runtime, branch only, not merged**: one core, many
+  SimpleX profiles, a serialized active-user scheduler, event routing by receiving
+  `userId`. Five of its six files import no SDK so it is testable with no core; see
+  architecture §32 and D-096),
   `generator/` (**offline tooling, no runtime caller**: the profile generator, built one
   component per briefing. Shared deterministic `rng.ts`, then `names/` and `traits/`.
   Nothing outside it imports it and nothing writes its output; see architecture §31),
@@ -152,6 +156,8 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
 `verify:namegen` and `verify:traits` (the profile generator; pure computation, no DB),
+`verify:multi-profile` (the multi-profile runtime, against PGlite and an in-process core
+double; branch only),
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
 proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture

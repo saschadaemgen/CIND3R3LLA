@@ -1351,6 +1351,75 @@ population layer, the validation layer, bios, avatars, and persistence of any of
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.
 
+## 32. The multi-profile runtime (CCB-S4-004, D-096)
+
+**On `feature/multi-profile-core-foundation`, not merged to main, and not wired to
+`startBot()`.** The live bot still boots through `bot.run()` exactly as §4 describes.
+
+`src/bot/runtime/` hosts many SimpleX profiles on one in-process core: one
+`ChatApi.init()`, one `startChat()`, every enabled profile subscribed simultaneously, no
+profile rotation. It sits under `src/bot/` because that is the only directory
+`verify:adapter-seam` permits the SDK in, and because D-085 recorded that this runtime is
+not to be built against the adapter seam as it stands. `src/adapter/` is untouched.
+
+| File | Role | SDK |
+|---|---|---|
+| [`core.ts`](../src/bot/runtime/core.ts) | Lifecycle, profile enumeration, subscription, the two SDK workarounds | yes |
+| [`scheduler.ts`](../src/bot/runtime/scheduler.ts) | Serializes active-user-dependent command **issuing** | no |
+| [`router.ts`](../src/bot/runtime/router.ts) | One subscriber per event tag, fan-out by receiving `userId` | no |
+| [`state.ts`](../src/bot/runtime/state.ts) | Six-state machine, injected clock | no |
+| [`errors.ts`](../src/bot/runtime/errors.ts) | The two-class benign-noise allowlist | no |
+| [`types.ts`](../src/bot/runtime/types.ts) | Domain types and the narrow core contract | no |
+
+**Five of six files import no SDK**, which is what lets `verify:multi-profile` drive the
+whole runtime against an in-process double with no Haskell core.
+
+**The scheduler is the load-bearing part.** Every command that does not take an explicit
+`userId` executes as whatever profile is currently active, and making a profile active is
+itself a command, so "become A, then send" has a gap. A concurrent "become B" landing in
+that gap makes the first send execute as B, and **the core raises nothing**, because a
+legal command was issued by a genuinely active profile. There is no serialization anywhere
+in the SDK to fall back on: `sendChatCmd` is a bare pass-through to the native addon. The
+scheduler serializes the *issuing* and not the waiting, so many operations are still in
+flight at once; a grouped workload pays 3 switches for 9 commands rather than 9.
+
+**`bot.run()` is reimplemented rather than called N times.** It calls `process.exit()` on
+three internal paths with no thrown error, its user resolution cannot select a named
+profile out of a populated database, and it calls `startChat()` itself. The one thing that
+must survive the reimplementation is `mkBotProfile`'s mutation: it forces
+`preferences.files` and sets `peerType = Bot`, so a bare `apiCreateActiveUser` creates
+profiles that are not marked as bots and **do not allow file transfer**, silently breaking
+media capture with nothing raised until the first image arrives.
+[`botProfileFor`](../src/bot/runtime/core.ts) reproduces it deliberately.
+
+**Two SDK defects are worked around in `core.ts`**, both verified present in the installed
+6.5.4. `apiChatItemReaction` checks the response against `chatItemsDeleted` although
+`/_reaction` answers `chatItemReaction` in both directions, so add and remove **both throw
+although the operation succeeded**; the thrown error carries the successful response on
+`.response` while `.chatError` is `undefined`, which is what makes it expensive to
+diagnose (upstream PR #7109, open). And `apiSendMessages` discards the `user` the
+underlying response carries, so sends are issued as raw commands to keep `r.user.userId`
+and verify attribution at the send site.
+
+**Registry:** `cinderella_bot_registry` (migration 023) carries the actor type, automation
+mode, avatar source, disclosure label, operator reference and the three-part personality
+reference. `simplex_user_id` is the first SimpleX user id anywhere in this schema. Half of
+the §14 safety invariants are CHECK constraints; the half containing the word *silently*
+is application logic in [`bot-registry.ts`](../src/profiles/bot-registry.ts), which audits
+every transition and refuses the two §14 forbids.
+
+**Capture stays bound to exactly one profile.** Under D-083 a conversation carries N group
+ids across N participating profiles, and `UNIQUE (group_id, group_msg_id)` permits all N
+rows, so widening capture without conversation canonicalisation would store N copies of
+every message with N consent derivations. See D-096 for the full deferral list.
+
+**Untested against a live core**, and listed rather than implied: that `/_start` subscribes
+every user in a shared database rather than only the active one (the single most
+load-bearing unverified assumption); that the 10 s quiet period and 120 s ceiling are the
+right constants; that a live core misroutes without the scheduler (the harness reproduces
+the mechanism, not the core); `degraded` in any form; and whether `fileId` is unique across
+users in one core database.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.
