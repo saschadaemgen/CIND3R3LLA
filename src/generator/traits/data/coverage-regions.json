@@ -1,0 +1,148 @@
+{
+  "_README": [
+    "Named regions of the trait space, for the standing coverage check in verify:traits.",
+    "",
+    "WHY THIS FILE EXISTS. A repaired correlation is not a populated space. The joint solve",
+    "brought every between-archetype correlation within 0.12 of the model, including every",
+    "pair involving honesty (A/H 0.050, C/H 0.066, N/H -0.040, O/H 0.120, E/H -0.114), and",
+    "the low-honesty half of the space still has a one-sided hole that no correlation can",
+    "see. The eleventh archetype was added after exactly this was discovered by accident.",
+    "So the regions the design intends to represent are NAMED IN ADVANCE, each with a",
+    "status, and a newly empty one fails visibly while a deliberate gap stays recorded as",
+    "deliberate.",
+    "",
+    "STATUS values:",
+    "  occupied              at least one archetype mean satisfies the predicate. Empty = FAIL.",
+    "  covered-with-caveat   occupied only at the corroborating threshold. Reported, not failed.",
+    "  known-gap             deliberately empty, with the reason recorded. Occupied = REPORT,",
+    "                        because the taxonomy then needs re-reviewing, not because it is bad.",
+    "",
+    "THRESHOLD is |z| >= 0.5, NON-STRICT, with a corroborating pass at 0.3. Non-strict",
+    "matters: `average` sits at extraversion +0.55 and neuroticism +0.50 exactly, so a",
+    "strict '>' reports high-E/high-N empty with a nearest-archetype distance of 0.000. Ten",
+    "of eleven archetypes have at least one trait within 0.25 of zero, so that flap would",
+    "recur. A stricter 1.0 is not usable at all: eleven points cannot occupy 60 two-trait",
+    "boxes, and 16 of the 35 gaps it reports are pure strictness artefacts.",
+    "",
+    "OCCUPANCY IS COUNTED, NOT ASSERTED AS A BOOLEAN. Most regions here hold exactly one",
+    "archetype, so a booleans-only check would not notice a region going from one occupant",
+    "to zero until it already had.",
+    "",
+    "reviewedAgainst NAMES THE ARCHETYPE SET this taxonomy was derived from. If",
+    "archetypes.json carries a different version, the check says the taxonomy needs",
+    "re-reviewing rather than silently re-evaluating against a set nobody looked at."
+  ],
+  "version": "coverage-regions-2026-07-31",
+  "reviewedAgainst": "archetypes-11-2026-07-31",
+  "threshold": 0.5,
+  "corroboratingThreshold": 0.3,
+  "regions": [
+    {
+      "key": "warm-organised-honest",
+      "predicate": { "conscientiousness": 1, "agreeableness": 1, "honesty": 1 },
+      "describes": "Dependable, kind, straight",
+      "status": "occupied"
+    },
+    {
+      "key": "calm-competent-honest",
+      "predicate": { "neuroticism": -1, "conscientiousness": 1, "honesty": 1 },
+      "describes": "Steady, organised, trustworthy",
+      "status": "occupied"
+    },
+    {
+      "key": "anxious-honest",
+      "predicate": { "neuroticism": 1, "honesty": 1 },
+      "describes": "Frets about doing right, meticulously fair",
+      "status": "occupied",
+      "note": "The region the eleventh archetype was added for. Single-occupancy: any re-solve that moves anxiousScrupulous empties it again, which is why the count is reported rather than a boolean."
+    },
+    {
+      "key": "blunt-honest",
+      "predicate": { "agreeableness": -1, "honesty": 1 },
+      "describes": "Argumentative, sincere, fair",
+      "status": "occupied"
+    },
+    {
+      "key": "willing-unreliable",
+      "predicate": { "conscientiousness": -1, "honesty": 1 },
+      "describes": "Well meaning and flaky",
+      "status": "occupied",
+      "note": "Held by enthusiasticNewcomer alone, and it empties at a 0.8 threshold: the four strongly-honest archetypes all sit at C >= -0.28. Honesty and reliability entangle at the top of H."
+    },
+    {
+      "key": "quiet-honest",
+      "predicate": { "extraversion": -1, "honesty": 1 },
+      "describes": "Unassuming, straight, says little",
+      "status": "covered-with-caveat",
+      "note": "reserved sits at E -1.21, H +0.38, so it clears the corroborating pass and not the primary one. Pre-recorded as a threshold artefact so it does not fire every run."
+    },
+    {
+      "key": "warm-bad-faith",
+      "predicate": { "agreeableness": 1, "honesty": -1 },
+      "describes": "Pleasant to everyone and working it",
+      "status": "occupied"
+    },
+    {
+      "key": "abrasive-bad-faith",
+      "predicate": { "agreeableness": -1, "honesty": -1 },
+      "describes": "Rude and self-serving",
+      "status": "occupied"
+    },
+    {
+      "key": "loud-bad-faith",
+      "predicate": { "extraversion": 1, "honesty": -1 },
+      "describes": "Bad faith that works the room",
+      "status": "occupied",
+      "note": "The ONLY low-honesty region with more than one occupant, and both occupants are the whole low-honesty pole."
+    },
+    {
+      "key": "cold-systematic",
+      "predicate": { "neuroticism": -1, "conscientiousness": 1, "honesty": -1 },
+      "describes": "Calm, organised, self-serving; works the process rather than the room",
+      "status": "known-gap",
+      "note": "Recorded before this taxonomy existed. Nearest is terseExpert at 0.370, contributed ENTIRELY by honesty: it already satisfies calm and organised. Filling it is a joint re-solve rather than an edit, and pushing terseExpert's H down would make one archetype the sole occupant of four regions at once."
+    },
+    {
+      "key": "calm-bad-faith",
+      "predicate": { "neuroticism": -1, "honesty": -1 },
+      "describes": "Cold, unbothered, self-serving",
+      "status": "known-gap",
+      "note": "The two-trait parent of cold-systematic. Named separately so the recorded gap is not mistaken for one isolated cell when it is a corner of a band."
+    },
+    {
+      "key": "covert-bad-faith",
+      "predicate": { "extraversion": -1, "honesty": -1 },
+      "describes": "Reads everything, contributes little, not in good faith",
+      "status": "known-gap",
+      "note": "THE FIRST REGION TO FILL if and when a feature consumes actor typing. A covert automated account, a scraper or a lurking bad actor is low-visibility by definition, and the set currently encodes the proposition that bad faith announces itself."
+    },
+    {
+      "key": "anxious-bad-faith",
+      "predicate": { "neuroticism": 1, "honesty": -1 },
+      "describes": "Cuts corners out of fear rather than appetite",
+      "status": "known-gap",
+      "note": "The exact mirror of anxious-honest, which the eleventh archetype was added to fill. Leaving it empty asserts that anxious members are never manipulative."
+    },
+    {
+      "key": "quiet-blunt-honest",
+      "predicate": { "agreeableness": -1, "extraversion": -1, "honesty": 1 },
+      "describes": "Says no in three words and is always right about why",
+      "status": "known-gap",
+      "note": "Nearest principledContrarian at 0.280, entirely on extraversion. Its contrast with covert-bad-faith is the evidence that the hole is a property of the low-honesty half specifically and not of the low-extraversion half."
+    },
+    {
+      "key": "exacting-honest",
+      "predicate": { "conscientiousness": 1, "agreeableness": -1, "honesty": 1 },
+      "describes": "The auditor: rigorous, unfriendly, incorruptible",
+      "status": "known-gap",
+      "note": "A hard gap at 0.648, no mean carrying all three signs. This is the natural shape of a SYSTEM IDENTITY, so it is acceptable only while no system identity is generated."
+    },
+    {
+      "key": "reactive-antagonist",
+      "predicate": { "agreeableness": -1, "neuroticism": 1 },
+      "describes": "Hostile and thin-skinned; the flamer",
+      "status": "known-gap",
+      "note": "No honesty content, so low relevance to good-faith classification. Relevant to moderation-path test fixtures rather than to actor typing."
+    }
+  ]
+}

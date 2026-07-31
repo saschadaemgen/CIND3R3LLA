@@ -243,6 +243,154 @@ section('Archetype set (§5)');
   check('the archetype set is versioned', archetypes.version.length > 0, archetypes.version);
 }
 
+/* ------------------------------------------ standing coverage check (D-097) */
+
+section('Region coverage (standing check, D-097)');
+{
+  // WHY THIS EXISTS. A repaired correlation is not a populated space. The joint solve
+  // brought every correlation involving honesty to within 0.12 of the model, and the
+  // low-honesty half of the space STILL has a one-sided hole that no correlation can
+  // see: the whole low-H pole is two archetypes, both strongly extraverted and both
+  // emotionally average. The eleventh archetype was added after exactly this was found
+  // by accident, so the regions the design intends to represent are now named IN
+  // ADVANCE and a newly empty one fails here rather than being discovered later.
+  interface RawRegion {
+    key: string;
+    predicate: Record<string, number>;
+    describes: string;
+    status: 'occupied' | 'covered-with-caveat' | 'known-gap';
+    note?: string;
+  }
+  const coverage = JSON.parse(
+    readFileSync(join(ROOT, 'src/generator/traits/data/coverage-regions.json'), 'utf8'),
+  ) as {
+    version: string;
+    reviewedAgainst: string;
+    threshold: number;
+    corroboratingThreshold: number;
+    regions: RawRegion[];
+  };
+
+  measure('coverage taxonomy', `${coverage.version}, reviewed against ${coverage.reviewedAgainst}`);
+
+  // A taxonomy is a claim about a specific set of vectors. If the set has moved and
+  // nobody has re-read the regions, say so rather than re-evaluating silently against
+  // a set no one looked at.
+  check(
+    'the taxonomy was reviewed against the archetype set in use',
+    coverage.reviewedAgainst === archetypes.version,
+    `taxonomy ${coverage.reviewedAgainst} vs set ${archetypes.version}`,
+  );
+
+  /** Occupancy is COUNTED. Most regions hold exactly one archetype, so a boolean would
+   *  not notice a region going from one occupant to zero until it already had. */
+  function occupants(r: RawRegion, threshold: number): string[] {
+    return archetypes.list
+      .filter((a) =>
+        Object.entries(r.predicate).every(([trait, sign]) => {
+          const v = a.mean[TRAIT_INDEX[trait as TraitKey]]!;
+          // NON-STRICT. `average` sits at E +0.55 and N +0.50 exactly, so a strict `>`
+          // reports high-E/high-N empty with a nearest-archetype distance of zero.
+          return sign > 0 ? v >= threshold : v <= -threshold;
+        }),
+      )
+      .map((a) => a.key);
+  }
+
+  /** Distance from a region's canonical centre to the nearest archetype mean. */
+  function centreDistance(r: RawRegion): number {
+    const centre = TRAIT_ORDER.map((t) => (r.predicate[t] ?? 0) * 1.4);
+    let best = Infinity;
+    for (const a of archetypes.list) {
+      let d = 0;
+      for (let i = 0; i < TRAIT_COUNT; i++) d += (a.mean[i]! - centre[i]!) ** 2;
+      best = Math.min(best, Math.sqrt(d));
+    }
+    return best;
+  }
+
+  // The set's own minimum inter-archetype spacing is the natural yardstick: a region
+  // whose centre is further from every archetype than two archetypes are from each
+  // other is one where the TYPICAL member is unrepresented, even though the box is
+  // ticked. This is the one thing a sign predicate genuinely cannot see.
+  const minSpacing = separations(archetypes)[0]!.distance;
+  measure('minimum inter-archetype spacing (the centre-distance yardstick)', minSpacing.toFixed(3));
+
+  let wrongStatus = 0;
+  let weak = 0;
+  console.log('         region                   occ  centre-dist  status');
+  for (const r of coverage.regions) {
+    const primary = occupants(r, coverage.threshold);
+    const corroborating = occupants(r, coverage.corroboratingThreshold);
+    const dist = centreDistance(r);
+    const weakFlag = dist > minSpacing ? ' WEAK' : '';
+    if (dist > minSpacing) weak++;
+
+    let verdict = '';
+    if (r.status === 'occupied' && primary.length === 0) {
+      verdict = ' <-- DECLARED OCCUPIED BUT EMPTY';
+      wrongStatus++;
+    } else if (r.status === 'known-gap' && primary.length > 0) {
+      verdict = ' <-- gap has closed, taxonomy needs re-review';
+      wrongStatus++;
+    } else if (r.status === 'covered-with-caveat' && corroborating.length === 0) {
+      verdict = ' <-- empty even at the corroborating threshold';
+      wrongStatus++;
+    }
+    console.log(
+      `         ${r.key.padEnd(24)}${String(primary.length).padStart(3)}` +
+        `${dist.toFixed(3).padStart(13)}  ${r.status}${weakFlag}${verdict}`,
+    );
+  }
+
+  check(
+    'every region matches its declared status',
+    wrongStatus === 0,
+    wrongStatus === 0 ? `${coverage.regions.length} regions` : `${wrongStatus} mismatched`,
+  );
+
+  const singles = coverage.regions.filter(
+    (r) => r.status === 'occupied' && occupants(r, coverage.threshold).length === 1,
+  );
+  measure(
+    'single-occupancy regions',
+    `${singles.length} of ${coverage.regions.filter((r) => r.status === 'occupied').length} occupied ` +
+      `(${singles.map((r) => r.key).join(', ')})`,
+  );
+  measure(
+    'regions whose centre is further away than two archetypes are from each other',
+    `${weak} of ${coverage.regions.length}`,
+  );
+
+  console.log(
+    '         REPORTED, NOT ALL GATED. A declared status that no longer holds fails,',
+  );
+  console.log(
+    '         because that is a claim about the set going stale. WEAK marks a region',
+  );
+  console.log(
+    '         whose box is ticked while its typical member is unrepresented, which is',
+  );
+  console.log(
+    '         the one thing a sign predicate cannot see, and it is reported only.',
+  );
+  console.log(
+    '         THE OPEN ITEM: the low-honesty pole is two archetypes, both strongly',
+  );
+  console.log(
+    '         extraverted and both emotionally average. Bad faith in this set is always',
+  );
+  console.log(
+    '         loud and never rattled. The correlation matrix cannot detect that: every',
+  );
+  console.log(
+    '         pair involving honesty now sits within 0.12 of the model. It is the same',
+  );
+  console.log(
+    '         failure the eleventh archetype was added for, recurring on the low side.',
+  );
+}
+
 /* ------------------------------------------- standing collinearity diagnostic */
 
 section('Between-archetype collinearity (standing diagnostic, D-097): REPORTED, NOT GATED');

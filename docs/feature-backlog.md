@@ -687,11 +687,37 @@ briefings. Architecture §31 has the detail; the state of it is:
       leaving that region empty. Every correlation now within 0.12 of the model;
       spectrum condition ratio 2.77 against roughly 3000 originally. Set version
       `archetypes-11-2026-07-31`. See D-097.
-- [ ] **A calm, organised, low-honesty archetype.** The one region still unoccupied;
-      `ingratiator` is adjacent but emotionally moderate rather than calm. Deliberately
-      not added: the correlation targets are met without it, and adding an archetype to
-      occupy a region no measure asks for weakens each one's meaning. Revisit if
-      reference data says such a type is common.
+- [x] **Standing coverage check** — `data/coverage-regions.json` names sixteen regions
+      with a status each; `verify:traits` checks all of them every run, counts occupancy
+      rather than asserting booleans, and flags weakly-occupied regions the sign
+      predicate cannot see. Threshold 0.5 non-strict with a 0.3 corroborating pass.
+- [ ] **The low-honesty pole is two points**, both strongly extraverted and both
+      emotionally average: bad faith in this set is always loud and never rattled. No
+      introverted, calm or anxious bad actor exists. **The correlation matrix cannot see
+      this** — every pair involving honesty is now within 0.12 of the model. Second
+      independent instance of "a repaired correlation is not a populated space".
+      `covert-bad-faith` (low E, low H) is the first region to fill when a feature
+      consumes actor typing. Note the harm is in what the set can NAME, not what it can
+      PRODUCE: those avatars are generated and simply classified to the wrong nearest
+      archetype (D-097).
+- [ ] **A calm, organised, low-honesty archetype** — cold, patient, systematic bad faith,
+      as distinct from the warm ingratiating kind `ingratiator` already covers. The set
+      can currently express manipulation only as charm. Deliberately open: no product
+      feature uses actor-type personality yet. **When actor-type modelling becomes real,
+      this is the first region to check** (D-097).
+- [ ] **Carry two named expectations into fidelity measurement**, so they are tested
+      rather than noticed. (1) The joint solve pushed means outward — `anxiousScrupulous`
+      at N +1.73 / H +1.70 is top-few-percent on two dimensions at once, which followed
+      from the separation constraint rather than from a choice; whether real data has
+      density there is unanswerable from inside the generator. (2) Coverage is a
+      two-level question: does every intended region contain an archetype, and does the
+      generated population reach where real people are. The second needs beta-recall and
+      nearest-neighbour coverage against reference data.
+- [ ] **Extend the versioning pattern to the reference layer.** "A set that cannot be
+      named cannot have a bound written against it" applies to the reference dataset
+      (file hashes, exclusion rules, scoring keys, split indices), the metric
+      implementation, and the numeric tolerances — not only to the archetype set, which
+      is just the first instance (D-097).
 - [ ] **Reference data layer** — raw file hashes, per-artefact licence text, exclusion
       rules, scoring keys, frozen train/validation/holdout indices. Everything downstream
       of validation depends on this existing and being immutable, and it is not code.
