@@ -32,14 +32,25 @@
 import { TRAIT_COUNT, UNCLASSIFIED_SIGMA_FACTOR, type ArchetypeSet, type TraitConfig } from './types.js';
 
 export interface PopulationMoments {
-  /** Grand mean of the mixture, per trait. */
+  /** Grand mean of the mixture, per trait. Subtracted at draw time. */
   mean: number[];
+  /** Per-trait population standard deviation. Divided by at draw time. */
+  sd: number[];
   /** Within-component covariance. */
   within: number[][];
   /** Between-component covariance. */
   between: number[][];
-  /** `within + between`. The population covariance. */
+  /** `within + between`. The population covariance of the AUTHORED coordinates. */
   covariance: number[][];
+  /**
+   * The covariance the sampler's OUTPUT actually has: `D^-1 (W + B) D^-1`.
+   *
+   * Unit diagonal by construction, because the draw is standardised. Anything reading
+   * standardised latent - which is everything downstream - must normalise against this
+   * rather than against `covariance`, or it will divide by a spread the values no longer
+   * have.
+   */
+  standardisedCovariance: number[][];
 }
 
 /**
@@ -98,7 +109,43 @@ export function populationMoments(
   const within = config.covariance.map((row) => row.map((v) => v * withinScale));
   const covariance = within.map((row, i) => row.map((v, j) => v + between[i]![j]!));
 
-  return { mean, within, between, covariance };
+  const sd = Array.from({ length: TRAIT_COUNT }, (_, i) => Math.sqrt(covariance[i]![i]!));
+  const standardisedCovariance = covariance.map((row, i) =>
+    row.map((v, j) => v / (sd[i]! * sd[j]!)),
+  );
+
+  return { mean, sd, within, between, covariance, standardisedCovariance };
+}
+
+/**
+ * Standardise a latent vector against the population moments: `(x - mu) / sd`, per trait.
+ *
+ * ── WHY THIS RUNS AT DRAW TIME AND NOT AS A CALIBRATION ─────────────────────
+ *
+ * Both moments are properties of `(archetype set x archetypeMix)`, not of the set alone,
+ * and `archetypeMix` is an OPERATOR-FACING CONTROL. Solving the archetype positions to
+ * put the mean at zero fixed the moments for one mix; it cannot fix them for a mix
+ * nobody has chosen yet, and the control exists precisely so it can be moved.
+ *
+ * Standardising here makes the z-score claim true BY CONSTRUCTION for any mix, rather
+ * than true by calibration for one. The solve's mean and sd targets become a
+ * convenience: they keep this transform close to the identity at the default mix, which
+ * is what keeps `archetypes.json` readable as the coordinates somebody authored.
+ *
+ * ── TWO CONSEQUENCES THAT MUST NOT SURPRISE ANYONE ─────────────────────────
+ *
+ * The values in `archetypes.json` are PRE-STANDARDISATION coordinates. An avatar drawn
+ * from `professionalSupport` no longer sits at the authored mean. Relative structure is
+ * untouched, because every point shifts by the same constant and scales by the same
+ * factor per trait, so separation and semantics are preserved.
+ *
+ * And SEPARATION MUST BE CHECKED IN STANDARDISED SPACE. Distances scale by `1/sd` per
+ * trait, so a mix that pushed a trait's sd to 0.7 would inflate every separation along
+ * it by roughly 1.4 and the floor would pass trivially. At the default mix `sd` is
+ * within a few percent of 1, which is exactly why this would otherwise be missed.
+ */
+export function standardise(latent: readonly number[], moments: PopulationMoments): number[] {
+  return latent.map((v, i) => (v - moments.mean[i]!) / moments.sd[i]!);
 }
 
 /**

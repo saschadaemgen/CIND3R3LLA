@@ -53,7 +53,22 @@
     "the mean was measured at +0.213 on honesty once anyone looked. Worst mean is now 0.045.",
     "",
     "Both are properties of (SET x MIX), not of the set alone: they are solved against the",
-    "DEFAULT equal mix, and a different archetypeMix reintroduces an offset in both."
+    "DEFAULT equal mix, and a different archetypeMix reintroduces an offset in both.",
+    "",
+    "THESE ARE PRE-STANDARDISATION COORDINATES (D-101). The sampler standardises its output",
+    "per trait, (x - mean) / sd, against the moments of whatever (set x mix) it is given, so",
+    "the z-score claim holds for ANY mix rather than for the one the set was solved against.",
+    "An avatar drawn from professionalSupport therefore does NOT sit at the mean written",
+    "here. Relative structure is untouched: every point shifts by the same constant and",
+    "scales by the same per-trait factor, so separation and semantics are preserved.",
+    "",
+    "The solve's mean and sd targets remain, as a convenience rather than a requirement:",
+    "they keep the standardisation close to the identity at the default mix, which is what",
+    "keeps these numbers readable as the coordinates somebody actually authored.",
+    "",
+    "SEPARATION IS CHECKED IN STANDARDISED SPACE, and it is mix-dependent: distances scale",
+    "by 1/sd per trait. The loader asserts the floor against the DEFAULT mix because it",
+    "cannot know a caller's; verify:traits sweeps several and prints the dependence."
   ],
   "version": "archetypes-11-2026-07-31b",
   "archetypes": [

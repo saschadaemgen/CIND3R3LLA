@@ -53,6 +53,7 @@ import {
   defaultCovariance,
   loadArchetypes,
   parseArchetypes,
+  populationMoments,
   prepareTraitSampler,
   productWithTranspose,
   ridgeRepair,
@@ -557,9 +558,16 @@ section('Determinism (§2)');
     const c = classified.draw(s);
     const u = background.draw(s);
     const mu = archetypes.byKey.get(c.archetype!)!.mean;
-    // Recover L@z from each: (latent - mu) / spread.
-    const zc = TRAIT_ORDER.map((k, i) => (c.latent[k] - mu[i]!) / DEFAULT_SIGMA);
-    const zu = TRAIT_ORDER.map((k) => u.latent[k] / background.unclassifiedSigma);
+    // Recover L@z from each. The draw is now STANDARDISED on the way out (D-101), so
+    // un-standardise first: raw = latent * sd + populationMean, then (raw - mu) / spread.
+    const mc = classified.moments;
+    const mb = background.moments;
+    const zc = TRAIT_ORDER.map(
+      (k, i) => (c.latent[k] * mc.sd[i]! + mc.mean[i]! - mu[i]!) / DEFAULT_SIGMA,
+    );
+    const zu = TRAIT_ORDER.map(
+      (k, i) => (u.latent[k] * mb.sd[i]! + mb.mean[i]!) / background.unclassifiedSigma,
+    );
     if (zc.every((v, i) => Math.abs(v - zu[i]!) < 1e-9)) sameZ++;
   }
   check('the latent stream is independent of the archetype draw', sameZ === 200, `${sameZ}/200`);
@@ -811,6 +819,37 @@ section('Population composition (§4.3, §4.4)');
     narrowest > 0.8 && widest < 1.25, `sd ${narrowest.toFixed(3)} to ${widest.toFixed(3)}`);
   check('the population is near enough centred for the default mix',
     worstOffset < 0.35, `worst ${worstOffset.toFixed(3)}`);
+
+  // SEPARATION IS MIX-DEPENDENT IN STANDARDISED SPACE, and that cuts both ways. The
+  // loader asserts the floor against the DEFAULT mix because it cannot know the mix a
+  // caller will use. Distances scale by 1/sd per trait, so a mix that inflates sd
+  // deflates separation and one that deflates sd inflates it. Reported across several
+  // mixes so the dependence is visible rather than assumed away.
+  console.log('         mix                          worst authored mean   min separation');
+  const mixProbe: [string, Record<string, number>][] = [
+    ['default (equal)', Object.fromEntries(archetypes.list.map((a) => [a.key, 1]))],
+    ['skewed: 80% one archetype', { ingratiator: 8, professionalSupport: 1, quietLurker: 1 }],
+    ['two archetypes only', { roleModel: 1, selfCentered: 1 }],
+    ['support-heavy', { professionalSupport: 6, average: 2, quietLurker: 2 }],
+  ];
+  let anyBelowFloor = false;
+  for (const [label, mix] of mixProbe) {
+    const m = populationMoments(archetypes, config({ archetypeMix: mix }));
+    const sep = separations(archetypes, m)[0]!;
+    if (sep.distance < DEFAULT_ARCHETYPE_SEPARATION) anyBelowFloor = true;
+    console.log(
+      `         ${label.padEnd(28)}${Math.max(...m.mean.map(Math.abs)).toFixed(3).padStart(14)}` +
+        `${sep.distance.toFixed(3).padStart(17)}${sep.distance < DEFAULT_ARCHETYPE_SEPARATION ? '  <-- below the floor' : ''}`,
+    );
+  }
+  measure('mix-dependence of the separation floor',
+    anyBelowFloor
+      ? 'at least one plausible mix falls below it; the floor is a property of (set x mix)'
+      : 'every probed mix clears it');
+  console.log('         REPORTED, NOT GATED. An operator mix that compresses the geometry is a');
+  console.log('         configuration consequence rather than a defect in the set, and failing');
+  console.log('         the run would break a legitimate slider position. But it is exactly the');
+  console.log('         case a floor checked only at the default mix cannot see.');
 
   // §4.3: separation is validated, never applied.
   const pairs = separations(archetypes);

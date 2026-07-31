@@ -53,6 +53,7 @@
 import { Rng } from '../rng.js';
 import { cholesky } from './covariance.js';
 import { standardNormals } from './normal.js';
+import { populationMoments, type PopulationMoments } from './population.js';
 import {
   SIGMA_MAX,
   SIGMA_MIN,
@@ -89,6 +90,13 @@ export interface PreparedTraitSampler {
   readonly factor: readonly (readonly number[])[];
   /** The resolved background spread, after the `sigma * factor` default is applied. */
   readonly unclassifiedSigma: number;
+  /**
+   * The moments this configuration produces, used to standardise every draw.
+   *
+   * Exposed because everything reading the OUTPUT must normalise against
+   * `standardisedCovariance` rather than against the authored coordinates.
+   */
+  readonly moments: PopulationMoments;
 }
 
 function assertFinite(name: string, value: unknown): asserts value is number {
@@ -166,6 +174,11 @@ export function prepareTraitSampler(
   // Raises on a matrix that is malformed, asymmetric, or not positive-definite.
   const factor = cholesky(config.covariance);
 
+  // Closed form, computed once. The draw is standardised against these so the z-score
+  // claim holds for ANY mix rather than for the one the archetypes were solved against
+  // (D-101). archetypeMix is an operator-facing control; it will move.
+  const moments = populationMoments(archetypes, config);
+
   const mix = { ...config.archetypeMix };
   const share = config.unclassifiedShare;
   const sigma = config.sigma;
@@ -187,13 +200,17 @@ export function prepareTraitSampler(
       // Row i of L is zero past column i, so the inner sum stops at i.
       let correlated = 0;
       for (let k = 0; k <= i; k++) correlated += factor[i]![k]! * z[k]!;
-      latent[TRAIT_ORDER[i]!] = mean[i]! + spread * correlated;
+      // Standardised on the way out: (x - mu) / sd, per trait. The authored archetype
+      // coordinates are therefore PRE-standardisation, and an avatar drawn from
+      // professionalSupport does not sit at the authored mean.
+      const raw = mean[i]! + spread * correlated;
+      latent[TRAIT_ORDER[i]!] = (raw - moments.mean[i]!) / moments.sd[i]!;
     }
 
     return { archetype: archetype?.key ?? null, latent };
   }
 
-  return { draw, factor, unclassifiedSigma };
+  return { draw, factor, unclassifiedSigma, moments };
 }
 
 /**

@@ -38,8 +38,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { defaultCovariance } from './covariance.js';
+import { populationMoments, type PopulationMoments } from './population.js';
 import {
+  DEFAULT_ARCHETYPE_MIX,
   DEFAULT_ARCHETYPE_SEPARATION,
+  DEFAULT_SIGMA,
+  DEFAULT_UNCLASSIFIED_SHARE,
   TRAIT_COUNT,
   TRAIT_ORDER,
   type Archetype,
@@ -48,6 +53,14 @@ import {
 } from './types.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+
+/** The mix the separation floor is asserted against on load. See `loadArchetypes`. */
+const DEFAULT_MOMENT_CONFIG = {
+  archetypeMix: DEFAULT_ARCHETYPE_MIX,
+  unclassifiedShare: DEFAULT_UNCLASSIFIED_SHARE,
+  sigma: DEFAULT_SIGMA,
+  covariance: defaultCovariance(),
+};
 const DEFAULT_PATH = './data/archetypes.json';
 
 /** The raw shape of the authored file. */
@@ -242,7 +255,12 @@ export function loadArchetypes(options: LoadArchetypesOptions = {}): ArchetypeSe
   }
   const set = parseArchetypes(parsed, path);
   const separation = options.separation === undefined ? DEFAULT_ARCHETYPE_SEPARATION : options.separation;
-  if (separation !== null) assertSeparation(set, separation);
+  if (separation !== null) {
+    // Checked in STANDARDISED space, against the DEFAULT mix. The mix is a per-request
+    // input and the loader cannot know it, so the default is what the floor is asserted
+    // against; a caller using a very different mix should re-check with its own moments.
+    assertSeparation(set, separation, populationMoments(set, DEFAULT_MOMENT_CONFIG));
+  }
   return set;
 }
 
@@ -277,7 +295,13 @@ export interface SeparationPair {
  * purpose true: "if someone authors two archetypes that sit on top of each other,
  * the test should say so".
  */
-export function separations(set: ArchetypeSet): SeparationPair[] {
+export function separations(set: ArchetypeSet, moments?: PopulationMoments): SeparationPair[] {
+  // IN STANDARDISED SPACE when moments are supplied, which is the space the sampler's
+  // output actually lives in. Distances scale by 1/sd per trait, so a mix that pushed a
+  // trait's sd to 0.7 would inflate every separation along it by roughly 1.4 and the
+  // floor would pass trivially. At the default mix sd sits within a few percent of 1,
+  // which is precisely why this would otherwise never be noticed.
+  const scale = (k: number): number => (moments ? moments.sd[k]! : 1);
   const out: SeparationPair[] = [];
   for (let i = 0; i < set.list.length; i++) {
     for (let j = i + 1; j < set.list.length; j++) {
@@ -287,7 +311,7 @@ export function separations(set: ArchetypeSet): SeparationPair[] {
       let sum = 0;
       for (const t of traits) {
         const k = TRAIT_ORDER.indexOf(t);
-        const d = a.mean[k]! - b.mean[k]!;
+        const d = (a.mean[k]! - b.mean[k]!) / scale(k);
         sum += d * d;
       }
       out.push({ a: a.key, b: b.key, traits, distance: Math.sqrt(sum) });
@@ -301,11 +325,15 @@ export function separations(set: ArchetypeSet): SeparationPair[] {
  * property of the archetype definitions, so it is validated here and applied
  * nowhere.
  */
-export function assertSeparation(set: ArchetypeSet, separation: number): void {
+export function assertSeparation(
+  set: ArchetypeSet,
+  separation: number,
+  moments?: PopulationMoments,
+): void {
   if (!Number.isFinite(separation) || separation <= 0) {
     throw new Error(`Trait sampler: archetypeSeparation must be positive, got ${separation}.`);
   }
-  const violations = separations(set).filter((p) => p.distance < separation);
+  const violations = separations(set, moments).filter((p) => p.distance < separation);
   if (violations.length === 0) return;
   const detail = violations
     .map(

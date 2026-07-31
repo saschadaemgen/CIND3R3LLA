@@ -722,6 +722,19 @@ briefings. Architecture §31 has the detail; the state of it is:
       can currently express manipulation only as charm. Deliberately open: no product
       feature uses actor-type personality yet. **When actor-type modelling becomes real,
       this is the first region to check** (D-097).
+- [ ] **The joint-density check per archetype.** The sharper form of the outward-push
+      hypothesis: `|z| = 2` on one trait is roughly the 2nd percentile and unremarkable,
+      but an archetype extreme on one trait AND displaced on others sits at a joint
+      density far below any marginal suggests. Ask what fraction of real people occupy
+      the neighbourhood of each archetype mean in six dimensions, and compare against the
+      mixture weight assigned to it. Turns a general concern into a number per archetype,
+      and would show an archetype given five percent of a population where real data has
+      one (D-101).
+- [ ] **A separation floor that survives the mix slider.** The floor is a property of
+      (set x mix) in standardised space; a plausible operator mix (80 percent one
+      archetype) already falls to 1.927 against a 2.0 floor. Reported, not gated, because
+      failing the run would break a legitimate slider position — but it needs a product
+      answer, probably a warning in the Personality panel rather than a refusal (D-101).
 - [ ] **Carry two named expectations into fidelity measurement**, so they are tested
       rather than noticed. (1) The joint solve pushed means outward — `anxiousScrupulous`
       at N +1.73 / H +1.70 is top-few-percent on two dimensions at once, which followed

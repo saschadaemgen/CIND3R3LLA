@@ -194,19 +194,36 @@ section('Derivation correctness (§11)');
   // here, because populationMoments already computes it for the percentile transform.
   const absMean = moments.mean.map(Math.abs);
   const worstTrait = TRAIT_ORDER[absMean.indexOf(Math.max(...absMean))];
-  measure('population MEAN per trait (analytic)',
+  // TWO SETS OF MOMENTS, answering different questions. The authored coordinates are
+  // what the archetype file says and what the solve constrains; the OUTPUT moments are
+  // what the sampler actually emits, and they are exactly (0, 1) by construction because
+  // the draw is standardised (D-101).
+  measure('AUTHORED-coordinate mean per trait (what the solve constrains)',
     TRAIT_ORDER.map((t, i) => `${t.slice(0, 4)} ${moments.mean[i]!.toFixed(3)}`).join('  '));
-  measure('largest mean magnitude', `${Math.max(...absMean).toFixed(3)} on ${worstTrait}`);
-  console.log('         REPORTED. The z-score claim has two halves and only the sd half was ever');
-  console.log('         constrained. If the mean is materially non-zero the same question arises');
-  console.log('         as it did for the sd: a constraint the archetype solve should carry, or a');
-  console.log('         documented property of the set.');
+  measure('largest authored mean magnitude', `${Math.max(...absMean).toFixed(3)} on ${worstTrait}`);
+  const outMean = TRAIT_ORDER.map((t) => mean(population.map((p) => p.latent[t])));
+  const outSd = TRAIT_ORDER.map((t) => Math.sqrt(variance(population.map((p) => p.latent[t]))));
+  measure('OUTPUT mean per trait (empirical, after standardisation)',
+    `${Math.min(...outMean).toFixed(3)} to ${Math.max(...outMean).toFixed(3)}`);
+  measure('OUTPUT sd per trait (empirical, after standardisation)',
+    `${Math.min(...outSd).toFixed(3)} to ${Math.max(...outSd).toFixed(3)}`);
+  check('the sampler output is standardised for THIS mix',
+    Math.max(...outMean.map(Math.abs)) < 0.03 && Math.min(...outSd) > 0.97 && Math.max(...outSd) < 1.03,
+    'exactly (0, 1) analytically; the spread here is sampling noise at n=20,000');
+  console.log('         The z-score claim is now true BY CONSTRUCTION for any mix rather than by');
+  console.log('         calibration for one. The solve still constrains the authored moments, which');
+  console.log('         keeps the standardisation near the identity and archetypes.json readable as');
+  console.log('         the coordinates somebody actually authored.');
   check('the analytic standard deviation matches a large sample within 0.02',
     worstSd < 0.02, worstSd.toFixed(4));
   check('the analytic mean matches a large sample within 0.02', worstMean < 0.02, worstMean.toFixed(4));
-  check('the population covariance is the one the sampler actually produces',
-    Math.abs(Math.sqrt(moments.covariance[0]![0]!) -
-      Math.sqrt(variance(population.map((p) => p.latent.openness)))) < 0.02);
+  // Against the STANDARDISED covariance, which is the one the sampler's output has.
+  // Comparing the authored-coordinate covariance here would compare a spread the values
+  // no longer carry (D-101).
+  check('the standardised covariance is the one the sampler actually produces',
+    Math.abs(Math.sqrt(moments.standardisedCovariance[0]![0]!) -
+      Math.sqrt(variance(population.map((p) => p.latent.openness)))) < 0.02,
+    `analytic 1.000 against empirical ${Math.sqrt(variance(population.map((p) => p.latent.openness))).toFixed(4)}`);
 
   // Abramowitz and Stegun 7.1.26 carries a residual of about 1e-9 at z=0, so this is a
   // tolerance rather than an equality. The residual is seven orders of magnitude finer

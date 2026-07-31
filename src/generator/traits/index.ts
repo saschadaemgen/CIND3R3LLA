@@ -67,6 +67,7 @@ export {
   linearCombinationMean,
   linearCombinationVariance,
   linearCombinationCorrelation,
+  standardise,
   type PopulationMoments,
 } from './population.js';
 export { Rng } from '../rng.js';

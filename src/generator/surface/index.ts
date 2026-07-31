@@ -157,7 +157,15 @@ export function prepareSurface(
   loadings: LoadingSet,
   population: PopulationConfig = DEFAULT_POPULATION,
 ): PreparedSurface {
-  const moments = populationMoments(archetypes, traitConfig);
+  // The sampler standardises its output (D-101), so the values reaching here have mean
+  // zero and unit per-trait sd by construction. Normalising against the AUTHORED
+  // coordinates would divide by a spread the values no longer have.
+  const raw = populationMoments(archetypes, traitConfig);
+  const moments = {
+    ...raw,
+    mean: raw.mean.map(() => 0),
+    covariance: raw.standardisedCovariance,
+  };
   const normalisation = styleNormalisation(loadings, moments);
 
   const derive = (request: Omit<SurfaceRequest, 'population' | 'loadings'>): Surface => {

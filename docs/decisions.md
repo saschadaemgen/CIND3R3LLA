@@ -13,6 +13,54 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-101 — The latent output is standardised at draw time, so the z-score claim survives the mix slider
+
+**Status: IMPLEMENTED** (CCB-S4-003, superseding the calibration half of D-100).
+
+**The problem D-100 left open.** Both moments are properties of `(archetype set x archetypeMix)`, not of the set alone. `archetypeMix` is an **operator-facing control in the Personality panel**, so the mix will change, and every change reintroduces exactly the offset the solve was run to remove. The solve fixed the moments for one mix; it cannot fix them for a mix nobody has chosen yet, and the control exists precisely so it can be moved.
+
+**Decision.** The sampler standardises on the way out:
+
+```
+x' = (x - mean(set, mix)) / sd(set, mix)      per trait
+```
+
+Both moments are already available in closed form for any `(set, mix)`, so this is one subtraction and one division at the end of a function that already computes them. **The z-score claim becomes true by construction rather than by calibration.**
+
+**Measured under mixes the solve never saw.** The authored-coordinate mean moves a long way; the output does not.
+
+| mix | worst authored mean | output mean | output sd |
+|---|---|---|---|
+| default (equal) | 0.046 | -0.014 .. 0.006 | 0.990 .. 1.005 |
+| **80 percent one archetype** | **0.826** | -0.012 .. 0.006 | 0.996 .. 1.004 |
+| two archetypes only | 0.756 | -0.012 .. 0.006 | 0.990 .. 1.005 |
+| support-heavy | 0.489 | -0.011 .. 0.002 | 0.999 .. 1.005 |
+
+Exactly `(0, 1)` analytically; the residual is sampling noise at n = 20,000.
+
+**The solve's moment targets are now a convenience, not a requirement.** They keep the standardisation close to the identity at the default mix, which is what keeps `archetypes.json` readable as coordinates somebody authored. D-100 is not withdrawn: it is what stops this transform being a large correction that would make the file misleading to read.
+
+**Two consequences, both handled rather than documented away.**
+
+*The archetype file holds PRE-standardisation coordinates.* An avatar drawn from `professionalSupport` no longer sits at the authored mean. Relative structure is untouched, because every point shifts by the same constant and scales by the same per-trait factor, so separation and semantics are preserved. Said in the data file so a mismatch is not read as a bug.
+
+*The separation floor is now checked in STANDARDISED space.* Distances scale by `1/sd` per trait, so a mix that pushed a trait's sd to 0.7 would inflate every separation along it by roughly 1.4 and the floor would pass trivially. At the default mix `sd` sits within a few percent of 1, which is exactly why this would otherwise never have been noticed.
+
+**And that immediately found something.** The dependence cuts both ways, and a plausible operator mix goes the wrong way:
+
+| mix | min separation |
+|---|---|
+| default | 2.060 |
+| **80 percent one archetype** | **1.927, below the 2.0 floor** |
+| two archetypes only | 2.025 |
+| support-heavy | 2.207 |
+
+**Reported, not gated.** An operator mix that compresses the geometry is a configuration consequence rather than a defect in the archetype set, and failing the run would break a legitimate slider position. But it is precisely the case a floor checked only at the default mix cannot see, and the loader can only check the default because it cannot know the caller's mix. `verify:traits` now sweeps several mixes and prints the dependence.
+
+**The surface layer needed one change and would otherwise have been silently wrong.** It normalises style percentiles against the population covariance, and after standardisation the values reaching it have unit per-trait spread. Normalising against the authored-coordinate covariance would have divided by a spread the values no longer carry. It now uses `standardisedCovariance` and a zero mean.
+
+**A sharper form of the outward-push hypothesis, for the reference layer.** Three archetypes sit beyond `|z| = 2`, which on a single trait is roughly the 2nd percentile and is not alarming on its own: avatars drawn around such a mean with spread 0.6 land in a band real populations do occupy. **The question worth carrying is joint, not marginal.** An archetype extreme on one trait while also displaced on others sits at a joint density far below any of its marginals suggests. The reference comparison should ask **what fraction of real people occupy the neighbourhood of each archetype mean in six dimensions, and compare that against the mixture weight assigned to it**. That turns a general concern into a number per archetype, and it is the check that would show an archetype being given five percent of a population where real data has one.
+
 ### D-100 — The population mean is a constraint, and constraining it closed three coverage gaps nobody authored for
 
 **Status: IMPLEMENTED** (CCB-S4-003, amending D-094/D-097). Archetype set `archetypes-11-2026-07-31b`, coverage taxonomy `coverage-regions-2026-07-31b`.
