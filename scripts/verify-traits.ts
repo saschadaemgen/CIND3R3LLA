@@ -241,6 +241,19 @@ section('Archetype set (§5)');
     at('anxiousScrupulous', 'neuroticism') > 1 && at('anxiousScrupulous', 'honesty') > 1);
   // A set version is what a calibrated bound would have to name (D-095, D-097).
   check('the archetype set is versioned', archetypes.version.length > 0, archetypes.version);
+
+  // Provenance is declared before any reference comparison runs, never after (D-098).
+  const roles = archetypes.list.filter((a) => a.provenance === 'product-role');
+  const candidates = archetypes.list.filter((a) => a.provenance === 'empirical-candidate');
+  check(
+    'every archetype declares whether reference data may retire it',
+    roles.length + candidates.length === archetypes.list.length,
+  );
+  measure(
+    'provenance',
+    `${roles.length} product roles (${roles.map((a) => a.key).join(', ')}), ` +
+      `${candidates.length} empirical candidates`,
+  );
 }
 
 /* ------------------------------------------ standing coverage check (D-097) */
@@ -810,8 +823,8 @@ section('Population composition (§4.3, §4.4)');
     {
       version: 'collapsed-fixture-v1',
       archetypes: [
-        { key: 'a', label: 'A', sketch: 'test', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },
-        { key: 'b', label: 'B', sketch: 'test', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },
+        { key: 'a', label: 'A', sketch: 'test', provenance: 'empirical-candidate', provenanceWhy: 'fixture', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },
+        { key: 'b', label: 'B', sketch: 'test', provenance: 'empirical-candidate', provenanceWhy: 'fixture', defining: ['extraversion'], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) },
       ],
     },
     'collapsed-fixture',
@@ -821,9 +834,9 @@ section('Population composition (§4.3, §4.4)');
     collapseError !== null && /a \/ b/.test(collapseError.message),
     (collapseError?.message ?? '').slice(0, 60));
   check('a positional mean array is rejected',
-    threw(() => parseArchetypes({ archetypes: [{ key: 'a', label: 'A', sketch: 's', defining: ['extraversion'], mean: [0, 0, 0, 0, 0, 0] }] }, 'fixture')) !== null);
+    threw(() => parseArchetypes({ archetypes: [{ key: 'a', label: 'A', sketch: 's', provenance: 'empirical-candidate', provenanceWhy: 'f', defining: ['extraversion'], mean: [0, 0, 0, 0, 0, 0] }] }, 'fixture')) !== null);
   check('an archetype with no defining trait is rejected',
-    threw(() => parseArchetypes({ archetypes: [{ key: 'a', label: 'A', sketch: 's', defining: [], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) }] }, 'fixture')) !== null);
+    threw(() => parseArchetypes({ archetypes: [{ key: 'a', label: 'A', sketch: 's', provenance: 'empirical-candidate', provenanceWhy: 'f', defining: [], mean: Object.fromEntries(TRAIT_ORDER.map((t) => [t, 0])) }] }, 'fixture')) !== null);
   check('the loader enforces separation on startup',
     threw(() => loadArchetypes({ separation: 99 })) !== null);
 }

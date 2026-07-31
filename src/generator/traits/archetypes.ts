@@ -64,6 +64,8 @@ interface RawArchetype {
   mean?: unknown;
   defining?: unknown;
   note?: unknown;
+  provenance?: unknown;
+  provenanceWhy?: unknown;
 }
 
 const TRAIT_KEYS = new Set<string>(TRAIT_ORDER);
@@ -157,8 +159,22 @@ export function parseArchetypes(raw: unknown, source: string): ArchetypeSet {
       fail(source, `${named} has a non-string "note".`);
     }
 
+    if (entry.provenance !== 'product-role' && entry.provenance !== 'empirical-candidate') {
+      fail(
+        source,
+        `${named} has no valid "provenance" (product-role or empirical-candidate). ` +
+          `It must be declared BEFORE any reference comparison runs: deciding afterwards ` +
+          `lets a real finding be argued away and a product decision be defended as empirical.`,
+      );
+    }
+    if (typeof entry.provenanceWhy !== 'string' || entry.provenanceWhy.length === 0) {
+      fail(source, `${named} declares a provenance with no reason.`);
+    }
+
     const archetype: Archetype = {
       key: entry.key,
+      provenance: entry.provenance,
+      provenanceWhy: entry.provenanceWhy,
       label: entry.label,
       sketch: entry.sketch,
       mean: resolveMean(entry.mean, source, named),

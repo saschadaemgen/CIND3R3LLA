@@ -81,6 +81,20 @@ export interface Archetype {
   defining: readonly TraitKey[];
   /** Anything authored beyond the sketch, recorded so it is not mistaken for spec. */
   note?: string;
+  /**
+   * Whether reference data is allowed to revise or retire this archetype.
+   *
+   * `product-role` exists for a product reason and survives whatever clustering real
+   * data produces. `empirical-candidate` was authored to sketch a personality space and
+   * is exactly what reference data should be allowed to overturn.
+   *
+   * Declared BEFORE any reference comparison runs, and required rather than optional,
+   * because deciding afterwards lets a real finding be argued away ("that one was always
+   * a product role") and lets a product decision be defended as empirical.
+   */
+  provenance: 'product-role' | 'empirical-candidate';
+  /** Why it carries that provenance. */
+  provenanceWhy: string;
 }
 
 /** A loaded, validated archetype set. */

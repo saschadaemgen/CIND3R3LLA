@@ -33,7 +33,20 @@
     "POSITIONS COME FROM A JOINT SOLVE, not from hand-placement. The fifteen",
     "between-archetype correlations are coupled across the points, so fixing one pair moves",
     "the others; sequential patching does not converge. Run 'npm run solve:archetypes' after",
-    "any edit, read the proposal as descriptions of people, and only then accept it."
+    "any edit, read the proposal as descriptions of people, and only then accept it.",
+    "",
+    "PROVENANCE, DECLARED BEFORE THE REFERENCE COMPARISON RUNS AND NOT AFTER.",
+    "",
+    "  product-role         exists for a product reason and survives regardless of what",
+    "                       clustering real data says. Needs no empirical backing to be useful.",
+    "  empirical-candidate  authored to sketch a personality space. Reference data may revise",
+    "                       or retire it.",
+    "",
+    "Declared NOW because doing it afterwards lets a real finding be argued away ('that one",
+    "was always a product role') and lets a product decision be defended as empirical. The",
+    "split happens to match the pinned/free split used by solve:archetypes, and that is not a",
+    "coincidence: 'this position carries product meaning' and 'this archetype survives",
+    "whatever the data says' are the same question in different words."
   ],
   "version": "archetypes-11-2026-07-31",
   "archetypes": [
@@ -52,7 +65,9 @@
         "agreeableness": 0.15,
         "neuroticism": 0.5,
         "honesty": 0.0
-      }
+      },
+      "provenance": "product-role",
+      "provenanceWhy": "Anchors the centre of the space. A structural role; it is not a claim that \"average person\" is an empirical cluster."
     },
     {
       "key": "roleModel",
@@ -74,7 +89,9 @@
         "neuroticism": -1.48,
         "honesty": 1.11
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round."
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "reserved",
@@ -93,7 +110,9 @@
         "neuroticism": -1.14,
         "honesty": 0.38
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round."
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "selfCentered",
@@ -113,7 +132,9 @@
         "agreeableness": -1.35,
         "neuroticism": 0.03,
         "honesty": -0.84
-      }
+      },
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "enthusiasticNewcomer",
@@ -133,7 +154,9 @@
         "neuroticism": 0.01,
         "honesty": 0.55
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round."
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "terseExpert",
@@ -153,7 +176,9 @@
         "neuroticism": -1.0,
         "honesty": -0.13
       },
-      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round."
+      "note": "POSITION FROM THE JOINT SOLVE (npm run solve:archetypes), not hand-placed: the fifteen between-archetype correlations are coupled across the eleven points and cannot be satisfied one pair at a time. The label was checked against the solved position afterwards, not the other way round.",
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "quietLurker",
@@ -169,7 +194,9 @@
         "agreeableness": 0.2,
         "neuroticism": 0.35,
         "honesty": 0.1
-      }
+      },
+      "provenance": "product-role",
+      "provenanceWhy": "Populates rooms. Useful whatever clustering says about whether quiet lurkers form a type."
     },
     {
       "key": "ingratiator",
@@ -188,7 +215,9 @@
         "agreeableness": 1.43,
         "neuroticism": 0.13,
         "honesty": -1.59
-      }
+      },
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "principledContrarian",
@@ -206,7 +235,9 @@
         "agreeableness": -1.52,
         "neuroticism": -0.13,
         "honesty": 1.53
-      }
+      },
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "anxiousScrupulous",
@@ -225,7 +256,9 @@
         "agreeableness": 0.71,
         "neuroticism": 1.73,
         "honesty": 1.7
-      }
+      },
+      "provenance": "empirical-candidate",
+      "provenanceWhy": "Authored to sketch a personality space. Reference data is allowed to revise or retire this one."
     },
     {
       "key": "professionalSupport",
@@ -246,7 +279,9 @@
         "agreeableness": 1.35,
         "neuroticism": -1.3,
         "honesty": 1.45
-      }
+      },
+      "provenance": "product-role",
+      "provenanceWhy": "The support-avatar archetype, the one production-facing member of the set."
     }
   ]
 }

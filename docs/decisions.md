@@ -27,6 +27,14 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 **Already true of the generator, and now required of consumers.** `TraitResult.archetype` is `string | null`, and briefing §4.4 required that the unclassified case be representable rather than encoded as a special string. This extends that from the producer to every consumer.
 
+**A PREDICTION TO TEST THE FIRST TIME A CLASSIFIER EXISTS, recorded so it is measured rather than rediscovered.** The geometry is asymmetric in a way the framing is not: `ordinary-calm` sits 1.605 from any archetype while `ordinary-anxious` and the origin both sit at 0.760. Both are `background-owned` and both should be, but one is twice as far out.
+
+**Once abstention exists that asymmetry may become an abstention asymmetry.** Under a posterior classifier with the background as a component, a point far from every archetype resolves to the background and abstains, while a point near an archetype competes with the background and may be labelled. So calm-and-unremarkable avatars would abstain more readily than anxious-and-unremarkable ones at the same threshold. The mechanism is competition with the background component rather than raw distance, which is why this is a prediction and not an inference from the distances above.
+
+**If it holds, emotionally stable people are labelled less often than anxious ones, purely as an artefact of where the archetype set happens to sit.** Should labels ever carry consequences, anxious members are systematically more exposed to them. That is the same class of quiet structural bias as the moral halo, arriving through geometry rather than through authorship.
+
+**The check, when there is something to check:** report the abstention rate conditioned on each trait and confirm it is flat. It belongs with whatever validates the classifiability curve. It cannot be measured before a classifier exists, which is why it is written down now.
+
 **TWO KINDS OF COVERAGE GAP, WITH OPPOSITE ANSWERS.** Recorded because without it the coverage check eventually reads as a demand to fill every empty region, and the set grows archetypes for regions that should have none:
 
 | Kind | Example | Correct response |
@@ -35,6 +43,20 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 | The set has no archetype for a region the **background** properly owns | `ordinary-calm` | **abstention, never an archetype** |
 
 `coverage-regions.json` carries a `background-owned` status for the second kind, so the distinction is structural rather than prose. `ordinary-calm` is filed under it, and it is the case that distinguishes them.
+
+**PROVENANCE IS DECLARED BEFORE THE REFERENCE COMPARISON, NOT AFTER.** Every archetype now carries `provenance`, required by the loader rather than optional: `product-role` (exists for a product reason, survives whatever clustering real data produces) or `empirical-candidate` (authored to sketch a personality space, and exactly what reference data should be allowed to overturn). Three product roles - `average` anchors the centre, `quietLurker` populates rooms, `professionalSupport` is the support-avatar archetype - and eight candidates.
+
+**The timing is the whole point.** Deciding afterwards lets a real finding be argued away ("that one was always a product role") and lets a product decision be defended as empirical. The split matches the pinned/free split `solve:archetypes` already used, and that is not a coincidence: "this position carries product meaning" and "this archetype survives whatever the data says" are the same question in different words.
+
+**What the reference comparison will actually ask** is not whether density matches at the archetype locations, because the archetypes were never claimed to be a random sample of people. It is **whether the type structure corresponds at all**. Gerlach found four types across more than 1.5 million respondents with only about 42 percent of people assignable to any; this set has eleven covering 55 percent by design. Three outcomes, leading in different directions:
+
+| Outcome | Consequence |
+|---|---|
+| Real data yields far fewer robust types than eleven | The set is over-specified. Fewer archetypes, a larger background, or the candidates reframed as product roles |
+| Real clusters correspond roughly to some of ours | Those are validated; the rest are product roles and should be labelled as such |
+| Real clusters sit where we have gaps | The coverage gaps are confirmed as real and get filled **from data rather than intuition** |
+
+The third would settle `covert-bad-faith` and `cold-systematic` without anyone authoring a vector, which is a better outcome than either filling or deferring them on judgement.
 
 **THE GEOMETRIC SWEEP IS BOUND TO THE SET VERSION.** `npm run coverage:geometry` finds **unnamed** gaps that no sign predicate can express; the standing check finds **named** regions degrading. Neither substitutes for the other, and the largest hole in the set was found by the sweep because nothing had named that region. It stays off the per-commit path (its output is weighted directions that need a person to translate back into people), but binding it to solve time would miss the case that matters: `archetypes.json` is editable without a rebuild, so someone can move the set, bump the version, and have every named region report healthy while a new unnamed hole has opened. `verify:traits` therefore fails when the recorded sweep names a different set version than the one in use. Same binding as the region taxonomy, same reason.
 

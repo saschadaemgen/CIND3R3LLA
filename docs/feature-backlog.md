@@ -687,6 +687,12 @@ briefings. Architecture §31 has the detail; the state of it is:
       leaving that region empty. Every correlation now within 0.12 of the model;
       spectrum condition ratio 2.77 against roughly 3000 originally. Set version
       `archetypes-11-2026-07-31`. See D-097.
+- [ ] **Measure the abstention rate conditioned on each trait**, the first time a
+      classifier exists. Prediction to test: `ordinary-calm` sits 1.605 from any
+      archetype against 0.760 for its anxious mirror, so calm-and-unremarkable avatars
+      may abstain more readily than anxious ones at the same threshold — which would
+      mean emotionally stable people are labelled less often, purely as an artefact of
+      where the set sits. Confirm the rate is flat (D-098).
 - [ ] **Abstention in every classifier (D-098).** Settled as a requirement before
       anything classifies: a component that assigns an avatar to an archetype must be
       able to return "no archetype". Forced nearest-archetype assignment is a defect.
