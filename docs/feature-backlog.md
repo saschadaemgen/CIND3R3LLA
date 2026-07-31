@@ -737,9 +737,12 @@ briefings. Architecture §31 has the detail; the state of it is:
       Note the licensing fork it must resolve: IPIP material is public domain and usable
       commercially; the official HEXACO-PI-R forms are free only for non-commercial
       academic research. D-097 defers that fork rather than removing it.
-- [ ] **Surface derivation** — tone, verbosity, emoji affinity, reaction weights, derived
-      from the latent vector. Explicitly out of scope of the trait sampler's briefing (§8)
-      and the obvious next component.
+- [x] **Surface derivation** (CCB-S4-005) — style, rhythm and identity from the latent
+      vector. `npm run verify:surface`, 28 checks. Style is a pure function (no `Rng`
+      parameter); identity is drawn (no `latent` parameter), so personality cannot leak
+      into origin, age or gender. See D-099, including the §8 diagnostic catching
+      `tone`/`emojiAffinity` at 0.983 on its first run, which had also left the coherence
+      cap firing on 0 of 20,000 avatars.
 - [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
       mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
       input and deliberately makes no claim about what a realistic one is.

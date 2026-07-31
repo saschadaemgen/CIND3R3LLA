@@ -13,6 +13,35 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-099 — Surface derivation: style is a pure function, identity is drawn, and the diagnostic caught the loadings on its first run
+
+**Status: IMPLEMENTED** (CCB-S4-005). `src/generator/surface/`, proven by `npm run verify:surface` (28 checks).
+
+> **Numbering:** D-098 was the highest across **every** branch, checked with the branch-aware command CLAUDE.md now carries. `feature/multi-profile-core-foundation` holds D-096 and is not on `main`.
+
+**The structural decision: style takes no random source at all.** Briefing §3 splits the output three ways - style DERIVED from the latent vector, rhythm MIXED, identity DRAWN - and the split is kept by the function signatures rather than by discipline. `deriveStyle` has no `Rng` parameter, so two avatars with identical latent vectors provably write identically. `drawIdentity` has no `latent` parameter, so origin, age and gender **cannot** be derived from personality. That matters for the same reason the archetype halo did: deriving identity from personality would encode that extraverts come from one place, or that anxious people are younger, and nobody intends either. The one bias §3 does ask for, teenagers skewing toward handles, is age to name type - both identity - so it stays inside identity.
+
+**One addition to the specified formula, and the reason.** §4.1 gives `z = raw / sd_raw`. This uses `z = (raw - mean_raw) / sd_raw`. The population mean of the raw combination is not zero, because the archetype set is not centred, so without subtracting it the percentile is systematically offset and a tone of 70 would not mean "more casual than roughly 70 percent of the population" - which §4.1 says is the entire point of the mapping. The correction is analytic like the rest, so it costs nothing and carries no noise.
+
+**The population covariance moved into `src/`.** `populationMoments` existed only in an analysis script; §4.1's analytic normalisation needs it at call time, and two copies would have let the normalisation and the analysis drift. `verify:surface` checks the closed form against 20,000 draws rather than trusting it: sd agrees to 0.011, mean to 0.011.
+
+**THE §8 DIAGNOSTIC CAUGHT THE LOADINGS ON ITS FIRST RUN, the second time a diagnostic built for this has paid for itself immediately.** `tone` and `emojiAffinity` correlated at **0.983**. §4.2 gives both fields the same three traits in the same directions (E up, C down, A up), so near-duplication is inherent unless the *magnitudes* differentiate them, and mine did not. Two consequences, one of which would have been invisible:
+
+- the interface would have advertised six style dimensions while carrying five;
+- **the coherence cap was inert, firing on 0 of 20,000 avatars**, because two fields correlating at 0.983 can never disagree enough for a coherence rule to have anything to do. §5 says a cap firing on 2 percent is a rule and one firing on 40 percent is a weighting problem; it did not anticipate 0 percent, and 0 percent is the case that looks healthiest in a report.
+
+Re-authored so formality is mostly conscientiousness and expressiveness is mostly extraversion and agreeableness: `tone`/`emojiAffinity` falls to **0.659** and the cap now fires on **6.35 percent**. Loading set version `loadings-2026-07-31b`.
+
+**The diagnostic reports the correlation AND whether the loadings explain it**, which is the refinement that made the archetype version useful (D-097) and applies unchanged. `warmth`/`emojiAffinity` at 0.901 against a loading overlap of 0.928 is intended structure and must not read as a defect; the number to watch is the **unexplained** column, currently `verbosity`/`warmth` at r 0.652 against overlap 0.394.
+
+**Reaction weights needed a temperature and a floor.** A bare softmax left 7.67 of 8 reactions active per avatar and gave 21 percent of high-agreeableness avatars a thumbs-down, which is exactly §6's stated failure: a distribution where every avatar has some probability of every reaction expresses no personality at all. Sharpening the scores before the floor, then zeroing below it, gives 5.70 active and **0.0 percent of high-A avatars** while 100 percent of low-A retain it. An absent key means never rather than rarely.
+
+**The three §13 open questions, answered.** (1) The loading set lives beside **this** component, not beside the archetype set as §4.2 suggests: the loadings belong to surface derivation, and putting them next to `archetypes.json` would give the sampler a data file it never reads. (2) `responseLatency` and `messageLength` go through the **percentile**, because it is the only route that can hit §7's measured target of a six-to-ten-word median whatever the loadings are; a direct combination puts the median wherever the weights happen to land. (3) The style diagnostic gets its **own harness**, because `verify:traits` would otherwise start failing for reasons that have nothing to do with the trait sampler the moment someone edited `loadings.json`. Both harnesses cross-reference.
+
+**Gates correctness, reports quality**, the split D-095 settled. Determinism, the derived-versus-drawn separation, direction of effect, cap and override behaviour and the reaction invariants all fail the run. The percentile uniformity deviation (worst 0.081) and the collinearity matrix are reported: §11 says a perfectly uniform marginal would mean the archetype structure had washed out entirely, so some non-uniformity is the archetypes surviving into the visible layer, which is the point of having them.
+
+**Not delivered, per §12:** bios, avatar images, name generation itself (this feeds it), the population layer, the behaviour layer, persistence. The loadings are **authored, not read off any data**, and carry the same open question as the archetype set.
+
 ### D-098 — Classification must support abstention, and forced nearest-archetype assignment is a defect
 
 **Status: IMPLEMENTED as a recorded design requirement** (CCB-S4-003). Nothing classifies yet; that is precisely why it is settled now.

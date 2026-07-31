@@ -62,6 +62,12 @@ export {
 } from './covariance.js';
 
 export { standardNormals } from './normal.js';
+export {
+  populationMoments,
+  linearCombinationMean,
+  linearCombinationVariance,
+  type PopulationMoments,
+} from './population.js';
 export { Rng } from '../rng.js';
 
 export {

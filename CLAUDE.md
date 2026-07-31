@@ -112,7 +112,8 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `generator/` (**offline tooling, no runtime caller**: the profile generator, built one
   component per briefing. Shared deterministic `rng.ts`, then `names/` and `traits/`.
-  Nothing outside it imports it and nothing writes its output; see architecture §31),
+  Nothing outside it imports it and nothing writes its output; see architecture §31.
+  Components: `names/` (CCB-S4-002), `traits/` (CCB-S4-003), `surface/` (CCB-S4-005)),
   `profiles/` (profile/group/authority config, runtime policy, bot onboarding —
   configuration and policy only, they never drive the SDK; unconsolidated, D-068),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
@@ -151,7 +152,8 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
-`verify:namegen` and `verify:traits` (the profile generator; pure computation, no DB.
+`verify:namegen`, `verify:traits` and `verify:surface` (the profile generator; pure
+computation, no DB.
 `verify:traits` gates CORRECTNESS and only REPORTS the two quality measures: both bounds
 were withdrawn under D-095 after measurement showed they named the wrong properties.
 `npm run calibrate:traits` prints the surface replacements get written from),

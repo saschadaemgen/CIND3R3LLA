@@ -1,0 +1,128 @@
+{
+  "_README": [
+    "Style loadings for surface derivation (briefing CCB-S4-005 section 4.2).",
+    "",
+    "DATA, NOT CODE, and VERSIONED. Editable without a rebuild; the loader refuses a set",
+    "without a version. Same pattern and same reason as archetypes.json: values derived",
+    "from these weights are properties of a specific weight set, so anything measured",
+    "against them must be able to name which set it was measured against.",
+    "",
+    "EVERY FIELD IS A WEIGHT VECTOR OVER THE SIX LATENT TRAITS, including",
+    "sentenceComplexity, whose specification direction is 'verbosity up, C up'. Verbosity",
+    "is itself a linear combination of latent traits, so substituting it keeps",
+    "sentenceComplexity linear in the latent vector, which is what makes the analytic",
+    "normalisation valid. Expressing it as a function of an already-derived field would",
+    "have required a second normalisation with no closed form.",
+    "",
+    "THE SPECIFICATION GIVES DIRECTIONS, NOT NUMBERS. The directions are:",
+    "  tone                E up, C down, A up        (formal to casual)",
+    "  verbosity           E up, C up",
+    "  warmth              A up, E up",
+    "  humor               E up, O up, C down",
+    "  emojiAffinity       E up, A up, C down",
+    "  sentenceComplexity  verbosity up, C up",
+    "The magnitudes below are authored within those directions. They are NOT read off any",
+    "data and there is no claim that they are.",
+    "",
+    "AUTHORED WITH THE COLLINEARITY DIAGNOSTIC RUNNING. tone, warmth and humor all load",
+    "on extraversion and agreeableness, so they will correlate no matter what; that is",
+    "INTENDED structure. What is not intended is two fields becoming near-duplicates when",
+    "their loadings share little. verify:surface reports the correlation across derived",
+    "fields and, for each pair, whether the correlation is explained by shared loadings or",
+    "is an artefact. That distinction is what made the archetype diagnostic useful (D-097)",
+    "and it applies unchanged here.",
+    "",
+    "REACTION SCORES are pre-softmax. Directions from the specification: A and E push the",
+    "warm and celebratory reactions; C and low E push the acknowledging ones; low A is what",
+    "enables thumbs-down at all.",
+    "",
+    "TEMPERATURE sharpens the reaction softmax before the floor is applied. At 1.0 the",
+    "scores produce a distribution so flat that almost every avatar retains almost every",
+    "reaction, which is the failure section 6 names: a distribution where every avatar has",
+    "some probability of every reaction expresses no personality at all.",
+    "",
+    "TONE AND EMOJI AFFINITY WERE RE-AUTHORED after the section 8 diagnostic caught them",
+    "correlating at 0.983 on its first run. The specification gives both fields the same",
+    "three traits in the same directions (E up, C down, A up), so near-duplication is",
+    "inherent unless the MAGNITUDES differentiate them. Formality is mostly a",
+    "conscientiousness property; expressiveness is mostly extraversion and agreeableness.",
+    "The coherence cap was inert at 0 of 20,000 avatars before this, because two fields",
+    "that correlate at 0.983 can never disagree enough for a coherence rule to have",
+    "anything to do."
+  ],
+  "version": "loadings-2026-07-31b",
+  "temperature": 1.6,
+  "style": {
+    "tone": {
+      "extraversion": 0.4,
+      "conscientiousness": -0.65,
+      "agreeableness": 0.15
+    },
+    "verbosity": {
+      "extraversion": 0.6,
+      "conscientiousness": 0.4
+    },
+    "warmth": {
+      "agreeableness": 0.65,
+      "extraversion": 0.35
+    },
+    "humor": {
+      "openness": 0.6,
+      "extraversion": 0.45,
+      "conscientiousness": -0.2
+    },
+    "emojiAffinity": {
+      "extraversion": 0.55,
+      "agreeableness": 0.55,
+      "conscientiousness": -0.2
+    },
+    "sentenceComplexity": {
+      "extraversion": 0.3,
+      "conscientiousness": 0.7
+    }
+  },
+  "reactions": {
+    "👍": {
+      "conscientiousness": 0.5,
+      "extraversion": -0.3,
+      "agreeableness": 0.25
+    },
+    "👎": {
+      "agreeableness": -1.4,
+      "honesty": -0.3
+    },
+    "😀": {
+      "extraversion": 0.35,
+      "agreeableness": 0.3
+    },
+    "😂": {
+      "extraversion": 0.6,
+      "agreeableness": 0.35,
+      "openness": 0.2
+    },
+    "😢": {
+      "neuroticism": 0.45,
+      "agreeableness": 0.3,
+      "extraversion": -0.2
+    },
+    "❤": {
+      "agreeableness": 0.7,
+      "extraversion": 0.3
+    },
+    "🚀": {
+      "extraversion": 0.5,
+      "openness": 0.4,
+      "agreeableness": 0.2
+    },
+    "✅": {
+      "conscientiousness": 0.65,
+      "extraversion": -0.35
+    }
+  },
+  "coherence": {
+    "formalToneBelow": 30,
+    "emojiAffinityCap": 45,
+    "enabled": true
+  },
+  "reactionFloor": 0.04
+}

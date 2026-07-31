@@ -1311,7 +1311,8 @@ its own briefings; two of them exist.
 |---|---|---|
 | Shared RNG | [`generator/rng.ts`](../src/generator/rng.ts) | both harnesses |
 | Name generator (CCB-S4-002) | [`generator/names/`](../src/generator/names/) | `verify:namegen` (42 checks) |
-| Trait sampler (CCB-S4-003) | [`generator/traits/`](../src/generator/traits/) | `verify:traits` (66 checks) |
+| Trait sampler (CCB-S4-003) | [`generator/traits/`](../src/generator/traits/) | `verify:traits` |
+| Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` (28 checks) |
 
 **The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
 stream rather than globally. Every stage of every component derives its own stream from
@@ -1346,7 +1347,17 @@ exist in a built tree. This has never mattered because both components are exerc
 `tsx` from source by their harnesses, and neither has a runtime caller. It becomes a real
 defect on the day one does: either extend `scripts/copy-assets.mjs` or pass an explicit path.
 
-**Not built:** surface derivation (tone, verbosity, emoji affinity, reaction weights), the
+**Surface derivation** (CCB-S4-005, D-099) turns the six z-scores into what everything
+downstream reads. Its structure is the point: `deriveStyle` takes **no random source**, so
+identical latent vectors provably produce identical style, and `drawIdentity` takes **no
+latent vector**, so origin, age and gender cannot be derived from personality. Style fields
+are weighted sums of latent traits mapped through the normal CDF to a 0-100 percentile,
+using the **analytic** population standard deviation from `populationMoments` rather than an
+empirical one, so the transform never depends on how many avatars happened to be drawn. The
+loadings are versioned data (`loadings-2026-07-31b`), and the collinearity diagnostic caught
+them correlating two fields at 0.983 on its first run.
+
+**Not built:** the
 population layer, the validation layer, bios, avatars, and persistence of any of it. See
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.
