@@ -855,14 +855,11 @@ briefings. Architecture §31 has the detail; the state of it is:
       recorded; **the first is taken** (D-109): `ModelBioConfig.languages` defaults to
       `['de', 'en']` and out-of-scope profiles get no bio at all rather than a bad one.
       Running a larger model remains the way to lift it, and is a platform decision.
-- [ ] **The out-of-scope language drop is counted but never printed.** `runModelPass`
-      collects `outOfScopeLanguage` per language (D-109), and `scripts/assemble.ts` prints
-      every other figure in the report except that one. So a run that drops a large share of
-      its candidate bios still reports `0 failed` on the only path a person uses, and the
-      raised empty rate in `distribution.txt` has nothing next to it saying why. One line of
-      output. This is the counted-but-not-shown half of the CCB-S3-023 standing rule; it
-      masks no fault, since the drop is a deliberate choice, but it does hide the number
-      that is supposed to drive widening the list.
+- [x] **The out-of-scope language drop is now printed** (CCB-S4-008). `runModelPass` collected
+      `outOfScopeLanguage` per language (D-109) and `scripts/assemble.ts` printed every other
+      figure except that one, so a run dropping a large share of its candidates still reported
+      `0 failed` on the only path a person uses. It now prints the per-language drop and its
+      share of candidates, confirmed live: `nl 6, es 5, fr 3`, 40.0 percent.
 - [ ] **The two engines fail differently, and the comparison is not one axis.** The model
       path is caught by a SINGLE bio read in isolation (coined compounds, simile, matched
       couplets, drift into third person); the template path is only caught ACROSS the
@@ -881,6 +878,19 @@ briefings. Architecture §31 has the detail; the state of it is:
       no migration writes its output; D-082's schema position is unchanged. Note before
       starting: the build does not copy the modules' `data/` JSON into `dist/`, which has
       never mattered because both harnesses run from source through `tsx`.
+
+## Public front: the BIGINT bounds are not layered evenly (found under CCB-S4-008)
+
+- [ ] **Two of the three public routes have no second line of defence against an oversized
+      message id.** Found by *proving* the new regression gate rather than by reading the
+      code: `getPublishedItem` carries its own `MAX_SAFE_INTEGER` bound (CCB-S3-025 review),
+      so `/embed/:id/m/:msgId` stays a clean 404 even with its route guard deleted.
+      `getPublishedMedia` and the `isPublished` path carry **no such bound**, so for
+      `/embed/:id/media/:msgId` and `POST /embed/:id/report` the route guard is the only
+      thing between an oversized id and a 22003/22P02 that 500s. All three are gated by
+      `verify:public` now, so a deletion goes red either way. The open question is whether
+      the data layer should be symmetric, which is a small change and deliberately **not**
+      made under CCB-S4-008's "nothing further" scope.
 
 ## Carried into Season 4 (recorded under CCB-S3-028)
 

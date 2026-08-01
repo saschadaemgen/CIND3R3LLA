@@ -292,16 +292,13 @@ nothing while the harness reported green. `verify:bio-model` now walks the list 
 when a reason was never triggered, so adding a rejection reason without a test that fires it
 breaks the build rather than quietly widening what gets through.
 
-**KNOWN GAP, recorded rather than fixed: the count is collected but never printed.**
-`scripts/assemble.ts` prints every other figure in the report (failures by reason, retries,
-cache rejections, stale entries, kept template text, emptied) and does **not** print
-`outOfScopeLanguage`. So on the one path a person actually uses, a run that drops 40 percent
-of its candidate bios reports `0 failed` and says nothing about the drop. The information is
-partly inferable from `distribution.txt`, which shows the empty share and a language tally,
-but nothing connects the two. This is the counted-but-not-shown half of the CCB-S3-023
-standing rule, it is a choice rather than a fault so nothing is being masked, and it is one
-line of output. **Not fixed here under the CCB-S4-008 dispatch freeze**; carried in the
-backlog.
+**The gap this entry left open is CLOSED under CCB-S4-008.** As delivered, the count was
+collected and never printed: `scripts/assemble.ts` reported every other figure and not this
+one, so a run that dropped 40 percent of its candidate bios said `0 failed` on the only path
+a person uses, and the raised empty rate in `distribution.txt` had nothing beside it saying
+why. That was the counted-but-not-shown half of the CCB-S3-023 standing rule. The pass now
+prints the drop per language with its share of candidates, verified live at
+`14 bios NOT written ... (40.0 percent of candidates): nl 6, es 5, fr 3`.
 
 ---
 

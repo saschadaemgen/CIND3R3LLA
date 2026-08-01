@@ -86,6 +86,26 @@ if (engine === 'model') {
       `(${report.keptTemplateText} kept template text, ${report.emptied} emptied)`,
   );
   for (const [reason, n] of Object.entries(report.failures)) console.log(`    ${n}x ${reason}`);
+  // The D-109 drop, printed rather than only counted (CCB-S4-008 §4.2). Every other figure
+  // in this report reaches a person here; this one did not, so a run that dropped a large
+  // share of its candidate bios still reported "0 failed" on the only path anybody uses,
+  // and the raised empty rate in distribution.txt had nothing beside it saying why.
+  // Printed per language on purpose: widening `languages` is a decision, and this is the
+  // number that decision gets made against.
+  const outOfScope = Object.entries(report.outOfScopeLanguage).sort((a, b) => b[1] - a[1]);
+  if (outOfScope.length > 0) {
+    const dropped = outOfScope.reduce((sum, [, n]) => sum + n, 0);
+    const share = dropped / (report.attempted + dropped);
+    console.log(
+      `  ${dropped} bios NOT written because the model is not trusted with the language ` +
+        `(${(share * 100).toFixed(1)} percent of candidates): ` +
+        outOfScope.map(([lang, n]) => `${lang} ${n}`).join(', '),
+    );
+    console.log(
+      `    Silence beats wrong (D-109). These profiles are empty, not badly written. ` +
+        `Widen ModelBioConfig.languages to change it.`,
+    );
+  }
   if (report.retried > 0) console.log(`  ${report.retried} needed a second attempt`);
   if (report.cacheRejected > 0) {
     console.log(`  ${report.cacheRejected} cached bios were rejected by today's rules and rewritten`);
