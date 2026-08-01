@@ -205,10 +205,11 @@ covers the bot's own member-facing output, which is what remains.
 ## Documentation maintenance (binding on every briefing)
 
 Documentation is maintained **per change, not per season** (CCB-S1-019). On
-completing the work of any briefing, review the five living documents —
+completing the work of any briefing, review the **six** living documents —
 [`docs/architecture.md`](docs/architecture.md), [`docs/security.md`](docs/security.md),
 [`docs/wire-format.md`](docs/wire-format.md), [`docs/feature-backlog.md`](docs/feature-backlog.md),
-[`docs/decisions.md`](docs/decisions.md) — and update whichever the change affects,
+[`docs/decisions.md`](docs/decisions.md), [`docs/adapter-contract.md`](docs/adapter-contract.md)
+— and update whichever the change affects,
 grounded in the actual code. If the change touches nothing documented, state
 **"no documentation change"** explicitly in the completion report — never skip
 silently. New decisions get a `D-<n>` entry with a Status (`IMPLEMENTED` /
@@ -250,8 +251,15 @@ A deliberate gap is fine and should be stated in the entry that skips it.
 
 Why this keeps the docs ground truth: the strategy documents (season protocol,
 decisions narrative, season plan) are authored in the planning chat and may run
-ahead of the code; the five technical docs are maintained by Claude Code **from the
+ahead of the code; the six technical docs are maintained by Claude Code **from the
 code** and are the corrective.
+
+**The count was five until CCB-S3-020 added [`docs/adapter-contract.md`](docs/adapter-contract.md)
+and did not update the rule that governs it** (corrected under CCB-S4-009). Statements of
+"five" in the Season 1 and Season 2 protocols are therefore **historically correct and are
+left alone**; only current and forward-looking statements were changed. If a seventh is
+ever added, this rule, its companion above, the register's documentation checkpoint and
+`README.md` all state the count and all need updating together.
 
 **Two season counts now run in parallel, and they must never be conflated.** This
 repository has the product's seasons (`CCB-S<n>-<NNN>`, currently closing Season 3).

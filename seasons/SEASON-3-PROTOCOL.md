@@ -224,7 +224,7 @@ inserted lines across 46 files, none carrying a `Briefing:` trailer. See **Part 
 the full inventory and the two defects it brought with it. Season 4 opens by gathering it:
 
 - What was designed, decided and built there, and what state it is in.
-- Reconcile it against the five living documents and the decision log, so a decision made
+- Reconcile it against the six living documents and the decision log, so a decision made
   in another chat does not silently contradict one recorded here.
 - Fold it into the architecture rather than bolting it on.
 
@@ -271,7 +271,7 @@ feature, should drive Season 4:
 Season 4 begins in a **new planning chat**. It should be given:
 
 - This document.
-- The five living documents and the decision log.
+- The six living documents and the decision log.
 - The briefing register.
 - Whatever the parallel AI chats produced, noting that the code itself is already on `main`
   and inventoried in Part G §3.

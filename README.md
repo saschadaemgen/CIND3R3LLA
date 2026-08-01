@@ -384,7 +384,7 @@ Conversation content is not sent to an external model provider by default.
 
 ## Documentation
 
-The repository contains detailed technical documents for architecture, decisions, security, wire formats, and the feature backlog.
+The repository contains six living technical documents: architecture, decisions, security, wire formats, the feature backlog, and the chat-adapter contract.
 
 These documents are updated when a runtime boundary becomes stable. Experimental measurements and proposals remain clearly separated from implemented production behaviour.
 
