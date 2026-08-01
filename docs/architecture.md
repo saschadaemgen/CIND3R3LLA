@@ -863,6 +863,21 @@ rules clear the ordinary threshold, and the model clears a floor of its own (0.9
 cannot fall through to a different consent intent. Full reasoning and the three ways the code is
 stricter than the original protocol are in **D-112**.
 
+**The gate is one of four layers, and together they make the consent path injection-resistant by
+construction** (D-116, CCB-S4-010). Beyond the conjunction: a third-party target is refused outright
+with no action; a consent intent **writes nothing**, it sets a pending confirmation keyed to the
+sender; and the write is keyed to `msg.senderMemberId` of the confirming message, so nothing the
+model produced selects whose consent changes. The worst case of a successful injection is the bot
+asking the sender about the sender's own consent.
+
+**Which replies a model may phrase at all is an allowlist.** `AI_PERSONALIZED_KEYS` covers **9 of
+the 36** persona keys; every consent confirmation, result, refusal, undo, destruction outcome and
+restore is a deterministic string the member cannot influence. Of the nine, `priceAmbiguous` and
+`status` are **locked**, meaning the model writes only an opening line and the deterministic text is
+appended unchanged. `status` was moved there by the injection review because it reports a member's
+own publication state and `requiredLiterals` protects tokens rather than meaning. Gated in
+`verify:interaction` over real traffic.
+
 ### 24.4 The environment contract, and what it enforces
 
 `LOCAL_AI_ENABLED` (default false) · `LOCAL_AI_BASE_URL` (default loopback) · `LOCAL_AI_MODEL` ·

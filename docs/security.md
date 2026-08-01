@@ -1113,26 +1113,54 @@ them and a newly added AI route cannot forget one:
   `/webauthn/*`, so all AI mutations require fresh passkey re-verification when step-up is
   enabled and at least one passkey exists.
 
-### 12.5 Prompt injection: OPEN, and not claimed otherwise
+### 12.5 Prompt injection: REVIEWED (CCB-S4-010, D-116 and D-117)
 
-**This is the one question that stays unreviewed.** The member's own text is the model's input
-on both paths, which is the definition of the exposure.
+The member's own text is the model's input on both lanes, so a member is an untrusted author
+with a direct line into the model's context. That exposure is real. **What it can reach is
+not.**
 
-What exists is **mitigation, not evidence**. Both system prompts instruct the model to treat
-the member message as untrusted text, never to follow instructions inside it, and never to
-claim an action happened. The reply prompt additionally forbids writing a person name. Those
-are prompt-level defences and a prompt-level defence is exactly what an injection attacks.
+**The consent path is injection-resistant by construction, and the evidence is the code, not
+the prompt.** Four independent layers, any one of which is sufficient:
 
-What genuinely constrains the damage is **not** the prompt but the code around it: a model
-that is successfully steered still cannot invent a consent intent (D-112 double gate), still
-cannot emit a `blockedLiteral`, still cannot drop a `requiredLiteral`, still cannot return an
-out-of-catalog intent past `sanitize()`, and still cannot execute anything. So the realistic
-worst case is a misclassification within the catalog or an odd-sounding reply, not an
-unauthorised publish.
+| # | Layer | Where |
+|---|---|---|
+| 1 | The gate is a **conjunction over two independent evaluators of the same text**. `ruleResolver` runs on every request, before the model, and contains no model. A consent intent survives only if the deterministic rules independently reach the same one. A failed gate cannot fall through to a *different* consent intent | `ollama-resolver.ts` |
+| 2 | A **third-party target is refused outright**, with no action, regardless of who asks. Slot merging lets the model *add* a target (which forces the refusal) but **never erase** one the rules found | `engine.ts` §4.2 |
+| 3 | A consent intent **writes nothing**. It sets a pending confirmation keyed to the sender and asks a question | `engine.ts` |
+| 4 | The write is keyed to **`msg.senderMemberId`** of the confirming message. Nothing the model produced selects whose consent changes | `applyConsentChange` |
 
-**That is an argument, not a test.** No adversarial testing has been done. Scoped to a
-successor briefing; until then this specific question, and not the subsystem as a whole,
-is the unreviewed surface.
+**The worst case of a perfectly successful injection is that the bot asks the sender a
+question about the sender's own consent.** That is not an escalation.
+
+**The consent path's own wording never reaches a model either.** `AI_PERSONALIZED_KEYS` is an
+allowlist of **9 of 36** persona keys; every confirmation, result, refusal, undo, destruction
+outcome and restore is a deterministic string. Gated over real traffic in
+`verify:interaction`: 60 personalize calls across every flow, none consent-bearing.
+
+**Output cannot leave the closed catalog.** The intent response is schema-constrained to the
+active catalog, re-validated by `parseCompletion`, and re-validated **again independently** by
+`sanitize()` at the seam, which converts an invented intent, an out-of-range confidence or a
+thrown error into `UNKNOWN`.
+
+**One gap was found and closed.** `status` reports a member's own publication state and ran in
+`free` mode, where the model rewrites the draft and only `requiredLiterals` is enforced. For
+`status` those are two bare counts, so a rewrite that swaps which number means what satisfied
+every existing check. It is now **locked**: the model writes the opening line only and the
+deterministic text is appended unchanged.
+
+**One gap is real and deliberately not fixed locally.** `blockedLiterals` carries only the
+sender's display name, while a **third party's** name written by the member sits in the
+model's input and in none of the guards. A model-emitted name is not covered by the
+mention-based archive redaction, which is authoritative in SQL and alternates patterns
+declared at the reply site rather than read from the finished text. By default only the
+**price** category among the nine personalized kinds publishes, so that is the narrow route
+to the public archive. Detecting arbitrary names in free text is a design problem rather than
+a local guard, so it is scoped to a successor briefing in **D-117**.
+
+**What this section does not claim.** It does not claim a model cannot be steered. That is a
+live adversarial test against a running endpoint, in the operator's environment, and the
+residual list is in **D-117**. The findings above are structural and hold whatever the model
+does, which is why they are stated as properties rather than as reassurance.
 
 ## 13. The generator's model path sends no member data (D-104)
 

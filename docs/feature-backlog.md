@@ -584,11 +584,26 @@ harnesses pass; what is missing is the reasoning, the reconciliation and the rev
       is the addressed message and the bot's own draft, never archive content; the telemetry is
       content-free field by field, including the `details` JSONB; and CSRF, session, rate limit and
       step-up are enforced by **global hooks**, so no AI route can omit one.
-- [ ] **Prompt injection remains unreviewed, and is the one open security question.** The member's
-      own text is the model's input on both paths. Prompt-level mitigations exist and a
-      prompt-level mitigation is what an injection attacks; what actually bounds the damage is the
-      code around the model (D-112, `blockedLiterals`, `sanitize()`). **That is an argument, not a
-      test.** Scoped to a successor briefing.
+- [x] **Prompt injection reviewed** (CCB-S4-010, D-116). The consent path is **injection-resistant
+      by construction**: the gate is a conjunction over two independent evaluators of the same text,
+      a third-party target is refused outright, a consent intent writes nothing, and the write is
+      keyed to the sender of the confirming message. The consent path's own wording never reaches a
+      model (allowlist of 9 of 36 persona keys). One gap found and closed: `status` is now locked.
+      Gated in `verify:interaction`, three checks, each mutation-proven.
+- [ ] **A model-emitted third-party name is not covered by mention-based redaction** (D-117).
+      `blockedLiterals` carries only the sender's display name; a name the member wrote about
+      someone else is in the model's input and in none of the guards, and archive redaction
+      alternates patterns declared at the reply site rather than read from the finished text. By
+      default only the **price** category among the personalized kinds publishes, which is the narrow
+      route to the public archive. Not a local guard: the options are passing every known member name
+      as a blocked literal, not publishing personalized categories, or declaring mentions from the
+      finished text, which CCB-S3-007 §2 deliberately refused. **Scoped to a successor briefing.**
+- [ ] **Live adversarial test against a running endpoint** (D-117). Four residuals that reading code
+      cannot settle: whether a crafted message can steer the classification at all, how instruction-
+      shaped text behaves, whether the model can be made to echo a third-party name despite the
+      prompt forbidding it, and whether a free-mode reply can keep its required literals while
+      inverting their meaning. In every case the containment means a wrong answer is the worst
+      outcome, not an unauthorised action. Needs the operator's environment.
 - [ ] **Decide how this subsystem relates to the plugin framework** as the function count grows
       toward the projected ~300. Two extension mechanisms now exist side by side.
 - [ ] **`cloud_allowed` is a flag with no consumer.** Computed, constrained so `local_only` forces it
