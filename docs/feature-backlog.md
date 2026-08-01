@@ -574,20 +574,67 @@ harnesses pass; what is missing is the reasoning, the reconciliation and the rev
       profile, group and authority control plane; deterministic per-group runtime policy; persistent
       bot onboarding configuration; the AI admin workspaces, mega navigation and brand layer;
       migrations 017/018/019; and 19 `verify:*` harnesses, all passing.
-- [ ] **Reconcile against these five documents and the decision log.** A decision taken in a parallel
-      chat must not silently contradict one recorded here. Two of Season 3's worst faults came from
-      work whose reasoning lived outside the documents; this is the third instance of the pattern,
-      caught at close-out rather than in production.
-- [ ] **Security review under the CCB scheme.** Not done. The open questions are listed in
-      [`security.md`](security.md) §12: SSRF reach of the configurable endpoint, whether member
-      content sent to the model passes the same consent and scope gates as capture, prompt injection
-      against `blockedLiterals` and the consent gate, whether the new admin routes carry the CSRF /
-      step-up / session / rate-limit controls, and whether the telemetry is in fact content-free.
+- [x] **Reconcile against the living documents and the decision log** (CCB-S4-008). The reasoning is
+      recorded as **D-111** (the fourteen pre-implementation boundaries, marked clause by clause
+      against the code), **D-112** (the consent double gate) and **D-113** (the private inference
+      path). `architecture.md` §24 is an architecture rather than an inventory.
+- [x] **Security review under the CCB scheme** (CCB-S4-008), except prompt injection. Four of the
+      five questions are answered from the code in [`security.md`](security.md) §12: the endpoint is
+      **not admin-settable** and the validator refuses any non-private host; what leaves the process
+      is the addressed message and the bot's own draft, never archive content; the telemetry is
+      content-free field by field, including the `details` JSONB; and CSRF, session, rate limit and
+      step-up are enforced by **global hooks**, so no AI route can omit one.
+- [ ] **Prompt injection remains unreviewed, and is the one open security question.** The member's
+      own text is the model's input on both paths. Prompt-level mitigations exist and a
+      prompt-level mitigation is what an injection attacks; what actually bounds the damage is the
+      code around the model (D-112, `blockedLiterals`, `sanitize()`). **That is an argument, not a
+      test.** Scoped to a successor briefing.
 - [ ] **Decide how this subsystem relates to the plugin framework** as the function count grows
       toward the projected ~300. Two extension mechanisms now exist side by side.
+- [ ] **`cloud_allowed` is a flag with no consumer.** Computed, constrained so `local_only` forces it
+      false, persisted, and read by nothing that could act on it. Safe today, and exactly the shape
+      `docs/planning/conversation-identity-status.md` warns about for `personality_profile`: a column
+      that exists, is never consumed and defaults quietly reads as configured when nothing configured
+      it. Whoever builds a provider path must treat it as unwired rather than as working enforcement.
 - [ ] **Migration numbering.** Numbers 017, 018 and 019 each exist twice. Not broken (the runner keys
       on filename) but constrained: **no applied migration may be renamed**, and the number is not an
-      ordinal. Allocate from 020. See **D-069** and [`architecture.md`](architecture.md) Appendix §5.
+      ordinal. Allocate from **the highest number on disk plus one**, stated as a rule because the
+      fixed number in this line went stale once already. See **D-069** and
+      [`architecture.md`](architecture.md) Appendix §5.
+
+### Designed but never implemented, from the local AI protocol (M1 §19, folded in under CCB-S4-008)
+
+Recorded so the gap between what the admin surface suggests and what exists is visible.
+
+- [ ] **Batch text, image and video categorization queue.** M1's second stated product purpose for
+      local AI, alongside interactive understanding. Only the interactive foundation was built. The
+      durable job queue (§22) is the obvious host for it.
+- [ ] **Vision-model production pipeline.** Prerequisite for the above on images and video, and
+      related to the parked AI-moderation track where `moderation_state` is the hook.
+- [ ] **GPU and VRAM telemetry agent.** The AI Hardware workspace exists and reports `not integrated`
+      rather than fabricated numbers, which is the honest state and should stay that way until a
+      real agent exists. M1 §22 places it deliberately late, as a separate private agent.
+- [ ] **Private RAG ingestion and retrieval.** Page and architecture boundary exist; no ingestion, no
+      retrieval, and it stays disabled until explicitly approved (D-111 clause 12).
+- [ ] **Authenticated Go reverse proxy with a bearer token, and a dedicated AI gateway abstraction.**
+      The option M1 recorded for making the endpoint implementation genuinely replaceable. Today the
+      OpenAI-compatible wire shape is written into both call sites and there is no provider
+      abstraction, which is why D-111 marks clause 4 **PARTIAL** rather than implemented.
+- [ ] **Personality training or a personality generator.** Superseded in part: the profile generator
+      (CCB-S4-002 to S4-007) is that work, built offline with no runtime caller.
+- [ ] **Live creation of multiple SimpleX identities from the setup assistant, and automated contact
+      creation and group invitation execution.** The onboarding service stores intent only and does
+      not invoke the SDK. Depends on the multi-profile runtime, which is on
+      `feature/multi-profile-core-foundation` and unmerged.
+- [ ] **Matrix transport.** Recorded elsewhere in this file; M1 §22 is explicit that SimpleX is
+      finished first.
+- [ ] **Rewritten README and redesigned repository banner.** Presentation work, never done.
+
+**The intentionally inactive admin surfaces are inactive on purpose, not unfinished by accident:**
+provider pages and provider boundaries, the private RAG page, the personality page and its training
+boundary, the testing and comparison page, and the cloud routing controls. They render, and the
+actions they imply are disabled. That is the D-111 clause 12 position: nothing is switched off,
+because nothing was built to switch off.
 - [x] **Lint failure on `main` repaired at close-out (CCB-S3-026).**
       `src/interaction/ollama-reply.ts` tripped `no-control-regex` on a deliberate C0/C1 sanitizer
       for untrusted model output; an `eslint-disable-next-line` now carries that reason. No behaviour

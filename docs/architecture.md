@@ -799,39 +799,106 @@ quiet until hover; blanking the label or url removes them. Chat-side (help reply
 `updateProfile`-only-on-avatar reconcile gate + unverified core handling of parens make it risky, and a
 per-message suffix would be noise). See D-065.
 
-## 24. The local AI subsystem — in the repository, not yet consolidated (D-068)
-
-> **This section is an inventory, not an architecture.** The subsystem below entered the
-> repository outside the briefing scheme, from the operator's two parallel planning chats, so the
-> reasoning behind its design is not recorded anywhere in this repository. Consolidating it is the
-> **first task of Season 4** (`seasons/SEASON-3-PROTOCOL.md` Part D). Describing it as settled
-> architecture now would invent that reasoning rather than recover it. What follows is what the code
-> is, so the work is not invisible in the meantime.
+## 24. The local AI subsystem (D-068, consolidated under CCB-S4-008)
 
 **Provenance.** 23 commits, 2026-07-25 to 2026-07-27 (`b308201`..`e236ccf`), roughly 17,700 inserted
 lines across 46 files, **none carrying a `Briefing:` trailer**. On `main` and deployed. See D-068.
+This section was an inventory until CCB-S4-008, because the reasoning behind the design existed only
+in the operator's parallel planning chats. That reasoning is now recorded: **D-111** (the fourteen
+pre-implementation boundaries, marked clause by clause against the code), **D-112** (the consent
+double gate), **D-113** (the private inference path). The register carries an umbrella row for the
+block so it reads as explained rather than missing.
 
-**Interaction (`src/interaction/`).**
+### 24.1 The shape: two model calls, both behind seams, neither able to act
 
-- `ollama-resolver.ts` — a local Ollama intent resolver behind the existing `IntentResolver` seam.
-  Its header states the constraint the whole design rests on: the model **classifies text only**. It
-  never executes an action, writes consent, calls a tool, or decides whether a confirmation is
-  accepted; the existing resolver seam re-validates the result and the dialogue engine keeps the
-  consent handshake. Consent intents carry an extra deterministic gate: the model may confirm
-  **PUBLISH or UNPUBLISH only when the rule resolver independently found the same intent**, so a
-  model mistake cannot invent a consent request. This is the same containment principle as
-  CCB-S3-002 (§16), applied to a model rather than to rules.
-- `ollama-reply.ts` — individualized reply wording. Model output is cleaned before it reaches a
-  member: code fences stripped, em/en dashes and horizontal bars rewritten to `-` (the standing rule,
-  D-061), and C0/C1 control characters removed. A JSON response schema bounds the reply length, and
-  `blockedLiterals` keeps values such as a sender's display name out of generated text.
-- `ai-runtime.ts` — runtime control, role routing, model discovery, and content-free operations
-  telemetry. Environment configuration decides whether local AI is available at all; persisted
-  settings decide whether this process uses it and which installed model serves each role. Enabling
-  and routing changes are **fail-closed**: the selected models are verified before the active
-  resolver is swapped. Changes are audited (`writeAudit`).
+The subsystem adds exactly **two** places where a model is consulted, and both return data rather
+than performing anything.
 
-**Profiles and policy (`src/profiles/`).**
+**Intent classification** (`interaction/ollama-resolver.ts`) sits behind the existing
+`IntentResolver` seam, so nothing that resolves an intent knows a model is involved. It sends a
+static system prompt plus **the member's addressed message and nothing else**: no history, no
+archive rows, no other member's text. The reply is forced through a JSON schema whose `intent` enum
+is the **active** catalog, and it is parsed defensively before it is returned.
+
+**Reply wording** (`interaction/ollama-reply.ts`) runs only after the dialogue engine has already
+chosen the intent, done its database reads and decided what may happen. It can phrase a finished
+result and nothing else: the module holds no database, tool or transport capability, which is
+visible in its imports. Model output is cleaned before a member can read it, with code fences
+stripped, em/en dashes and horizontal bars rewritten to `-` (the standing rule, D-061), and C0/C1
+control characters removed because untrusted model output is on its way into a chat. `requiredLiterals`
+must survive a free rewrite exactly, so counts and prices cannot drift, and `blockedLiterals` keeps
+values such as a sender's display name out of generated text. Two modes: `free` rewrites the draft,
+`locked` writes only a short lead and the application appends the deterministic text unchanged.
+
+**The seam validates a second time, independently** (`interaction/resolver.ts`). `resolveIntent`
+re-sanitises whatever the active resolver returned against the active catalog, clamps confidence
+into 0..1, and treats an invented intent, an out-of-range confidence **or a thrown error** as
+`UNKNOWN`. The catalog is therefore enforced where the result is consumed rather than trusted from
+the implementation that produced it.
+
+### 24.2 Fail-closed routing, and the two switches
+
+`ai-runtime.ts` owns runtime control, per-role model routing, model discovery and telemetry. Two
+independent switches decide whether a model is used at all: the **environment** says whether local
+AI is available to the process (`LOCAL_AI_ENABLED`, default false), and a **persisted admin
+setting** says whether this process uses it. `isEnabled()` requires both, and turning off either
+calls `resetIntentResolver()`, which puts the deterministic rule engine back.
+
+Routing is **fail-closed**: the selected models are verified against the endpoint's own inventory
+before the active resolver is swapped, and a failed routing change is rolled back to the previous
+persisted value rather than left half-applied. Every runtime and routing mutation is audited
+(`writeAudit`, `local-ai.*`).
+
+**Two lanes, measured separately.** Intent and reply carry their own metrics (requests, successes,
+failures, fallbacks, latency, last error) and their own model selection, so a degradation in
+phrasing is not read as a degradation in understanding. `guardOverrides` counts the times the
+deterministic gate changed the model's answer, which makes the gate visible as a number rather than
+only as a policy.
+
+### 24.3 The consent gate
+
+Consent intents are double-gated and the model may only ever corroborate: `PUBLISH`, `UNPUBLISH`
+**and `RESTORE`** are accepted only when the rule resolver independently found the same intent, the
+rules clear the ordinary threshold, and the model clears a floor of its own (0.9). A failed gate
+cannot fall through to a different consent intent. Full reasoning and the three ways the code is
+stricter than the original protocol are in **D-112**.
+
+### 24.4 The environment contract, and what it enforces
+
+`LOCAL_AI_ENABLED` (default false) · `LOCAL_AI_BASE_URL` (default loopback) · `LOCAL_AI_MODEL` ·
+`LOCAL_AI_TIMEOUT_MS` (default 15000, clamped to 250..60000).
+
+`normalizeLocalAiBaseUrl` in [`config.ts`](../src/config.ts) rejects at startup, with an actionable
+`ConfigError`: a non-URL, a scheme other than http/https, embedded credentials, any path, query or
+fragment, and **any host that is not loopback or private**. It returns `url.origin`, so only scheme,
+host and port survive. This is a **client-side control**: it proves the application will not talk to
+a public endpoint, and it cannot prove the inference server is not publicly exposed, which is host
+and firewall state outside this repository. See D-113.
+
+**The private endpoint shape**, described rather than configured here: the GPU host has no usable
+public inbound address, so it **initiates** the tunnel to the VPS over the existing WireGuard
+interface; the inference server binds to loopback with a restricted bridge onto the tunnel address
+only; a watchdog restarts both unattended. No public AI port exists and no new inbound rule was
+added. WireGuard is retired from the admin path (Addendum 3) and this is what it is still for.
+
+### 24.5 Performance envelope
+
+**These are M1 measurements on the operator's own hardware (an RTX-class desktop GPU) against
+`qwen3.5:9b`. They are NOT reproducible from this repository**, which has no model, no GPU and no
+tunnel, and every harness in the verification set fakes the transport. Treat them as a recorded
+observation, not as a property of the code.
+
+| Measure | Observed |
+|---|---|
+| Warm classification, live | roughly 0.9 to 1.5 s |
+| Cold request, including model load | roughly 5.5 to 6.6 s |
+| Concurrency | roughly 1.7 to 1.8 requests per second |
+
+The operational consequence that matters is the cold figure: the first request after a model
+unload costs seconds, so a timeout tuned to warm latency alone would turn every cold start into a
+fallback. `LOCAL_AI_TIMEOUT_MS` defaults to 15000 for that reason.
+
+### 24.6 Profiles, policy and onboarding (`src/profiles/`)
 
 - `service.ts` — persistent profile, group and authority configuration, keyed on technical SimpleX
   identifiers. It explicitly **does not** connect to SimpleX, join a group, process invitation links,
@@ -845,23 +912,38 @@ lines across 46 files, **none carrying a `Briefing:` trailer**. On `main` and de
   address settings, workflow policy, safety controls) as an explicit state machine
   (`configured` → … → `ready` / `error`). It stores intent only; it **does not invoke the SDK**.
 
+**`cloud_allowed` is a recorded flag with no consumer** (D-111 clause 12). It is computed,
+constrained so `local_only` forces it false, and persisted, and nothing reads it to act on. There is
+no cloud path in the subsystem to disable: every `fetch` targets the validated private `baseUrl`.
+Safe today, and named here so it is treated as an unwired flag rather than as an enforcement point
+that already works.
+
 **Admin (`src/web/views/`).** `ai.ts` (2084 lines), `ai-profiles.ts`, `ai-onboarding.ts`, a global
 mega navigation (`assets/admin-navigation.js`), the brand/effects layer (`admin-effects.js`), and the
 setup, access-control and model-catalog clients. Five workspaces were subsequently redesigned:
-access control, runtime control, models catalog, routing, hardware.
+access control, runtime control, models catalog, routing, hardware. Every one of these routes
+inherits session auth, the global rate limit, the admin IP policy, CSRF on mutation and step-up
+from **global hooks** rather than per-route middleware; see `security.md` §12.
+
+### 24.7 Schema, verification, and what remains
 
 **Schema.** `migrations/017_cinderella_profiles.sql`, `018_runtime_policy_decisions.sql`,
 `019_bot_onboarding.sql` — three numbers that were **already taken** by the CCB-attributed Season 3
-work. Not broken, but constrained; see **D-069** before touching any migration filename.
+work. Not broken, but constrained; see **D-069** before touching any migration filename. New
+migrations allocate from the highest number on disk plus one, which is a rule rather than a fixed
+number because the fixed number went stale once already.
 
-**Verification.** 19 new `verify:*` harnesses (`ai`, `ai-runtime`, `ai-admin`, `ai-models`,
+**Verification.** 19 `verify:*` harnesses (`ai`, `ai-runtime`, `ai-admin`, `ai-models`,
 `ai-routing`, `ai-telemetry`, `ai-navigation`, `ai-profiles`, `ai-replies`, `ai-live`,
 `bot-onboarding`, `runtime-policy`, `admin-navigation-shell`, `admin-mega-navigation`,
-`admin-brand-fx`, `admin-setup-workflow`, and the extended `admin-views`), all passing at close-out.
+`admin-brand-fx`, `admin-setup-workflow`, and the extended `admin-views`). **Every one of them fakes
+the transport**, so the subsystem's logic is proven without a model, a GPU or a tunnel; `ai-live` is
+the exception that talks to a real endpoint and is not part of the standard set.
 
-**Not yet done:** reconciliation against these documents and the decision log, a security review
-under the CCB scheme (`security.md` §14), and a decision on how this subsystem relates to the plugin
-framework (§15) as the function count grows.
+**What remains after CCB-S4-008.** The reasoning is recorded (D-111 to D-113) and the security
+questions the code can answer are answered (`security.md` §12). Still open: **prompt injection is
+unreviewed** and is scoped to a successor briefing, and how this subsystem relates to the plugin
+framework (§15) as the function count grows is still undecided.
 
 ## 25. Hide or delete on revocation, and evidence holds (CCB-S3-013)
 

@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-110**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-114**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,176 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-114 - Direct work on `main` is the default, and a branch delivery is not delivered until it is pushed
+
+**Status: IMPLEMENTED** (CCB-S4-008). Closes the conflict M1 §22 recorded as unresolved and
+required to be settled in the decision log before new code was written.
+
+**The conflict, as it stood.** Three sources disagreed. The local AI work was performed
+directly on `main` and deployed after each verified commit. A later parallel-work brief
+proposed a feature branch for the multi-profile core. The Season 3 close-out convention also
+stated direct work on `main`. No branch was created in that chat, so the conflict was
+recorded rather than hit.
+
+**Decision: `main` is the default; a branch happens only where a briefing instructs it.**
+The reason is not preference. This repository deploys from `main`, one systemd unit, and its
+verification is a set of harnesses that run in seconds against a WASM Postgres with no
+server. Long-lived branches buy isolation this project does not need and cost the thing it
+does need, which is that work is deployed and observed early. CCB-S4-004 is the exception
+that proves the shape: the briefing instructed a branch **because** the work changes the
+runtime's identity handling and must not reach production before a joint review.
+
+**A branch delivery is incomplete until it is pushed to `origin`.** This is the clause with
+evidence behind it. CCB-S4-004 was delivered on `feature/multi-profile-core-foundation`, the
+register recorded it as delivered, and the branch existed **as a single copy in one working
+tree in a project with no backups**. `origin` carried only `main` and one `wip/` branch. It
+was closed by S4-DIR-003, which pushed the branch at `9df4f6e`. Nothing was lost, and
+nothing announced the risk either: every harness was green and the register read as
+complete the whole time. "Delivered" therefore means pushed, and a completion report that
+claims delivery on a branch states the pushed head.
+
+**Merges happen only after joint review with the operator.** A branch created because a
+briefing wanted a review gate is not merged by the agent that wrote it. `feature/multi-profile-core-foundation`
+stays unmerged at `9df4f6e` and this briefing does not touch it.
+
+---
+
+### D-113 - The private inference path, and why the endpoint validator is the only part of it this repository can enforce
+
+**Status: IMPLEMENTED** for the repository's half (`src/config.ts`), **DESCRIBED ONLY** for
+the host and network half, which lives outside this repository and cannot be verified from
+it. Reconstructed from M1 sections 6 to 8 under CCB-S4-008.
+
+**The shape, without reproducing any address.** The model runs on a GPU host on the
+operator's home network, which has no usable public inbound address, so **the GPU host
+initiates** the tunnel to the VPS rather than accepting a connection from it. The existing
+WireGuard interface carries it; a new peer was added to the existing subnet and the
+existing UDP rule was reused. **No public AI port was created and no new inbound rule was
+added.** The inference server binds to loopback on the GPU host with a restricted bridge
+onto the tunnel address only, so the endpoint is reachable from the VPS and from nowhere
+else. A watchdog restarts the server and the bridge unattended. WireGuard was retired from
+the *admin* path (Addendum 3) but stays installed, and this is what it is still for.
+
+**The environment contract.** `LOCAL_AI_ENABLED` (default **false**), `LOCAL_AI_BASE_URL`
+(default loopback), `LOCAL_AI_MODEL`, `LOCAL_AI_TIMEOUT_MS` (default 15000, clamped to
+250..60000). Two independent switches decide whether a model is used at all: the environment
+says whether local AI is *available* to the process, and a persisted admin setting says
+whether *this process* uses it. `isEnabled()` requires both. Disabling either restores the
+deterministic rule engine.
+
+**What the repository actually enforces, and it is one function.**
+`normalizeLocalAiBaseUrl` in [`src/config.ts`](../src/config.ts) rejects, at startup and
+with an actionable `ConfigError`: a non-URL, a scheme that is not http or https, embedded
+credentials, any path, query or fragment, and **any host that is not loopback or a private
+address**. It returns `url.origin`, so only scheme, host and port survive. The message says
+what the rule is: public AI endpoints are disabled.
+
+**The honest boundary. This is a client-side control, not a network control.** It proves the
+application will not *talk* to a public endpoint. It cannot prove the inference server is
+not publicly exposed, because that is host and firewall configuration in a different
+machine's state. M1 asserts the server is bound privately; this repository cannot verify
+that assertion and does not claim to. Anyone auditing the boundary has to look at both
+halves, and only one of them is in git.
+
+**No address literal is introduced by this entry.** The one that exists is the example value
+already carried by `.env.example`, and it stays the only one.
+
+---
+
+### D-112 - Consent intents are double-gated, and the model may only ever corroborate
+
+**Status: IMPLEMENTED.** [`src/interaction/ollama-resolver.ts`](../src/interaction/ollama-resolver.ts)
+and the resolver seam [`src/interaction/resolver.ts`](../src/interaction/resolver.ts).
+Recorded under CCB-S4-008 from M1 section 3.
+
+**The rule as M1 states it.** For `PUBLISH` and `UNPUBLISH` the model is not trusted by
+itself: its result is accepted only when the deterministic resolver independently identifies
+the same consent intent with sufficient confidence, and negation, hypotheticals, malformed
+output and model-only consent wording reduce to `UNKNOWN`.
+
+**The code is STRICTER than the protocol in three ways, and the protocol is what is out of
+date.** Verified by reading `createOllamaIntentResolver`:
+
+1. **Three intents are gated, not two.** `isConsentIntent` covers `PUBLISH`, `UNPUBLISH`
+   **and `RESTORE`**, with the reason recorded at the function: RESTORE puts a member's
+   content back into public view, and although it reaches that through a confirmation
+   handshake, the handshake only ever asks about the intent that was resolved. A model that
+   invented RESTORE would put that question in front of a member who never raised it
+   (CCB-S3-013).
+2. **A consent intent needs a confidence floor of its own.** `CONSENT_CONFIDENCE = 0.9`, and
+   the model must clear `max(ctx.threshold, 0.9)` while the rules must independently clear
+   the ordinary threshold with the same intent.
+3. **A failed gate cannot fall through to a different consent intent.** When the gate does
+   not hold, the result is the rules' own intent only if that intent is non-`UNKNOWN` **and
+   not itself a consent intent**; otherwise `UNKNOWN`. So no path through the failure branch
+   can produce a consent outcome.
+
+**The rules resolver runs on every request, not only on failure.** `ruleResolver.resolve` is
+awaited before the model is called, so the corroborating opinion always exists rather than
+being fetched only when something looks wrong.
+
+**And the seam validates a second time, independently.** `resolveIntent` re-sanitises
+whatever the active resolver returned against the **active** catalog, clamps confidence, and
+treats an invented intent, an out-of-range confidence or a thrown error as `UNKNOWN`. The
+model is therefore checked by the resolver that called it and again by the seam that owns
+the result. For a rule engine that is belt and braces; for a model it is the difference
+between "I did not understand" and an unauthorised publish.
+
+**What this does not cover.** The gate constrains what a model may *assert*. It says nothing
+about whether a crafted member message can steer the classification itself, which is the
+open prompt-injection question recorded in `security.md` and deliberately not claimed here.
+
+---
+
+### D-111 - The pre-implementation boundaries of the local AI subsystem, marked against the code
+
+**Status: IMPLEMENTED** except where the table says otherwise. Recorded under CCB-S4-008
+from M1 section 3, which stated these before implementation and held them throughout. This
+entry supplies the reasoning D-068 recorded as missing; the inventory it replaces is
+`architecture.md` §24.
+
+Every clause is marked against what the code proves, not against what the protocol asserts.
+
+| # | Boundary | Status | What proves it |
+|---|---|---|---|
+| 1 | Local inference is the default | **IMPLEMENTED** | `LOCAL_AI_BASE_URL` defaults to loopback; `LOCAL_AI_ENABLED` defaults false |
+| 2 | Archived member content goes to no third party by default | **IMPLEMENTED, and stronger than stated** | Not a default but a floor: the validator refuses any non-private host. Neither call path carries archive content (see below) |
+| 3 | One configurable OpenAI-compatible endpoint | **IMPLEMENTED** | A single `baseUrl`; both callers build `/v1/chat/completions` on it, discovery uses `/api/tags` |
+| 4 | The endpoint implementation stays replaceable | **PARTIAL** | Replaceable at the `IntentResolver` seam and through an injectable `fetchImpl`. But the OpenAI-compatible wire shape is written into both modules and there is no provider abstraction; M1 §19 lists the gateway as not implemented |
+| 5 | The model never executes application actions | **IMPLEMENTED** | The resolver returns an `IntentResult`; the reply module returns a string. Neither imports a database, a tool, or a transport |
+| 6 | The model may classify and phrase | **IMPLEMENTED** | Exactly two modules do so, and only those two |
+| 7 | Deterministic code holds consent, identity, permissions, routing, execution | **IMPLEMENTED** | Consent: D-112. Permissions: `runtime-policy.ts`. Routing: fail-closed in `ai-runtime.ts`. Execution: the dialogue engine |
+| 8 | The closed intent catalog is authoritative | **IMPLEMENTED TWICE** | `parseCompletion` rejects an out-of-catalog intent, and `sanitize()` at the seam re-checks against the **active** catalog independently |
+| 9 | The rule engine is the automatic fallback | **IMPLEMENTED** | `resolver.ts` holds `const fallback = ruleResolver` and runs it when the active resolver throws |
+| 10 | An unavailable endpoint degrades safely | **IMPLEMENTED** | `AbortController` on `LOCAL_AI_TIMEOUT_MS`; a throw reaches the seam, which falls back to rules, and if that also throws the answer is `UNKNOWN`. The bot answers either way |
+| 11 | The inference server is never publicly exposed | **PARTIAL, and not provable here** | The repository enforces the client half only. See D-113 |
+| 12 | Cloud, RAG, provider routing and comparison stay disabled until approved | **IMPLEMENTED BY ABSENCE** | There is no cloud path to disable. Every `fetch` in the subsystem targets the validated private `baseUrl`. `cloud_allowed` is a recorded policy flag with **no consumer** |
+| 13 | Admin mutations are CSRF-protected and audited | **IMPLEMENTED** | A global `preHandler` enforces CSRF on every mutating non-public route; `writeAudit` records the `local-ai.*` mutations |
+| 14 | Telemetry stores no member text, prompts, drafts or replies | **IMPLEMENTED** | Verified field by field in `security.md`; the intent metrics are in-process only |
+
+**On clause 2, because it is the one that matters most.** What actually leaves the process is
+bounded and readable in two functions. The intent path sends the static system prompt and
+**the member's addressed message, nothing else**: no history, no archive rows, no other
+member's text. The reply path sends the reply kind, the language, the member's addressed
+message capped at 2000 characters, the bot's own deterministic draft capped at 5000, and the
+literals that must survive a rewrite. Neither path can reach the archive, because neither
+module holds a database handle.
+
+**On clause 12, and a hazard it exposes.** `cloud_allowed` is computed, constrained
+(`local_only` forces it false), persisted and never read by anything that could act on it.
+That is safe today and is exactly the shape `conversation-identity-status.md` warns about
+for `personality_profile`: a column that exists, is never consumed and defaults quietly
+**reads as configured when nothing configured it**. Recorded here so that whoever builds a
+provider path treats it as an unwired flag rather than as an enforcement point that already
+works.
+
+**What is NOT claimed.** Prompt injection is unreviewed. The system prompts do instruct the
+model to treat the member message as untrusted text and never to follow instructions inside
+it, and that mitigation is real, but no adversarial testing has been done and the question
+stays open in `security.md` §14 for a successor briefing.
 
 ---
 

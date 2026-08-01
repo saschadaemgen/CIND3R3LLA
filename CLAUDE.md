@@ -60,6 +60,20 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   exposure to every directory added after it. So when a source tree is added, walk the
   standing checks and decide **per check** whether it now applies, rather than assuming the
   green run means covered.
+- **When the implementation and a verifier disagree, inspect the rendered output and the
+  current source before changing behaviour** (standing rule, D-111, from the local AI
+  protocol). Several failures in that work were **verifier defects, not implementation
+  defects**: desktop and mobile markup counted together, HTML escaping expected as
+  unescaped text, nested HTML truncated by a regex, whitespace-sensitive exact matching, a
+  check still asserting a pre-rename title. Every one of them would have been "fixed" by
+  changing working code to satisfy a broken test. The check is cheap and the damage is not:
+  look at what the code actually renders, and at what the test actually asserts, before
+  touching either.
+- **Read production state before retrying a deployment that may already have succeeded**
+  (standing rule, D-111, same source). Ordinary `git push` output and a transient `curl`
+  reset both read like failures and are not. A blind retry of a deployment that already
+  landed is how a working production host gets disturbed for no reason. Check the service,
+  the health endpoint and the deployed revision first, then decide.
 - **No em-dashes in member-facing output** (standing rule, CCB-S3-021). The em-dash
   (`—`), en-dash (`–`), and horizontal bar (`―`) must never appear in any string a
   member can read, in any language: persona strings, locale files, the help and
@@ -200,6 +214,14 @@ grounded in the actual code. If the change touches nothing documented, state
 silently. New decisions get a `D-<n>` entry with a Status (`IMPLEMENTED` /
 `PLANNED` / `Superseded by D-<n>`). Keep the implemented-vs-planned discipline so
 the docs never present planned work as built.
+
+**`docs/planning/` is history, not authority** (D-110). Sixteen documents from the parallel
+planning chats, committed as a dated snapshot under CCB-S4-008. On any divergence the order
+is **the code, then the living documents, then these**. Several are titled `decision-*` and
+record *proposals*; what was adopted is in `docs/decisions.md` with a number and a Status,
+and it is usually narrower. Nothing there may be cited as a decision, nothing there is
+maintained, and anything added later is privacy-scrubbed first with the result recorded in
+its README even when the scrub replaced nothing.
 
 **Read the next free decision number off the file; never assume it.** This has gone
 wrong twice: once when D-080 was allocated to two entries, and again when a second

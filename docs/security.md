@@ -1011,51 +1011,128 @@ reporting is a legal process the operator performs.
 for the community. Hash matching detects known material only; a no-match result is not a statement that
 anything is safe, and the product says so where an operator will read it.
 
-## 12. The local AI subsystem has not been security-reviewed (D-068)
+## 12. The local AI subsystem, reviewed against the code (D-068, CCB-S4-008)
 
-**Stated plainly because absence of review is itself a security fact.** The local AI
-subsystem and the admin expansion around it (23 commits, 2026-07-25 to 2026-07-27,
-`b308201`..`e236ccf`) entered the repository outside the briefing scheme and have **not been
-security-reviewed under the CCB scheme**. They are on `main` and deployed. The inventory is
-in [`architecture.md`](architecture.md) §24; the provenance is **D-068**.
+Four of the five questions this section previously listed as open are **answered below from
+the code**. The fifth, prompt injection, stays **OPEN** and is the one remaining unreviewed
+question. The subsystem is 23 commits, 2026-07-25 to 2026-07-27 (`b308201`..`e236ccf`), on
+`main` and deployed; provenance is **D-068**, reasoning is **D-111** to **D-113**, and the
+architecture is [`architecture.md`](architecture.md) §24.
 
-**What the code already does right**, from reading it (not from a review):
+### 12.1 SSRF: what an authenticated admin can point the resolver at
 
-- **The model classifies, it never executes.** `src/interaction/ollama-resolver.ts` sits behind
-  the existing `IntentResolver` seam. It cannot perform an action, write consent, call a tool,
-  or decide whether a confirmation is accepted; the seam re-validates its result and the
-  dialogue engine keeps the consent handshake. This preserves the CCB-S3-002 containment
-  property (§9c) against a model rather than against rules.
-- **Consent intents carry a second, deterministic gate.** The model may confirm **PUBLISH or
-  UNPUBLISH only when the rule resolver independently found the same intent**, so a
-  misclassification cannot invent a consent request. This is the property that matters most
-  for the one rule, and it is enforced in code rather than in a prompt.
-- **Enabling and routing are fail-closed.** `src/interaction/ai-runtime.ts` verifies the
-  selected models before the active resolver is swapped, and audits the change.
-- **Model output is treated as untrusted before it reaches a member.**
-  `src/interaction/ollama-reply.ts` strips code fences, rewrites em/en dashes and horizontal
-  bars to `-` (D-061), removes C0/C1 control characters, bounds length via a JSON response
-  schema, and refuses to emit `blockedLiterals` such as a sender's display name.
-- **The policy services do not act.** `src/profiles/service.ts`, `runtime-policy.ts` and
-  `bot-onboarding.ts` all state, and appear to honour, that they store configuration and
-  resolve policy without connecting to SimpleX, joining a group, processing an invitation
-  link, invoking the SDK, or calling an external provider.
+**Answered. The endpoint is not admin-settable at all.** It comes from `LOCAL_AI_BASE_URL`
+in the environment, is normalised **once at config load**, and no admin route writes it. What
+the admin surface can change is which *model name* serves each role and whether the runtime is
+enabled, both persisted in `settings` and both validated against the endpoint's own inventory.
 
-**What a Season 4 review still has to establish**, none of which is answered today:
+`normalizeLocalAiBaseUrl` ([`src/config.ts`](../src/config.ts)) rejects, with an actionable
+`ConfigError` at startup:
 
-- Where the Ollama endpoint is configured, whether it can be pointed at a non-local host, and
-  what the admin surface allows an authenticated operator to reach (**SSRF**).
-- Whether member content sent to the model is subject to the same consent and scope gates as
-  capture (§9h), and what leaves the process.
-- Whether prompt content can be influenced by a member such that `blockedLiterals` or the
-  consent gate can be worked around (**prompt injection**), given that the member's own text
-  is the input.
-- Whether the new admin routes carry the CSRF, step-up, session and rate-limit controls of §4
-  and §6, and whether `runtime_policy_decisions` retains anything content-bearing.
-- Whether the telemetry described as content-free is in fact content-free.
+| Rejected | Why it matters |
+|---|---|
+| Non-URL, or scheme other than `http`/`https` | no `file:`, no `gopher:` |
+| Embedded credentials (`user:pass@`) | no credential smuggling into the request |
+| Any path, query or fragment | the return is `url.origin`, so a crafted path cannot ride along |
+| **Any host that is not loopback or a private address** | the message is explicit: public AI endpoints are disabled |
 
-Until that review happens, treat this subsystem as **unreviewed attack surface on a
-hostile-facing console**.
+Private is decided by `isPrivateAiHost`, which covers loopback, `10/8`, `172.16/12`,
+`192.168/16`, IPv6 loopback, and `fc00::/7` plus link-local. **An authenticated admin cannot
+point the resolver anywhere**, and an operator editing the environment cannot point it at a
+public host without the process refusing to start.
+
+**The honest limit:** this is a client-side control. It proves the application will not talk
+to a public endpoint. It does not prove the inference server is not publicly exposed, which
+is host and firewall state outside this repository (D-113). A private-range host that is
+itself reachable from elsewhere is outside what this check can see, and DNS names resolving
+to private addresses are not re-checked after resolution.
+
+### 12.2 What leaves the process
+
+**Answered, and it is bounded by two functions.** Neither module holds a database handle, so
+neither can reach the archive.
+
+| Path | Sent to the endpoint |
+|---|---|
+| **Intent** (`ollama-resolver.ts`) | The static system prompt, and **the member's addressed message, nothing else** |
+| **Reply** (`ollama-reply.ts`) | Reply kind (≤80 chars), language (≤16), **the member's addressed message capped at 2000 chars**, the bot's own deterministic draft capped at 5000, and the literals that must survive a rewrite |
+
+**No member text beyond the addressed instruction is ever transmitted.** No message history,
+no other member's text, no archive rows, no captured media, no consent records. The
+deterministic draft is the bot's own prepared reply; it can contain member-derived values such
+as a count, which is why `requiredLiterals` exists to keep them exact and `blockedLiterals`
+exists to keep a display name out of the generated wording.
+
+This satisfies the §9h scope property by construction rather than by a gate: the model is
+consulted on the addressed message, which is the same text the deterministic resolver already
+sees, and nothing widens that.
+
+### 12.3 Telemetry, field by field
+
+**Answered. Nothing content-bearing is recorded, in either place.**
+
+**The intent and reply metrics are in-process only.** `intentMetricsState` is a private field
+on `AiRuntimeService`, reset by `emptyIntentMetrics()`, and **never written to the database**.
+It holds counts, latency sums, timestamps, the last model and final intent (both enum values),
+and `lastError`. The error strings the resolver throws are static (`Ollama returned malformed
+JSON.`, an HTTP status, a timeout) and interpolate no member text. The 50-entry activity buffer
+stores a categorised `detail`, not a raw message.
+
+**`cinderella_runtime_policy_decisions` (migration 018)** is the only AI-adjacent table
+written on the message path. Every column:
+
+| Column | Content-bearing? |
+|---|---|
+| `id`, `decided_at` | no |
+| `profile_id`, `group_id`, `simplex_group_id`, `item_id` | no, identifiers |
+| `simplex_member_id` | **an identifier, not content**. Text column, but it holds a protocol member id |
+| `outcome`, `reason`, `role`, `group_kind` | no, enums |
+| `local_only`, `cloud_allowed` | no, booleans |
+| `details` (JSONB) | **verified**: `policySource`, `enforcementApplied`, `profileSlug`, `inheritProfile`, `roleSource`, and five booleans. No free text, no message body |
+
+So the table records **who was decided about and what was decided**, never what was said. That
+is the intended shape: it is a policy audit trail, and it is stated here because a JSONB column
+is exactly where content would leak unnoticed.
+
+### 12.4 Admin routes: CSRF, session, rate limit
+
+**Answered, and the guarantee is structural rather than per-route.** All three are enforced by
+**global hooks** in [`src/web/server.ts`](../src/web/server.ts), so every `/ai/*` route inherits
+them and a newly added AI route cannot forget one:
+
+- **Rate limit** — `onRequest` applies the global per-IP limiter to every path except
+  `/assets/` and the public front. `isPublicFront` matches only `/embed`, `/embed/`,
+  `/robots.txt` and `/sitemap.xml`, so no AI route is exempt.
+- **Admin IP allow/deny** — same hook, same exemptions.
+- **Session** — same hook. The public list is the public front, `/login`, `/demo/enter`,
+  `/healthz`, `/favicon.ico`, `/assets/` and `/webauthn/login/`. No AI route is on it, so an
+  unauthenticated request is redirected or gets 401.
+- **CSRF** — a `preHandler` on every mutating method, exempting only `/demo/`, the public
+  front, `/login` and `/webauthn/login/`. Every `/ai/*` mutation is checked, 403 otherwise.
+- **Step-up** — `isSensitive` returns true for **every** mutating method except `/logout` and
+  `/webauthn/*`, so all AI mutations require fresh passkey re-verification when step-up is
+  enabled and at least one passkey exists.
+
+### 12.5 Prompt injection: OPEN, and not claimed otherwise
+
+**This is the one question that stays unreviewed.** The member's own text is the model's input
+on both paths, which is the definition of the exposure.
+
+What exists is **mitigation, not evidence**. Both system prompts instruct the model to treat
+the member message as untrusted text, never to follow instructions inside it, and never to
+claim an action happened. The reply prompt additionally forbids writing a person name. Those
+are prompt-level defences and a prompt-level defence is exactly what an injection attacks.
+
+What genuinely constrains the damage is **not** the prompt but the code around it: a model
+that is successfully steered still cannot invent a consent intent (D-112 double gate), still
+cannot emit a `blockedLiteral`, still cannot drop a `requiredLiteral`, still cannot return an
+out-of-catalog intent past `sanitize()`, and still cannot execute anything. So the realistic
+worst case is a misclassification within the catalog or an odd-sounding reply, not an
+unauthorised publish.
+
+**That is an argument, not a test.** No adversarial testing has been done. Scoped to a
+successor briefing; until then this specific question, and not the subsystem as a whole,
+is the unreviewed surface.
 
 ## 13. The generator's model path sends no member data (D-104)
 
