@@ -131,6 +131,13 @@ async function main(): Promise<void> {
   const pinned = new Set(['MONERO', 'XMR', 'BTC']);
   /** Symbols a carried-over lookup actually asked about — must stay noise-free. */
   const priceAsked: string[] = [];
+  /** Every reply the engine offered to a model for phrasing (CCB-S4-010, D-116). */
+  const personalizeCalls: {
+    kind: string;
+    mode: string;
+    requiredLiterals: string[];
+    blockedLiterals: string[];
+  }[] = [];
 
   const engine = new InteractionEngine({
     db,
@@ -164,6 +171,18 @@ async function main(): Promise<void> {
     },
     now: clock.now,
     random: fakeRandom,
+    // Records what the engine WOULD ask a model to phrase, and always returns null so
+    // the deterministic draft is used. Every existing assertion below therefore still
+    // reads the deterministic text; this only observes the request (CCB-S4-010).
+    personalize: async (request) => {
+      personalizeCalls.push({
+        kind: String(request.kind),
+        mode: request.mode,
+        requiredLiterals: [...(request.requiredLiterals ?? [])],
+        blockedLiterals: [...(request.blockedLiterals ?? [])],
+      });
+      return Promise.resolve(null);
+    },
   });
 
   /** Sends one message through the engine and returns what she said back. */
@@ -1776,6 +1795,53 @@ async function main(): Promise<void> {
       r.length > 0 && !/report|Meldung/i.test(r),
     );
   }
+
+  /* ── What may be handed to a model at all (CCB-S4-010, D-116) ──────────── */
+  //
+  // These read the log of everything the engine offered for phrasing across every flow
+  // above. They gate CONTAINMENT, not wording: a model that is successfully steered by a
+  // crafted member message still cannot reach what is not sent to it.
+
+  // The consent path never reaches a model. Its replies are deterministic strings, so a
+  // member cannot influence the wording of a confirmation, a result, a refusal, or a
+  // destruction outcome. The flows above already exercise publish, unpublish, undo,
+  // hide/delete and restore, so this asserts over real traffic rather than over the list.
+  const CONSENT_BEARING = [
+    'publishConfirm', 'published', 'unpublishConfirm', 'unpublished', 'refuseThirdParty',
+    'undo', 'undoNothing', 'undoNotRevocation', 'cancelled', 'revokeChoice', 'hidden',
+    'deleteConfirm', 'deleteNeedsWord', 'deleted', 'deleteDeferred', 'deleteNothing',
+    'choiceNotRevoked', 'alreadyHidden', 'alreadyDestroyed', 'deleteRetrying', 'restored',
+    'restoreNotDeleted', 'restoreConfirm', 'redactedMember',
+  ];
+  const consentOffered = personalizeCalls.filter((c) => CONSENT_BEARING.includes(c.kind));
+  check(
+    'no consent-bearing reply is ever offered to a model',
+    consentOffered.length === 0,
+    consentOffered.length === 0
+      ? `${personalizeCalls.length} personalize calls seen, none consent-bearing`
+      : `offered: ${[...new Set(consentOffered.map((c) => c.kind))].join(', ')}`,
+  );
+
+  // `status` reports a member's own publication state, which is consent-bearing
+  // information. In `free` mode the model rewrites the draft and only `requiredLiterals`
+  // is enforced, which for status is two bare counts: a rewrite that swaps which number
+  // means what satisfies every check there is. Locked mode appends the deterministic text
+  // unchanged, so the fact cannot be altered at all.
+  const statusCalls = personalizeCalls.filter((c) => c.kind === 'status');
+  check(
+    'a status reply is offered LOCKED, so its counts cannot be rewritten',
+    statusCalls.length > 0 && statusCalls.every((c) => c.mode === 'locked'),
+    `${statusCalls.length} status call(s), modes: ${[...new Set(statusCalls.map((c) => c.mode))].join(', ') || 'none'}`,
+  );
+
+  // Every offer carries the sender's name as a blocked literal, so generated wording
+  // cannot address or name them even if the draft or their own message contains it.
+  check(
+    'every personalized reply blocks the sender display name',
+    personalizeCalls.length > 0 &&
+      personalizeCalls.every((c) => c.blockedLiterals.some((l) => l.trim() !== '')),
+    `${personalizeCalls.length} call(s) checked`,
+  );
 
   console.log(
     `\n${failures === 0 ? 'All interaction checks passed.' : `${failures} check(s) FAILED.`}`,

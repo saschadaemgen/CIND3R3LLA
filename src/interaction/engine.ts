@@ -244,7 +244,25 @@ const AI_PERSONALIZED_KEYS = new Set<PersonaKey>([
   'priceThrottled',
 ]);
 
-const AI_LOCKED_KEYS = new Set<PersonaKey>(['priceAmbiguous']);
+/**
+ * Personalized replies whose deterministic text may NOT be rewritten, only led into.
+ *
+ * `status` is here for a security reason found by the CCB-S4-010 injection review, not
+ * for style. In `free` mode the model rewrites the whole draft, and the only protection
+ * is `requiredLiterals`, which is built from the persona's variable VALUES. For `status`
+ * those values are two bare counts, so the check proves the two numbers still appear and
+ * says nothing about what they are now claimed to mean: `I keep 5 of your messages, 0 of
+ * them public` and a rewrite that swaps which number is which both satisfy it. Nothing
+ * downstream compares the draft's meaning with the output.
+ *
+ * `status` is the one personalized reply that reports a member's own publication state,
+ * which is consent-bearing information (D-080: addressing her IS the consent path). A
+ * member misinformed about their state may not exercise a right they have. Locked mode
+ * removes the possibility rather than relying on the model: the application appends the
+ * deterministic text unchanged and the model only writes the opening line, so the member
+ * still gets an individualized reply and the fact is immutable. See D-116.
+ */
+const AI_LOCKED_KEYS = new Set<PersonaKey>(['priceAmbiguous', 'status']);
 
 /**
  * Is this fragment pure reaction rather than an instruction (§1)?
