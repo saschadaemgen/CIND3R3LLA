@@ -178,12 +178,22 @@ trailer on `0e0a3d9`.
 
 ### Work in `main` that carries no briefing id
 
-Between 2026-07-25 and 2026-07-27, **23 commits** (`b308201`..`e236ccf`, roughly 17,700
-inserted lines across 46 files) introduced the **local AI subsystem** and a large admin
-expansion. None carries a `Briefing:` trailer, so none is registrable here. The work
-originated in the operator's parallel planning chats and is **deployed but not
-consolidated**; the inventory is in [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md)
-**Part G §3**, and consolidating it is the first task of Season 4.
+One row accounts for the whole block. **It is deliberately not given a `CCB-` id**: no id is
+reused, no commit is rewritten, and inventing one would misrepresent unbriefed work as
+briefed. The `Block` column therefore carries a descriptive label, not an identifier.
+
+| Block | Commits | Span | Decision | Status |
+|---|---|---|---|---|
+| Local AI subsystem and admin expansion | `b308201`..`e236ccf` (**23**, inclusive of `b308201`; roughly 17,700 inserted lines across 46 files) | 2026-07-25 to 2026-07-27 | **D-068** | **Consolidated under CCB-S4-008.** None of the 23 carries a `Briefing:` trailer, so none is registrable as a briefing and none was rewritten to add one. The work originated in the operator's parallel planning chats and was **deployed but unexplained**: the code was in `main` and its reasoning was in a chat transcript. That reasoning is now recorded as **D-111** (the fourteen pre-implementation boundaries, marked clause by clause against the code), **D-112** (the consent double gate) and **D-113** (the private inference path); [`architecture.md`](../docs/architecture.md) §24 is an architecture rather than an inventory, and four of the five open security questions are answered in [`security.md`](../docs/security.md) §12. **Prompt injection remains unreviewed** and is scoped to a successor briefing |
+
+**This block is Season 3 work by date and is not a Season 3 briefing.** It landed inside
+Season 3's span and carries no id, so it changes nothing about the season boundary:
+**Season 3 still closes with CCB-S3-043**, which is a statement about briefings, and this
+was never one. Recorded in the same spirit as the `CCB-S4-004` row above: the gap reads as
+**explained** rather than as a missing briefing.
+
+The original inventory is in [`SEASON-3-PROTOCOL.md`](SEASON-3-PROTOCOL.md) **Part G §3**,
+kept as written.
 
 ## Planning documents (not Claude Code Briefings — they inform Season 2)
 
