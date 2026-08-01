@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-109**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-110**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,57 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-110 - The planning workstream's documents are committed as history, and history is not authority
+
+**Status: IMPLEMENTED** (CCB-S4-008). [`docs/planning/`](planning/), sixteen files, with
+[`docs/planning/README.md`](planning/README.md) stating the rule and recording the scrub.
+
+**What forced it.** Two workstreams ran in parallel chats outside the briefing scheme. One
+produced the local AI subsystem now on `main` (D-068, 23 commits with no `Briefing:`
+trailer); the other produced the measurement work, the multi-profile briefing and the
+personality model. The reasoning behind both existed **only in chat transcripts and on one
+machine**, in a project with no backups. The register recorded the first as an unexplained
+gap and could say nothing about the second. Losing either would not have broken the build,
+which is precisely why it could have happened without anyone noticing.
+
+**Decision 1: the documents are committed, unedited, as a snapshot.** Not rewritten into
+the living documents and deleted, and not summarised. A summary would have to choose what
+mattered, and the value of a planning record is exactly the parts nobody has yet realised
+matter. They are committed as received so a later reader can see what was believed at the
+time, including the parts that turned out to be wrong.
+
+**Decision 2: they are inputs, never authority, and the order is code, then living
+documents, then these.** This is the load-bearing half. A directory of documents that read
+like specifications is a standing invitation to cite one as settled, and several are titled
+`decision-*`. They record *proposals*. What was adopted is in this file, with a number and
+a Status, and it is frequently narrower than the proposal: `decisions-reader-workflow.md`
+proposes a biography layer that does not exist, and D-109 adopted only the language
+restriction and the rejection gate from the same document. The README states the precedence
+order so it cannot be inferred wrongly.
+
+**Decision 3: nothing is annotated into the files themselves.** Divergences found while
+reconciling are recorded against CCB-S4-008 rather than as editorial marks in the
+documents, because an annotated snapshot is no longer a snapshot. The cost is that a reader
+must consult two places; the benefit is that the record stays faithful and a second intake
+does not have to guess which lines were original.
+
+**Decision 4: the scrub is an obligation on entry, and a scrub that replaced nothing must
+say so.** The repository is public. This intake required **zero replacements**, which the
+README states as a positive finding with the full list of what was checked. The distinction
+that matters is between "checked, clean" and "never checked", and only an explicit record
+tells them apart. Two judgement calls are named there rather than left implicit: the
+measurement report's mention of a consumer machine on a satellite uplink is kept because it
+qualifies the report's own figures and identifies nobody, and the two raw probe data files
+(`measurement-results.json`, `message-history.json`, the second holding per-profile message
+history) are **deliberately absent** and stay on the measurement machine.
+
+**What this does not do.** It does not make the planning documents part of the maintained
+documentation set. They are not updated when the code changes, they will go stale, and that
+is intended: they are dated evidence, not a living document. The six living documents remain
+the only maintained record, and the per-change rule (CCB-S1-019) does not extend here.
 
 ---
 
