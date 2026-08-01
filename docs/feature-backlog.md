@@ -879,6 +879,54 @@ briefings. Architecture §31 has the detail; the state of it is:
       starting: the build does not copy the modules' `data/` JSON into `dist/`, which has
       never mattered because both harnesses run from source through `tsx`.
 
+## From the planning package, not yet reflected anywhere else (CCB-S4-008 Stage 5)
+
+Gaps found by reading [`docs/planning/`](planning/) against the code and the decision log.
+The package is history, not authority (D-110); these are the items where it describes
+something the repository does not have and the gap is worth carrying.
+
+- [ ] **The biography layer, as a specified component.** `decisions-reader-workflow.md` §1
+      calls it "the highest-leverage open item" and specifies it: place, occupation, tenure,
+      a small number of specifics, optionally a URL, plus three constraints that matter more
+      than the field list (most avatars have almost none of it and specifics correlate with
+      activity tier and conscientiousness; **do not derive occupation from personality**, the
+      `drawIdentity` rule again; places follow the origin blend, which hits the same
+      labelled-corpus gap as the names). The **gap** is already in this file as "NO PROPER
+      NOUNS ANYWHERE" (D-107); what is missing is the **specified shape above**, which no
+      decision records. Both text engines are limited by the same missing input, so this
+      precedes further work on either.
+- [ ] **The whole avatar half of the personality model is unbuilt**, and nothing in the
+      decision log says so. Verified absent from `src/`: designed characters,
+      trigger profiles, disclosure labels as a generator concern (Addendum A), the
+      motif × style deck and any image generation, and Addendum B's four configuration
+      layers (wizard, presets, panels, raw). `avatar-personality-model-v2.md` layers 1, 2
+      and 4 are built (traits, surface, visible profile); layer 3 (population) and layer 5
+      (validation) exist only as far as `assemble/` and the per-component harnesses go, not
+      as the specified layers.
+- [ ] **The conversation-identity question needs one query against a populated database.**
+      `conversation-identity-status.md` settles that a `groupId` identifies a *membership*,
+      that `group_profile_id` is disqualified, and that consent identity survives
+      multi-profile because it keys on `sender_member_id`. What is open is whether
+      `public_group_id` or `group_link` in `group_profiles` is populated and identical
+      across profiles sharing a group. It cannot be answered on a fresh instance, and
+      `docs/planning/check-group-identity.js` and `scan-group-identity.js` are the probes for
+      it. Worth running **before** the multi-profile runtime writes its first row: retrofitting
+      a conversation identity after duplication starts is a data migration rather than a
+      schema decision. Note the counterpart the same document raises: `shared_msg_id` is
+      captured and persisted today but nullable with no index, and a canonicalisation that
+      silently skips null rows would be worse than none.
+- [ ] **Archive storage was never measured.** `conversation-identity-status.md` closes on
+      this and it is easy to miss: the measurement report covers **runtime** cost only.
+      Archive storage scales with messages multiplied by participating profiles, which is a
+      different factor from cost per event, so any sizing taken from the measurement report
+      alone understates storage for a multi-profile deployment.
+- [ ] **Four specification decisions in `open-items.md` §4 are still open**: rhythm-only
+      archetypes composable with trait archetypes or not; how an operator's own trait profile
+      is obtained; and whether `Personality` is persisted or recomputed (the document
+      recommends persisting with the seed, and D-104's cache keying already implies it for
+      bios without deciding it for personality). The fourth, model-backed text generation,
+      **is** decided: D-104 and D-109.
+
 ## Public front: the BIGINT bounds are not layered evenly (found under CCB-S4-008)
 
 - [ ] **Two of the three public routes have no second line of defence against an oversized
