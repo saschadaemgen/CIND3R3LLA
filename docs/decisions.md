@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-114**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-115**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,54 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-115 - A check is not a decision: when a harness contradicts the decision log, the harness moves
+
+**Status: IMPLEMENTED** (CCB-S4-009). `scripts/verify-admin-brand-fx.ts`,
+`scripts/verify-admin-navigation-shell.ts`. Both were red on `main` and both are now green
+and mutation-proven in both directions.
+
+**The situation this settles.** Two harnesses arrived with the unbriefed AI block (D-068)
+and later contradicted decisions taken after they were written. `verify:admin-brand-fx`
+pinned one admin sentence to the plain spelling; **D-088** then stylised the product name
+everywhere it is displayed, the admin console included, and did not update the harness.
+`verify:admin-navigation-shell` asserted a `/website` link in the System sidebar; **D-089**
+then moved the marketing site into its own repository and `3da6076` took the page with it.
+In both cases the code was right and the check was stale.
+
+**The rule, ruled by the operator and recorded here so it is not re-argued:** a check
+encodes an understanding at a moment in time. **The decision log is the record of intent;
+a harness is only ever evidence about the code.** When the two disagree, establish which
+decision governs, then move the check. Changing correct code to satisfy a stale assertion
+is the failure mode CLAUDE.md already warns about one level down, where a verifier defect
+gets "fixed" in the implementation.
+
+**This does not weaken the standing rule that a red check is never ignored.** Both of these
+sat red for days precisely because nobody owned them, and the resolution was to look at each
+one rather than to silence it. Two of the three possible outcomes leave the code alone and
+one changes it; which applies is a question about the decision log, not about the harness.
+
+**Both repairs were mutation-proven, because a check repaired by relaxing it is worse than a
+check left red.** A relaxed check reports coverage it does not have, which is the D-107
+lesson. So each was broken deliberately and confirmed to go red before being restored:
+removing a shipped sidebar child, re-adding the retired `/website` page, reverting the brand
+sentence, and drifting a *different* chrome string that the old pinned assertion would have
+missed entirely.
+
+**Both checks came out broader than they went in.** The brand check pinned one sentence and
+now asserts that no plain-spelling product reference survives anywhere in the admin chrome;
+the navigation check now also asserts that the retired page has **not** come back. A removal
+that is only expressed by deleting an assertion is indistinguishable from never having
+checked, so the removal is asserted.
+
+**Diagnosis before repair, and one earlier diagnosis was wrong.** CCB-S4-008 recorded that
+the navigation harness expected a `data-section="system"` attribute that "exists nowhere in
+`src/web/`". That was a literal grep against a template that **interpolates** the value
+(`data-section="${activeRoot.key}"`), and the rendered page does carry it. Inspecting the
+rendered output, which is what CLAUDE.md's standing rule asks for, showed the single failing
+conjunct was the `/website` link. The corrected account is in `architecture.md` §24.7.
 
 ---
 

@@ -927,26 +927,35 @@ something the repository does not have and the gap is worth carrying.
       bios without deciding it for personality). The fourth, model-backed text generation,
       **is** decided: D-104 and D-109.
 
-## Two harnesses are RED on `main` (found under CCB-S4-008, not caused by it)
+## Two harnesses were RED on `main` (found under CCB-S4-008, fixed under CCB-S4-009)
 
-Both arrived with the unbriefed AI block and have been failing since 2026-07-28. The briefing
-that found them changed no file under `src/` or `assets/`, which is how it is known they are
-pre-existing. Full diagnosis in [`architecture.md`](architecture.md) §24.7.
+Both arrived with the unbriefed AI block and failed from 2026-07-28. Full account in
+[`architecture.md`](architecture.md) §24.7 and **D-115**.
 
-- [ ] **`verify:admin-brand-fx`: "individual bot naming remains Cinderella".** `9d11bb0` (D-088)
-      changed `html.ts` to `Control how CIND3R3LLA addresses people`; the harness asserts that
-      sentence keeps the individual-profile spelling, guarding M1 §18's rule that product identity
-      is not inferred from one bot profile. **A product-naming decision, not a code fix.** Either
-      D-088's rename extends to this sentence and the harness is updated, or the sentence describes
-      one bot and reverts. Operator's call.
-- [ ] **`verify:admin-navigation-shell`: "system sidebar matches the System main section".** Expects
-      `data-section="system"` on `/settings`; that attribute exists nowhere in `src/web/`. The shell
-      it asserts was superseded by the mega navigation (`8292ff0`) two commits after it was written.
-      Reads as a stale harness.
+- [x] **`verify:admin-brand-fx`** — the operator ruled that D-088 governs, so the assertion was
+      inverted and broadened to "no plain-spelling product reference survives anywhere in the admin
+      chrome". Mutation-proven in both directions.
+- [x] **`verify:admin-navigation-shell`** — stale against D-089, which moved the marketing site out
+      and took `/website` with it. Aligned to the three children the System root ships, plus a new
+      assertion that the retired page has not returned. Mutation-proven in both directions.
+      **CCB-S4-008's stated cause was wrong** and is corrected in §24.7: the `data-section` attribute
+      is interpolated and does render; the failing conjunct was the `/website` link.
 - [ ] **Decide what a red harness from the unbriefed block means for the standard set.** These two
-      sat red for four days because they were in no completion report and no routine. Either they
-      join the set that must be green before a push, or they are retired; leaving them red teaches
-      everyone to ignore a red run, which is worse than either.
+      sat red for four days because they were in no completion report and no routine. The full set is
+      41 of 41 green as of CCB-S4-009, so the question is now about keeping it that way: either the
+      whole set must be green before a push, or the ones nobody owns are retired. Leaving any of them
+      red teaches everyone to ignore a red run, which is worse than either.
+
+- [ ] **`BOT_DISPLAY_NAME` silently regressed away from D-088, and is still wrong on `main`.** Found
+      while verifying the brand under CCB-S4-009, outside its scope, so recorded rather than fixed.
+      `9d11bb0` implemented D-088 by setting the default to `CIND3R3LLA`; `80f26b4` on the same day,
+      a **consent-messaging fix**, changed it back to `Cinderella` with nothing in its message about
+      the brand. That is a collateral revert, the broad-source-replacement hazard CLAUDE.md warns
+      about, and D-088 explicitly lists `BOT_DISPLAY_NAME` as following the product name.
+      `.env.example` also still says `Cinderella`. **Deliberately not fixed here**: it changes
+      `src/`, it changes a member-facing identity, and the live value depends on the production
+      `EnvironmentFile`, which cannot be read from the repository. Needs an operator decision plus a
+      deploy, not a hygiene edit.
 
 ## Public front: the BIGINT bounds are not layered evenly (found under CCB-S4-008)
 

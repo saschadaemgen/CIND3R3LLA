@@ -940,25 +940,32 @@ number because the fixed number went stale once already.
 the transport**, so the subsystem's logic is proven without a model, a GPU or a tunnel; `ai-live` is
 the exception that talks to a real endpoint and is not part of the standard set.
 
-**TWO OF THEM ARE RED ON `main`, and have been since 2026-07-28** (found while running the full set
-at the close of CCB-S4-008; not caused by it, which changed no file under `src/` or `assets/`).
+**Two of them were RED on `main` from 2026-07-28 and are fixed under CCB-S4-009** (D-115). Found by
+running the full set at the close of CCB-S4-008, which did not cause them: it changed no file under
+`src/` or `assets/`, and neither harness script changed either.
 
-- `verify:admin-brand-fx` — "individual bot naming remains Cinderella". It asserts that
-  `html.ts` says `Control how Cinderella addresses people` and **not** the CIND3R3LLA spelling,
-  guarding M1 §18's rule that product identity is not inferred from an individual bot profile.
-  `9d11bb0` (D-088, "her name is CIND3R3LLA") changed exactly that string. **Which side is right is a
-  product-naming decision, not a code fix**: D-088 made the stylised name the displayed one, and this
-  harness holds that this particular sentence describes what one bot does rather than what the
-  product is. Left for the operator.
-- `verify:admin-navigation-shell` — "system sidebar matches the System main section". It expects a
-  `data-section="system"` sidebar on `/settings`, and that attribute **exists nowhere in `src/web/`**.
-  The shell it asserts was replaced by the mega navigation (`8292ff0`) two commits after the harness
-  was written. This one reads as a stale harness rather than a defect.
+- `verify:admin-brand-fx` pinned one admin sentence to the plain spelling, guarding the rule that
+  product identity is not inferred from an individual bot profile. `9d11bb0` implemented **D-088**,
+  which stylises the product name everywhere it is displayed, the admin console included, and did not
+  update the harness. **The operator ruled that D-088 governs**, so the assertion was inverted and
+  broadened: no plain-spelling product reference survives anywhere in the admin chrome. The rule the
+  original check cared about was not abandoned; the individual bot's name is `BOT_DISPLAY_NAME` in
+  configuration, a different thing in a different file.
+- `verify:admin-navigation-shell` asserted a `/website` link in the System sidebar. **D-089** moved
+  the marketing site into its own repository and `3da6076` took the admin page with it, so the
+  harness was stale against a recorded decision. Aligned to the three children the System root
+  actually ships, plus a new assertion that the retired page has **not** returned.
 
-Recorded rather than fixed, under this briefing's "nothing further" scope. **The instructive part is
-why nobody noticed for four days:** these harnesses arrived with the unbriefed block, so they were in
-no completion report and in no routine, which is the register's point about unattributed work made
-concrete.
+**CCB-S4-008's diagnosis of the second one was wrong and is corrected here.** It reported that the
+harness expected a `data-section="system"` attribute existing "nowhere in `src/web/`". That was a
+literal grep against a template which **interpolates** the value (`data-section="${activeRoot.key}"`),
+and the rendered page does carry it; the System root has always had key `system`. The single failing
+conjunct was the `/website` link. Inspecting rendered output rather than grepping source, which is
+what the standing rule asks for, is what found it.
+
+**The instructive part is why nobody noticed for four days:** these harnesses arrived with the
+unbriefed block, so they were in no completion report and in no routine, which is the register's
+point about unattributed work made concrete.
 
 **What remains after CCB-S4-008.** The reasoning is recorded (D-111 to D-113) and the security
 questions the code can answer are answered (`security.md` §12). Still open: **prompt injection is
