@@ -42,10 +42,27 @@ async function main(): Promise<void> {
     'footer exposes the product name',
     rendered.includes('admin-footer-product">CIND3R3LLA</span>'),
   );
+  // THIS CHECK USED TO ASSERT THE OPPOSITE, and it was red on `main` from 2026-07-28.
+  // It was written in `23acf03`, before D-088, and guarded the rule that product identity
+  // is not inferred from one bot profile by pinning this sentence to the plain spelling.
+  // `9d11bb0` then implemented D-088, which stylises the product name EVERYWHERE it is
+  // displayed, the admin console included, and did not update this harness. The operator
+  // has ruled: D-088 governs and the harness follows, so the assertion is inverted.
+  //
+  // The rule the original check cared about is not abandoned, it has moved to where it
+  // actually lives. The admin chrome is PRODUCT copy and carries the product spelling; the
+  // INDIVIDUAL bot's name is `BOT_DISPLAY_NAME` in configuration, which is a different
+  // thing in a different file and is not what this sentence was ever about.
   check(
-    'individual bot naming remains Cinderella',
-    htmlSource.includes('Control how Cinderella addresses people') &&
-      !htmlSource.includes('Control how CIND3R3LLA addresses people'),
+    'admin chrome copy uses the product spelling (D-088)',
+    htmlSource.includes('Control how CIND3R3LLA addresses people') &&
+      !htmlSource.includes('Control how Cinderella addresses people'),
+  );
+  // Broadened deliberately: pinning one sentence let the rest of the chrome drift without
+  // anything noticing. No plain-spelling product reference belongs in this file at all.
+  check(
+    'and no plain-spelling product reference survives anywhere in the admin chrome',
+    !/\bCinderella\b/.test(htmlSource),
   );
 
   console.log('\n2. Original random starfield');

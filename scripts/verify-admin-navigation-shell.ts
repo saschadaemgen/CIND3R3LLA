@@ -217,13 +217,25 @@ async function main(): Promise<void> {
 
   const system = await app.inject({ method: 'GET', url: '/settings', headers });
   const systemSidebar = contextSidebar(system.body);
+  // `/website` was REMOVED from this sidebar on purpose, not lost: D-089 moved the
+  // marketing site into its own repository and `3da6076` took the admin page with it.
+  // The harness predates that (it was written in `165a7a6`) and kept asserting the link,
+  // which is the whole of why this check was red. Aligned to the three children the
+  // System root actually ships. If a fourth is added, add it here: this check exists to
+  // notice the sidebar and the main section drifting apart.
   check(
     'system sidebar matches the System main section',
     systemSidebar.includes('data-section="system"') &&
       systemSidebar.includes('href="/settings"') &&
       systemSidebar.includes('href="/security"') &&
-      systemSidebar.includes('href="/embeds"') &&
-      systemSidebar.includes('href="/website"'),
+      systemSidebar.includes('href="/embeds"'),
+  );
+  // The removal is asserted rather than assumed. Without this, deleting the `/website`
+  // expectation above would be indistinguishable from never having checked it, and a
+  // regression that put the page back would pass silently.
+  check(
+    'and the System sidebar does NOT carry the retired /website page (D-089)',
+    !systemSidebar.includes('href="/website"'),
   );
 
   await app.close();
