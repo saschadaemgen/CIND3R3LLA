@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-107**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-108**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,71 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-108 - The site deploy builds beside the live release and switches atomically, and a reserved hostname answers 404 honestly
+
+**Status: IMPLEMENTED.** Site repository, `SITE-S2-002b` and `SITE-S2-002a`.
+
+**The decision.** A site deploy no longer edits the directory it is serving from.
+`/opt/cinderella-site` holds `releases/<timestamp>-<rev>/` and a `current`
+symlink; a deploy builds a new release while the old one keeps serving, and
+switches by moving the symlink atomically. One `flock` makes two simultaneous
+deploys impossible. A failed health or render check switches back. Rolling back
+is `SITE_ROLLBACK=1 bash deploy/push.sh`, which transfers nothing and builds
+nothing. This refines the delivery half of D-091, which stands: still push, still
+no server-side script, still no `git pull`.
+
+**Why.** The deploy cleared the target directory and then extracted into it. A
+tarball that had grown to 91.4 MB, because gitignored design material was never
+excluded, outran a timeout inside that window and left `/opt/cinderella-site`
+holding nothing but `node_modules`, with the service answering from memory and
+certain to die on its next restart. **Shrinking the tarball fixed the trigger and
+not the mechanism**; any slow step in that window ended the same way. The window
+itself is now gone.
+
+**A release is not usable because it exists.** An interrupted deploy leaves a
+half-built release directory behind and it is the NEWEST on disk. Rollback chose
+by timestamp, so after an interruption the command whose purpose is to rescue the
+site would have switched it onto a build that never finished. A `.release-ok`
+marker, written only after health and rendering both pass, is what distinguishes
+a release from a ruin; rollback and pruning both read it.
+
+**Three tests were required as deliverables and two of them found real defects.**
+The lock's refusal message destroyed the evidence it was about to print, because
+both sides opened the lock file with `>` and truncation happens at open. The
+rollback selected wreckage, as above. Neither was visible by reading the script.
+Additionally, the first two attempts at the lock test proved nothing - the
+holder's lifetime elapsed before the deploy reached the lock - and would have
+been reported as passing by anyone not checking the timing. **A test that cannot
+fail is not evidence of passing.**
+
+**Measured 2026-08-01.** Deploy 35 to 39 seconds; transfer 1.9 MB, down from
+91.4; four releases 201 MB total rather than four times 165, because
+`node_modules` is hard-linked when the lockfile is byte-identical. A deploy
+killed mid-build left `current`, `REVISION`, the service PID and the live page
+unchanged. The product service was untouched throughout: `MainPID=1430559`,
+`NRestarts=0`, active since 2026-07-30, which is the D-089 separation holding
+under repeated deploys rather than being asserted.
+
+**systemd resolves the `current` symlink at fork**, established by reading
+`/proc/<pid>/cwd`. That is what makes a switch take effect on restart and not
+before, and rollback a link move plus a restart.
+
+**Second decision, same infrastructure: `insights.cind3r3lla.com` is reserved
+rather than built.** It has a vhost, its own certificate, its own logs, and it
+answers 404 with `noindex`. Nothing listens behind it. A name that answers 404 is
+telling the truth; a name that does not resolve, or presents a certificate for
+another host, is the worse answer and it is found at the wrong moment. Its
+certificate is deliberately SEPARATE from `cind3r3lla.com`: a renewal failing on
+a host serving 404 costs a 404, whereas a shared certificate takes the live
+marketing site with it. No change to the SNI stream splitter was needed, its map
+already reading `default 127.0.0.1:4443`.
+
+**Evidence.** Site repository: `deploy/push.sh`, `deploy/cinderella-site.service`,
+`deploy/nginx-insights.conf`, `docs/cind3r3lla-deployment-reference.md`,
+`seasons/SITE-SEASON-2-PROTOCOL.md`; commits `c745032`, `655a9c4`, `fadc15c`.
 
 ---
 
