@@ -927,6 +927,27 @@ something the repository does not have and the gap is worth carrying.
       bios without deciding it for personality). The fourth, model-backed text generation,
       **is** decided: D-104 and D-109.
 
+## Two harnesses are RED on `main` (found under CCB-S4-008, not caused by it)
+
+Both arrived with the unbriefed AI block and have been failing since 2026-07-28. The briefing
+that found them changed no file under `src/` or `assets/`, which is how it is known they are
+pre-existing. Full diagnosis in [`architecture.md`](architecture.md) §24.7.
+
+- [ ] **`verify:admin-brand-fx`: "individual bot naming remains Cinderella".** `9d11bb0` (D-088)
+      changed `html.ts` to `Control how CIND3R3LLA addresses people`; the harness asserts that
+      sentence keeps the individual-profile spelling, guarding M1 §18's rule that product identity
+      is not inferred from one bot profile. **A product-naming decision, not a code fix.** Either
+      D-088's rename extends to this sentence and the harness is updated, or the sentence describes
+      one bot and reverts. Operator's call.
+- [ ] **`verify:admin-navigation-shell`: "system sidebar matches the System main section".** Expects
+      `data-section="system"` on `/settings`; that attribute exists nowhere in `src/web/`. The shell
+      it asserts was superseded by the mega navigation (`8292ff0`) two commits after it was written.
+      Reads as a stale harness.
+- [ ] **Decide what a red harness from the unbriefed block means for the standard set.** These two
+      sat red for four days because they were in no completion report and no routine. Either they
+      join the set that must be green before a push, or they are retired; leaving them red teaches
+      everyone to ignore a red run, which is worse than either.
+
 ## Public front: the BIGINT bounds are not layered evenly (found under CCB-S4-008)
 
 - [ ] **Two of the three public routes have no second line of defence against an oversized

@@ -940,6 +940,26 @@ number because the fixed number went stale once already.
 the transport**, so the subsystem's logic is proven without a model, a GPU or a tunnel; `ai-live` is
 the exception that talks to a real endpoint and is not part of the standard set.
 
+**TWO OF THEM ARE RED ON `main`, and have been since 2026-07-28** (found while running the full set
+at the close of CCB-S4-008; not caused by it, which changed no file under `src/` or `assets/`).
+
+- `verify:admin-brand-fx` — "individual bot naming remains Cinderella". It asserts that
+  `html.ts` says `Control how Cinderella addresses people` and **not** the CIND3R3LLA spelling,
+  guarding M1 §18's rule that product identity is not inferred from an individual bot profile.
+  `9d11bb0` (D-088, "her name is CIND3R3LLA") changed exactly that string. **Which side is right is a
+  product-naming decision, not a code fix**: D-088 made the stylised name the displayed one, and this
+  harness holds that this particular sentence describes what one bot does rather than what the
+  product is. Left for the operator.
+- `verify:admin-navigation-shell` — "system sidebar matches the System main section". It expects a
+  `data-section="system"` sidebar on `/settings`, and that attribute **exists nowhere in `src/web/`**.
+  The shell it asserts was replaced by the mega navigation (`8292ff0`) two commits after the harness
+  was written. This one reads as a stale harness rather than a defect.
+
+Recorded rather than fixed, under this briefing's "nothing further" scope. **The instructive part is
+why nobody noticed for four days:** these harnesses arrived with the unbriefed block, so they were in
+no completion report and in no routine, which is the register's point about unattributed work made
+concrete.
+
 **What remains after CCB-S4-008.** The reasoning is recorded (D-111 to D-113) and the security
 questions the code can answer are answered (`security.md` §12). Still open: **prompt injection is
 unreviewed** and is scoped to a successor briefing, and how this subsystem relates to the plugin
