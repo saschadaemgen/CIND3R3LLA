@@ -780,6 +780,50 @@ async function main(): Promise<void> {
     'report consent: unpublished item → neutral 303, NO row (no oracle)',
     rUnpub.statusCode === 303 && (await reportRows(unpubTextId)).length === 0,
   );
+  // --- The BIGINT overflow guard, at all THREE of its sites (CCB-S4-008 §4.1) ---
+  //
+  // THE FIX SHIPPED WITHOUT A GATE. `embed.ts` bounds every parsed message id at
+  // MAX_SAFE_INTEGER on three routes, and until now nothing would have gone red if any of
+  // the three bounds were deleted. That is the CCB-S3-023 shape: a control nobody is
+  // watching is a control that quietly stops existing.
+  //
+  // Why this id and not a smaller one: `Number.parseInt('99999999999999999999', 10)` is
+  // 1e20. It is a finite integer and it is greater than 1, so `Number.isInteger(id)` and
+  // `id < 1` BOTH pass it. The `> Number.MAX_SAFE_INTEGER` clause is the only thing that
+  // stops it, which is exactly what makes these three checks a gate on that clause rather
+  // than on validation in general. Without it the value is bound into a query against the
+  // BIGINT `messages.id`, Postgres raises 22003/22P02, and the route 500s.
+  //
+  // THE THREE SITES ARE NOT DEFENDED EQUALLY, which was found by proving this gate rather
+  // than by reading the code. `/m/:msgId` is bounded twice: at the route AND inside
+  // `getPublishedItem` (`db/public-archive.ts`, from the CCB-S3-025 review), so removing
+  // either one alone still yields 404 and check 1/3 only goes red when BOTH are gone.
+  // `/media/:msgId` and `/report` have no such second bound, because `getPublishedMedia`
+  // and the `isPublished` path carry none: for those two the route guard is the ONLY thing
+  // standing between an oversized id and a 500. Recorded here so nobody deletes a route
+  // guard on the assumption that the data layer catches it. It catches exactly one of three.
+  const OVERSIZED = '99999999999999999999';
+  const hugePermalink = await app.inject({ method: 'GET', url: `${base}/m/${OVERSIZED}` });
+  check(
+    'overflow guard 1/3: GET /m/:msgId oversized id → clean 404, not a 500',
+    hugePermalink.statusCode === 404,
+    `got ${hugePermalink.statusCode}`,
+  );
+  const hugeMedia = await app.inject({ method: 'GET', url: `${base}/media/${OVERSIZED}` });
+  check(
+    'overflow guard 2/3: GET /media/:msgId oversized id → clean 404, not a 500',
+    hugeMedia.statusCode === 404,
+    `got ${hugeMedia.statusCode}`,
+  );
+  // The report route answers 303 to everything by design, so that it is not a publication
+  // oracle. The failure being gated here is therefore a 500, not a wrong answer.
+  const rHuge = await report(OVERSIZED, 'illegal', 'x');
+  check(
+    'overflow guard 3/3: POST /report oversized id → neutral 303, not a 500',
+    rHuge.statusCode === 303,
+    `got ${rHuge.statusCode}`,
+  );
+
   const rBad = await report(pubImgId, 'notareason', 'x');
   check('report: invalid reason → 400', rBad.statusCode === 400);
   await report(pubVideoId, 'other', 'z'.repeat(1500));
