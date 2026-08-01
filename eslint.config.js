@@ -19,6 +19,13 @@ export default tseslint.config(
       // must never be linted as part of the main project (their files are not in
       // this project's tsconfig service).
       '.claude/**',
+      // Planning-workstream source documents (D-110). The two probe scripts there are
+      // committed AS RECEIVED and unaltered, are standalone Node scripts run by hand
+      // against a SQLite file, and are not part of this project's tsconfig service.
+      // Linting them would demand edits the intake rule forbids, so the check's scope
+      // is decided here rather than by whether the parser happens to reach them
+      // (the D-105 discipline: a new tree does not inherit a check by default).
+      'docs/planning/**',
       '*.js',
       '*.mjs',
     ],
