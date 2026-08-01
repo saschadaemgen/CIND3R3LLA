@@ -1315,7 +1315,7 @@ its own briefings; two of them exist.
 | Surface derivation (CCB-S4-005) | [`generator/surface/`](../src/generator/surface/) | `verify:surface` |
 | Bio generator (CCB-S4-006) | [`generator/bio/`](../src/generator/bio/) | `verify:bio` |
 | Assembly and review (CCB-S4-007) | [`generator/assemble/`](../src/generator/assemble/) | `verify:assemble` (22 checks) |
-| Model bio path (D-104) | [`generator/bio/model.ts`](../src/generator/bio/model.ts), [`assemble/model-pass.ts`](../src/generator/assemble/model-pass.ts) | `verify:bio-model` (33 checks, transport faked) |
+| Model bio path (D-104, D-109) | [`generator/bio/model.ts`](../src/generator/bio/model.ts), [`assemble/model-pass.ts`](../src/generator/assemble/model-pass.ts) | `verify:bio-model` (51 checks, transport faked) |
 
 **Bio text has two engines, and the line between them is STRUCTURE versus LANGUAGE** (D-104).
 Traits and surface derivation are mathematics; names are corpus statistics, where a model
@@ -1330,6 +1330,17 @@ are all fixed before `runModelPass` is called, and it changes exactly one field.
 survives by caching, keyed on **seed + conditioning version + model identity**, so swapping
 the model or editing a data set regenerates visibly rather than serving text written for a
 different person. Failures are counted by reason and never absorbed.
+
+**The model is asked only for the languages it writes correctly** (D-109). `ModelBioConfig.languages`
+defaults to `['de', 'en']`, and `runModelPass` resolves each profile's language before it
+builds the work list, so an out-of-scope profile is never counted as work the pass attempted.
+Those profiles are emptied outright rather than written badly or left holding template text,
+because a bio with a conjugation error is a tell no reader misses while an absent bio is
+ordinary. This is a **measured limit of `qwen3.5:9b`, not a design one** (six of eighteen
+non-German, non-English bios carried real grammatical errors), and the drop is counted per
+language in `ModelPassReport.outOfScopeLanguage` so widening the list has a number attached
+to it. Known gap: that count is not printed by `scripts/assemble.ts`, so a run that drops a
+large share of its candidates still reports `0 failed`.
 
 **The shared RNG is the spine.** SplitMix32 with FNV-1a stream folding, seeded per named
 stream rather than globally. Every stage of every component derives its own stream from

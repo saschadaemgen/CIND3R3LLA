@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-107**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-109**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,77 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-109 - The model is asked only for the languages it writes correctly, and every rejection reason is proven to reject
+
+**Status: IMPLEMENTED.** `src/generator/bio/model.ts`, `src/generator/assemble/model-pass.ts`,
+proven by `npm run verify:bio-model` (51 checks, transport faked so no model need be
+running). **D-108 does not exist in this repository**: it was allocated here, then removed
+as belonging to the site repository, so the number is deliberately skipped rather than
+reused.
+
+**This answers D-107 Finding 2, which was deliberately left undecided.** That finding
+recorded three options and took none of them, because it is the operator's call rather than
+a defect to fix: restrict the model path to the languages it is competent in, run a larger
+model, or accept the errors. **The first option is taken.**
+
+**Decision 1: `languages` is a config field, and the default is `['de', 'en']`.** It lives on
+`ModelBioConfig` and is enforced in `runModelPass`, which resolves each profile's language
+*before* it builds the work list, so a profile the model is not trusted to write is never
+counted as work the pass attempted. `scripts/assemble.ts` spreads the default, so the
+restriction is live on `npm run assemble -- --engine model` and not only in the harness.
+
+**Why the evidence supports restriction rather than prompting.** Six of eighteen non-German,
+non-English bios carried grammatical errors a native could not make: `horne` for `horneo`,
+`je parcoure` for `je parcours`, `cocinador`, which is not a Spanish word. It was
+demonstrated to be a capability limit rather than a prompt defect rather than argued to be
+one: when the recitation gate was tightened, the model rewrote a Spanish bio into
+`Cursó lenguas`, third person preterite where first person present was needed. **The defect
+moved instead of disappearing.**
+
+**SILENCE BEATS WRONG, which is the rule the path already ran under.** D-104 already made
+`assemble` default to `--on-failure empty` because a population about to be READ takes
+silence over a wrong bio. An empty bio is realistic, since most real profiles have one; a
+Spanish bio with a conjugation error is a tell no reader misses. An out-of-scope profile is
+therefore emptied completely (text, theme, length, pattern and emoji count), not left
+holding template text, and its language is recorded so the derived views still re-derive
+from what the profile actually ended up with.
+
+**The drop is counted per language rather than totalled**, so widening the list has a number
+attached to it: `ModelPassReport.outOfScopeLanguage` is a map, and every origin still being
+dropped is a language somebody has to decide about. Measured on the harness population of
+120: 21 attempted, 14 dropped, as `nl` 6, `es` 5, `fr` 3. **That is 40 percent of the
+profiles that would otherwise have had a model bio**, so the raised empty rate this produces
+is expected rather than a regression, and it is the price of the decision rather than a
+side effect of it.
+
+**There is deliberately no CLI flag to widen the list.** A larger model very likely lifts
+this limit, but that is a hardware and cost decision for the platform rather than for this
+component. Widening is done by editing `languages`, which is where the measurement and its
+date are written down, so whoever lifts the restriction has to read why it was imposed
+first.
+
+**Decision 2: `BIO_REJECTIONS` enumerates every rejection reason at runtime, and the harness
+fails if any of them never fired.** A validator whose job is to reject must be gated on
+REJECTING. Asserting that good input passes says nothing at all about whether bad input
+fails, and this is not hypothetical here: D-107 recorded three escaping faults in one
+function, each of which produced a check that read correctly, type-checked, and rejected
+nothing while the harness reported green. `verify:bio-model` now walks the list and fails
+when a reason was never triggered, so adding a rejection reason without a test that fires it
+breaks the build rather than quietly widening what gets through.
+
+**KNOWN GAP, recorded rather than fixed: the count is collected but never printed.**
+`scripts/assemble.ts` prints every other figure in the report (failures by reason, retries,
+cache rejections, stale entries, kept template text, emptied) and does **not** print
+`outOfScopeLanguage`. So on the one path a person actually uses, a run that drops 40 percent
+of its candidate bios reports `0 failed` and says nothing about the drop. The information is
+partly inferable from `distribution.txt`, which shows the empty share and a language tally,
+but nothing connects the two. This is the counted-but-not-shown half of the CCB-S3-023
+standing rule, it is a choice rather than a fault so nothing is being masked, and it is one
+line of output. **Not fixed here under the CCB-S4-008 dispatch freeze**; carried in the
+backlog.
 
 ---
 
@@ -176,7 +247,8 @@ removed check reads afterwards as a property nobody tested rather than one withd
 
 **Status: IMPLEMENTED.** `src/generator/bio/model.ts`, `src/generator/bio/cache.ts`,
 `src/generator/assemble/model-pass.ts`, `npm run assemble -- --engine model`, proven by
-`npm run verify:bio-model` (33 checks, transport faked so no model need be running).
+`npm run verify:bio-model` (51 checks as of D-109, transport faked so no model need be
+running; the entry originally said 33, which went stale twice as the harness grew).
 
 **What forced it.** A read of two hundred generated profiles produced ten defect classes.
 The structural diagnostic passed all of them: 279 distinct patterns, most common at 4.6

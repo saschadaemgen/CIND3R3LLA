@@ -25,6 +25,7 @@ import {
   runModelPass,
 } from '../src/generator/assemble/index.js';
 import {
+  BIO_REJECTIONS,
   DEFAULT_MODEL_BIO_CONFIG,
   modelIdentity,
   validateBio,
@@ -35,6 +36,21 @@ import {
 import { BioCache } from '../src/generator/bio/cache.js';
 
 let failures = 0;
+
+/**
+ * Every rejection reason this run actually triggered.
+ *
+ * A VALIDATOR WHOSE JOB IS TO REJECT MUST BE GATED ON REJECTING. Asserting that good input
+ * passes says nothing about whether bad input fails, and this file has already shipped
+ * three checks that read correctly, type-checked and rejected nothing.
+ */
+const triggered = new Set<string>();
+function reject(text: string, c: BioConditioning): string {
+  const r = validateBio(text, c);
+  if (r !== null) triggered.add(r);
+  return String(r);
+}
+
 function check(label: string, ok: boolean, detail = ''): void {
   if (!ok) failures++;
   console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ` - ${detail}` : ''}`);
@@ -257,8 +273,13 @@ section('Failures are surfaced and counted, never masked (CCB-S3-023)');
     Object.keys(report.failures).some((r) => r.includes('ECONNREFUSED')),
     Object.keys(report.failures)[0] ?? '');
   check('nothing was generated', report.generated === 0);
+  // Every profile the pass WORKED ON keeps its template text. Profiles whose language the
+  // model is not trusted with are emptied before any of this, regardless of onFailure,
+  // so they are correctly not covered by the claim.
   check('onFailure=template keeps the deterministic text',
-    profiles.every((p, i) => p.bio.text === withTemplate[i]) && report.keptTemplateText === report.attempted);
+    report.keptTemplateText === report.attempted
+      && profiles.every((p, i) => p.bio.text === null || p.bio.text === withTemplate[i]),
+    `${report.keptTemplateText} kept, ${Object.values(report.outOfScopeLanguage).reduce((a, b) => a + b, 0)} out of scope`);
 
   const profiles2 = population();
   const report2 = await runModelPass(profiles2, {
@@ -319,11 +340,11 @@ section('Model output is sanitised and validated before it can be read');
     ageBand: '25-34', activityTier: 'lurker', interests: ['cycling'], targetWords: 8,
     displayName: 'Fernando Ramirez',
   };
-  check('meta-text is rejected', validateBio('Here is a bio for you: cycling', base) === 'meta-text');
-  check('a bio naming its own owner is rejected', validateBio('I am Fernando and I cycle', base) === 'names-self');
-  check('a link is rejected', validateBio('cycling, see https://example.test', base) === 'has-link');
-  check('a runaway length is rejected', validateBio('word '.repeat(60), base) === 'too-long');
-  check('empty is rejected', validateBio('', base) === 'empty');
+  check('meta-text is rejected', reject('Here is a bio for you: cycling', base) === 'meta-text');
+  check('a bio naming its own owner is rejected', reject('I am Fernando and I cycle', base) === 'names-self');
+  check('a link is rejected', reject('cycling, see https://example.test', base) === 'has-link');
+  check('a runaway length is rejected', reject('word '.repeat(60), base) === 'too-long');
+  check('empty is rejected', reject('', base) === 'empty');
   check('a plain bio passes', validateBio('Cycling, mostly. Slow about it.', base) === null);
 
   // THE MODEL RECITES ITS OWN INPUTS unless stopped. The first real run against
@@ -332,7 +353,7 @@ section('Model output is sanitised and validated before it can be read');
   // Nobody describes themselves as organised and warm; being organised and warm is what
   // the writing is supposed to SHOW.
   check('reciting two conditioning adjectives is rejected',
-    validateBio('I am a very organised, warm Linux enthusiast who finds quiet moments.', base) === 'recites-traits');
+    reject('I am a very organised, warm Linux enthusiast who finds quiet moments.', base) === 'recites-traits');
   check('and it survives translation, which an English-only list would have missed',
     validateBio('Ich bin geordnet, doch warmherzig, und lese viel.', base) === 'recites-traits',
     'the conditioning is English and the bio is not');
@@ -403,6 +424,54 @@ section('What was derived from the text is re-derived');
     written.every(({ p }) => p.bio.length === bucket(p.bio.text!)),
     `${written.length} written`);
   rmSync(dir, { recursive: true, force: true });
+}
+
+/* ====================================== the model is only asked for what it can do */
+
+section('Languages the model is not trusted with get no bio at all (decision §2)');
+{
+  const dir = mkdtempSync(join(tmpdir(), 'biomodel-'));
+  const profiles = population(120);
+  const asked: string[] = [];
+  const report = await runModelPass(profiles, {
+    config: MODEL_CONFIG, templates: components.templates, conditioningVersion: CONDITIONING,
+    cachePath: join(dir, 'c.json'),
+    fetchImpl: fakeModel((seen) => {
+      asked.push(String(seen.user.language));
+      return 'linux, slowly';
+    }).fetch,
+  });
+  const dropped = Object.values(report.outOfScopeLanguage).reduce((a, b) => a + b, 0);
+  check('the model is never asked for a language outside its list',
+    asked.length > 0 && asked.every((l) => MODEL_CONFIG.languages.includes(l)),
+    `asked for: ${[...new Set(asked)].sort().join(', ')}`);
+  check('and the profiles it was not asked about are EMPTY, not badly written',
+    dropped > 0 && profiles.filter((p) => p.bio.language !== undefined && !MODEL_CONFIG.languages.includes(p.bio.language)).every((p) => p.bio.text === null),
+    `${dropped} dropped: ${JSON.stringify(report.outOfScopeLanguage)}`);
+  // Counted per language rather than totalled, so widening the list has a number on it.
+  check('the drop is counted per language, not totalled',
+    Object.keys(report.outOfScopeLanguage).length > 1,
+    'silence beats wrong, but it still has to be visible');
+  check('and out-of-scope profiles are not counted as work the pass attempted',
+    report.attempted + dropped === profiles.filter((p) => p.bio.text !== null).length + dropped,
+    `${report.attempted} attempted, ${dropped} out of scope`);
+  rmSync(dir, { recursive: true, force: true });
+}
+
+/* ============================================== every rejection reason is gated */
+
+section('Each rejection reason is proven to reject (decision §4)');
+{
+  const untested = BIO_REJECTIONS.filter((r) => !triggered.has(r));
+  check('every rejection reason was triggered by a test in this run',
+    untested.length === 0,
+    untested.length === 0
+      ? `${BIO_REJECTIONS.length} reasons, all fired`
+      : `never fired: ${untested.join(', ')}`);
+  console.log('         A test that asserts good input passes says nothing about whether bad');
+  console.log('         input fails. Three checks in model.ts have already read correctly,');
+  console.log('         type-checked, and rejected nothing while this harness reported green.');
+  console.log('         Adding a reason without a test that fires it now breaks the build.');
 }
 
 /* -------------------------------------------------------------------- done */

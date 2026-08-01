@@ -800,13 +800,22 @@ briefings. Architecture §31 has the detail; the state of it is:
       bands and interests, and never a place or a job or a date. This is a CONDITIONING
       gap, so it belongs to the surface layer rather than to the bio writer, and it is
       probably the highest-leverage single item left in the workstream.
-- [ ] **DECIDE: which languages the model may be asked for.** `qwen3.5:9b` makes outright
+- [x] **DECIDED: which languages the model may be asked for.** `qwen3.5:9b` makes outright
       grammatical errors outside German and English, at six of eighteen bios: `horne` for
       `horneo`, `je parcoure` for `je parcours`, `cocinador` (not a Spanish word). Not a
       prompt defect and not fixable by prompting; tightening the recitation gate merely
-      swapped one Spanish recitation for a conjugation error (D-107). Three options, none
-      taken yet: restrict the model path to de and en, run a larger model, or accept the
-      errors. Recorded rather than decided, because it is the operator's call.
+      swapped one Spanish recitation for a conjugation error (D-107). Three options were
+      recorded; **the first is taken** (D-109): `ModelBioConfig.languages` defaults to
+      `['de', 'en']` and out-of-scope profiles get no bio at all rather than a bad one.
+      Running a larger model remains the way to lift it, and is a platform decision.
+- [ ] **The out-of-scope language drop is counted but never printed.** `runModelPass`
+      collects `outOfScopeLanguage` per language (D-109), and `scripts/assemble.ts` prints
+      every other figure in the report except that one. So a run that drops a large share of
+      its candidate bios still reports `0 failed` on the only path a person uses, and the
+      raised empty rate in `distribution.txt` has nothing next to it saying why. One line of
+      output. This is the counted-but-not-shown half of the CCB-S3-023 standing rule; it
+      masks no fault, since the drop is a deliberate choice, but it does hide the number
+      that is supposed to drive widening the list.
 - [ ] **The two engines fail differently, and the comparison is not one axis.** The model
       path is caught by a SINGLE bio read in isolation (coined compounds, simile, matched
       couplets, drift into third person); the template path is only caught ACROSS the

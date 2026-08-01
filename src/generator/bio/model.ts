@@ -61,6 +61,29 @@ export interface ModelBioConfig {
    * needs two attempts every time is visible rather than merely slow.
    */
   attempts: number;
+  /**
+   * The languages this model may be ASKED for. Anything else gets no bio at all.
+   *
+   * A MODEL-SPECIFIC LIMITATION, NOT A DESIGN ONE, and recorded that way on purpose so it
+   * is re-examined rather than inherited. Measured against `qwen3.5:9b` (Q4_K_M, 9.7B) on
+   * 2026-08-01: six of eighteen non-German, non-English bios carried outright grammatical
+   * errors a native could not make. `horne` for `horneo`, `je parcoure` for `je parcours`,
+   * `cocinador`, which is not a Spanish word at all.
+   *
+   * It is a capability limit rather than a prompt defect, and that was demonstrated rather
+   * than argued: when the recitation gate was tightened, the model rewrote a Spanish bio
+   * from a recitation into `Cursó lenguas`, third person preterite where first person
+   * present was needed. The defect moved instead of disappearing.
+   *
+   * An empty bio is realistic and correct; a Spanish bio with a conjugation error is a
+   * tell no reader misses. This is the same rule the template path already runs under:
+   * SILENCE BEATS WRONG.
+   *
+   * A larger model very likely lifts this, but that is a hardware and cost decision for
+   * the platform rather than for this component. Widening the list is how it gets lifted,
+   * and the list is here so somebody has to look at this comment first.
+   */
+  languages: string[];
 }
 
 /**
@@ -83,6 +106,7 @@ export const DEFAULT_MODEL_BIO_CONFIG: ModelBioConfig = Object.freeze({
   concurrency: 4,
   onFailure: 'template',
   attempts: 2,
+  languages: ['de', 'en'],
 });
 
 /**
@@ -286,6 +310,21 @@ export type BioRejection =
   | 'names-self'
   | 'has-link'
   | 'recites-traits';
+
+/**
+ * Every rejection reason, enumerated at runtime.
+ *
+ * EXISTS SO THE HARNESS CAN PROVE EACH ONE ACTUALLY REJECTS. A validator whose job is to
+ * reject must be gated on rejecting: a test asserting that good input passes says nothing
+ * at all about whether bad input fails, and three escaping faults in this file each
+ * produced a check that read correctly, type-checked, and rejected nothing while the
+ * harness reported green. `verify:bio-model` walks this list and fails if any reason was
+ * never triggered, so adding a reason without a test that fires it breaks the build
+ * rather than quietly widening what gets through.
+ */
+export const BIO_REJECTIONS: readonly BioRejection[] = [
+  'empty', 'meta-text', 'too-long', 'names-self', 'has-link', 'recites-traits',
+] as const;
 
 export function validateBio(text: string, c: BioConditioning): BioRejection | null {
   if (text.length === 0) return 'empty';

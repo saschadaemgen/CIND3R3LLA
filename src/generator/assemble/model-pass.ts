@@ -26,7 +26,11 @@ import type { TemplateSet } from '../bio/types.js';
 import type { AssembledProfile } from './index.js';
 
 export interface ModelPassReport {
-  /** Profiles the deterministic layer gave a bio, so the ones this pass had work for. */
+  /**
+   * Profiles this pass actually had work for: the deterministic layer gave them a bio AND
+   * the model is trusted with their language. Out-of-scope languages are counted
+   * separately rather than inflating this, so `generated + fromCache + failed` adds up.
+   */
   attempted: number;
   fromCache: number;
   generated: number;
@@ -39,6 +43,8 @@ export interface ModelPassReport {
   retried: number;
   /** Cached bios today's validator rejects, so they were regenerated rather than served. */
   cacheRejected: number;
+  /** Bios dropped because the model is not trusted to write that language. Counted by tag. */
+  outOfScopeLanguage: Record<string, number>;
   cache: BioCache['stats'];
 }
 
@@ -80,7 +86,26 @@ export async function runModelPass(
   const cache = BioCache.load(cachePath);
   const identity = modelIdentity(config);
 
-  const work = profiles.filter((p) => p.bio.text !== null && p.bio.theme !== null);
+  // Language is decided BEFORE the work list, so a profile the model is not trusted to
+  // write is never counted as work it attempted.
+  const candidates = profiles
+    .filter((p) => p.bio.text !== null && p.bio.theme !== null)
+    .map((p) => ({
+      profile: p,
+      // THE MODEL PATH IS NOT LIMITED TO THE AUTHORED TEMPLATE LANGUAGES. `languageFor`
+      // requires a clause pool to exist, which is right for the fallback and wrong here:
+      // a model writes Spanish with no Spanish pool authored. On the first real model run
+      // `Juan García Hernández` wrote English for no reason except that `es` had no pool
+      // the model was never going to use.
+      language:
+        originLanguageFor(
+          { latent: p.latent, style: p.surface.style, identity: p.surface.identity,
+            rhythm: p.surface.rhythm, content: p.surface.content },
+          templates,
+        ) ?? p.bio.language,
+    }));
+
+  const work = candidates.filter((c) => config.languages.includes(c.language));
   const report: ModelPassReport = {
     attempted: work.length,
     fromCache: 0,
@@ -91,23 +116,27 @@ export async function runModelPass(
     emptied: 0,
     retried: 0,
     cacheRejected: 0,
+    outOfScopeLanguage: {},
     cache: cache.stats,
   };
   let done = 0;
 
-  await pooled(work, config.concurrency, async (profile) => {
-    // THE MODEL PATH IS NOT LIMITED TO THE AUTHORED TEMPLATE LANGUAGES. `languageFor`
-    // requires a clause pool to exist, which is right for the fallback and wrong here: a
-    // model writes Spanish with no Spanish pool authored. On the first real model run
-    // `Juan García Hernández` wrote English for no reason except that `es` had no pool
-    // the model was never going to use. Following the origin directly fixes the reported
-    // defect "language does not follow the name's culture" for this path outright.
-    const language = originLanguageFor(
-      { latent: profile.latent, style: profile.surface.style, identity: profile.surface.identity,
-        rhythm: profile.surface.rhythm, content: profile.surface.content },
-      templates,
-    ) ?? profile.bio.language;
+  // SILENCE BEATS WRONG. The model is competent in some languages and not others, and a
+  // bio with a conjugation error is a tell no reader misses while an absent bio is
+  // ordinary. Dropped here rather than written badly, and counted PER LANGUAGE so that
+  // widening `config.languages` has a number attached to it.
+  for (const { profile, language } of candidates) {
+    if (config.languages.includes(language)) continue;
+    profile.bio.text = null;
+    profile.bio.theme = null;
+    profile.bio.length = 'empty';
+    profile.bio.pattern = 'empty';
+    profile.bio.emojiCount = 0;
+    profile.bio.language = language;
+    report.outOfScopeLanguage[language] = (report.outOfScopeLanguage[language] ?? 0) + 1;
+  }
 
+  await pooled(work, config.concurrency, async ({ profile, language }) => {
     const key = BioCache.key(profile.seed, conditioningVersion, identity);
     const conditioning: BioConditioning = {
       seed: profile.seed,
