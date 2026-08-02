@@ -53,8 +53,10 @@ MEDIA_ROOT=/var/lib/cinderella/media
 # QUARANTINE_ROOT=/var/lib/cinderella/quarantine
 # Encryption of original media at rest (CCB-S3-012). Generate with
 # `openssl rand -base64 48`. NO KEY HISTORY: rotating or losing this makes every
-# encrypted original permanently unreadable, and backup.sh does NOT copy this file,
-# so back the key up separately from the media backups or a restore is worthless.
+# encrypted original permanently unreadable. backup.sh DOES capture it, because it
+# copies the whole env file, which means the key sits in the same backup directory as
+# the media it decrypts: copy the env archive somewhere else than the media archive if
+# backups leave the host, or the encryption is decorative. See deploy/BACKUP.md.
 # After setting it, backfill existing plaintext media as the service user:
 #   sudo -u cinderella env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) #     npx tsx scripts/encrypt-media.ts
 MEDIA_SECRET=<openssl rand -base64 48>
@@ -269,9 +271,20 @@ missing derivatives on demand once it can write.
 
 ## Backup
 
-`deploy/backup.sh` dumps the archive DB and snapshots `media/` + the env file.
-Schedule it via cron/systemd-timer. Restore = `pg_restore` the dump, extract the
-media tarball, restore the env file.
+**See [`BACKUP.md`](BACKUP.md).** It is the authority; this is the summary.
+
+`cinderella-backup.timer` runs `deploy/backup.sh` daily at 03:30 (`Persistent=true`,
+so a host that was off catches up on boot). Five archives, 14 generations each: the
+archive database, `media/`, the **quarantine**, the **messaging-core SQLite** (her
+SimpleX identity, and unencrypted content, so `0600` in a `0700` directory), and the
+env file. Installing and enabling the units is an operator step, documented in
+`BACKUP.md` §3.
+
+**A restore is not finished when the data is back.** Re-applying deletions made after
+the dump is a mandatory step, because a dump predates them and restoring it silently
+resurrects content a member deleted. `BACKUP.md` §5 has the procedure, the three cases
+that behave differently, and the honest limit: deletions made after the newest
+surviving dump cannot be recovered from backups at all.
 
 ## Firewall
 
