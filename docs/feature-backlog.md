@@ -692,33 +692,51 @@ These are not code tasks — they are actions only the operator can take. Source
 
 Verified against the production host on 2026-07-27, not inferred.
 
-- [ ] **No backups exist.** `/var/backups/cinderella/` does not exist on the host, there is no cron entry
-      and no systemd timer. `deploy/backup.sh` is committed, is well written, and **has never run.** The
-      archive has no recovery from disk loss of any kind. Everything else in this section is secondary to
-      scheduling it.
+- [x] **A trigger exists** (CCB-S4-011, D-118). `deploy/cinderella-backup.timer` and its service unit are
+      in the repository: daily at 03:30, `Persistent=true` so a host that was off catches up on boot,
+      output to the journal, non-zero exit on a failed dump. **Installing and enabling them on the VPS is
+      an operator step**, documented in [`deploy/BACKUP.md`](../deploy/BACKUP.md) §3. Until that is done
+      the host still has no backups; the repository half is what this briefing could deliver.
+- [ ] **Confirm on the VPS after the first real run** (owed by CCB-S4-011, which could not run systemd or
+      verify file modes on a Windows workstation): that `OnCalendar` fires and `Persistent=true` catches a
+      missed run, and that the archives really are `0600` in a `0700` directory. `BACKUP.md` §6 lists both
+      as owed and says how to check.
+- [x] **Two defects in `backup.sh` found and fixed** (D-118), both demonstrated. A failed `pg_dump` left a
+      **zero-byte dump that counted as a generation** and could push a good one out of retention, because
+      the dump used a shell redirect; and retention piped `ls` over a glob, which under `set -o pipefail`
+      **aborted the whole script** for any kind with no files yet.
 - [ ] **The key is backed up beside what it unlocks.** `backup.sh` does copy the env file carrying
       `MEDIA_SECRET` (correcting an earlier note above), but into the same backup directory as the
       encrypted media. A single lost or stolen backup is then either a total loss or a total disclosure.
       The key belongs somewhere the operator controls separately. There is no key history: rotating
       `MEDIA_SECRET` destroys the archive.
-- [ ] **Quarantine bytes fall out of backups entirely.** `QUARANTINE_ROOT` is deliberately outside
-      `MEDIA_ROOT` (D-074) and `backup.sh` covers only the media tree. Evidence surviving a disk failure
-      matters for the custody obligation.
-- [ ] **Restoring a backup resurrects deleted content.** Any restore must re-apply the deletions that
-      happened since the dump, or the deletion promise breaks on every restore. This belongs in the runbook
-      **and** in the privacy policy. Whether it is even implementable today depends on whether the consent
-      action journal (migration 009) and deletion provenance (005) retain enough to replay a deletion
-      against a restored row — that needs checking before the procedure is written.
+- [x] **Quarantine bytes are in the backup set** (D-118 decision 1). Derived exactly as
+      `resolveQuarantineRoot()` derives it rather than hardcoded, so a host that moved it stays covered.
+      Its own 14 generations.
+- [x] **The restore procedure re-applies deletions** (D-118 decision 3), in
+      [`deploy/BACKUP.md`](../deploy/BACKUP.md) §5. The question of whether it was implementable is
+      answered: **one of the three cases is automatic** (a destruction requested before the dump has its
+      `pending_destructions` row inside the dump, and the sweeper re-applies it on start), and the other
+      two are replayed by diffing the restored generation against a newer surviving one. Revocation is the
+      dangerous case, because nothing is missing: content simply becomes public again.
+- [ ] **The privacy policy still has to say it** (D-118, operator-owned). A member's deletion right is not
+      a one-time event if a restore can undo it. The policy should state that a restore re-applies
+      subsequent deletions and name the window it cannot cover. Member-facing copy, so the wording is the
+      operator's to confirm.
+- [ ] **Deletions after the newest surviving dump are unrecoverable, by construction.** Nothing records
+      them outside the database that was lost. The exposure window is the time since the last successful
+      backup, which is the operational argument for the timer being enabled rather than merely committed.
 - [ ] **Backup encryption is unresolved.** `backup.sh` does not encrypt. Open decision, with the tradeoff:
       encrypting under a key separate from `MEDIA_SECRET` protects the dump but adds a second key whose
       loss is equally fatal; a pull model (the backup host reaches in) means a compromised server cannot
       reach or destroy its own backups, but requires standing credentials on the backup side.
 
-**Open question the operator owes:** is the SimpleX core database backed up, and what does losing it cost?
-It holds unencrypted content, which is a privacy argument *against* backing it up, but it also holds
-Cinderella's SimpleX identity and group membership. If losing it means she cannot be restored and must be
-re-invited to the group as a **new identity**, every member's consent record survives while the identity
-they consented to does not. That answer changes the urgency and has not been established.
+**That open question is ANSWERED** (D-118 decision 2): the messaging-core database **is** backed up. The
+identity argument won, and the privacy argument became a handling requirement rather than an exclusion.
+Because it holds unencrypted content, its archive is `0600` in a `0700` directory and `BACKUP.md` states
+that plainly so a later reader does not loosen it. It is snapshotted with `sqlite3 .backup` for
+consistency against a live database, and when `sqlite3` is absent the script still copies but warns on
+every file rather than passing a weaker backup off as a good one.
 
 **Standing constraint (not an open question):** quarantine material must never reach a private machine.
 Suspect material on a personal computer is a materially different legal position from the same material

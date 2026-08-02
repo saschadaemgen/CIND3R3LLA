@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-117**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-118**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,78 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-118 - The backup set, and the restore step that keeps the deletion promise
+
+**Status: IMPLEMENTED** (CCB-S4-011), except the privacy-policy clause, which is
+**operator-owned** and marked below. `deploy/backup.sh`, `deploy/cinderella-backup.timer`,
+`deploy/cinderella-backup.service`, `deploy/BACKUP.md`. Round trip verified 2026-08-02.
+
+**What forced it.** `backup.sh` had existed since Season 1, was correct, and **had never
+run**: no cron, no timer, no dump on the host. An archive whose entire promise is permanence
+had no recovery from disk loss. The script was not the gap; the absence of anything to
+trigger it was.
+
+**Decision 1: quarantined bytes are IN the backup set** (operator ruling). They are MOVED out
+of `MEDIA_ROOT` on escalation, so they appear in no other archive and were the one class of
+material a disk failure would have destroyed completely. A custody obligation that a failed
+disk can erase is not an obligation. The path is derived exactly as `resolveQuarantineRoot()`
+derives it, configured value or a sibling of the media store, rather than hardcoded, so a
+host that moved it stays covered.
+
+**Decision 2: the messaging-core database is IN the backup set** (operator ruling). It is her
+SimpleX **identity** and group membership; without it a restore is a bot that must be
+reintroduced to every group by hand. It also holds **unencrypted** content, unlike the
+consent-governed archive database, so its archive is `0600` inside a `0700` directory and
+`BACKUP.md` says so in terms rather than leaving a later reader to infer it. Snapshotted with
+`sqlite3 .backup` for consistency against a live database; when `sqlite3` is absent the
+script still copies but **warns on every file**, because a silently weaker backup is the
+failure mode CCB-S3-023 exists to prevent.
+
+**Decision 3: the deletion-replay obligation is written down, in the runbook and in the
+privacy policy.** A dump is a photograph. Restoring it returns content a member has since
+deleted, and nothing tells the member. Three cases behave differently and only one is
+automatic:
+
+| After the dump | On restore | Action |
+|---|---|---|
+| Destruction already **requested** before the dump | The `pending_destructions` row is inside the dump | **Automatic.** The sweeper starts with the service and re-applies it |
+| Deletion or destroy entirely **after** the dump | Rows are back, nothing records that they should not be | Manual replay |
+| **Revocation** after the dump | `revoked_at` and `revocation_mode` roll back, so the member reads as opted in and content **republishes** | Manual replay, and this is the worst of the three because nothing is missing |
+
+**The mechanism, and the limit that must not be softened.** The record of what was deleted
+lives in the database that was lost, so it can only come from a **newer dump**; retention
+keeps 14, so one usually exists. The procedure diffs the restored generation against the
+newest surviving one: message ids present in the old and absent in the new were destroyed,
+and `consent` rows whose `revoked_at` is set in the newer one were revoked. **Deletions made
+after the newest surviving dump cannot be recovered from backups at all.** Nothing records
+them anywhere else. That window is the time since the last successful backup, which is the
+strongest argument for the timer actually being enabled.
+
+**The privacy-policy clause is the operator's to confirm.** A member's deletion right is not
+a one-time event if a restore can undo it, so the policy should state that a restore
+re-applies subsequent deletions and name the window it cannot cover. It is **member-facing
+copy**, so it is not written here; recorded as owed.
+
+**Two defects were found in the existing script and fixed, both demonstrated rather than
+argued.** The dump used a shell redirect, which creates the target before `pg_dump` runs: a
+failed dump exited non-zero **and left a zero-byte `.dump` that counted as a generation**,
+able to push a good one out of retention while the directory looked healthy. Reproduced, then
+closed by writing to a dotted `.part` and renaming on success. And retention piped `ls` over a
+glob, which under `set -o pipefail` **aborted the whole script** for any kind that had no
+files yet. Replaced by a `nullglob` collection sorted lexicographically, which is
+chronological here because the stamp is zero-padded UTC and therefore cannot be reordered by
+a filesystem restore touching mtimes.
+
+**Verified, not asserted.** The full round trip ran on PostgreSQL 16.13 against scratch
+databases: restore into an empty database with matching row counts and values, byte-identical
+media and quarantine trees, the SQLite identity row read back from both core files, 15
+generations of each of the five kinds pruned to 14 with the oldest removed, and a failed dump
+leaving **zero** files. What could not be verified on a Windows workstation is named in
+`BACKUP.md` §6 and owed on the VPS: **file modes** (NTFS reports `install -m600` as success
+and leaves `0644`) and **the timer itself** (no systemd).
 
 ---
 
