@@ -66,7 +66,7 @@ the policy has to say so. The operator supplied the binding German text on 2026-
 reproduced verbatim here under the D-079 rule that legal copy is not paraphrased, reflowed
 or "improved":
 
-> Wenn wir aus einem Backup wiederherstellen, spielen wir alle Löschungen erneut an, die nach
+> Wenn wir aus einem Backup wiederherstellen, spielen wir alle Löschungen erneut ein, die nach
 > dem Zeitpunkt dieses Backups vorgenommen wurden, damit einmal gelöschte Inhalte nicht wieder
 > erscheinen. Ein schmales Zeitfenster bleibt: Löschungen, die nach dem jüngsten verfügbaren
 > Backup und vor einem Datenverlust erfolgten, lassen sich nicht wiederherstellen.
@@ -84,12 +84,12 @@ its own briefing scheme and its own season count, so the edit belongs to a **sit
 and deliberately did not happen under CCB-S4-011. Recorded here so the confirmed wording is
 not lost between the two repositories.
 
-**One observation on the German, raised rather than acted on**, because D-079 forbids
-improving supplied legal copy and because the German version is the **binding** one: "spielen
-wir alle Löschungen erneut an" reads as a slip. In German IT usage the verb for applying a
-backup is *einspielen*; *anspielen* means to allude to something. Either "spielen wir alle
-Löschungen erneut **ein**" or "**wenden** wir alle Löschungen erneut **an**" says what is
-meant. The operator's text stands as given until the operator says otherwise.
+**One verb was corrected, by the operator and not by us.** The text as first supplied read
+"spielen wir alle Löschungen erneut **an**". In German IT usage the verb for applying a
+backup is *einspielen*; *anspielen* means to allude to something. Because the German version
+is the **binding** one and D-079 forbids improving supplied legal copy, the slip was raised
+rather than silently fixed, and the operator chose *einspielen* on 2026-08-02. The text above
+is that corrected version and is the one that ships.
 
 **Two defects were found in the existing script and fixed, both demonstrated rather than
 argued.** The dump used a shell redirect, which creates the target before `pg_dump` runs: a
