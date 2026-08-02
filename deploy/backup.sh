@@ -116,8 +116,14 @@ PROGRESS_DONE=""
 
 # Rewritten after every stage so a poll always sees the current position. Same
 # permissions as the status file, for the same reason: no secret is in it.
+# progress_write <stage> [file] [bytes] [total] [substate]
+#
+# `total` of 0 means UNKNOWN, and the console renders that as an indeterminate bar with a
+# climbing byte count rather than inventing a percentage. The database dump has no
+# knowable total in advance, which is exactly the case that must not be faked.
 progress_write() {
   local current="$1" tmp
+  local pfile="${2:-}" pbytes="${3:-0}" ptotal="${4:-0}" psub="${5:-}"
   tmp="$PROGRESS_PATH.tmp"
   mkdir -p "$(dirname "$PROGRESS_PATH")" 2>/dev/null || true
   {
@@ -128,13 +134,57 @@ progress_write() {
     printf '  "updatedAt": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '  "stages": [%s],\n' "$PROGRESS_STAGES"
     printf '  "done": [%s],\n' "$PROGRESS_DONE"
-    printf '  "current": "%s"\n' "$(jstr "$current")"
+    printf '  "current": "%s",\n' "$(jstr "$current")"
+    printf '  "currentFile": "%s",\n' "$(jstr "$pfile")"
+    printf '  "currentBytes": %s,\n' "${pbytes:-0}"
+    printf '  "currentTotal": %s,\n' "${ptotal:-0}"
+    printf '  "substate": "%s"\n' "$(jstr "$psub")"
     printf '}\n'
   } >"$tmp" 2>/dev/null || return 0
   mv -f "$tmp" "$PROGRESS_PATH" 2>/dev/null || return 0
   chmod 0644 "$PROGRESS_PATH" 2>/dev/null || true
   chown "$STATUS_OWNER":"$STATUS_OWNER" "$PROGRESS_PATH" 2>/dev/null || true
   return 0
+}
+
+# THE BYTE SAMPLER (CCB-S4-018, D-123).
+#
+# The five stage boundaries alone made the bar freeze for minutes inside the media
+# archive, which looks broken while the run is working perfectly. The `.part` file grows
+# as `pg_dump` or `tar` writes it, so a once-a-second `wc -c` on it is a real, live
+# measure of the work. Sampling a file size costs nothing next to compressing gigabytes.
+#
+# It runs beside the producing command and is stopped BEFORE the next stage boundary is
+# written, so a stale reading can never overwrite a transition. Every write is the same
+# tmp-then-rename, so a reader never sees half a record.
+SAMPLER_PID=""
+start_sampler() {
+  local part="$1" total="$2" st="$3" sub="${4:-archiving}"
+  (
+    while :; do
+      # Guarded rather than redirect-and-suppress: the shell reports a failed input
+      # redirect itself, so `wc -c <missing 2>/dev/null` still writes to the journal
+      # once a second until the file appears.
+      if [ -f "$part" ]; then sz="$(wc -c <"$part" 2>/dev/null)"; else sz=0; fi
+      progress_write "$st" "$(basename "$part")" "${sz:-0}" "$total" "$sub"
+      sleep 1
+    done
+  ) &
+  SAMPLER_PID=$!
+}
+stop_sampler() {
+  if [ -n "$SAMPLER_PID" ]; then
+    kill "$SAMPLER_PID" 2>/dev/null || true
+    wait "$SAMPLER_PID" 2>/dev/null || true
+    SAMPLER_PID=""
+  fi
+}
+
+# Source size as the denominator for media and quarantine. Compression makes it
+# approximate, which is honest for a bar; a `du` failure yields 0, which the console
+# renders as indeterminate rather than as a wrong percentage.
+dir_bytes() {
+  du -sb "$1" 2>/dev/null | cut -f1 || echo 0
 }
 
 # Marks the previous stage finished and announces the next one. `STAGE` keeps its old
@@ -166,13 +216,21 @@ warn() {
 # never match a dotted name, and a crash leaves nothing that looks complete.
 on_exit() {
   local code=$?
+  stop_sampler
   rm -f "$BACKUP_DIR"/.cinderella-*.part
   rm -rf "$BACKUP_DIR"/.cinderella-*.stage
-  # A failed run must not leave a progress file claiming it is forever in progress. The
-  # status file is the authoritative record of the outcome; this one only ever describes
-  # a run that is still happening, so it goes on every exit path.
-  rm -f "$PROGRESS_PATH" "$PROGRESS_PATH.tmp"
+  # ORDER MATTERS, AND GETTING IT WRONG COST A RACE (CCB-S4-018).
+  #
+  # The status file is written FIRST, then the progress file is removed. The console stops
+  # polling the moment progress disappears, so if the old order held, a poll landing
+  # between the two would see "not running", render the PREVIOUS run's result, and stop
+  # watching before the new one was ever written. Observed live: a completed run still
+  # showing yesterday's timestamp. Writing the result before withdrawing the live signal
+  # means the console can never stop on stale data.
   write_status "$code"
+  # A failed run must not leave a progress file claiming it is forever in progress; this
+  # one only ever describes a run that is still happening, so it goes on every exit path.
+  rm -f "$PROGRESS_PATH" "$PROGRESS_PATH.tmp"
 }
 trap on_exit EXIT
 rm -f "$BACKUP_DIR"/.cinderella-*.part
@@ -295,11 +353,20 @@ command -v "$NODE_BIN" >/dev/null 2>&1 || {
 finalize() {
   local part="$1" dest="$2"
   local staged="$BACKUP_DIR/.$(basename "$dest").part"
+  # Encrypting a multi-gigabyte media archive takes real time, and without this the bar
+  # sat frozen through all of it looking broken. The ciphertext grows as it is written, so
+  # the same sampler works; the plaintext size is the denominator, since AES-GCM adds only
+  # an 81-byte header and tag.
+  local plain
+  plain="$(wc -c <"$part" 2>/dev/null || echo 0)"
+  start_sampler "$staged.part" "${plain:-0}" "$STAGE" encrypting
   if ! "$NODE_BIN" "$CRYPT_HELPER" encrypt "$part" "$staged" "$PASSPHRASE_FILE"; then
+    stop_sampler
     rm -f "$part" "$staged"
     echo "Encryption failed for $(basename "$dest"); no archive written." >&2
     return 1
   fi
+  stop_sampler
   rm -f "$part"
   mv -f "$staged" "$dest"
   # Group READ only. The console streams downloads; it can never alter or delete one.
@@ -315,15 +382,21 @@ finalize() {
 # as a generation and could push a good one out of retention. The unit failed, and
 # the directory still looked healthy.
 set_stage database
+# Total 0 on purpose: pg_dump's output size is not knowable in advance, so the console
+# shows a climbing byte count and an indeterminate bar rather than a fabricated percentage.
+start_sampler "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" 0 database
 pg_dump --format=custom --no-owner --file="$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$DATABASE_URL"
+stop_sampler
 finalize "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$BACKUP_DIR/cinderella-db-$STAMP.dump.enc"
 
 # 2) Media store (paths in the DB are relative to MEDIA_ROOT).
 set_stage media database
 if [ -d "$MEDIA_ROOT" ]; then
+  start_sampler "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" "$(dir_bytes "$MEDIA_ROOT")" media
   tar -czf "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" -C "$MEDIA_ROOT" .
+  stop_sampler
   finalize "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" \
     "$BACKUP_DIR/cinderella-media-$STAMP.tar.gz.enc"
 else
@@ -337,7 +410,9 @@ fi
 # custody obligation is exactly why they have to survive it.
 set_stage quarantine media
 if [ -d "$QUARANTINE_ROOT" ]; then
+  start_sampler "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" "$(dir_bytes "$QUARANTINE_ROOT")" quarantine
   tar -czf "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" -C "$QUARANTINE_ROOT" .
+  stop_sampler
   finalize "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" \
     "$BACKUP_DIR/cinderella-quarantine-$STAMP.tar.gz.enc"
 else
@@ -372,7 +447,9 @@ if [ ${#core_files[@]} -gt 0 ]; then
       cp -p "$f" "$core_stage/$(basename "$f")"
     fi
   done
+  start_sampler "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" "$(dir_bytes "$core_stage")" messaging-core
   tar -czf "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" -C "$core_stage" .
+  stop_sampler
   rm -rf "$core_stage"
   finalize "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" \
     "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz.enc"
