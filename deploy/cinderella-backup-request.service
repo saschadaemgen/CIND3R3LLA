@@ -1,0 +1,24 @@
+[Unit]
+Description=Honour an admin-console request to run the Cinderella backup
+Documentation=file:/opt/cinderella/deploy/BACKUP.md
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# The marker is removed FIRST and unconditionally. `PathExists=` re-arms as soon as the
+# triggered unit finishes, so a marker left in place would start the backup again
+# immediately, and again after that. Removing it before doing anything also means a
+# backup that fails does not leave a request that loops.
+ExecStartPre=/bin/rm -f /var/lib/cinderella/backup-request
+
+# Starts the SAME unit the timer starts, rather than invoking the script a second way.
+# One place runs the backup, so the schedule and the button cannot drift apart, and the
+# journal shows one unit whichever caused the run. --no-block so this oneshot is not
+# holding the transaction open for the length of a dump.
+ExecStart=/usr/bin/systemctl start --no-block cinderella-backup.service
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinderella-backup-request

@@ -1,0 +1,19 @@
+[Unit]
+Description=Watch for an admin-console request to run the Cinderella backup
+Documentation=file:/opt/cinderella/deploy/BACKUP.md
+
+[Path]
+# THE PRIVILEGE BOUNDARY, and it runs the safe way round (D-120).
+#
+# The admin console is the unprivileged `cinderella` user with NoNewPrivileges=true and
+# an empty CapabilityBoundingSet, so it cannot start a unit and cannot `sudo` at all.
+# Rather than granting it something, the request travels as data: the console writes this
+# marker inside its OWN state directory, and this root-side unit notices. The console
+# gains no capability, and the only thing it can cause is a backup, which is the one
+# action being offered.
+PathExists=/var/lib/cinderella/backup-request
+
+Unit=cinderella-backup-request.service
+
+[Install]
+WantedBy=multi-user.target

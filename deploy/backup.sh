@@ -14,6 +14,98 @@ BACKUP_DIR="${1:-/var/backups/cinderella}"
 KEEP=14
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
+# WHY A STATUS FILE EXISTS AT ALL (CCB-S4-014, D-120).
+#
+# The admin console runs as the unprivileged `cinderella` user and CANNOT read
+# `$BACKUP_DIR`: that directory is 0700 root by design, and the app's unit sets
+# `ProtectSystem=strict` with an empty `CapabilityBoundingSet`. A status page that
+# listed archives it cannot see would be a display that lies.
+#
+# So the privileged side leaves a record on the way past, in the one directory the app
+# can read. It carries names, sizes and counts. It NEVER carries a value out of the env
+# file: the env archive appears as an existence and a size, never as contents.
+STATUS_PATH="${BACKUP_STATUS_PATH:-/var/lib/cinderella/backup-status.json}"
+STATUS_OWNER="${BACKUP_STATUS_OWNER:-cinderella}"
+# Updated as the run progresses, so a failure records HOW FAR it got rather than only
+# that it failed.
+STAGE="starting"
+
+# Minimal JSON string escaping: backslash and quote, and control characters dropped.
+# Values here are paths, stamps and our own warning strings, never member content.
+jstr() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/[[:cntrl:]]//g'
+}
+
+# One line per kind: newest archive, its size, and how many generations are retained.
+kind_json() {
+  local prefix="$1" files=() f newest="" size=0
+  shopt -s nullglob
+  for f in "$BACKUP_DIR/$prefix-"*; do files+=("$f"); done
+  shopt -u nullglob
+  if [ ${#files[@]} -gt 0 ]; then
+    newest="$(printf '%s\n' "${files[@]}" | sort -r | head -n 1)"
+    size="$(wc -c <"$newest" 2>/dev/null || echo 0)"
+  fi
+  printf '{"kind":"%s","newest":"%s","bytes":%s,"generations":%s}' \
+    "$(jstr "${prefix#cinderella-}")" "$(jstr "$(basename "$newest")")" \
+    "${size:-0}" "${#files[@]}"
+}
+
+# Written on EVERY exit path, success or failure, so the console can show a red last
+# run rather than silence. A backup that fails invisibly is the failure this whole
+# briefing exists to make impossible.
+write_status() {
+  local code="$1" result="ok" tmp
+  [ "$code" -eq 0 ] || result="failed"
+  tmp="$STATUS_PATH.tmp"
+  mkdir -p "$(dirname "$STATUS_PATH")" 2>/dev/null || true
+  {
+    printf '{\n'
+    printf '  "stamp": "%s",\n' "$(jstr "$STAMP")"
+    printf '  "finishedAt": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '  "result": "%s",\n' "$result"
+    printf '  "exitCode": %s,\n' "$code"
+    printf '  "stage": "%s",\n' "$(jstr "$STAGE")"
+    printf '  "backupDir": "%s",\n' "$(jstr "$BACKUP_DIR")"
+    printf '  "retain": %s,\n' "$KEEP"
+    printf '  "archives": [\n    %s,\n    %s,\n    %s,\n    %s,\n    %s\n  ],\n' \
+      "$(kind_json cinderella-db)" "$(kind_json cinderella-media)" \
+      "$(kind_json cinderella-quarantine)" "$(kind_json cinderella-core)" \
+      "$(kind_json cinderella-env)"
+    printf '  "warnings": [%s]\n' "$WARNINGS_JSON"
+    printf '}\n'
+  } >"$tmp" 2>/dev/null || return 0
+  mv -f "$tmp" "$STATUS_PATH" 2>/dev/null || return 0
+  # No secrets in it, so it may be world-readable; tightened to the app's user where
+  # that user exists. A failed chown must never fail the backup.
+  chmod 0644 "$STATUS_PATH" 2>/dev/null || true
+  chown "$STATUS_OWNER":"$STATUS_OWNER" "$STATUS_PATH" 2>/dev/null || true
+  return 0
+}
+
+# Warnings go to the journal AND into the status file, so a condition an operator would
+# only have seen by reading logs is visible in the console too. Written with `if` rather
+# than a `&&` list so `set -e` has nothing to trip over on the first warning.
+WARNINGS_JSON=""
+warn() {
+  echo "$1" >&2
+  if [ -n "$WARNINGS_JSON" ]; then
+    WARNINGS_JSON="$WARNINGS_JSON,"
+  fi
+  WARNINGS_JSON="$WARNINGS_JSON\"$(jstr "$1")\""
+}
+
+# A partial artifact must never be mistaken for a generation. Everything is
+# written to a dotted `.part` first and renamed only on success; the prune globs
+# never match a dotted name, and a crash leaves nothing that looks complete.
+on_exit() {
+  local code=$?
+  rm -f "$BACKUP_DIR"/.cinderella-*.part
+  write_status "$code"
+}
+trap on_exit EXIT
+rm -f "$BACKUP_DIR"/.cinderella-*.part
+
 # Every artifact here is sensitive: the env file carries MEDIA_SECRET, and the
 # messaging-core database holds unencrypted content. 077 makes that the default
 # rather than something each line has to remember.
@@ -77,11 +169,6 @@ SIMPLEX_DB_PREFIX="${file_prefix:-${SIMPLEX_DB_PREFIX:-/var/lib/cinderella/state
 mkdir -p "$BACKUP_DIR"
 chmod 0700 "$BACKUP_DIR"
 
-# A partial artifact must never be mistaken for a generation. Everything is
-# written to a dotted `.part` first and renamed only on success; the prune globs
-# never match a dotted name, and a crash leaves nothing that looks complete.
-trap 'rm -f "$BACKUP_DIR"/.cinderella-*.part' EXIT
-rm -f "$BACKUP_DIR"/.cinderella-*.part
 
 # 1) Archive database (custom format — restore with pg_restore).
 #
@@ -89,17 +176,19 @@ rm -f "$BACKUP_DIR"/.cinderella-*.part
 # before pg_dump runs, so a failed dump left a zero-byte .dump behind that counted
 # as a generation and could push a good one out of retention. The unit failed, and
 # the directory still looked healthy.
+STAGE="database"
 pg_dump --format=custom --no-owner --file="$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$DATABASE_URL"
 mv -f "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" "$BACKUP_DIR/cinderella-db-$STAMP.dump"
 
 # 2) Media store (paths in the DB are relative to MEDIA_ROOT).
+STAGE="media"
 if [ -d "$MEDIA_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" -C "$MEDIA_ROOT" .
   mv -f "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" \
     "$BACKUP_DIR/cinderella-media-$STAMP.tar.gz"
 else
-  echo "MEDIA_ROOT ($MEDIA_ROOT) does not exist; no media archive written." >&2
+  warn "MEDIA_ROOT ($MEDIA_ROOT) does not exist; no media archive written."
 fi
 
 # 3) Quarantine (CCB-S4-011 decision 1: INCLUDE).
@@ -107,12 +196,13 @@ fi
 # Quarantined originals are MOVED out of MEDIA_ROOT, so they are not in the media
 # archive and would be the one class of evidence a disk failure destroyed. The
 # custody obligation is exactly why they have to survive it.
+STAGE="quarantine"
 if [ -d "$QUARANTINE_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" -C "$QUARANTINE_ROOT" .
   mv -f "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" \
     "$BACKUP_DIR/cinderella-quarantine-$STAMP.tar.gz"
 else
-  echo "QUARANTINE_ROOT ($QUARANTINE_ROOT) does not exist yet; nothing quarantined." >&2
+  warn "QUARANTINE_ROOT ($QUARANTINE_ROOT) does not exist yet; nothing quarantined."
 fi
 
 # 4) Messaging-core database (CCB-S4-011 decision 2: BACK UP).
@@ -126,6 +216,7 @@ fi
 # a file the service is writing can tear across a page boundary, so when sqlite3 is
 # missing we still take the copy but say loudly that it is the weaker one, rather
 # than letting a degraded backup pass as a good one.
+STAGE="messaging-core"
 core_files=()
 for suffix in chat agent; do
   [ -f "${SIMPLEX_DB_PREFIX}_${suffix}.db" ] && core_files+=("${SIMPLEX_DB_PREFIX}_${suffix}.db")
@@ -138,8 +229,7 @@ if [ ${#core_files[@]} -gt 0 ]; then
     if command -v sqlite3 >/dev/null 2>&1; then
       sqlite3 "$f" ".backup '$core_stage/$(basename "$f")'"
     else
-      echo "WARNING: sqlite3 not installed; copying $(basename "$f") while it may be in use." >&2
-      echo "WARNING: install sqlite3 for a consistent messaging-core snapshot." >&2
+      warn "sqlite3 not installed; copied $(basename "$f") while it may be in use. Install sqlite3 for a consistent snapshot."
       cp -p "$f" "$core_stage/$(basename "$f")"
     fi
   done
@@ -149,11 +239,12 @@ if [ ${#core_files[@]} -gt 0 ]; then
     "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz"
   chmod 600 "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz"
 else
-  echo "No messaging-core database at ${SIMPLEX_DB_PREFIX}_{chat,agent}.db." >&2
+  warn "No messaging-core database at ${SIMPLEX_DB_PREFIX}_{chat,agent}.db."
 fi
 
 # 5) Secrets (restrict tightly). Carries MEDIA_SECRET, so this archive is the key
 # to every encrypted original in the media archive beside it. See BACKUP.md.
+STAGE="env"
 install -m 0600 "$ENV_FILE" "$BACKUP_DIR/cinderella-env-$STAMP.env"
 
 # 6) Retain the newest $KEEP of each kind.
@@ -176,8 +267,10 @@ prune() {
   return 0
 }
 
+STAGE="retention"
 for prefix in cinderella-db cinderella-media cinderella-quarantine cinderella-core cinderella-env; do
   prune "$prefix"
 done
 
+STAGE="complete"
 echo "Backup complete: $BACKUP_DIR (stamp $STAMP, keeping $KEEP of each kind)"
