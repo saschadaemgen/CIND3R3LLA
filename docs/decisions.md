@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-120**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-121**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,92 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-121 - Backups are encrypted with AES-256-GCM, the key lives off-host, and the console gets a read-group
+
+**Status: IMPLEMENTED** (CCB-S4-016 Stage 1, the engine). `scripts/backup-crypt.mjs`,
+`deploy/backup.sh`. Round trip and every failure case proven on scratch data; the
+read-group permission test is **owed on the VPS**.
+
+**What forced it.** Filesystem permissions are access control, not encryption. The
+database dump, the messaging-core SQLite and the env file were plaintext behind `0700
+root`, which protects nothing the moment an archive is copied off the host. Worse,
+`MEDIA_SECRET` sits inside the env archive, in the same directory as the media it
+decrypts, so an offsite copy made media encryption decorative.
+
+**Decision 1: a 256-bit symmetric cipher, and no asymmetric layer.** Grover only halves
+effective strength, so AES-256 keeps a ~128-bit margin against a quantum adversary. That
+matters here specifically because a backup is the textbook **harvest-now-decrypt-later**
+target: an archive stolen today must still be secret in a decade. A self-encrypted,
+self-restored backup gains nothing from public-key crypto, and a key-agreement step would
+be exactly the part that breaks.
+
+**Decision 2: NOT `age`, and the reason is a measured fact rather than a preference.**
+`age` was chosen first and implements precisely this scheme in passphrase mode. But
+**`age -p` reads the passphrase from the terminal by design and cannot be driven from a
+systemd timer.** Verified three ways against `age` v1.3.1: piping the passphrase hung,
+`AGE_PASSPHRASE` hung, and redirecting stdin hung, each exiting 124 under a timeout.
+`age -e -i` **is** scriptable, and a full round trip with it worked, but it is X25519:
+adopting it would have quietly given up the quantum property the whole decision was made
+for, while still saying "age" in the runbook. That is the worst of both outcomes, so it
+was rejected.
+
+**Decision 3: NOT raw `openssl enc` either, and the implementation avoids what made that
+dangerous.** AES-256-GCM is an AEAD, so a wrong key **fails** instead of emitting
+plausible garbage; the IV is random per archive and stored in the header; and a stream
+mode has no padding to get wrong. Those three are the traps that make hand-rolled
+`openssl enc` pipelines a bad idea. This is the same construction the project already
+trusts for media at rest (D-075). Key derivation is scrypt, N=32768 r=8 p=1, with a random
+32-byte salt per archive. `scripts/backup-crypt.mjs` streams, so a multi-gigabyte media
+archive never lands in memory.
+
+**Decision 4: the key lives off-host, in its own root-only file.**
+`/etc/cinderella/backup-passphrase`, `0600 root`, deliberately **not** in
+`cinderella.env`, because that file is itself archived and a key inside the backup it
+unlocks is not a key. It also sits outside the backup directory so the read-group can
+never reach it. Losing it loses every backup, and `BACKUP.md` says so at the top rather
+than leaving it to be discovered in a crisis.
+
+**Decision 5: fail loudly, never fall back to plaintext.** A preflight runs **before a
+single byte is written** and refuses to start without node, the helper, and a non-empty
+passphrase file. Producing an unencrypted archive because the key was missing would defeat
+the entire purpose while looking like success. Proven: a missing, empty or unreadable
+passphrase exits non-zero, writes **zero** files, and records `result: failed`,
+`stage: preflight`.
+
+**Decision 6: a read-group, `cinderella-backup`, read-only.** The console runs
+unprivileged and could not read the backup directory at all. Rather than a copy-and-serve
+dance across the privilege boundary, the directory becomes `0750 root:cinderella-backup`
+and each archive `0640`, so the app can stream a download directly. **Writing and deleting
+stay root-only**, through the CCB-S4-014 request-unit path: a compromised web process
+could download a backup but never alter or destroy one. The script refuses to run if the
+group does not exist, because writing archives the console cannot read would silently
+undo the decision.
+
+**Group-readability is safe ONLY because the archives are now ciphertext**, which is why
+the two decisions ship in one briefing. The env archive is `0640` like the rest, and that
+would have been indefensible while it was plaintext with `MEDIA_SECRET` in it. If
+encryption is ever made optional (Stage 2's toggle), the permissions have to move with it.
+
+**Verified on scratch data**, never against real backups: all five kinds produced as
+`.enc`; `pg_restore` and `tar` both **fail** on them; neither `MEDIA_SECRET` nor row text
+appears in any archive; decrypting with the correct passphrase and restoring reproduced
+the database, media, quarantine, messaging-core identity and env file identically; a wrong
+passphrase, a tampered byte, a missing passphrase and an empty passphrase each failed with
+a clear message and **left nothing at the destination**; and retention still prunes 15
+generations to 14 for every kind with the new filenames.
+
+**One defect was found by the proof and fixed.** The helper first wrote decrypted output
+straight to its destination, and because GCM only authenticates at the very end, a wrong
+passphrase left partial unverified plaintext sitting there looking like a restored file.
+It now stages to a `.part` and renames only after authentication passes, in both
+directions. The failure case is what caught it.
+
+**Owed on the VPS**, since it needs Linux groups and privilege dropping: that a member of
+`cinderella-backup` can read an archive, a non-member cannot, and no member can write or
+delete one.
 
 ---
 

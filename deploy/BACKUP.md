@@ -3,6 +3,11 @@
 Companion to [`RUNBOOK.md`](RUNBOOK.md). Introduced by CCB-S4-011, which turned an
 unrun script into a schedule. Decisions behind the scope are **D-118**.
 
+> **Every archive is encrypted (CCB-S4-016, D-121). Without the passphrase they are
+> unrecoverable.** There is no recovery path, no escrow and no backdoor: that is what
+> real encryption costs. Keep the passphrase somewhere you will still have it when the
+> host is gone, and NOT in the backup directory. See [section 2b](#2b-encryption).
+>
 > **A restore is not finished when the data is back.** The last step, re-applying
 > deletions made after the dump, is what keeps the deletion promise. It is
 > [below](#5-mandatory-re-apply-deletions-made-after-the-dump) and it is not optional.
@@ -17,7 +22,7 @@ unrun script into a schedule. Decisions behind the scope are **D-118**.
 | Trigger | `cinderella-backup.timer`, daily at **03:30** host time, `RandomizedDelaySec=15min` |
 | Missed runs | `Persistent=true`, so a host that was off at 03:30 runs the backup on next boot |
 | Script | `/opt/cinderella/deploy/backup.sh` |
-| Destination | `/var/backups/cinderella`, created `0700` |
+| Destination | `/var/backups/cinderella`, `0750 root:cinderella-backup` |
 | Retention | the newest **14** generations of each kind, pruned every run |
 
 Root is required and is not incidental: the env file is `0600` root-owned and
@@ -42,10 +47,11 @@ host that moved the quarantine is still covered.
 
 ### Two things about these files that must not be loosened
 
-**The messaging-core archive holds UNENCRYPTED message content.** The archive PostgreSQL is
-the consent-governed store; the SimpleX core's own SQLite is not, and it is plaintext. That
-archive is written `0600` in a `0700` directory and must stay that way. Anyone arguing for
-looser permissions on the backup directory is arguing to publish member messages.
+**The messaging-core archive holds UNENCRYPTED message content**, before this layer. The
+archive PostgreSQL is the consent-governed store; the SimpleX core's own SQLite is not.
+Since CCB-S4-016 that archive is encrypted like the rest, which is the only reason it can
+be `0640` group-readable instead of `0600`. If encryption is ever turned off, this file
+goes back to root-only or the read-group starts handing out member messages.
 
 **The env archive is the key to the media archive sitting next to it.** `MEDIA_SECRET`
 decrypts every original in `cinderella-media-*.tar.gz`, and both live in the same directory.
@@ -65,6 +71,80 @@ it the script still runs, still takes a plain copy, and prints a `WARNING` to th
 every run saying the copy may be torn. It does not fail the unit, because a weaker
 messaging-core copy is not worth losing that night's database dump over, but the warning is
 there to be acted on rather than lived with.
+
+## 2b. Encryption
+
+Every one of the five archives is encrypted before it is finalised, so the finished names
+end in `.enc` (`cinderella-db-<stamp>.dump.enc`). A backup that leaves this host carries
+**no plaintext anywhere**, which is the point: filesystem permissions are access control,
+not encryption, and they protect nothing once an archive is copied off the machine.
+
+| | |
+|---|---|
+| Cipher | **AES-256-GCM**, authenticated |
+| Key derivation | **scrypt**, N=32768 r=8 p=1, random 32-byte salt per archive |
+| IV | random 12 bytes per archive, stored in the header |
+| Implementation | [`scripts/backup-crypt.mjs`](../scripts/backup-crypt.mjs), Node's own `crypto`, streaming |
+
+**Why a 256-bit symmetric cipher.** It is quantum-resistant in the sense that matters for
+an archive that must stay secret for years: Grover only halves the effective strength, so
+256 bits leaves a ~128-bit margin. An asymmetric layer was rejected deliberately, because
+a self-encrypted, self-restored backup gains nothing from one and a key-agreement step
+would be the part a future quantum adversary breaks. A backup is the textbook
+harvest-now-decrypt-later target.
+
+**Why not `age`.** `age` was the first choice and implements exactly this scheme in
+passphrase mode, but **`age -p` reads the passphrase from the terminal by design** and
+cannot be driven from a systemd timer: piping it, setting an environment variable and
+redirecting stdin all hang. `age -i` is scriptable but is X25519, which would have given
+up the quantum property while looking like it had not. See **D-121**.
+
+**Why not raw `openssl enc`.** GCM here is authenticated, so a wrong key **fails** instead
+of emitting plausible garbage; the IV is random per archive and stored; and there is no
+padding to get wrong. Those are precisely the traps that make hand-rolled `openssl enc`
+pipelines dangerous. It is the same construction the project already trusts for media at
+rest (D-075).
+
+### The passphrase, and where it lives
+
+```bash
+sudo install -m 0600 -o root -g root /dev/null /etc/cinderella/backup-passphrase
+sudo sh -c 'openssl rand -base64 48 > /etc/cinderella/backup-passphrase'
+sudo chmod 0600 /etc/cinderella/backup-passphrase
+```
+
+**It is deliberately NOT in `cinderella.env`.** That file is itself archived, so a key
+stored inside the backup it unlocks is not a key. It also lives outside the backup
+directory, so the read-group below can never read it.
+
+**Copy it somewhere off this host now.** A password manager, a printed sheet in a safe,
+anywhere that survives the machine. Losing it loses every backup.
+
+### The read-group (operator step)
+
+The admin console runs unprivileged and could not read `/var/backups/cinderella` at all
+while it was `0700 root`. A dedicated group gives it **read access only**:
+
+```bash
+sudo groupadd -f cinderella-backup
+sudo usermod -aG cinderella-backup cinderella
+sudo systemctl restart cinderella
+```
+
+The restart matters: the app only picks up a new group membership when its process is
+replaced.
+
+After the next run the directory is `0750 root:cinderella-backup` and each archive is
+`0640 root:cinderella-backup`. **Read and traverse, never write.** Creating and deleting
+archives stay root-only, through the request-unit path from CCB-S4-014, so a compromised
+web process could download a backup but never alter or destroy one.
+
+**Group-readability is safe only because the archives are now encrypted**, and the two
+decisions ship together for that reason. The env archive is `0640` like the rest, which
+would have been unacceptable while it was plaintext with `MEDIA_SECRET` inside it.
+
+**If the group does not exist the backup fails rather than running.** Writing archives the
+console cannot read would silently undo this, so the script refuses and says what to run.
 
 ## 3. Installing and enabling the timer (operator step)
 
@@ -149,6 +229,22 @@ Stop the service first, so nothing writes while you work.
 sudo systemctl stop cinderella
 ```
 
+### 5.0 Decrypt first
+
+Nothing below works on a `.enc` file. Decrypt each archive you need, using the passphrase
+you kept off this host:
+
+```bash
+cd /opt/cinderella
+sudo node scripts/backup-crypt.mjs decrypt   /var/backups/cinderella/cinderella-db-<stamp>.dump.enc /tmp/cinderella-db.dump   /etc/cinderella/backup-passphrase
+```
+
+Repeat for `media`, `quarantine`, `core` and `env`, then use the decrypted paths below.
+
+**A wrong passphrase fails and writes nothing.** The cipher is authenticated, so you get
+an error rather than a file full of garbage that looks restorable. Decrypt to somewhere
+that is not the backup directory, and delete the plaintext when the restore is done.
+
 ### 5.1 Database, into an EMPTY database
 
 `pg_restore` into a database that already has rows will not give you the dump's state.
@@ -156,22 +252,22 @@ sudo systemctl stop cinderella
 ```bash
 sudo -u postgres psql -c "DROP DATABASE cinderella;"
 sudo -u postgres psql -c "CREATE DATABASE cinderella OWNER cinderella;"
-sudo -u postgres pg_restore -d cinderella --no-owner /var/backups/cinderella/cinderella-db-<stamp>.dump
+sudo -u postgres pg_restore -d cinderella --no-owner /tmp/cinderella-db.dump
 ```
 
 ### 5.2 Media, quarantine, messaging core
 
 ```bash
-sudo tar -xzf /var/backups/cinderella/cinderella-media-<stamp>.tar.gz      -C /var/lib/cinderella/media
-sudo tar -xzf /var/backups/cinderella/cinderella-quarantine-<stamp>.tar.gz -C /var/lib/cinderella/quarantine
-sudo tar -xzf /var/backups/cinderella/cinderella-core-<stamp>.tar.gz       -C /var/lib/cinderella/state/simplex
+sudo tar -xzf /tmp/cinderella-media.tar.gz      -C /var/lib/cinderella/media
+sudo tar -xzf /tmp/cinderella-quarantine.tar.gz -C /var/lib/cinderella/quarantine
+sudo tar -xzf /tmp/cinderella-core.tar.gz       -C /var/lib/cinderella/state/simplex
 sudo chown -R cinderella:cinderella /var/lib/cinderella
 ```
 
 ### 5.3 Env file
 
 ```bash
-sudo install -m600 -o root -g root /var/backups/cinderella/cinderella-env-<stamp>.env /etc/cinderella/cinderella.env
+sudo install -m600 -o root -g root /tmp/cinderella-env.env /etc/cinderella/cinderella.env
 ```
 
 **`MEDIA_SECRET` must be the one that encrypted the media you just restored.** There is no
