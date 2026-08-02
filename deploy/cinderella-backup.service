@@ -1,0 +1,40 @@
+[Unit]
+Description=Cinderella backup (database, media, quarantine, messaging-core, env)
+Documentation=file:/opt/cinderella/deploy/BACKUP.md
+# Not Requires=: the backup must still run when the app is stopped. A host that is
+# down for maintenance is exactly when an operator wants yesterday's dump intact.
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+
+# Root because the env file is 0600 root-owned and pg_dump needs the credentials
+# inside it. This unit reads secrets by design; it is why the archives are 0600 in
+# a 0700 directory.
+User=root
+Group=root
+
+ExecStart=/opt/cinderella/deploy/backup.sh /var/backups/cinderella
+
+# The script writes progress to stdout and every warning to stderr; both go to the
+# journal, which BACKUP.md tells the operator how to read. A failed pg_dump exits
+# non-zero under `set -e`, so the unit result is `failed` and nothing pretends the
+# run succeeded.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cinderella-backup
+
+# A backup that hangs must not hang forever and mask the next one.
+TimeoutStartSec=30min
+
+# Modest hardening. Deliberately NOT ProtectSystem=strict or PrivateTmp: the script
+# has to read /etc/cinderella and /var/lib/cinderella and write /var/backups, and a
+# backup that silently cannot see its own inputs is worse than an unhardened one.
+NoNewPrivileges=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

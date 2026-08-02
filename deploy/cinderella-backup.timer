@@ -1,0 +1,20 @@
+[Unit]
+Description=Daily Cinderella backup
+Documentation=file:/opt/cinderella/deploy/BACKUP.md
+
+[Timer]
+# Daily, in the small hours, on the host's clock.
+OnCalendar=*-*-* 03:30:00
+
+# A missed run fires on the next boot. This is the clause that matters for a host
+# that is not on 24/7: without it, a machine that was off at 03:30 simply has no
+# backup for that day and nothing says so.
+Persistent=true
+
+# Spread the start so a host running several timers does not begin them together.
+RandomizedDelaySec=15min
+
+Unit=cinderella-backup.service
+
+[Install]
+WantedBy=timers.target
