@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-121**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-122**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,71 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-122 - A run reports that it is running, because the request marker never could
+
+**Status: IMPLEMENTED** (CCB-S4-017). `deploy/backup.sh`,
+`deploy/cinderella-backup-request.service`, `src/backup/status.ts`,
+`src/web/views/backup.ts`. Proven by an observed live run; 27 checks in
+`verify:admin-views`, three mutation-proven.
+
+**The bug, and it was mine.** D-120 made the console poll while a request was
+"outstanding", and defined that as the request marker still existing. But
+`cinderella-backup-request.service` deletes the marker in **`ExecStartPre`, before it
+starts the backup**. So the marker means "a run was STARTED" and is gone within
+milliseconds, while the backup still has half a minute to go. The first poll eight
+seconds later found no marker, concluded nothing was happening, and stopped watching.
+The finished run never appeared without a manual reload, which is exactly what the
+operator reported: press, "requested", then nothing, then reload twenty times.
+
+The D-120 comment claimed "when the root side consumes the marker the next render omits
+them and the polling ends". Consuming the marker means the run has **begun**, not ended.
+The stopping condition was watching the wrong event.
+
+**Decision 1: the backup reports its own progress, and that is the signal to poll on.**
+`backup.sh` writes `/var/lib/cinderella/backup-progress.json`, sibling to the status
+file and read the same way, carrying the five stages, which are done, which is current,
+and when it was last touched. It exists for **exactly as long as the run does**, which
+is the property the marker never had. The progress bar is therefore not decoration: it
+is the same signal, rendered.
+
+**Decision 2: the handover is seamless, because a single unlucky poll must not be
+fatal.** The first fix polled on `marker OR progress`, and a live run exposed a hole
+between them: the marker was deleted before the script had written any progress, and one
+poll landing in that gap stopped the polling permanently. So the marker is no longer
+deleted by the unit. `backup.sh` writes its first progress record and **then** removes
+the marker itself, so there is no instant where neither exists. The request unit's
+`ExecStart` became blocking, since `PathExists=` re-arms only when it finishes and by
+then the marker is gone, so there is still no re-trigger loop. `ExecStopPost` keeps a
+safety `rm` for a run that never happened at all.
+
+**Decision 3: the progress file is cleared on every exit path, and a stale one is not
+trusted.** The existing EXIT trap removes it, so a failed run ends the progress state
+exactly as a successful one does and nothing is left claiming a run is forever in
+flight. A file untouched for five minutes means the run died in a way that skipped the
+trap, and is treated as absent rather than polled against for ever.
+
+**Decision 4: the button moves to the top and disables while a run is in flight.** It is
+the primary action of the page. Disabling it during a run is not cosmetic either: it
+stops a second concurrent request against a backup that is already running.
+
+**Verified by an observed run, not by markup**, with the marker-delete-then-start
+sequence reproduced exactly as the unit performs it. Polling stayed on for **54 seconds**
+across a ~39 second backup and the page advanced on its own with no reload:
+`0 of 5 Database (0%)` at 15:27:47, `1 of 5 Media (20%)`, `2 of 5 Quarantine (40%)`,
+`4 of 5 Environment (80%)`, then at 15:28:24 polling off, button re-enabled, and the new
+run rendered as the last run. Under the old condition this stopped after eight seconds.
+
+**Two of my own checks were caught by mutation-proving in this briefing**, which is worth
+recording as evidence the practice earns its cost: a "button disabled" assertion that
+matched the words "Backup running" in the progress card title and so passed with the
+button left enabled, and, in CCB-S4-015, a regex whose `` had become U+0008. Both were
+green and both were inert.
+
+**Owed on the VPS:** that the real `.path` and request units perform this sequence under
+systemd. The reproduction here drove the same order of operations by hand.
 
 ---
 
