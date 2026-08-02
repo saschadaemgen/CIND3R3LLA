@@ -16,6 +16,10 @@
 import { PGlite } from '@electric-sql/pglite';
 import { readFileSync } from 'node:fs';
 import argon2 from 'argon2';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
@@ -33,6 +37,9 @@ function check(label: string, ok: boolean, detail = ''): void {
   if (!ok) failures++;
   console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ` — ${detail}` : ''}`);
 }
+
+/** Scratch paths for the backup console checks (CCB-S4-014). */
+const BACKUP_TMP = mkdtempSync(join(tmpdir(), 'cinderella-backup-view-'));
 
 function cookieOf(setCookie: string | string[] | undefined, name: string): string | null {
   const arr = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie];
@@ -118,6 +125,8 @@ async function main(): Promise<void> {
     simplexFilesFolder: '/var/lib/cinderella/files',
     groupName: 'cinderella-test',
     mediaRoot: process.cwd(),
+    backupStatusPath: join(BACKUP_TMP, 'backup-status.json'),
+    backupRequestPath: join(BACKUP_TMP, 'backup-request'),
     avatarPath: '',
     databaseUrl: `postgres://cinderella:${DB_PASSWORD_SECRET}@127.0.0.1:5432/cinderella`,
     logLevel: 'info',
@@ -1021,6 +1030,73 @@ async function main(): Promise<void> {
     headers: authed,
   });
   check('interaction edit without CSRF is rejected', iaNoCsrf.statusCode === 403);
+
+  /* ── Backup console (CCB-S4-014, D-120) ──────────────────────────────── */
+  //
+  // Gates the ONE property this page exists for: it renders only what the run record
+  // actually says. The web process cannot read the backup directory, so a page that
+  // showed archive figures without a status file would be showing invented ones.
+
+  // (a) No status file: the honest empty state, not a fabricated listing.
+  const bkEmpty = await getPage('/backup');
+  check('backup: renders without a status file', bkEmpty.code === 200);
+  check(
+    'backup: says plainly that no result is recorded',
+    bkEmpty.body.includes('no result recorded'),
+  );
+  check(
+    'backup: invents no archive figures when it cannot see any',
+    !bkEmpty.body.includes('cinderella-db-'),
+  );
+
+  // (b) A real (failed) run record: the page must show FAILED and the stage reached.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-status.json'),
+    JSON.stringify({
+      stamp: '20260802T033000Z',
+      finishedAt: '2026-08-02T03:30:12Z',
+      result: 'failed',
+      exitCode: 1,
+      stage: 'database',
+      backupDir: '/var/backups/cinderella',
+      retain: 14,
+      archives: [
+        { kind: 'db', newest: 'cinderella-db-20260801T033000Z.dump', bytes: 2048, generations: 7 },
+        { kind: 'media', newest: '', bytes: 0, generations: 0 },
+      ],
+      warnings: ['QUARANTINE_ROOT does not exist yet; nothing quarantined.'],
+    }),
+    'utf8',
+  );
+  const bkFailed = await getPage('/backup');
+  check('backup: a FAILED run is representable, not only a successful one',
+    bkFailed.body.includes('FAILED'));
+  check('backup: shows the stage the failure reached', bkFailed.body.includes('database'));
+  check('backup: surfaces the run warning', bkFailed.body.includes('nothing quarantined'));
+  check('backup: shows the real generation count from the record',
+    bkFailed.body.includes('7'));
+  check('backup: names the newest archive from the record',
+    bkFailed.body.includes('cinderella-db-20260801T033000Z.dump'));
+
+  // (c) No schedule editor in Stage 1, and the page says why rather than showing a dead control.
+  check('backup: ships no schedule/retention editor',
+    !bkFailed.body.includes('name="onCalendar"') && !bkFailed.body.includes('name="retain"'));
+  check('backup: states that schedule and retention live in the unit',
+    bkFailed.body.includes('set in the systemd unit'));
+
+  // (d) The run-now POST is CSRF-protected like every other admin mutation.
+  const bkRunNoCsrf = await app.inject({
+    method: 'POST',
+    url: '/backup/run',
+    headers: { ...authed, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: '',
+  });
+  check('backup: run-now without CSRF is rejected', bkRunNoCsrf.statusCode === 403);
+
+  const bkNoAuth = await app.inject({ method: 'GET', url: '/backup' });
+  check('backup: unreachable unauthenticated', bkNoAuth.statusCode !== 200);
+
+  rmSync(BACKUP_TMP, { recursive: true, force: true });
 
   await app.close();
   await pg.close();

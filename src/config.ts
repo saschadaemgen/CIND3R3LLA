@@ -33,6 +33,16 @@ export interface Config {
   /** Absolute path to Cinderella's own media store. */
   mediaRoot: string;
   /**
+   * Where `backup.sh` leaves its JSON run record, and where the console asks for a run.
+   *
+   * Both live under the app's own state directory ON PURPOSE (CCB-S4-014, D-120). The
+   * web process cannot read `/var/backups/cinderella`, which is 0700 root, so the
+   * privileged side hands a record across this boundary instead. The request marker
+   * goes the other way and is the only thing the app writes: it holds no privilege.
+   */
+  backupStatusPath: string;
+  backupRequestPath: string;
+  /**
    * Absolute path to the quarantine store (CCB-S3-013 §4).
    *
    * Quarantined bytes are MOVED here, physically out of `mediaRoot`, because the
@@ -223,6 +233,12 @@ export function loadConfig(): Config {
     simplexFilesFolder: filesFolder,
     groupName: optional('GROUP_NAME', ''),
     mediaRoot: resolve(optional('MEDIA_ROOT', './media')),
+    backupStatusPath: resolve(
+      optional('BACKUP_STATUS_PATH', '/var/lib/cinderella/backup-status.json'),
+    ),
+    backupRequestPath: resolve(
+      optional('BACKUP_REQUEST_PATH', '/var/lib/cinderella/backup-request'),
+    ),
     quarantineRoot: resolveQuarantineRoot(),
     avatarPath: resolveAvatarPath(),
     databaseUrl: required('DATABASE_URL'),

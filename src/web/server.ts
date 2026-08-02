@@ -594,6 +594,12 @@ export function registerNav(): void {
           label: 'Embeds',
           icon: icon('embed'),
         },
+        {
+          key: 'backups',
+          href: '/backup',
+          label: 'Backups',
+          icon: icon('shield'),
+        },
       ],
     },
   ]);
