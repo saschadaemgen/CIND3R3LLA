@@ -719,10 +719,14 @@ Verified against the production host on 2026-07-27, not inferred.
       `pending_destructions` row inside the dump, and the sweeper re-applies it on start), and the other
       two are replayed by diffing the restored generation against a newer surviving one. Revocation is the
       dangerous case, because nothing is missing: content simply becomes public again.
-- [ ] **The privacy policy still has to say it** (D-118, operator-owned). A member's deletion right is not
-      a one-time event if a restore can undo it. The policy should state that a restore re-applies
-      subsequent deletions and name the window it cannot cover. Member-facing copy, so the wording is the
-      operator's to confirm.
+- [ ] **The privacy-policy clause: wording confirmed, not yet shipped, and it ships ELSEWHERE.** The
+      operator supplied the binding German on 2026-08-02 and it is recorded verbatim in **D-118**. It does
+      **not** land in this repository: the legal texts left with the marketing site (D-089), so the clause
+      belongs in [`cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site) at
+      `src/pages/legal.ts`, in the existing section "Grenzen der Löschung, ehrlich benannt" which already
+      says copies persist in backups until they expire. **That is a site briefing**, with a site id, and it
+      is not in this register. Carried here only so the confirmed wording is not lost between the two
+      repositories. One flagged, unacted observation on the German is in D-118.
 - [ ] **Deletions after the newest surviving dump are unrecoverable, by construction.** Nothing records
       them outside the database that was lost. The exposure window is the time since the last successful
       backup, which is the operational argument for the timer being enabled rather than merely committed.

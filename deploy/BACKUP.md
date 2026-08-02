@@ -205,9 +205,14 @@ window is the time since the last successful backup, which is the strongest oper
 argument for the daily timer actually being enabled.
 
 **This obligation belongs in the privacy policy as well as here** (D-118). A member's
-deletion right is not a one-time event if a restore can undo it, and the policy should say
-that a restore re-applies subsequent deletions and name the window it cannot cover. The
-policy is member-facing copy, so its wording is the operator's to confirm before it ships.
+deletion right is not a one-time event if a restore can undo it. The operator confirmed the
+binding German wording on 2026-08-02, and it is recorded verbatim in **D-118**.
+
+It ships in the **site repository**, not this one: the legal texts left here with the
+marketing site (D-089), and the clause belongs in `src/pages/legal.ts` under the existing
+section "Grenzen der Löschung, ehrlich benannt", which already tells members that copies
+persist in backups until those backups expire. That edit is a **site briefing**, tracked
+there rather than here.
 
 ---
 

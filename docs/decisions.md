@@ -60,10 +60,36 @@ after the newest surviving dump cannot be recovered from backups at all.** Nothi
 them anywhere else. That window is the time since the last successful backup, which is the
 strongest argument for the timer actually being enabled.
 
-**The privacy-policy clause is the operator's to confirm.** A member's deletion right is not
-a one-time event if a restore can undo it, so the policy should state that a restore
-re-applies subsequent deletions and name the window it cannot cover. It is **member-facing
-copy**, so it is not written here; recorded as owed.
+**The privacy-policy clause: wording CONFIRMED by the operator, placement NOT in this
+repository.** A member's deletion right is not a one-time event if a restore can undo it, so
+the policy has to say so. The operator supplied the binding German text on 2026-08-02,
+reproduced verbatim here under the D-079 rule that legal copy is not paraphrased, reflowed
+or "improved":
+
+> Wenn wir aus einem Backup wiederherstellen, spielen wir alle Löschungen erneut an, die nach
+> dem Zeitpunkt dieses Backups vorgenommen wurden, damit einmal gelöschte Inhalte nicht wieder
+> erscheinen. Ein schmales Zeitfenster bleibt: Löschungen, die nach dem jüngsten verfügbaren
+> Backup und vor einem Datenverlust erfolgten, lassen sich nicht wiederherstellen.
+
+It says both halves this decision requires: the replay obligation, and the window that cannot
+be covered.
+
+**It ships in the SITE repository, not here** (D-089). The legal texts left this repository
+with the marketing site: `src/web/site/legal.ts` was deleted by `aeb8db7`, and the policy now
+lives in [`cind3r3lla-site`](https://github.com/saschadaemgen/cind3r3lla-site) at
+`src/pages/legal.ts`. Its natural home is the existing section **"Grenzen der Löschung,
+ehrlich benannt"**, which already tells members that copies persist in backups until those
+backups expire; this clause is the missing other half of that paragraph. That repository has
+its own briefing scheme and its own season count, so the edit belongs to a **site briefing**
+and deliberately did not happen under CCB-S4-011. Recorded here so the confirmed wording is
+not lost between the two repositories.
+
+**One observation on the German, raised rather than acted on**, because D-079 forbids
+improving supplied legal copy and because the German version is the **binding** one: "spielen
+wir alle Löschungen erneut an" reads as a slip. In German IT usage the verb for applying a
+backup is *einspielen*; *anspielen* means to allude to something. Either "spielen wir alle
+Löschungen erneut **ein**" or "**wenden** wir alle Löschungen erneut **an**" says what is
+meant. The operator's text stands as given until the operator says otherwise.
 
 **Two defects were found in the existing script and fixed, both demonstrated rather than
 argued.** The dump used a shell redirect, which creates the target before `pg_dump` runs: a
