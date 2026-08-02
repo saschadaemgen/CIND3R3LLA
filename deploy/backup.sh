@@ -36,10 +36,20 @@ NODE_BIN="${BACKUP_NODE_BIN:-node}"
 # archives are now ciphertext, which is why these two decisions ship together.
 BACKUP_GROUP="${BACKUP_GROUP:-cinderella-backup}"
 STATUS_PATH="${BACKUP_STATUS_PATH:-/var/lib/cinderella/backup-status.json}"
+# WHY A PROGRESS FILE EXISTS (CCB-S4-017, D-122). The console needs to know a backup is
+# RUNNING, not merely that one was requested. The request marker cannot tell it: the
+# request unit deletes the marker in ExecStartPre, before the backup even starts, so the
+# marker says "started" and vanishes while there is still half a minute of work to do.
+# This file lives exactly as long as the run does, which is the signal the page can wait
+# on. It carries stage names and a state, never a secret.
+PROGRESS_PATH="${BACKUP_PROGRESS_PATH:-/var/lib/cinderella/backup-progress.json}"
+# Removed by this script once progress exists, so the console never sees a gap.
+REQUEST_PATH="${BACKUP_REQUEST_PATH:-/var/lib/cinderella/backup-request}"
 STATUS_OWNER="${BACKUP_STATUS_OWNER:-cinderella}"
 # Updated as the run progresses, so a failure records HOW FAR it got rather than only
 # that it failed.
 STAGE="starting"
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 # Minimal JSON string escaping: backslash and quote, and control characters dropped.
 # Values here are paths, stamps and our own warning strings, never member content.
@@ -100,6 +110,45 @@ write_status() {
   return 0
 }
 
+# The five stages the console shows, in the order this script runs them.
+PROGRESS_STAGES='"database","media","quarantine","messaging-core","env"'
+PROGRESS_DONE=""
+
+# Rewritten after every stage so a poll always sees the current position. Same
+# permissions as the status file, for the same reason: no secret is in it.
+progress_write() {
+  local current="$1" tmp
+  tmp="$PROGRESS_PATH.tmp"
+  mkdir -p "$(dirname "$PROGRESS_PATH")" 2>/dev/null || true
+  {
+    printf '{\n'
+    printf '  "state": "running",\n'
+    printf '  "stamp": "%s",\n' "$(jstr "$STAMP")"
+    printf '  "startedAt": "%s",\n' "$(jstr "$STARTED_AT")"
+    printf '  "updatedAt": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '  "stages": [%s],\n' "$PROGRESS_STAGES"
+    printf '  "done": [%s],\n' "$PROGRESS_DONE"
+    printf '  "current": "%s"\n' "$(jstr "$current")"
+    printf '}\n'
+  } >"$tmp" 2>/dev/null || return 0
+  mv -f "$tmp" "$PROGRESS_PATH" 2>/dev/null || return 0
+  chmod 0644 "$PROGRESS_PATH" 2>/dev/null || true
+  chown "$STATUS_OWNER":"$STATUS_OWNER" "$PROGRESS_PATH" 2>/dev/null || true
+  return 0
+}
+
+# Marks the previous stage finished and announces the next one. `STAGE` keeps its old
+# job of telling a FAILED status how far the run got; this adds the live view.
+set_stage() {
+  local next="$1" finished="${2:-}"
+  if [ -n "$finished" ]; then
+    if [ -n "$PROGRESS_DONE" ]; then PROGRESS_DONE="$PROGRESS_DONE,"; fi
+    PROGRESS_DONE="$PROGRESS_DONE\"$(jstr "$finished")\""
+  fi
+  STAGE="$next"
+  progress_write "$next"
+}
+
 # Warnings go to the journal AND into the status file, so a condition an operator would
 # only have seen by reading logs is visible in the console too. Written with `if` rather
 # than a `&&` list so `set -e` has nothing to trip over on the first warning.
@@ -119,6 +168,10 @@ on_exit() {
   local code=$?
   rm -f "$BACKUP_DIR"/.cinderella-*.part
   rm -rf "$BACKUP_DIR"/.cinderella-*.stage
+  # A failed run must not leave a progress file claiming it is forever in progress. The
+  # status file is the authoritative record of the outcome; this one only ever describes
+  # a run that is still happening, so it goes on every exit path.
+  rm -f "$PROGRESS_PATH" "$PROGRESS_PATH.tmp"
   write_status "$code"
 }
 trap on_exit EXIT
@@ -203,6 +256,18 @@ else
   exit 1
 fi
 
+# THE HANDOVER, AND WHY IT LIVES HERE (CCB-S4-017).
+#
+# The request unit used to delete the marker in ExecStartPre, before this script even
+# started. That left a window in which the marker was gone and no progress file existed
+# yet, and a single poll landing in that window concluded nothing was happening and
+# stopped watching for good. So the handover is atomic from the page's point of view:
+# progress appears FIRST, and only then does the marker go. There is no instant where
+# neither exists.
+STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+progress_write "starting"
+rm -f "$REQUEST_PATH"
+
 # PREFLIGHT, BEFORE A SINGLE BYTE IS WRITTEN.
 #
 # Constraint 2 of the briefing: encryption must never become a silent single point of
@@ -249,14 +314,14 @@ finalize() {
 # before pg_dump runs, so a failed dump left a zero-byte .dump behind that counted
 # as a generation and could push a good one out of retention. The unit failed, and
 # the directory still looked healthy.
-STAGE="database"
+set_stage database
 pg_dump --format=custom --no-owner --file="$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$DATABASE_URL"
 finalize "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$BACKUP_DIR/cinderella-db-$STAMP.dump.enc"
 
 # 2) Media store (paths in the DB are relative to MEDIA_ROOT).
-STAGE="media"
+set_stage media database
 if [ -d "$MEDIA_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" -C "$MEDIA_ROOT" .
   finalize "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" \
@@ -270,7 +335,7 @@ fi
 # Quarantined originals are MOVED out of MEDIA_ROOT, so they are not in the media
 # archive and would be the one class of evidence a disk failure destroyed. The
 # custody obligation is exactly why they have to survive it.
-STAGE="quarantine"
+set_stage quarantine media
 if [ -d "$QUARANTINE_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" -C "$QUARANTINE_ROOT" .
   finalize "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" \
@@ -290,7 +355,7 @@ fi
 # a file the service is writing can tear across a page boundary, so when sqlite3 is
 # missing we still take the copy but say loudly that it is the weaker one, rather
 # than letting a degraded backup pass as a good one.
-STAGE="messaging-core"
+set_stage messaging-core quarantine
 core_files=()
 for suffix in chat agent; do
   [ -f "${SIMPLEX_DB_PREFIX}_${suffix}.db" ] && core_files+=("${SIMPLEX_DB_PREFIX}_${suffix}.db")
@@ -317,7 +382,7 @@ fi
 
 # 5) Secrets (restrict tightly). Carries MEDIA_SECRET, so this archive is the key
 # to every encrypted original in the media archive beside it. See BACKUP.md.
-STAGE="env"
+set_stage env messaging-core
 install -m 0600 "$ENV_FILE" "$BACKUP_DIR/.cinderella-env-$STAMP.env.part"
 finalize "$BACKUP_DIR/.cinderella-env-$STAMP.env.part" \
   "$BACKUP_DIR/cinderella-env-$STAMP.env.enc"
@@ -342,7 +407,7 @@ prune() {
   return 0
 }
 
-STAGE="retention"
+set_stage retention env
 for prefix in cinderella-db cinderella-media cinderella-quarantine cinderella-core cinderella-env; do
   prune "$prefix"
 done

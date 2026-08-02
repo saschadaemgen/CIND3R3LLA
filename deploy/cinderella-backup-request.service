@@ -7,17 +7,23 @@ Type=oneshot
 User=root
 Group=root
 
-# The marker is removed FIRST and unconditionally. `PathExists=` re-arms as soon as the
-# triggered unit finishes, so a marker left in place would start the backup again
-# immediately, and again after that. Removing it before doing anything also means a
-# backup that fails does not leave a request that loops.
-ExecStartPre=/bin/rm -f /var/lib/cinderella/backup-request
+# THE MARKER IS NOT DELETED HERE ANY MORE (CCB-S4-017).
+#
+# It used to be, in ExecStartPre, before the backup had even started. That left a window
+# with no marker and no progress file yet, and one console poll landing in it concluded
+# nothing was running and stopped watching for the rest of the backup. `backup.sh` now
+# removes the marker itself, immediately after writing its first progress record, so from
+# the console's side the handover is seamless: progress exists before the marker goes.
+#
+# Starts the SAME unit the timer starts, rather than invoking the script a second way, so
+# the schedule and the button cannot drift apart and the journal shows one unit whichever
+# caused the run. BLOCKING on purpose: `PathExists=` re-arms only once this unit finishes,
+# and by then backup.sh has removed the marker, so there is no re-trigger loop.
+ExecStart=/usr/bin/systemctl start cinderella-backup.service
 
-# Starts the SAME unit the timer starts, rather than invoking the script a second way.
-# One place runs the backup, so the schedule and the button cannot drift apart, and the
-# journal shows one unit whichever caused the run. --no-block so this oneshot is not
-# holding the transaction open for the length of a dump.
-ExecStart=/usr/bin/systemctl start --no-block cinderella-backup.service
+# Safety net. If the backup never ran at all, the marker would otherwise sit there and
+# re-trigger this unit forever.
+ExecStopPost=/bin/rm -f /var/lib/cinderella/backup-request
 
 StandardOutput=journal
 StandardError=journal
