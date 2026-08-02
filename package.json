@@ -75,7 +75,7 @@
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
     "@fastify/formbody": "^8.0.2",
-    "@fastify/static": "^10.1.0",
+    "@fastify/static": "^10.1.2",
     "@simplewebauthn/browser": "^13.3.0",
     "@simplewebauthn/server": "^13.3.2",
     "@simplex-chat/types": "^0.8.0",
