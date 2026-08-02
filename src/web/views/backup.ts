@@ -20,8 +20,10 @@ import type { FastifyInstance } from 'fastify';
 
 import {
   pendingRequestAgeMs,
+  readBackupProgress,
   readBackupStatus,
   requestBackupRun,
+  type BackupProgress,
   type BackupStatusResult,
 } from '../../backup/status.js';
 import { writeAudit } from '../../db/audit.js';
@@ -32,6 +34,17 @@ import { badge, card, pageHeader } from './ui.js';
 
 /** A request older than this that is still on disk was never picked up. */
 const REQUEST_STALE_MS = 120_000;
+/** A progress file untouched this long means the run died without running its trap. */
+const PROGRESS_STALE_MS = 300_000;
+
+const STAGE_LABELS: Record<string, string> = {
+  database: 'Database',
+  media: 'Media',
+  quarantine: 'Quarantine',
+  'messaging-core': 'Messaging core',
+  env: 'Environment',
+  retention: 'Retention',
+};
 
 const KIND_LABELS: Record<string, string> = {
   db: 'Archive database',
@@ -147,6 +160,53 @@ function archivesCard(res: BackupStatusResult): SafeHtml {
   );
 }
 
+/**
+ * The live view of a run in flight, and the whole reason the polling race is fixed.
+ *
+ * Driven entirely by the progress file, so it shows the stage the backup is ACTUALLY on
+ * rather than an animation guessing at one. `retention` is not one of the five stages
+ * shown; reaching it means all five are done, which renders as a full bar.
+ */
+function runningCard(p: BackupProgress): SafeHtml {
+  const total = p.stages.length || 5;
+  const done = p.done.length;
+  const pct = Math.min(100, Math.round((done / total) * 100));
+  return card(
+    'Backup running',
+    html`<div class="flex flex-wrap items-center gap-3">
+        ${badge('running', 'amber')}
+        <span class="text-sm text-slate-300">
+          ${String(done)} of ${String(total)} stages complete
+        </span>
+        ${STAGE_LABELS[p.current]
+          ? html`<span class="text-sm text-slate-400"
+              >now: ${STAGE_LABELS[p.current] ?? p.current}</span
+            >`
+          : null}
+      </div>
+      <div class="mt-3 h-2 w-full overflow-hidden rounded bg-slate-800">
+        <div class="h-2 rounded bg-emerald-500" style="width: ${String(pct)}%"></div>
+      </div>
+      <ul class="mt-3 flex flex-wrap gap-2">
+        ${p.stages.map((st) => {
+          const isDone = p.done.includes(st);
+          const isCurrent = p.current === st;
+          return html`<li>
+            ${badge(
+              STAGE_LABELS[st] ?? st,
+              isDone ? 'green' : isCurrent ? 'amber' : 'slate',
+            )}
+          </li>`;
+        })}
+      </ul>
+      <p class="mt-3 text-xs text-slate-500">
+        Read from the run record <code>backup.sh</code> updates after every stage. This
+        page refreshes on its own while the run lasts; the result below becomes final when
+        the run finishes.
+      </p>`,
+  );
+}
+
 function scheduleCard(): SafeHtml {
   return card(
     'Schedule and retention',
@@ -184,15 +244,19 @@ function scheduleCard(): SafeHtml {
  * frame. Quiet is the right weight: running a backup by hand is deliberate, but it is
  * not what this page is for.
  */
-function runNowCard(csrf: string, pendingMs: number | null): SafeHtml {
+function runNowCard(csrf: string, pendingMs: number | null, running: boolean): SafeHtml {
   const stale = pendingMs !== null && pendingMs > REQUEST_STALE_MS;
   return card(
     'Run now',
     html`<form method="post" action="/backup/run" class="flex items-center gap-3">
         <input type="hidden" name="_csrf" value="${csrf}" />
-        <button type="submit" class="setup-button setup-button-quiet">
-          Request a backup now
-        </button>
+        ${running
+          ? html`<button type="submit" class="setup-button setup-button-quiet" disabled>
+              Backup running
+            </button>`
+          : html`<button type="submit" class="setup-button setup-button-quiet">
+              Request a backup now
+            </button>`}
         ${pendingMs === null
           ? null
           : stale
@@ -232,10 +296,25 @@ function runNowCard(csrf: string, pendingMs: number | null): SafeHtml {
 function statusRegion(
   res: BackupStatusResult,
   pending: number | null,
+  progress: BackupProgress | null,
   csrf: string,
 ): SafeHtml {
-  const inner = html`${lastRunCard(res)} ${archivesCard(res)} ${runNowCard(csrf, pending)}`;
-  const outstanding = pending !== null && pending <= REQUEST_STALE_MS;
+  const running = progress !== null;
+  // The action first, then the live run, then the record. The button belongs at the top
+  // because it is the primary thing an operator comes here to do.
+  const inner = html`${runNowCard(csrf, pending, running)}
+  ${running && progress ? runningCard(progress) : null} ${lastRunCard(res)}
+  ${archivesCard(res)}`;
+  // THE RACE THIS FIXES (CCB-S4-017, D-122). This used to be the request marker alone.
+  // But `cinderella-backup-request.service` deletes that marker in `ExecStartPre`, BEFORE
+  // it starts the backup, so it was gone within milliseconds; the first poll eight seconds
+  // later concluded nothing was outstanding and stopped watching while the backup still
+  // had half a minute to run. The finished run then never appeared without a reload.
+  //
+  // Two signals now, and the union is what makes it correct end to end. The marker covers
+  // the gap between the button press and the run starting; the progress file covers the
+  // run itself and outlives the marker by the whole duration of the backup.
+  const outstanding = running || (pending !== null && pending <= REQUEST_STALE_MS);
   // Two literal shapes rather than an interpolated attribute, so the polling attributes
   // are either present in the markup or absent from it, with nothing in between.
   return outstanding
@@ -243,7 +322,7 @@ function statusRegion(
         id="backup-status"
         class="grid gap-4"
         hx-get="/backup/fragment"
-        hx-trigger="every 8s"
+        hx-trigger="every 3s"
         hx-swap="outerHTML"
       >
         ${inner}
@@ -253,9 +332,15 @@ function statusRegion(
 
 export function registerBackup(app: FastifyInstance, ctx: ViewContext): void {
   async function regionFor(csrf: string): Promise<SafeHtml> {
+    const now = Date.now();
     const res = await readBackupStatus(ctx.cfg.backupStatusPath);
-    const pending = await pendingRequestAgeMs(ctx.cfg.backupRequestPath, Date.now());
-    return statusRegion(res, pending, csrf);
+    const pending = await pendingRequestAgeMs(ctx.cfg.backupRequestPath, now);
+    const progress = await readBackupProgress(
+      ctx.cfg.backupProgressPath,
+      now,
+      PROGRESS_STALE_MS,
+    );
+    return statusRegion(res, pending, progress, csrf);
   }
 
   app.get('/backup', async (req, reply) => {

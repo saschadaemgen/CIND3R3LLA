@@ -147,3 +147,63 @@ export async function pendingRequestAgeMs(path: string, now: number): Promise<nu
     return null;
   }
 }
+
+export interface BackupProgress {
+  state: string;
+  stamp: string;
+  startedAt: string;
+  updatedAt: string;
+  stages: string[];
+  done: string[];
+  current: string;
+}
+
+/**
+ * Is a backup RUNNING right now, and how far along?
+ *
+ * THIS IS THE SIGNAL THE PAGE POLLS ON, and the reason it exists is a race the request
+ * marker could not avoid (CCB-S4-017, D-122). `cinderella-backup-request.service` deletes
+ * the marker in `ExecStartPre`, before it starts the backup, so the marker means "a run
+ * was started" and is gone within milliseconds while the backup still has half a minute
+ * to go. Polling on the marker therefore stopped 8 seconds in, every time, and the
+ * finished run never appeared without a manual reload.
+ *
+ * The progress file lives exactly as long as the run does, which is the property the
+ * marker never had. `backup.sh` removes it on every exit path, success or failure, so its
+ * absence means "no run in progress" and never "the run is stuck".
+ */
+export async function readBackupProgress(
+  path: string,
+  now: number,
+  staleMs: number,
+): Promise<BackupProgress | null> {
+  let raw: string;
+  try {
+    raw = await readFile(path, 'utf8');
+  } catch {
+    return null;
+  }
+  try {
+    const j = JSON.parse(raw) as Record<string, unknown>;
+    const arr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+    const updatedAt = typeof j['updatedAt'] === 'string' ? j['updatedAt'] : '';
+    // A progress file nothing has touched for a long time means the run died in a way
+    // that skipped the trap (a kill -9, a reboot). Treating it as live would poll for
+    // ever, so it is treated as gone.
+    const at = Date.parse(updatedAt);
+    if (Number.isFinite(at) && now - at > staleMs) return null;
+    return {
+      state: typeof j['state'] === 'string' ? j['state'] : 'running',
+      stamp: typeof j['stamp'] === 'string' ? j['stamp'] : '',
+      startedAt: typeof j['startedAt'] === 'string' ? j['startedAt'] : '',
+      updatedAt,
+      stages: arr(j['stages']),
+      done: arr(j['done']),
+      current: typeof j['current'] === 'string' ? j['current'] : '',
+    };
+  } catch {
+    log.warn(`Backup progress: ${path} is not valid JSON.`);
+    return null;
+  }
+}

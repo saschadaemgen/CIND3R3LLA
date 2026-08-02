@@ -115,6 +115,7 @@ async function main(): Promise<void> {
     // Seeded so the Backups page has a real run record to render (CCB-S4-014/015).
     backupStatusPath: process.env['BACKUP_STATUS_PATH'] ?? './state/backup-status.json',
     backupRequestPath: process.env['BACKUP_REQUEST_PATH'] ?? './state/backup-request',
+    backupProgressPath: process.env['BACKUP_PROGRESS_PATH'] ?? './state/backup-progress.json',
     avatarPath: '',
     databaseUrl: 'postgres://cinderella:placeholder@127.0.0.1:5432/cinderella',
     logLevel: 'info',

@@ -127,6 +127,7 @@ async function main(): Promise<void> {
     mediaRoot: process.cwd(),
     backupStatusPath: join(BACKUP_TMP, 'backup-status.json'),
     backupRequestPath: join(BACKUP_TMP, 'backup-request'),
+    backupProgressPath: join(BACKUP_TMP, 'backup-progress.json'),
     avatarPath: '',
     databaseUrl: `postgres://cinderella:${DB_PASSWORD_SECRET}@127.0.0.1:5432/cinderella`,
     logLevel: 'info',
@@ -1134,7 +1135,7 @@ requested-by=harness
   check(
     'backup: polls while a request is outstanding',
     bkPending.body.includes('hx-get="/backup/fragment"') &&
-      bkPending.body.includes('hx-trigger="every 8s"'),
+      bkPending.body.includes('hx-trigger="every 3s"'),
   );
   check('backup: shows the request as pending', bkPending.body.includes('requested'));
 
@@ -1158,6 +1159,71 @@ requested-by=harness
     'backup: and says the request was not picked up',
     bkStale.body.includes('not picked up'),
   );
+
+  /* ── The polling race, and the progress bar (CCB-S4-017, D-122) ───────── */
+  //
+  // THE BUG THESE GATE. Polling used to depend on the request marker, but the request
+  // unit deletes that marker in ExecStartPre BEFORE starting the backup, so it was gone
+  // within milliseconds while the run had half a minute left. The page stopped watching
+  // eight seconds in and the finished run never appeared. These reproduce that exact
+  // state: a run in progress with NO marker on disk.
+  rmSync(join(BACKUP_TMP, 'backup-request'), { force: true });
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-progress.json'),
+    JSON.stringify({
+      state: 'running',
+      stamp: '20260802T150000Z',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      stages: ['database', 'media', 'quarantine', 'messaging-core', 'env'],
+      done: ['database', 'media'],
+      current: 'quarantine',
+    }),
+    'utf8',
+  );
+  const bkRunning = await getPage('/backup');
+  check(
+    'backup: KEEPS POLLING while a run is active even with the marker already deleted',
+    bkRunning.body.includes('hx-trigger="every 3s"'),
+  );
+  check('backup: shows the run as running', bkRunning.body.includes('Backup running'));
+  check(
+    'backup: the bar reports the real stage from the progress file',
+    bkRunning.body.includes('Quarantine') && bkRunning.body.includes('2 of 5 stages'),
+  );
+  check(
+    // Matched on the BUTTON markup, not on the words "Backup running", which also appear
+    // as the progress card's title: the looser version passed even with the button left
+    // enabled, which the mutation proof caught.
+    'backup: the button does not invite a second concurrent run',
+    /<button[^>]*class="setup-button setup-button-quiet"[^>]*disabled/.test(bkRunning.body),
+  );
+  check(
+    'backup: no result is claimed while the run is still going',
+    !bkRunning.body.includes('20260802T150000Z.dump'),
+  );
+
+  // A progress file nobody has touched for a long time is a run that died without its
+  // trap. Treating it as live would poll for ever.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-progress.json'),
+    JSON.stringify({
+      state: 'running',
+      stamp: 'x',
+      startedAt: '2020-01-01T00:00:00.000Z',
+      updatedAt: '2020-01-01T00:00:00.000Z',
+      stages: ['database'],
+      done: [],
+      current: 'database',
+    }),
+    'utf8',
+  );
+  const bkStaleProg = await getPage('/backup');
+  check(
+    'backup: a stale progress file stops the polling rather than spinning',
+    !bkStaleProg.body.includes('hx-trigger'),
+  );
+  rmSync(join(BACKUP_TMP, 'backup-progress.json'), { force: true });
 
   rmSync(BACKUP_TMP, { recursive: true, force: true });
 

@@ -42,6 +42,8 @@ export interface Config {
    */
   backupStatusPath: string;
   backupRequestPath: string;
+  /** Live run state, written by backup.sh while a run is in progress (D-122). */
+  backupProgressPath: string;
   /**
    * Absolute path to the quarantine store (CCB-S3-013 §4).
    *
@@ -238,6 +240,9 @@ export function loadConfig(): Config {
     ),
     backupRequestPath: resolve(
       optional('BACKUP_REQUEST_PATH', '/var/lib/cinderella/backup-request'),
+    ),
+    backupProgressPath: resolve(
+      optional('BACKUP_PROGRESS_PATH', '/var/lib/cinderella/backup-progress.json'),
     ),
     quarantineRoot: resolveQuarantineRoot(),
     avatarPath: resolveAvatarPath(),
