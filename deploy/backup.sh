@@ -24,6 +24,17 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 # So the privileged side leaves a record on the way past, in the one directory the app
 # can read. It carries names, sizes and counts. It NEVER carries a value out of the env
 # file: the env archive appears as an existence and a size, never as contents.
+# ENCRYPTION (CCB-S4-016, D-121). Every archive is encrypted before it is finalised, so
+# a backup that leaves this host carries no plaintext anywhere. The passphrase lives OFF
+# HOST in its own root-only file, deliberately NOT in cinderella.env: that file is itself
+# archived, and a key inside the backup it unlocks is not a key.
+PASSPHRASE_FILE="${BACKUP_PASSPHRASE_FILE:-/etc/cinderella/backup-passphrase}"
+CRYPT_HELPER="${BACKUP_CRYPT_HELPER:-$(dirname "$0")/../scripts/backup-crypt.mjs}"
+NODE_BIN="${BACKUP_NODE_BIN:-node}"
+# The read-group. Finalised archives are root:cinderella-backup 0640 so the admin console
+# can READ and stream them; writing and deleting stay root-only. Safe only because the
+# archives are now ciphertext, which is why these two decisions ship together.
+BACKUP_GROUP="${BACKUP_GROUP:-cinderella-backup}"
 STATUS_PATH="${BACKUP_STATUS_PATH:-/var/lib/cinderella/backup-status.json}"
 STATUS_OWNER="${BACKUP_STATUS_OWNER:-cinderella}"
 # Updated as the run progresses, so a failure records HOW FAR it got rather than only
@@ -68,6 +79,12 @@ write_status() {
     printf '  "stage": "%s",\n' "$(jstr "$STAGE")"
     printf '  "backupDir": "%s",\n' "$(jstr "$BACKUP_DIR")"
     printf '  "retain": %s,\n' "$KEEP"
+    # The console needs to be able to say "these are encrypted" without guessing from a
+    # filename. The scheme is named; THE PASSPHRASE IS NEVER RECORDED HERE, and the whole
+    # file is world-readable, which is exactly why it must not be.
+    printf '  "encrypted": true,\n'
+    printf '  "encryption": "AES-256-GCM, scrypt N=32768 r=8 p=1 (backup-crypt v1)",\n'
+    printf '  "readGroup": "%s",\n' "$(jstr "$BACKUP_GROUP")"
     printf '  "archives": [\n    %s,\n    %s,\n    %s,\n    %s,\n    %s\n  ],\n' \
       "$(kind_json cinderella-db)" "$(kind_json cinderella-media)" \
       "$(kind_json cinderella-quarantine)" "$(kind_json cinderella-core)" \
@@ -101,6 +118,7 @@ warn() {
 on_exit() {
   local code=$?
   rm -f "$BACKUP_DIR"/.cinderella-*.part
+  rm -rf "$BACKUP_DIR"/.cinderella-*.stage
   write_status "$code"
 }
 trap on_exit EXIT
@@ -167,7 +185,62 @@ SIMPLEX_DB_PREFIX="${file_prefix:-${SIMPLEX_DB_PREFIX:-/var/lib/cinderella/state
 # being owed. `umask 077` above already creates the directory restricted, so the chmod
 # closes no window; it is there to also correct a directory that predates this script.
 mkdir -p "$BACKUP_DIR"
-chmod 0700 "$BACKUP_DIR"
+# 0750, not 0700: the read-group needs to traverse. Writing stays root-only.
+chmod 0750 "$BACKUP_DIR"
+if ! command -v getent >/dev/null 2>&1; then
+  # No getent means this is not the production host (Debian always has it). The group
+  # cannot be verified, so say so loudly rather than pretending the read-group is set up.
+  warn "getent unavailable; cannot verify group '$BACKUP_GROUP'. Archive group ownership NOT applied."
+  BACKUP_GROUP=""
+elif getent group "$BACKUP_GROUP" >/dev/null 2>&1; then
+  chgrp "$BACKUP_GROUP" "$BACKUP_DIR"
+else
+  # FAIL RATHER THAN WRITE ARCHIVES THE CONSOLE CANNOT READ. Silently falling back to
+  # root-only would look like success and quietly undo the read-group decision.
+  echo "Group '$BACKUP_GROUP' does not exist. Create it and add the app user:" >&2
+  echo "  groupadd $BACKUP_GROUP && usermod -aG $BACKUP_GROUP cinderella" >&2
+  echo "See deploy/BACKUP.md." >&2
+  exit 1
+fi
+
+# PREFLIGHT, BEFORE A SINGLE BYTE IS WRITTEN.
+#
+# Constraint 2 of the briefing: encryption must never become a silent single point of
+# failure, and a missing key must never produce a plaintext archive. Checking here rather
+# than at the first encrypt means a misconfigured host fails with nothing written at all,
+# instead of leaving a half-set of archives behind.
+STAGE="preflight"
+command -v "$NODE_BIN" >/dev/null 2>&1 || {
+  echo "Backup encryption needs node, and '$NODE_BIN' is not on PATH." >&2; exit 1; }
+[ -f "$CRYPT_HELPER" ] || {
+  echo "Backup encryption helper missing: $CRYPT_HELPER" >&2; exit 1; }
+[ -f "$PASSPHRASE_FILE" ] || {
+  echo "Backup passphrase file missing: $PASSPHRASE_FILE" >&2
+  echo "Create it (root-only, 0600) and keep it OUT of $ENV_FILE. See deploy/BACKUP.md." >&2
+  exit 1; }
+[ -s "$PASSPHRASE_FILE" ] || {
+  echo "Backup passphrase file is empty: $PASSPHRASE_FILE" >&2; exit 1; }
+
+# Encrypt a staged plaintext part into its finished, group-readable archive.
+#
+# THERE IS NO PLAINTEXT FALLBACK. If encryption fails the function exits non-zero, `set
+# -e` stops the run, the EXIT trap records a failed status, and the plaintext part is
+# removed. The one thing that must never happen is an unencrypted archive appearing in
+# the backup set because the key was unavailable.
+finalize() {
+  local part="$1" dest="$2"
+  local staged="$BACKUP_DIR/.$(basename "$dest").part"
+  if ! "$NODE_BIN" "$CRYPT_HELPER" encrypt "$part" "$staged" "$PASSPHRASE_FILE"; then
+    rm -f "$part" "$staged"
+    echo "Encryption failed for $(basename "$dest"); no archive written." >&2
+    return 1
+  fi
+  rm -f "$part"
+  mv -f "$staged" "$dest"
+  # Group READ only. The console streams downloads; it can never alter or delete one.
+  if [ -n "$BACKUP_GROUP" ]; then chown "root:$BACKUP_GROUP" "$dest" 2>/dev/null || true; fi
+  chmod 0640 "$dest"
+}
 
 
 # 1) Archive database (custom format — restore with pg_restore).
@@ -179,14 +252,15 @@ chmod 0700 "$BACKUP_DIR"
 STAGE="database"
 pg_dump --format=custom --no-owner --file="$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
   "$DATABASE_URL"
-mv -f "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" "$BACKUP_DIR/cinderella-db-$STAMP.dump"
+finalize "$BACKUP_DIR/.cinderella-db-$STAMP.dump.part" \
+  "$BACKUP_DIR/cinderella-db-$STAMP.dump.enc"
 
 # 2) Media store (paths in the DB are relative to MEDIA_ROOT).
 STAGE="media"
 if [ -d "$MEDIA_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" -C "$MEDIA_ROOT" .
-  mv -f "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" \
-    "$BACKUP_DIR/cinderella-media-$STAMP.tar.gz"
+  finalize "$BACKUP_DIR/.cinderella-media-$STAMP.tar.gz.part" \
+    "$BACKUP_DIR/cinderella-media-$STAMP.tar.gz.enc"
 else
   warn "MEDIA_ROOT ($MEDIA_ROOT) does not exist; no media archive written."
 fi
@@ -199,8 +273,8 @@ fi
 STAGE="quarantine"
 if [ -d "$QUARANTINE_ROOT" ]; then
   tar -czf "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" -C "$QUARANTINE_ROOT" .
-  mv -f "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" \
-    "$BACKUP_DIR/cinderella-quarantine-$STAMP.tar.gz"
+  finalize "$BACKUP_DIR/.cinderella-quarantine-$STAMP.tar.gz.part" \
+    "$BACKUP_DIR/cinderella-quarantine-$STAMP.tar.gz.enc"
 else
   warn "QUARANTINE_ROOT ($QUARANTINE_ROOT) does not exist yet; nothing quarantined."
 fi
@@ -235,9 +309,8 @@ if [ ${#core_files[@]} -gt 0 ]; then
   done
   tar -czf "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" -C "$core_stage" .
   rm -rf "$core_stage"
-  mv -f "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" \
-    "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz"
-  chmod 600 "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz"
+  finalize "$BACKUP_DIR/.cinderella-core-$STAMP.tar.gz.part" \
+    "$BACKUP_DIR/cinderella-core-$STAMP.tar.gz.enc"
 else
   warn "No messaging-core database at ${SIMPLEX_DB_PREFIX}_{chat,agent}.db."
 fi
@@ -245,7 +318,9 @@ fi
 # 5) Secrets (restrict tightly). Carries MEDIA_SECRET, so this archive is the key
 # to every encrypted original in the media archive beside it. See BACKUP.md.
 STAGE="env"
-install -m 0600 "$ENV_FILE" "$BACKUP_DIR/cinderella-env-$STAMP.env"
+install -m 0600 "$ENV_FILE" "$BACKUP_DIR/.cinderella-env-$STAMP.env.part"
+finalize "$BACKUP_DIR/.cinderella-env-$STAMP.env.part" \
+  "$BACKUP_DIR/cinderella-env-$STAMP.env.enc"
 
 # 6) Retain the newest $KEEP of each kind.
 #
