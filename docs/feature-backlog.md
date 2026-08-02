@@ -985,6 +985,15 @@ Both arrived with the unbriefed AI block and failed from 2026-07-28. Full accoun
       assertion that the retired page has not returned. Mutation-proven in both directions.
       **CCB-S4-008's stated cause was wrong** and is corrected in §24.7: the `data-section` attribute
       is interpolated and does render; the failing conjunct was the `/website` link.
+- [x] **The backup console's run-now button was invisible, and is fixed** (CCB-S4-015). It shipped with
+      `bg-cinder-600`, and there is no `cinder` colour anywhere in this project: Tailwind v4 is CSS-first
+      here with no config file and `assets/app.css` defines no such token, so Tailwind emitted nothing.
+      Measured on the live page, the old class computed to `background: rgba(0,0,0,0)`, `border: 0px` and
+      `cursor: default`: literally bare text in an empty frame. Now `setup-button setup-button-quiet`,
+      the console's own system, verbatim what "Reset workflow" uses. **Both classes are required**, which
+      is the part worth remembering: `setup-button` carries the shape and the `-quiet` variant carries
+      only the colours. Also added self-limiting htmx refresh so a requested run appears without a manual
+      reload. Gated by 9 further checks in `verify:admin-views`, mutation-proven.
 - [ ] **Decide what a red harness from the unbriefed block means for the standard set.** These two
       sat red for four days because they were in no completion report and no routine. The full set is
       41 of 41 green as of CCB-S4-009, so the question is now about keeping it that way: either the

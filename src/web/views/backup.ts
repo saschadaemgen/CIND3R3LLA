@@ -169,16 +169,28 @@ function scheduleCard(): SafeHtml {
   );
 }
 
+/**
+ * The run-now control, using the console's OWN button system rather than utilities.
+ *
+ * BOTH classes are required, and getting that wrong is what broke it (CCB-S4-015).
+ * `setup-button` carries the shape: inline-flex, 40px min-height, 10px radius, 16px
+ * padding, the transitions. `setup-button-quiet` carries only the colours. This is
+ * verbatim what "Reset workflow" uses in `ai-onboarding.ts`.
+ *
+ * As shipped it read `bg-cinder-600`, and there is no `cinder` colour anywhere in this
+ * project: Tailwind v4 is CSS-first here with no config file, and `assets/app.css`
+ * defines no such token. Tailwind emits nothing for a class it cannot resolve, so the
+ * control had no fill, no padding and no height, and rendered as bare text in an empty
+ * frame. Quiet is the right weight: running a backup by hand is deliberate, but it is
+ * not what this page is for.
+ */
 function runNowCard(csrf: string, pendingMs: number | null): SafeHtml {
   const stale = pendingMs !== null && pendingMs > REQUEST_STALE_MS;
   return card(
     'Run now',
     html`<form method="post" action="/backup/run" class="flex items-center gap-3">
         <input type="hidden" name="_csrf" value="${csrf}" />
-        <button
-          type="submit"
-          class="rounded bg-cinder-600 px-4 py-2 text-sm font-medium text-white hover:bg-cinder-500"
-        >
+        <button type="submit" class="setup-button setup-button-quiet">
           Request a backup now
         </button>
         ${pendingMs === null
@@ -204,11 +216,50 @@ function runNowCard(csrf: string, pendingMs: number | null): SafeHtml {
   );
 }
 
+/**
+ * The self-refreshing region, and the reason it stops on its own.
+ *
+ * A request takes as long as a backup takes, so the operator should not have to reload
+ * to find out how it went. htmx polls this fragment back, and the STOPPING CONDITION is
+ * the fragment itself: the polling attributes are only emitted while a request is
+ * genuinely outstanding. When the root side consumes the marker the next render omits
+ * them and the polling ends, and it ends the same way once a request goes stale. There
+ * is no timer that runs forever and nothing that keeps asking after the answer arrived.
+ *
+ * It reports nothing it has not read. The completed run appears because the status file
+ * changed, never because a request was made.
+ */
+function statusRegion(
+  res: BackupStatusResult,
+  pending: number | null,
+  csrf: string,
+): SafeHtml {
+  const inner = html`${lastRunCard(res)} ${archivesCard(res)} ${runNowCard(csrf, pending)}`;
+  const outstanding = pending !== null && pending <= REQUEST_STALE_MS;
+  // Two literal shapes rather than an interpolated attribute, so the polling attributes
+  // are either present in the markup or absent from it, with nothing in between.
+  return outstanding
+    ? html`<div
+        id="backup-status"
+        class="grid gap-4"
+        hx-get="/backup/fragment"
+        hx-trigger="every 8s"
+        hx-swap="outerHTML"
+      >
+        ${inner}
+      </div>`
+    : html`<div id="backup-status" class="grid gap-4">${inner}</div>`;
+}
+
 export function registerBackup(app: FastifyInstance, ctx: ViewContext): void {
-  app.get('/backup', async (req, reply) => {
-    const csrf = req.session?.csrfToken ?? '';
+  async function regionFor(csrf: string): Promise<SafeHtml> {
     const res = await readBackupStatus(ctx.cfg.backupStatusPath);
     const pending = await pendingRequestAgeMs(ctx.cfg.backupRequestPath, Date.now());
+    return statusRegion(res, pending, csrf);
+  }
+
+  app.get('/backup', async (req, reply) => {
+    const csrf = req.session?.csrfToken ?? '';
     return reply.type('text/html').send(
       page({
         title: 'Backups',
@@ -218,12 +269,16 @@ export function registerBackup(app: FastifyInstance, ctx: ViewContext): void {
           'Backups',
           'What the last run actually recorded. Read from the run record, not from the backup directory, which this process cannot see.',
         )}
-        <div class="grid gap-4">
-          ${lastRunCard(res)} ${archivesCard(res)} ${runNowCard(csrf, pending)}
-          ${scheduleCard()}
-        </div>`,
+        <div class="grid gap-4">${await regionFor(csrf)} ${scheduleCard()}</div>`,
       }),
     );
+  });
+
+  // The polled fragment. Same source, same renderer, so the live view and the full page
+  // can never disagree about what the run record says.
+  app.get('/backup/fragment', async (req, reply) => {
+    const csrf = req.session?.csrfToken ?? '';
+    return reply.type('text/html').send((await regionFor(csrf)).value);
   });
 
   app.post('/backup/run', async (req, reply) => {

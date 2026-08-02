@@ -1096,6 +1096,69 @@ async function main(): Promise<void> {
   const bkNoAuth = await app.inject({ method: 'GET', url: '/backup' });
   check('backup: unreachable unauthenticated', bkNoAuth.statusCode !== 200);
 
+  /* ── Run-now button and live refresh (CCB-S4-015) ────────────────────── */
+  //
+  // The button shipped with `bg-cinder-600`, a colour that exists nowhere in this
+  // project, so Tailwind emitted nothing and it rendered as bare text. These gate the
+  // fix at the level the defect lived: the class actually in the markup.
+
+  check(
+    'backup: run-now uses the console button system, both classes',
+    bkFailed.body.includes('class="setup-button setup-button-quiet"'),
+  );
+  check(
+    'backup: no invented cinder colour survives anywhere on the page',
+    // Plain substring, NOT a regex. The first attempt used  written through a
+    // generator that turned it into U+0008, so it matched nothing and passed while the
+    // defect was present: D-107's escaping lesson recurring, caught by the mutation
+    // proof. No word boundary is needed to assert an absence.
+    !bkFailed.body.includes('cinder-'),
+  );
+
+  // Self-limiting polling: the attributes appear ONLY while a request is outstanding,
+  // so the page cannot poll forever. With no request marker there is nothing to wait
+  // for and the region must be inert.
+  check(
+    'backup: does not poll when no run was requested',
+    !bkFailed.body.includes('hx-trigger'),
+  );
+
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-request'),
+    `requested-at=${new Date().toISOString()}
+requested-by=harness
+`,
+    'utf8',
+  );
+  const bkPending = await getPage('/backup');
+  check(
+    'backup: polls while a request is outstanding',
+    bkPending.body.includes('hx-get="/backup/fragment"') &&
+      bkPending.body.includes('hx-trigger="every 8s"'),
+  );
+  check('backup: shows the request as pending', bkPending.body.includes('requested'));
+
+  // The fragment is the same renderer, so the live view cannot disagree with the page.
+  const bkFrag = await getPage('/backup/fragment');
+  check('backup: the polled fragment renders', bkFrag.code === 200);
+  check(
+    'backup: the fragment carries the status region, not a whole page',
+    bkFrag.body.includes('id="backup-status"') && !bkFrag.body.includes('<html'),
+  );
+
+  // A stale request stops the polling AND says so, rather than spinning forever.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-request'),
+    'requested-at=2020-01-01T00:00:00.000Z\nrequested-by=harness\n',
+    'utf8',
+  );
+  const bkStale = await getPage('/backup');
+  check('backup: a stale request stops the polling', !bkStale.body.includes('hx-trigger'));
+  check(
+    'backup: and says the request was not picked up',
+    bkStale.body.includes('not picked up'),
+  );
+
   rmSync(BACKUP_TMP, { recursive: true, force: true });
 
   await app.close();
