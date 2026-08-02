@@ -166,7 +166,7 @@ sudo systemctl start cinderella-backup.service
 systemctl status cinderella-backup.service
 ```
 
-## 3b. The admin console, and the two request units (CCB-S4-014, D-120)
+## 3b. The admin console, and the two request units (CCB-S4-014/017/018, D-120/D-122/D-123)
 
 The console has a **Backups** page under System. It is **read plus trigger only**: it shows
 what the last run recorded and offers a run-now button. It does not edit the schedule or
@@ -194,6 +194,30 @@ sudo systemctl enable --now cinderella-backup-request.path
 **Until those are installed the button writes a marker that nothing consumes.** The page
 detects exactly that: a request still sitting there after two minutes is shown as **not
 picked up**, naming the unit. It will not pretend a backup ran.
+
+**A second file reports the run while it is running** (CCB-S4-017/018, D-122/D-123).
+`backup.sh` writes `/var/lib/cinderella/backup-progress.json` and removes it on every exit
+path, so its presence means "a run is in progress" and its absence means the run is over.
+The page polls every three seconds while it exists and stops when it does not. It carries
+the five stages, which are done, which is current, the archive being written, its byte
+count and, where it is knowable, its expected size. A background sampler refreshes the byte
+count once a second, which is what makes the bars move continuously rather than five times.
+
+Three properties of this file are load-bearing and easy to break:
+
+- **`currentTotal: 0` means the size is not knowable**, not missing. Media and quarantine
+  are measured with `du` before the archive starts; a `pg_dump` cannot be. The console
+  renders an indeterminate bar and a climbing byte count there, and shows no percentage.
+- **`backup.sh` removes the request marker itself**, immediately after its first progress
+  record. The request unit no longer deletes it, so there is no instant in which neither
+  file exists, and a single poll landing in the handover cannot stop the polling.
+- **The status file is written before the progress file is removed.** Reversing that leaves
+  a window in which the page sees no run and the previous run's result, and renders a stale
+  completion notice.
+
+If the machine dies mid-run the progress file survives with no trap to clear it. The reader
+treats a record untouched for longer than the stale window as gone, so a stale file cannot
+make the page poll for ever; delete it by hand if you want the page clean immediately.
 
 Verify the boundary end to end after installing:
 

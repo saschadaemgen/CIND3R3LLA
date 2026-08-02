@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-122**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-123**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,64 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-123 - Progress is measured in bytes, and an unknowable total is shown as unknowable
+
+**Status: IMPLEMENTED** (CCB-S4-018). `deploy/backup.sh`, `src/backup/status.ts`,
+`src/web/views/backup.ts`. Proven by observed live runs, success and forced failure;
+36 checks in `verify:admin-views`.
+
+**Refines D-122, which was right about the signal and too coarse about the reading.**
+D-122 gave the console a progress file that lives exactly as long as the run does, and
+that part stands. But it recorded progress at **stage granularity**: five stages, a bar
+that moved five times. On real data the media stage alone runs for most of a minute, so
+the page sat at "1 of 5" showing nothing changing, which reads as a freeze rather than
+as work. The signal was correct and the resolution was not.
+
+**Decision 1: sample the archive being written, once a second, and report its size.**
+`backup.sh` starts a background sampler for each stage that `wc -c` the `.part` file it
+is currently writing, and writes `currentFile`, `currentBytes` and `currentTotal` into
+the progress record. The console renders two bars: overall completion across the five
+stages, and the current archive within itself. Motion on the page is now the same fact
+as bytes on disk.
+
+**Decision 2: `currentTotal: 0` means NOT KNOWABLE, and the page must say so rather than
+invent a number.** A media or quarantine tree can be measured with `du` before the
+archive starts, so those stages have an honest denominator. `pg_dump` has no predictable
+output size, and neither does the compressed result of anything, so the database stages
+have none. The temptation is to substitute an estimate; the standing rule forbids showing
+a percentage the data does not support. So 0 is carried through as a distinct value and
+rendered as an indeterminate bar with a climbing byte count and no percentage. Observed
+on a scratch database: 1.7, 3.8, 6.0, 7.6 MB, no bar position claimed.
+
+**Decision 3: encryption is a visible substate, because it is a second pass over the same
+bytes.** Under D-121 every archive is encrypted after it is written, which for a large
+media tree is a long operation on a file that is no longer growing. Reported as
+`archiving` versus `encrypting`, the pause becomes a labelled phase ("Media (encrypting)")
+instead of a stall.
+
+**Decision 4: the status file is written BEFORE the progress file is removed.** This is
+the third race in this mechanism and the subtlest. `on_exit` originally cleared progress
+and then wrote the status; a poll landing between the two found no run in progress and
+the *previous* run's status, so it rendered a completion notice for a run that had
+finished the day before and then stopped polling, with the real result never appearing.
+Observed live, with the notice showing the prior day's timestamp. The ordering is now
+stop the sampler, remove the partials, **write the status**, then remove the progress
+file, so every instant of the transition is covered by one artifact or the other. Three
+races in one mechanism is the lesson worth recording: any handover between two files that
+signal "running" and "finished" has a gap unless the overlap is deliberate.
+
+**Decision 5: the result is announced, and the control sits above what it controls.** A
+run that ends now leaves a completion notice at the top of the page, success or failure,
+naming the finished time and the archive sizes, or the stage it died at and the exit code.
+The forced-failure case was verified the same way as the success case: "Backup FAILED, at
+stage database, exit 1", polling stopped. The run-now button moved above the progress and
+result cards, because a control below its own output is found by scrolling past the answer.
+
+**Not built, deliberately:** the archive list, download, delete and labelling remain out
+of scope. This layer reads and triggers; it still does not manage.
 
 ---
 
