@@ -1203,6 +1203,90 @@ requested-by=harness
     !bkRunning.body.includes('20260802T150000Z.dump'),
   );
 
+  /* ── Continuous progress and the completion notice (CCB-S4-018, D-123) ── */
+
+  // A KNOWN total renders a real percentage.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-progress.json'),
+    JSON.stringify({
+      state: 'running', stamp: 'x', startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      stages: ['database', 'media', 'quarantine', 'messaging-core', 'env'],
+      done: ['database'], current: 'media',
+      currentFile: '.cinderella-media-20260802T150000Z.tar.gz.part',
+      currentBytes: 209715200, currentTotal: 419430400, substate: 'archiving',
+    }),
+    'utf8',
+  );
+  const bkBytes = await getPage('/backup');
+  check(
+    'backup: shows the archive being written right now',
+    bkBytes.body.includes('.cinderella-media-20260802T150000Z.tar.gz.part'),
+  );
+  check(
+    'backup: shows a live byte count against a real total',
+    bkBytes.body.includes('200 MB') && bkBytes.body.includes('400 MB'),
+  );
+  check(
+    'backup: the overall bar advances WITHIN a stage, not only at boundaries',
+    // 1 stage done + half of the second, over five: 30%, which five discrete jumps
+    // could never produce.
+    bkBytes.body.includes('width: 30%'),
+  );
+  check('backup: names the encryption sub-state only when encrypting',
+    !bkBytes.body.includes('(encrypting)'));
+
+  // An UNKNOWN total must NOT be rendered as a percentage.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-progress.json'),
+    JSON.stringify({
+      state: 'running', stamp: 'x', startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      stages: ['database', 'media', 'quarantine', 'messaging-core', 'env'],
+      done: [], current: 'database',
+      currentFile: '.cinderella-db-20260802T150000Z.dump.part',
+      currentBytes: 7606272, currentTotal: 0, substate: 'archiving',
+    }),
+    'utf8',
+  );
+  const bkIndet = await getPage('/backup');
+  check(
+    'backup: an unknown total shows a byte count, never a fabricated percentage',
+    bkIndet.body.includes('7.3 MB') && bkIndet.body.includes('total not known in advance'),
+  );
+  check(
+    'backup: and the stage bar is indeterminate rather than a made-up width',
+    bkIndet.body.includes('animate-pulse') && !bkIndet.body.includes('of 0 B'),
+  );
+
+  // The encryption pass is visible, so a long encrypt does not look like a freeze.
+  writeFileSync(
+    join(BACKUP_TMP, 'backup-progress.json'),
+    JSON.stringify({
+      state: 'running', stamp: 'x', startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      stages: ['database', 'media', 'quarantine', 'messaging-core', 'env'],
+      done: ['database'], current: 'media',
+      currentFile: '.cinderella-media-x.tar.gz.enc.part',
+      currentBytes: 1000, currentTotal: 4000, substate: 'encrypting',
+    }),
+    'utf8',
+  );
+  const bkEnc = await getPage('/backup');
+  check('backup: the encryption pass is shown, not a frozen bar',
+    bkEnc.body.includes('encrypting'));
+
+  rmSync(join(BACKUP_TMP, 'backup-progress.json'), { force: true });
+  const bkDone = await getPage('/backup');
+  check(
+    'backup: a finished run announces itself rather than the bar just vanishing',
+    bkDone.body.includes('Backup FAILED') || bkDone.body.includes('Backup complete'),
+  );
+  check(
+    'backup: the completion notice names the stage on a failure',
+    bkDone.body.includes('Backup FAILED') && bkDone.body.includes('database'),
+  );
+
   // A progress file nobody has touched for a long time is a run that died without its
   // trap. Treating it as live would poll for ever.
   writeFileSync(

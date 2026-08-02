@@ -156,6 +156,19 @@ export interface BackupProgress {
   stages: string[];
   done: string[];
   current: string;
+  /** The archive being written right now, so the operator sees real work. */
+  currentFile: string;
+  currentBytes: number;
+  /**
+   * Expected size of the current archive, or 0 when it is NOT KNOWABLE.
+   *
+   * 0 is not a missing value to paper over: `pg_dump` has no predictable output size, so
+   * the console must render an indeterminate bar with a climbing byte count. Inventing a
+   * percentage there would be a number the run cannot support (D-123).
+   */
+  currentTotal: number;
+  /** `archiving` or `encrypting`, so the encryption pass does not look like a freeze. */
+  substate: string;
 }
 
 /**
@@ -201,6 +214,10 @@ export async function readBackupProgress(
       stages: arr(j['stages']),
       done: arr(j['done']),
       current: typeof j['current'] === 'string' ? j['current'] : '',
+      currentFile: typeof j['currentFile'] === 'string' ? j['currentFile'] : '',
+      currentBytes: typeof j['currentBytes'] === 'number' ? j['currentBytes'] : 0,
+      currentTotal: typeof j['currentTotal'] === 'number' ? j['currentTotal'] : 0,
+      substate: typeof j['substate'] === 'string' ? j['substate'] : '',
     };
   } catch {
     log.warn(`Backup progress: ${path} is not valid JSON.`);

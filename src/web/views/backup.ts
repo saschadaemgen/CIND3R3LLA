@@ -161,48 +161,76 @@ function archivesCard(res: BackupStatusResult): SafeHtml {
 }
 
 /**
- * The live view of a run in flight, and the whole reason the polling race is fixed.
+ * The live view of a run in flight (CCB-S4-018, D-123).
  *
- * Driven entirely by the progress file, so it shows the stage the backup is ACTUALLY on
- * rather than an animation guessing at one. `retention` is not one of the five stages
- * shown; reaching it means all five are done, which renders as a full bar.
+ * WHAT MAKES THIS HONEST. The bar advances on BYTES within the current stage, not on the
+ * five stage boundaries, because boundaries alone left it frozen for minutes inside the
+ * media archive looking broken while the run was fine. But a byte count only becomes a
+ * percentage when a real denominator exists: media and quarantine have one (the source
+ * directory), and `pg_dump` does not, so that stage renders an INDETERMINATE bar with a
+ * climbing count. A fabricated percentage would be worse than no percentage.
+ *
+ * The encryption pass gets its own substate for the same reason: encrypting a
+ * multi-gigabyte archive is real work, and without it the bar sat still through all of it.
  */
 function runningCard(p: BackupProgress): SafeHtml {
   const total = p.stages.length || 5;
   const done = p.done.length;
-  const pct = Math.min(100, Math.round((done / total) * 100));
+  const known = p.currentTotal > 0;
+  const frac = known ? Math.min(1, p.currentBytes / p.currentTotal) : 0;
+  // Whole finished stages plus the measured fraction of the current one. When the current
+  // stage is indeterminate the bar simply holds at the completed-stage mark rather than
+  // drifting on a guess; the byte count beside it is what shows the work.
+  const overall = Math.min(100, Math.round(((done + frac) / total) * 100));
+  const stageName = STAGE_LABELS[p.current] ?? p.current;
+  const encrypting = p.substate === 'encrypting';
   return card(
     'Backup running',
     html`<div class="flex flex-wrap items-center gap-3">
-        ${badge('running', 'amber')}
+        ${badge(encrypting ? 'encrypting' : 'running', 'amber')}
         <span class="text-sm text-slate-300">
           ${String(done)} of ${String(total)} stages complete
         </span>
-        ${STAGE_LABELS[p.current]
-          ? html`<span class="text-sm text-slate-400"
-              >now: ${STAGE_LABELS[p.current] ?? p.current}</span
-            >`
+        ${p.current
+          ? html`<span class="text-sm text-slate-400">
+              now: ${stageName}${encrypting ? html` (encrypting)` : null}
+            </span>`
           : null}
       </div>
       <div class="mt-3 h-2 w-full overflow-hidden rounded bg-slate-800">
-        <div class="h-2 rounded bg-emerald-500" style="width: ${String(pct)}%"></div>
+        <div class="h-2 rounded bg-emerald-500" style="width: ${String(overall)}%"></div>
       </div>
+      <div class="mt-1 text-xs text-slate-500">${String(overall)}% overall</div>
+      ${p.currentFile
+        ? html`<div class="mt-3 rounded border border-slate-800 p-3">
+            <div class="font-mono text-xs text-slate-400">${p.currentFile}</div>
+            <div class="mt-1 text-sm text-slate-300">
+              ${bytes(p.currentBytes)}${known
+                ? html` of ${bytes(p.currentTotal)} (${String(Math.round(frac * 100))}%)`
+                : html` written<span class="text-slate-500">, total not known in advance</span>`}
+            </div>
+            <div class="mt-2 h-1.5 w-full overflow-hidden rounded bg-slate-800">
+              ${known
+                ? html`<div
+                    class="h-1.5 rounded bg-sky-500"
+                    style="width: ${String(Math.round(frac * 100))}%"
+                  ></div>`
+                : html`<div class="h-1.5 w-1/3 animate-pulse rounded bg-sky-500"></div>`}
+            </div>
+          </div>`
+        : null}
       <ul class="mt-3 flex flex-wrap gap-2">
         ${p.stages.map((st) => {
           const isDone = p.done.includes(st);
           const isCurrent = p.current === st;
           return html`<li>
-            ${badge(
-              STAGE_LABELS[st] ?? st,
-              isDone ? 'green' : isCurrent ? 'amber' : 'slate',
-            )}
+            ${badge(STAGE_LABELS[st] ?? st, isDone ? 'green' : isCurrent ? 'amber' : 'slate')}
           </li>`;
         })}
       </ul>
       <p class="mt-3 text-xs text-slate-500">
-        Read from the run record <code>backup.sh</code> updates after every stage. This
-        page refreshes on its own while the run lasts; the result below becomes final when
-        the run finishes.
+        Read from the run record <code>backup.sh</code> updates about once a second. This
+        page refreshes on its own while the run lasts, including after a manual reload.
       </p>`,
   );
 }
@@ -293,6 +321,53 @@ function runNowCard(csrf: string, pendingMs: number | null, running: boolean): S
  * It reports nothing it has not read. The completed run appears because the status file
  * changed, never because a request was made.
  */
+/**
+ * The completion notice (CCB-S4-018 Stage 3).
+ *
+ * A run that ends in silence is not a finished tool. When polling detects the run has
+ * ended, the active progress area is REPLACED by this, so an operator who glances back
+ * sees a plain result rather than an empty space where a bar used to be. It persists: it
+ * is the normal resting view of the page, not a toast that flashes away.
+ *
+ * It reports what the run RECORDED, never a guessed outcome, and a failure is a
+ * first-class notice with the stage it died at rather than a quiet return to the old view.
+ */
+function resultNotice(res: BackupStatusResult): SafeHtml | null {
+  const s = res.status;
+  if (!s) return null;
+  const okay = s.result === 'ok';
+  const written = s.archives.filter((a) => a.bytes > 0);
+  return card(
+    okay ? 'Backup complete' : 'Backup FAILED',
+    html`<div class="flex flex-wrap items-center gap-3">
+        ${badge(okay ? 'success' : 'FAILED', okay ? 'green' : 'red')}
+        <span class="text-sm text-slate-300">finished ${s.finishedAt || s.stamp}</span>
+        ${okay
+          ? null
+          : html`<span class="text-sm text-red-300">
+              at stage <strong>${s.stage}</strong>, exit ${String(s.exitCode)}
+            </span>`}
+      </div>
+      ${okay && written.length > 0
+        ? html`<ul class="mt-3 flex flex-wrap gap-2">
+            ${written.map(
+              (a) =>
+                html`<li class="text-sm text-slate-300">
+                  ${KIND_LABELS[a.kind] ?? a.kind}
+                  <span class="text-slate-500">${bytes(a.bytes)}</span>
+                </li>`,
+            )}
+          </ul>`
+        : null}
+      ${s.warnings.length > 0
+        ? html`<ul class="mt-3 space-y-1">
+            ${s.warnings.map((w) => html`<li class="text-sm text-amber-300">${w}</li>`)}
+          </ul>`
+        : null}`,
+    okay ? 'border-emerald-700' : 'border-red-700',
+  );
+}
+
 function statusRegion(
   res: BackupStatusResult,
   pending: number | null,
@@ -302,8 +377,10 @@ function statusRegion(
   const running = progress !== null;
   // The action first, then the live run, then the record. The button belongs at the top
   // because it is the primary thing an operator comes here to do.
+  // Action, then either the live run or its result, then the record. The result takes the
+  // running card's place so the transition is unmistakable rather than a bar vanishing.
   const inner = html`${runNowCard(csrf, pending, running)}
-  ${running && progress ? runningCard(progress) : null} ${lastRunCard(res)}
+  ${running && progress ? runningCard(progress) : resultNotice(res)} ${lastRunCard(res)}
   ${archivesCard(res)}`;
   // THE RACE THIS FIXES (CCB-S4-017, D-122). This used to be the request marker alone.
   // But `cinderella-backup-request.service` deletes that marker in `ExecStartPre`, BEFORE
