@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-119**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-120**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,84 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-120 - The console watches backups across a privilege boundary it never crosses
+
+**Status: IMPLEMENTED** (CCB-S4-014 Stage 1, read plus trigger only). `deploy/backup.sh`,
+`src/backup/status.ts`, `src/web/views/backup.ts`, `deploy/cinderella-backup-request.{path,service}`.
+Gated by twelve checks in `verify:admin-views`, three of them mutation-proven.
+
+**The finding that decided the whole design.** The admin console **cannot see the
+backups**, and this is not an oversight to route around:
+
+| | |
+|---|---|
+| App (`cinderella.service`) | `User=cinderella`, `ProtectSystem=strict`, `NoNewPrivileges=true`, **empty `CapabilityBoundingSet`** |
+| Backup (`cinderella-backup.service`) | `User=root`, writing `/var/backups/cinderella` at **`0700 root`** |
+
+So the directory is unreadable, the journal is unreadable, and `systemctl list-timers` is
+unavailable. `NoNewPrivileges=true` additionally makes `sudo` **impossible by
+construction** rather than merely discouraged. A page that listed archives from those
+sources would be a display that lies, which the standing rules forbid.
+
+**Decision 1: the privileged side leaves a record; the app never reaches for one.**
+`backup.sh` writes a JSON status file into `/var/lib/cinderella`, the one directory the
+app can read, on **every exit path**. It carries the stamp, result, exit code, the stage
+reached, per-kind newest archive, size and generation count, the retention setting, and
+every warning the run emitted. The page renders that file and nothing else.
+
+Two properties are deliberate. It **records failures**, so a run that died at the database
+stage shows as red with `stage: "database"` rather than leaving the console silently
+displaying the last success: the recorder is installed **before** the `DATABASE_URL`
+guard, so even a misconfiguration that aborts immediately is representable. And it
+**carries no secret**: the env archive appears as an existence and a size, never as
+contents, so the file is safe at `0644` and tightened to the app's user where that user
+exists.
+
+**Decision 2: run-now inverts the privilege boundary rather than opening it.** The obvious
+implementations are all wrong here: shelling to `sudo` cannot work under
+`NoNewPrivileges`, granting the app a sudoers line or a polkit rule widens exactly the
+surface the admin console is hardened against, and loosening `backup.sh` to run
+unprivileged defeats its purpose since it must read a `0600` env file. So the request
+travels **as data in the direction that is already allowed**: the console writes a marker
+inside its own state directory, and a root-side `cinderella-backup-request.path` unit
+notices and starts the same service the timer starts. The app gains no capability, and
+the only thing it can cause is a backup.
+
+**Decision 3: the button reports a request, never a result, and detects its own
+failure.** Writing a marker proves a request was made and nothing more. The page says so,
+and because the triggering unit removes the marker, a marker still present after two
+minutes means nothing consumed it. The page then says the request was **not picked up**
+and names the unit that is probably not installed. That is the difference between a
+button that lies and one that tells you the mechanism behind it is missing.
+
+**Decision 4: no schedule or retention editor in Stage 1, and no disabled placeholder
+either.** Editing them means a web request rewriting a root-owned unit, which is a
+boundary to design rather than improvise. The page states the shipped values as a sentence
+of fact and says they are set in the unit, with the honest qualifier that it is reading the
+unit's declaration rather than the host's confirmed state. A dead toggle would imply a
+control exists; a sentence does not.
+
+**What the page therefore shows, and what it does not.** It shows: last run result, time,
+failure stage, warnings, and the five kinds with newest archive, size and generation count
+against the retention setting. It does **not** show a next-run time, because that lives in
+the timer and nothing the app can read reports it; the page gives the unit's declared
+schedule and points at `systemctl list-timers`. Under-promising truthfully beats a
+confident fabrication.
+
+**Verified on scratch data**, never against a real backup: the status file appears with
+correct sizes and counts on success, and on **both** failure paths, with `stage`
+distinguishing a mid-run failure (`database`) from a config-guard failure (`starting`).
+The page was gated with a seeded record and mutation-proven three ways: rendering every
+run as successful, dropping the warnings, and adding a retention input each turn the
+matching check red.
+
+**Owed on the VPS**, since neither can exist on a workstation: that the `.path` unit fires
+(no systemd here), and the file modes. Installing the two request units is an operator
+step documented in `BACKUP.md`; **until it runs, the button writes a marker nobody
+consumes**, which the page will say plainly rather than hide.
 
 ---
 

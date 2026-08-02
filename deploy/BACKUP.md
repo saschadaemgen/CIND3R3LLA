@@ -86,6 +86,42 @@ sudo systemctl start cinderella-backup.service
 systemctl status cinderella-backup.service
 ```
 
+## 3b. The admin console, and the two request units (CCB-S4-014, D-120)
+
+The console has a **Backups** page under System. It is **read plus trigger only**: it shows
+what the last run recorded and offers a run-now button. It does not edit the schedule or
+retention, because that would mean a web request rewriting a root-owned unit.
+
+**It cannot see `/var/backups/cinderella`, and that is deliberate.** The app runs as the
+unprivileged `cinderella` user with `ProtectSystem=strict` and `NoNewPrivileges=true`; the
+backup directory is `0700 root`. So `backup.sh` leaves a JSON record at
+`/var/lib/cinderella/backup-status.json` on **every** run, successful or failed, and the
+page renders that and nothing else. The record carries names, sizes, counts, the stage a
+failure reached and any warnings. **It carries no secret**: the env archive appears as an
+existence and a size, never as contents.
+
+**Run-now needs two more units.** The console cannot start a service and cannot `sudo`, so
+the request travels as data: it writes `/var/lib/cinderella/backup-request`, and a
+root-side path unit notices and starts the ordinary backup service.
+
+```bash
+sudo install -m 0644 /opt/cinderella/deploy/cinderella-backup-request.path /etc/systemd/system/
+sudo install -m 0644 /opt/cinderella/deploy/cinderella-backup-request.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now cinderella-backup-request.path
+```
+
+**Until those are installed the button writes a marker that nothing consumes.** The page
+detects exactly that: a request still sitting there after two minutes is shown as **not
+picked up**, naming the unit. It will not pretend a backup ran.
+
+Verify the boundary end to end after installing:
+
+```bash
+sudo -u cinderella touch /var/lib/cinderella/backup-request
+journalctl -u cinderella-backup.service -n 20 --no-pager
+```
+
 ## 4. Reading the last result
 
 ```bash
