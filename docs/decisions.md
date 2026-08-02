@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-118**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-119**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,74 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-119 - `sharp` goes to 0.35.3, a major bump on the media path, taken deliberately
+
+**Status: IMPLEMENTED** (CCB-S4-013). `sharp` `^0.33.5` to `^0.35.3`, libvips 8.18.3. **No
+call-site code changed.** `npm audit` is clean: 0 vulnerabilities of any severity.
+
+**What it closes.** Four libvips CVEs inherited through `sharp` below 0.35.0: CVE-2026-33327,
+CVE-2026-33328, CVE-2026-35590, CVE-2026-35591 (GHSA-f88m-g3jw-g9cj). The advisory's fix is
+flagged `isSemVerMajor`, which is why this is a decision and not a lockfile bump.
+
+**Why a major bump was accepted rather than deferred.** `sharp` decodes **untrusted member
+media**: images arriving from a public SimpleX group go through `stripToDerivative` before
+anything is published. A decoder CVE on that path is reachable by anyone who can post a file
+to the group, which is the whole membership. Staying on a vulnerable decoder to avoid a
+version number is the wrong trade, and the three call sites turned out to use a small and
+stable API surface.
+
+**The three call sites, and what each uses.** Read before anything was changed:
+
+| Site | API surface |
+|---|---|
+| [`src/media/strip.ts`](../src/media/strip.ts) | `sharp(src, { failOn: 'none' }).rotate().toBuffer()`. Relies on re-encoding **without** `withMetadata()` dropping EXIF, IPTC and XMP |
+| [`src/bot/avatar.ts`](../src/bot/avatar.ts) | `.rotate()`, `.resize(px, px, { fit: 'cover', position: 'centre' })`, `.jpeg({ quality })`, `.toBuffer()` |
+| [`src/web/front/embed.ts`](../src/web/front/embed.ts) | SVG buffer input, `.png()`, `.toBuffer()` |
+
+**The breaking changes, checked against that surface before bumping.** From the 0.34.0 and
+0.35.0 changelogs, the ones that could have touched this code:
+
+- **`failOnError` was REMOVED in 0.35.0.** This is the near miss. `strip.ts` uses the modern
+  **`failOn`**, not the removed `failOnError`, so it is unaffected. Had it used the old name,
+  the strip path would have thrown on every image.
+- **Node.js 18 dropped; `>=20.9.0` required.** Handled below.
+- **`limitInputChannels` added, default 5.** No effect here: member photos and the SVG card
+  are well inside it.
+- `format.jp2k` renamed, non-animated GIF loop default, `removeAlpha` behaviour, array input.
+  None is used by any of the three sites.
+
+**`engines.node` moved from `>=20` to `>=20.9.0`**, because the old range admitted Node
+20.0 through 20.8, which `sharp` 0.35 refuses. Leaving it would have turned a clear engine
+mismatch into a confusing install failure on a host inside the declared range.
+
+**Verified by exercising the code, not by audit silence** (the standing rule for a dependency
+bump), on `sharp` 0.35.3 / libvips 8.18.3:
+
+- **Metadata stripping**, the security-critical one, by `npm run verify:archive`, which
+  asserts **both directions**: the detector still finds GPS in the hand-built fixture when it
+  is really there, and the derivative has no GPS and no other EXIF, IPTC or XMP. The original
+  stays untouched, the fail-closed withholding survives, and a missing derivative is still
+  withheld rather than served unstripped. A one-directional check here would prove nothing,
+  which is why the fixture exists (CCB-S3-011 §1.5).
+- **Avatar generation**, by driving `buildAvatarDataUri` on a deliberately **non-square**
+  900x630 source, so `fit: 'cover'` and `position: 'centre'` have work to do and a silently
+  ignored `fit` would show: output is a valid JPEG, **192x192 square**, 670 characters, inside
+  the 12000-character budget.
+- **The public embed card**, both by `verify:public` (`og image: enabled -> 200 image/png`)
+  and directly: the SVG rasterises to a PNG of exactly **1200x630** and 33918 bytes, so it is
+  a real image rather than an empty buffer behind a correct content type.
+- **`failOn: 'none'`** accepted by the 0.35 constructor, asserted explicitly because that is
+  the option adjacent to the one that was removed.
+
+41 of 41 standard checks green, including the CCB-S4-009 overflow checks on all three public
+routes.
+
+**A deploy rebuilds the native binary.** `npm ci` on the host compiles or fetches `sharp`'s
+platform binary; that is expected and is the reason this bump is an operator action rather
+than something a `git pull` finishes.
 
 ---
 

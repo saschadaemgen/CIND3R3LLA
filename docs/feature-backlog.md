@@ -1028,9 +1028,15 @@ wrong or already handled and are recorded here with the correction rather than t
       legal texts describe it as a mechanism rather than a fixed number so a tariff can change it without
       a rewrite, which CCB-S3-029 implemented. The deferred-destruction sweeper and evidence holds in
       `src/archive/` are **not** the retention mechanism and should not be mistaken for it.
-- [ ] **Nine high-severity npm advisories, not three.** `@fastify/static`, `brace-expansion`, `fast-uri`,
-      `find-my-way`, and `sharp` (inheriting four libvips CVEs). `sharp` is on the media path, which makes
-      it the one to look at first.
+- [x] **All high-severity npm advisories are closed** (CCB-S4-013). `npm audit` reports **0
+      vulnerabilities** at every severity. Deliberately split into two commits by risk class, so either is
+      revertible alone. **Class A**, four non-breaking lifts inside their existing major lines via
+      `npm audit fix` and never `--force`: `@fastify/static` 10.1.0 to 10.1.2 (the sharp one, an
+      **authorization bypass** via non-canonical URL paths plus a route-guard bypass via path traversal,
+      on the public HTTP path), `find-my-way` 9.6.0 to 9.7.0, `fast-uri` 3.1.3 to 3.1.5, `brace-expansion`
+      1.1.16 to 1.1.18, with `fastify` deliberately held at major 5. **Every nested copy was checked**, not
+      only the top-level one. **Class B**, the `sharp` major bump to 0.35.3 closing four libvips CVEs,
+      recorded as **D-119** with each of the three call sites verified by exercising it.
 - [ ] **The demo UI is not built.** Backend, isolation guard (D-082) and session handling are. The
       visitor-facing pane, the four guided prompts, the disclosure line and the mobile layout are not. The
       demo hostname answers 404 by deliberate nginx configuration (D-081), which is correct until the pane
