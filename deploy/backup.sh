@@ -19,21 +19,56 @@ STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 # rather than something each line has to remember.
 umask 077
 
-# shellcheck disable=SC1090
-[ -f "$ENV_FILE" ] && set -a && . "$ENV_FILE" && set +a
+# THE ENV FILE IS READ AS DATA, NEVER EXECUTED.
+#
+# `set -a && . "$ENV_FILE"` was wrong and failed on the real host. Sourcing runs the
+# file as shell, so a value is parsed for expansions: the admin password's Argon2 hash
+# begins `$argon2id$v=19$...`, which under `set -u` is a reference to an unset variable
+# and aborted the whole unit with `argon2id: unbound variable` before anything was
+# written. Every secret in that file is a hostile string to a parser, and the backup has
+# no business evaluating any of them.
+#
+# Same principle as `deploy.sh`, which reads the file with `grep` and hands it to `env`
+# precisely so an Argon2 `$` stays literal. This script needs the values in its OWN
+# shell rather than in a child's environment, so it extracts the four keys it actually
+# uses. Command-substitution output is not re-expanded, so the value arrives verbatim.
+env_value() {
+  local key="$1" line
+  [ -f "$ENV_FILE" ] || return 0
+  # Last assignment wins, which is what sourcing would have done. `export KEY=` and
+  # leading whitespace are both accepted; comments never match because of the anchor.
+  line="$(grep -E "^[[:space:]]*(export[[:space:]]+)?${key}=" "$ENV_FILE" | tail -n 1)" || return 0
+  [ -n "$line" ] || return 0
+  line="${line#*=}"
+  line="${line%$'\r'}" # tolerate a file saved with CRLF
+  # Strip ONE matching quote pair, as sourcing would.
+  case "$line" in
+    \"*\") line="${line#\"}"; line="${line%\"}" ;;
+    \'*\') line="${line#\'}"; line="${line%\'}" ;;
+  esac
+  printf '%s' "$line"
+}
+
+# Precedence is unchanged from sourcing: the file wins, then anything already in the
+# environment, then the default.
+file_dburl="$(env_value DATABASE_URL)"
+DATABASE_URL="${file_dburl:-${DATABASE_URL:-}}"
 
 if [ -z "${DATABASE_URL:-}" ]; then
   echo "DATABASE_URL not set (check $ENV_FILE)" >&2
   exit 1
 fi
 
-MEDIA_ROOT="${MEDIA_ROOT:-/var/lib/cinderella/media}"
+file_media="$(env_value MEDIA_ROOT)"
+MEDIA_ROOT="${file_media:-${MEDIA_ROOT:-/var/lib/cinderella/media}}"
 # Derived EXACTLY as resolveQuarantineRoot() in src/config.ts derives it: the
 # configured value when set, otherwise a SIBLING of the media store. Hardcoding
 # a path here would silently miss the quarantine on any host that moved it.
-QUARANTINE_ROOT="${QUARANTINE_ROOT:-$(dirname "$MEDIA_ROOT")/quarantine}"
+file_quarantine="$(env_value QUARANTINE_ROOT)"
+QUARANTINE_ROOT="${file_quarantine:-${QUARANTINE_ROOT:-$(dirname "$MEDIA_ROOT")/quarantine}}"
 # The SimpleX core writes <prefix>_chat.db and <prefix>_agent.db (src/config.ts).
-SIMPLEX_DB_PREFIX="${SIMPLEX_DB_PREFIX:-/var/lib/cinderella/state/simplex/cinderella}"
+file_prefix="$(env_value SIMPLEX_DB_PREFIX)"
+SIMPLEX_DB_PREFIX="${file_prefix:-${SIMPLEX_DB_PREFIX:-/var/lib/cinderella/state/simplex/cinderella}}"
 
 # `mkdir -p` + `chmod` rather than `install -d -m 0700`: identical result, and it is
 # what let the round trip in BACKUP.md be proven on a non-Linux workstation instead of

@@ -697,6 +697,14 @@ Verified against the production host on 2026-07-27, not inferred.
       output to the journal, non-zero exit on a failed dump. **Installing and enabling them on the VPS is
       an operator step**, documented in [`deploy/BACKUP.md`](../deploy/BACKUP.md) §3. Until that is done
       the host still has no backups; the repository half is what this briefing could deliver.
+- [x] **Two install-time defects fixed** (CCB-S4-012), both found on the VPS and both real repository
+      defects. The env file was read with `set -a && . "$ENV_FILE"`, which EXECUTES it: under `set -u`
+      the admin Argon2 hash `$argon2id$v=19$...` parsed as a reference to an unset variable and aborted
+      the unit at env line 9, before anything was written. The file is now read as **data**, extracting
+      only the four keys the script uses, on the same principle `deploy.sh` already applied. And the
+      executable bit was not stored in git, so a fresh checkout failed `203/EXEC`; the tree mode is now
+      `100755`. The round trip is re-proven against an env carrying a synthetic Argon2-shaped value,
+      which is the case the CCB-S4-011 fixture missed.
 - [ ] **Confirm on the VPS after the first real run** (owed by CCB-S4-011, which could not run systemd or
       verify file modes on a Windows workstation): that `OnCalendar` fires and `Persistent=true` catches a
       missed run, and that the archives really are `0600` in a `0700` directory. `BACKUP.md` §6 lists both
