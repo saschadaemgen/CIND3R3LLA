@@ -10,6 +10,13 @@ import type { AdminConfig, Config } from '../src/config.js';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import {
+  listContactRequests,
+  recordAcceptedContactRequest,
+  recordContactConnected,
+  recordIncomingContactRequest,
+  recordRejectedContactRequest,
+} from '../src/profiles/contact-requests.js';
+import {
   createBotOnboardingProfile,
   recordContactAddress,
   deleteBotOnboardingProfile,
@@ -438,6 +445,12 @@ async function main(): Promise<void> {
     withAddress.body.includes('waiting for a contact request'),
   );
   check(
+    'and no longer claims that accepting is unbuilt, which it stopped being in CCB-S4-023',
+    withAddress.body.includes('The request') &&
+      withAddress.body.includes('appears below for you to accept') &&
+      !withAddress.body.includes('accepting it is the next step and is not built yet'),
+  );
+  check(
     'the create-address control is gone once the address exists',
     !withAddress.body.includes('name="action" value="create-address"'),
   );
@@ -448,6 +461,167 @@ async function main(): Promise<void> {
   const afterReset = (await listBotOnboardingProfiles(db))[0];
   check('a workflow reset clears the address too', afterReset?.contactAddressLink === null);
   check('and returns to configured', afterReset?.workflowState === 'configured');
+
+  /* ============================================ 7. Accepting the contact request */
+  //
+  // CCB-S4-023, step two. The state moves on an EVENT and on a RESULT, never on a click
+  // alone, so what is checked is that each transition has a real cause behind it.
+
+  console.log('\n7. Accepting the contact request (CCB-S4-023)');
+
+  // Put the bot back where step one leaves it.
+  await recordContactAddress(db, targetId, { link: LINK, simplexUserId: 1 }, 'verify');
+
+  const REQ = 4242;
+  await recordIncomingContactRequest(db, targetId, {
+    contactRequestId: REQ,
+    simplexUserId: 1,
+    requesterName: 'Operator Phone',
+  });
+  const pendingProfile = (await listBotOnboardingProfiles(db))[0];
+  check(
+    'an arriving request moves the workflow to contact_request_pending',
+    pendingProfile?.workflowState === 'contact_request_pending',
+    pendingProfile?.workflowState ?? 'missing',
+  );
+  const pendingRows = await listContactRequests(db, targetId);
+  check('and is recorded with the core own request id', pendingRows[0]?.contactRequestId === REQ);
+  check('with the requester named', pendingRows[0]?.requesterName === 'Operator Phone');
+  check('and with the SimpleX user it arrived on', pendingRows[0]?.simplexUserId === 1);
+
+  // The same request again (a reconnect, a restart) must not become a second row.
+  const again = await recordIncomingContactRequest(db, targetId, {
+    contactRequestId: REQ,
+    simplexUserId: 1,
+    requesterName: 'Operator Phone',
+  });
+  check('the same request arriving twice is not duplicated', again.recorded === false);
+  check('and there is still exactly one row', (await listContactRequests(db, targetId)).length === 1);
+
+  const pendingPage = await app.inject({
+    method: 'GET',
+    url: '/ai/onboarding',
+    headers: { cookie: session },
+  });
+  check('the page shows the pending request', pendingPage.body.includes('data-request-panel'));
+  check('naming who it is from', pendingPage.body.includes('Operator Phone'));
+  check(
+    'with an accept and a reject control',
+    pendingPage.body.includes('name="action" value="accept-contact"') &&
+      pendingPage.body.includes('name="action" value="reject-contact"'),
+  );
+  check(
+    'and it says accepting connects a contact and nothing more',
+    pendingPage.body.includes('it does not put the bot in any group'),
+  );
+  check(
+    'the address panel is still there from step one',
+    pendingPage.body.includes('data-address-panel'),
+  );
+
+  // Pressing accept with no runtime must leave everything exactly as it was.
+  const failedAccept = await app.inject({
+    method: 'POST',
+    url: '/ai/onboarding',
+    payload: {
+      _csrf: (/name="_csrf" value="([a-f0-9]{64})"/.exec(pendingPage.body) ?? [])[1] ?? '',
+      action: 'accept-contact',
+      profileId: String(targetId),
+      contactRequestId: String(REQ),
+    },
+    headers: { cookie: session },
+  });
+  check(
+    'an accept with no runtime redirects with an error',
+    failedAccept.statusCode === 302 &&
+      String(failedAccept.headers['location'] ?? '').includes('error='),
+  );
+  check(
+    'and the request is STILL pending',
+    (await listContactRequests(db, targetId))[0]?.state === 'pending',
+  );
+  check(
+    'and the workflow did not advance',
+    (await listBotOnboardingProfiles(db))[0]?.workflowState === 'contact_request_pending',
+  );
+
+  // The write path, with a contact in hand.
+  await recordAcceptedContactRequest(
+    db,
+    targetId,
+    REQ,
+    { contactId: 77, contactName: 'Operator Phone' },
+    'verify',
+  );
+  const accepted = (await listContactRequests(db, targetId))[0];
+  check('recording an acceptance marks the row accepted', accepted?.state === 'accepted');
+  check('with the contact the core created', accepted?.contactId === 77);
+  check(
+    'and the workflow reaches contact_connected',
+    (await listBotOnboardingProfiles(db))[0]?.workflowState === 'contact_connected',
+  );
+  check('but NOT yet connected, which is a later fact', accepted?.connectedAt === null);
+
+  const stamped = await recordContactConnected(db, 1, 77);
+  check('the contactConnected event stamps the row', stamped);
+  check(
+    'and the page then says connected rather than connecting',
+    (await listContactRequests(db, targetId))[0]?.connectedAt !== null,
+  );
+
+  let doubleAccept = false;
+  try {
+    await recordAcceptedContactRequest(db, targetId, REQ, { contactId: 78, contactName: 'x' }, 'v');
+  } catch {
+    doubleAccept = true;
+  }
+  check('accepting the same request twice is refused', doubleAccept);
+
+  let noContact = false;
+  try {
+    await recordAcceptedContactRequest(db, targetId, 999, { contactId: 0, contactName: 'x' }, 'v');
+  } catch {
+    noContact = true;
+  }
+  check('an acceptance without a contact id is refused', noContact);
+
+  const connectedPage = await app.inject({
+    method: 'GET',
+    url: '/ai/onboarding',
+    headers: { cookie: session },
+  });
+  check(
+    'the connected page offers no accept control any more',
+    !connectedPage.body.includes('name="action" value="accept-contact"'),
+  );
+  check(
+    'and says the group step is not built yet rather than promising it',
+    connectedPage.body.includes('is not built yet'),
+  );
+
+  // Rejection: a second request, refused, puts the workflow back to waiting.
+  await recordIncomingContactRequest(db, targetId, {
+    contactRequestId: 4243,
+    simplexUserId: 1,
+    requesterName: 'Someone Else',
+  });
+  check(
+    'a request arriving after connection does not drag the workflow backwards',
+    (await listBotOnboardingProfiles(db))[0]?.workflowState === 'contact_connected',
+  );
+  await recordRejectedContactRequest(db, targetId, 4243, 'verify');
+  const rejected = (await listContactRequests(db, targetId)).find((r) => r.contactRequestId === 4243);
+  check('a rejected request is marked rejected', rejected?.state === 'rejected');
+  check('and establishes no contact', rejected?.contactId === null);
+
+  const acceptAudit = await db.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM audit_log WHERE action = 'cinderella.bot-profile.contact-accepted'",
+  );
+  const rejectAudit = await db.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM audit_log WHERE action = 'cinderella.bot-profile.contact-rejected'",
+  );
+  check('acceptance is audited', Number(acceptAudit.rows[0]?.n) === 1);
+  check('and so is rejection', Number(rejectAudit.rows[0]?.n) === 1);
 
   await app.close();
   await pg.close();
