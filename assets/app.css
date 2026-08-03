@@ -2306,6 +2306,61 @@ input[type='radio'] {
   line-height: 1.55;
 }
 
+/* The create-address control, inside the next-action card (CCB-S4-022). */
+.setup-next-action-form {
+  margin-top: 12px;
+}
+
+.setup-inline-note {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.setup-inline-note[data-tone='warning'] {
+  color: #f0c479;
+}
+
+/* The contact link the address step produces. Selectable, wrapping, monospace: an
+   operator copies this into another application by hand. */
+.setup-address {
+  margin-top: 16px;
+  border: 1px solid rgba(74, 222, 158, 0.24);
+  border-radius: 14px;
+  background: rgba(74, 222, 158, 0.05);
+  padding: 16px;
+}
+
+.setup-address header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.setup-address p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.setup-address-link {
+  display: block;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  user-select: all;
+}
+
 .setup-chip-row,
 .setup-detail-actions {
   display: flex;

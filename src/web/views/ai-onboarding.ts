@@ -1,7 +1,12 @@
 /**
  * Guided AI Bot Setup and persistent SimpleX bot settings.
  *
- * This surface stores desired settings only. No SDK action is executed here.
+ * Mostly a settings surface. ONE step now performs a real SimpleX action: creating the
+ * bot's contact address (CCB-S4-022). It runs in `src/bot/runtime/admin-actions.ts`
+ * against the running runtime and the state advances only on a link the core actually
+ * returned, which is the whole difference between this step and the description of it
+ * that stood here doing nothing for a season. Contact acceptance, group join and role
+ * setting are the next three briefings and are still descriptions.
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -9,6 +14,7 @@ import {
   createBotOnboardingProfile,
   deleteBotOnboardingProfile,
   listBotOnboardingProfiles,
+  recordContactAddress,
   resetBotOnboardingWorkflow,
   updateBotOnboardingProfile,
   type BotOnboardingInput,
@@ -18,6 +24,11 @@ import {
   type PolicyActivationMode,
   type SdkGroupRole,
 } from '../../profiles/bot-onboarding.js';
+import {
+  createOrShowBotAddress,
+  hostedIdentity,
+  type HostedIdentity,
+} from '../../bot/runtime/admin-actions.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, fmtDate, stat } from './ui.js';
@@ -73,6 +84,8 @@ const SDK_ROLES: Array<{
 ];
 
 const CAPABILITIES = [
+  ['apiCreateUserAddress', 'SDK available', 'WIRED (CCB-S4-022)'],
+  ['apiGetUserAddress', 'SDK available', 'WIRED (CCB-S4-022)'],
   ['BotOptions.createAddress', 'Stored', 'Runtime wiring planned'],
   ['BotOptions.updateAddress', 'Stored', 'Runtime wiring planned'],
   ['BotOptions.updateProfile', 'Stored', 'Runtime wiring planned'],
@@ -282,12 +295,15 @@ function nextAction(profile: BotOnboardingProfile): { title: string; description
       return {
         title: 'Create the SimpleX contact address',
         description:
-          'The settings are stored. The next runtime phase will create and display the contact link.',
+          'The settings are stored. Creating the address asks the running SimpleX core for ' +
+          'the contact link, which you then use to add this bot as a contact.',
       };
     case 'waiting_contact_request':
       return {
         title: 'Send a contact request',
-        description: 'Use the future contact link from your personal SimpleX profile.',
+        description:
+          'The contact link is below. Open your own SimpleX app, add a contact with that ' +
+          'link, and this bot receives the request.',
       };
     case 'contact_request_pending':
       return {
@@ -688,6 +704,92 @@ ${input.welcomeMessage}</textarea>
   </dialog>`;
 }
 
+
+/**
+ * The control the wizard's "next action" points at.
+ *
+ * The wizard has described this step since the onboarding work landed and there has
+ * never been a control behind it: the page said what to do next and offered no way to
+ * do it. This is that way. It renders only in `configured`, only for the bot the
+ * operator marked as the runtime's, and it says WHICH SimpleX identity it will act on
+ * before it acts, because an address created on the wrong profile in a shared core
+ * database is invisible until somebody tries to use the link.
+ */
+function createAddressControl(
+  profile: BotOnboardingProfile,
+  csrf: string,
+  hosted: HostedIdentity | null,
+): SafeHtml | null {
+  if (profile.workflowState !== 'configured') return null;
+
+  if (!profile.selectedForRuntime) {
+    return html`<p class="setup-inline-note" data-tone="warning">
+      This AI bot is not marked as the primary runtime bot, so the runtime is not hosting
+      it and there is no identity to create an address on. Mark it in Edit setup first.
+    </p>`;
+  }
+
+  const note =
+    hosted === null
+      ? html`<p class="setup-inline-note" data-tone="warning">
+          The SimpleX runtime is not running in this process, so the address cannot be
+          created right now. Start the bot, then reload this page.
+        </p>`
+      : html`<p class="setup-inline-note">
+          It will be created on the profile the runtime is hosting:
+          <strong>${hosted.displayName}</strong> (SimpleX user ${hosted.simplexUserId}).
+          ${hosted.state === 'ready'
+            ? null
+            : html`<br />The core is still starting up (${hosted.state}); it settles a few
+                seconds after a restart.`}
+          ${hosted.displayName === profile.displayName
+            ? null
+            : html`<br />The name stored here is <strong>${profile.displayName}</strong>, which
+                is not the hosted profile's name. The address is created on the hosted
+                profile, not on this record's name.`}
+        </p>`;
+
+  return html`
+    <form method="post" action="/ai/onboarding" class="setup-next-action-form">
+      <input type="hidden" name="_csrf" value="${csrf}" />
+      <input type="hidden" name="action" value="create-address" />
+      <input type="hidden" name="profileId" value="${profile.id}" />
+      <button type="submit" class="setup-button setup-button-primary">
+        Create the contact address
+      </button>
+    </form>
+    ${note}
+  `;
+}
+
+/**
+ * The contact link, once one exists, with what the page is waiting for.
+ *
+ * Shown for every state from `waiting_contact_request` onwards, not only that one: the
+ * link stays useful after the first contact connects, and a panel that vanished at the
+ * next step would look like the address had been withdrawn.
+ */
+function contactAddressPanel(profile: BotOnboardingProfile): SafeHtml | null {
+  if (!profile.contactAddressLink) return null;
+  const waiting = profile.workflowState === 'waiting_contact_request';
+
+  return html`<section class="setup-address" data-address-panel>
+    <header>
+      <span class="setup-eyebrow">SimpleX contact address</span>
+      ${waiting ? badge('waiting for a contact request', 'amber') : badge('address created', 'green')}
+    </header>
+    <p>
+      Open your own SimpleX app, choose to add a contact, and paste this link. The bot
+      receives the request; accepting it is the next step and is not built yet.
+    </p>
+    <code class="setup-address-link" data-address-link>${profile.contactAddressLink}</code>
+    <p class="setup-inline-note">
+      Created ${fmtDate(profile.contactAddressCreatedAt ?? profile.updatedAt)} on SimpleX user
+      ${profile.contactAddressUserId ?? 'unknown'}.
+    </p>
+  </section>`;
+}
+
 function profileListItem(profile: BotOnboardingProfile, selected: boolean): SafeHtml {
   const issue =
     profile.workflowState === 'error' ||
@@ -715,7 +817,11 @@ function profileListItem(profile: BotOnboardingProfile, selected: boolean): Safe
   </a>`;
 }
 
-function profileDetails(profile: BotOnboardingProfile, csrf: string): SafeHtml {
+function profileDetails(
+  profile: BotOnboardingProfile,
+  csrf: string,
+  hosted: HostedIdentity | null,
+): SafeHtml {
   const action = nextAction(profile);
   const dialogId = `setup-edit-${profile.id}`;
 
@@ -746,18 +852,24 @@ function profileDetails(profile: BotOnboardingProfile, csrf: string): SafeHtml {
       </div>
 
       <section class="setup-next-action">
-        <div class="setup-next-action-icon" aria-hidden="true">1</div>
+        <div class="setup-next-action-icon" aria-hidden="true">${workflowIndex(profile) + 1}</div>
         <div>
           <span>Next action</span>
           <h3>${action.title}</h3>
           <p>${action.description}</p>
+          ${createAddressControl(profile, csrf, hosted)}
         </div>
       </section>
+
+      ${contactAddressPanel(profile)}
 
       <div class="setup-chip-row">
         ${badge(profile.enabled ? 'enabled' : 'paused', profile.enabled ? 'green' : 'amber')}
         ${badge(profile.selectedForRuntime ? 'primary runtime' : 'not primary', 'blue')}
-        ${badge('settings stored', 'green')} ${badge('runtime not applied', 'amber')}
+        ${badge('settings stored', 'green')}
+        ${profile.contactAddressLink
+          ? badge('contact address created on the runtime', 'green')
+          : badge('runtime not applied', 'amber')}
         ${badge(profile.remoteCommandsEnabled ? 'remote requested' : 'remote blocked', 'slate')}
         ${badge(
           profile.persistentChangesEnabled ? 'persistent requested' : 'persistent blocked',
@@ -840,7 +952,7 @@ function capabilityReference(): SafeHtml {
         </div>
         <div class="setup-chip-row">
           ${badge('SimpleX SDK 6.5.4', 'green')} ${badge('Types 0.8.0', 'green')}
-          ${badge('No SDK actions in this phase', 'amber')}
+          ${badge('1 of 4 SDK actions wired: create address', 'amber')}
         </div>
       </div>
       <div class="setup-reference-table-wrap">
@@ -878,6 +990,10 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       const selected =
         profiles.find((profile) => profile.id === requestedProfileId) ?? profiles[0] ?? null;
       const createDialogId = 'setup-create';
+      // Read per request, never cached: the runtime may not have started when the
+      // console did, and it may stop while the console stays up. A page that showed a
+      // remembered identity would be describing a bot that is no longer there.
+      const hosted = hostedIdentity();
 
       reply.type('text/html');
 
@@ -967,7 +1083,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                       </p>
                     </aside>
                     <div class="setup-detail-panel">
-                      ${selected ? profileDetails(selected, csrf) : null}
+                      ${selected ? profileDetails(selected, csrf, hosted) : null}
                     </div>
                   </div>`
             }
@@ -999,6 +1115,34 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           await resetBotOnboardingWorkflow(ctx.db, profileId, actor);
           break;
+
+        // The first onboarding step that actually does something (CCB-S4-022).
+        //
+        // The ORDER here is the honesty rule: the SimpleX call happens first and the
+        // database write happens only with its result in hand. Any failure, including
+        // "the runtime is not running" and "the core returned no link", leaves the
+        // workflow state exactly where it was and lands on the page as an error. There
+        // is no path that stores an intention.
+        case 'create-address': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const profiles = await listBotOnboardingProfiles(ctx.db);
+          const target = profiles.find((profile) => profile.id === profileId);
+          if (!target) throw new Error('Bot onboarding profile not found.');
+          if (!target.selectedForRuntime) {
+            throw new Error(
+              'This AI bot is not marked as the primary runtime bot, so the runtime is not ' +
+                'hosting it and no address can be created for it.',
+            );
+          }
+          const address = await createOrShowBotAddress();
+          await recordContactAddress(
+            ctx.db,
+            profileId,
+            { link: address.link, simplexUserId: address.simplexUserId },
+            actor,
+          );
+          break;
+        }
 
         case 'delete-profile':
           await deleteBotOnboardingProfile(
