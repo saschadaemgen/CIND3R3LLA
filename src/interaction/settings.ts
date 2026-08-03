@@ -44,6 +44,10 @@ export const PERSONA_KEYS = [
   'status', // briefing §5 — {total} {public}
   'searchResult', // briefing §5 — {n} {query}
   'notUnderstood', // briefing §5
+  // CCB-S4-027 - the model was asked to talk and could not. NOT notUnderstood: saying
+  // "I did not catch that" when the truth is "my words were not available" is a small
+  // lie told to the member about which of them failed.
+  'conversationUnavailable',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -99,6 +103,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   status: 'status',
   searchResult: 'search',
   notUnderstood: 'notUnderstood',
+  conversationUnavailable: 'conversation',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -320,6 +325,8 @@ const PERSONA_EN: PersonaStrings = {
   notUnderstood:
     '🕯️ I did not quite catch that. Did you wish to publish, to withdraw, or to know what I keep ' +
     'of yours?',
+  conversationUnavailable:
+    '🕯️ I heard you, but I could not find my words just now. Ask me again in a moment.',
   undo: '↩️ Undone. It is as if I never heard it.',
   undoNothing: '↩️ There is nothing recent of yours for me to undo.',
   undoNotRevocation:
@@ -430,6 +437,8 @@ const PERSONA_DE: PersonaStrings = {
   notUnderstood:
     '🕯️ Das habe ich nicht ganz erfasst. Möchtest du veröffentlichen, widerrufen, oder wissen, ' +
     'was ich von dir bewahre?',
+  conversationUnavailable:
+    '🕯️ Ich habe dich gehört, aber meine Worte waren gerade nicht da. Frag mich gleich noch einmal.',
   undo: '↩️ Rückgängig. Es ist, als hätte ich es nie gehört.',
   undoNothing: '↩️ Da ist nichts Jüngeres von dir, was ich rückgängig machen könnte.',
   undoNotRevocation:

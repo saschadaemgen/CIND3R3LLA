@@ -35,6 +35,11 @@ export const REPLY_CATEGORIES = [
   'notUnderstood',
   'nickname',
   'disambiguation',
+  // CCB-S4-027: free conversation, where the model wrote the words itself rather than
+  // rephrasing a decision the application had already made. Its own category because it
+  // is its own kind of content, and an operator switching it must not also be switching
+  // "I did not understand you".
+  'conversation',
 ] as const;
 export type ReplyCategory = (typeof REPLY_CATEGORIES)[number];
 
@@ -167,6 +172,9 @@ export const DEFAULT_ARCHIVE: ArchiveSettings = {
     notUnderstood: false,
     nickname: false,
     disambiguation: false,
+    // Excluded by default, and the default matters more here than elsewhere: this is
+    // the only category whose text the application did not decide.
+    conversation: false,
   },
 };
 
@@ -179,6 +187,10 @@ export const CATEGORY_LABELS: Record<ReplyCategory, { label: string; help: strin
   price: {
     label: 'Price answers',
     help: 'Market-data answers from the Crypto Prices plugin, including "I could not reach a provider".',
+  },
+  conversation: {
+    label: 'Free conversation',
+    help: 'Excluded by default: replies the local model wrote itself when a member talked to her without asking for anything, so the words are the model own rather than the application decision.',
   },
   search: {
     label: 'Search answers',

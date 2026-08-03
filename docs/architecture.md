@@ -878,7 +878,17 @@ appended unchanged. `status` was moved there by the injection review because it 
 own publication state and `requiredLiterals` protects tokens rather than meaning. Gated in
 `verify:interaction` over real traffic.
 
-**This allowlist is why most replies look deterministic even when the model lane is
+**Free conversation is the one path where the model WRITES rather than rephrases**
+(CCB-S4-027, D-131). It is reachable from a single place: the `UNKNOWN` case in the intent
+dispatch, after every command intent has declined and after the addressing checks, which is
+what makes it impossible for it to intercept a command. There is no deterministic draft
+because no command produced one, so the reply lane gains a named `conversation` mode rather
+than being handed an empty one; every other guard in that file still applies, and a failed
+model answers with its own honest string rather than telling the member they were unclear.
+It has its own archive category, excluded by default, because it is the only category whose
+words the application did not decide.
+
+**This allowlist is why most OTHER replies look deterministic even when the model lane is
 healthy** (CCB-S4-026, D-130). An operator whose conversation is greetings and consent
 commands will correctly never see a model-worded reply, because none of those keys is in
 the nine. Widening the set is a consent-safety decision, not a configuration.

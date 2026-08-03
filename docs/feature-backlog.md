@@ -1075,6 +1075,14 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
 - [ ] **Declining a group invitation is not built.** There is no reject command for an
       invitation the way there is for a contact request; refusing means deleting the chat.
       An unwanted invitation currently sits pending on the page forever.
+- [x] **Free conversation, the raw test** (CCB-S4-027, D-131). Addressed, no command
+      intent, model writes the reply. Commands are untouched and proven so.
+- [ ] **Conversation has no history.** Every turn is the current message alone, so she
+      cannot follow a thread. History, persona cards, sharpness and motif are the
+      personality work proper.
+- [ ] **Model output can carry envelope artefacts.** One live conversational reply ended
+      with a stray `}` from the structured-output envelope. Cosmetic, seen once in two
+      replies, deliberately not pattern-matched away in a raw test.
 - [ ] **Widening the personalized reply set is the personality work's first question.**
       Nine of the 36 persona keys may be model-worded (D-130); the rest are deterministic
       because they can change consent or report an action. An operator who mostly exchanges

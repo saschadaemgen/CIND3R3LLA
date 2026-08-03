@@ -132,6 +132,8 @@ async function main(): Promise<void> {
   /** Symbols a carried-over lookup actually asked about — must stay noise-free. */
   const priceAsked: string[] = [];
   /** Every reply the engine offered to a model for phrasing (CCB-S4-010, D-116). */
+  /** What the fake model says in conversation mode. Null means it could not speak. */
+  let modelConversationReply: string | null = null;
   const personalizeCalls: {
     kind: string;
     mode: string;
@@ -181,7 +183,11 @@ async function main(): Promise<void> {
         requiredLiterals: [...(request.requiredLiterals ?? [])],
         blockedLiterals: [...(request.blockedLiterals ?? [])],
       });
-      return Promise.resolve(null);
+      // Null by default, so every assertion below keeps reading the deterministic text.
+      // CCB-S4-027 flips this on for the free-conversation section only.
+      return Promise.resolve(
+        request.mode === 'conversation' ? modelConversationReply : null,
+      );
     },
   });
 
@@ -578,8 +584,11 @@ async function main(): Promise<void> {
   // asserted in section 16.
   const puzzled = await say('Hey Cinderella flurble wibbet');
   check(
-    'a clearly-addressed but unrecognised message gets the "not understood" answer',
-    puzzled.replies[0]?.includes('did not quite catch that') === true,
+    'a clearly-addressed but unrecognised message is answered, not ignored',
+    // CCB-S4-027: free conversation now answers here. The harness's model fake returns
+    // null (unavailable), so what she says is the honest unavailable line rather than a
+    // claim that the member was unclear.
+    puzzled.replies[0]?.includes('could not find my words') === true,
   );
   check('and is treated as a control message, not archived', puzzled.handled);
 
@@ -804,7 +813,7 @@ async function main(): Promise<void> {
   const strict = await say('Hey Cinderella publsh me');
   check(
     'a high confidence threshold makes her ask instead of act',
-    strict.replies[0]?.includes('did not quite catch that') === true,
+    strict.replies[0]?.includes('could not find my words') === true,
   );
   settings = normalizeInteraction({});
 
@@ -1105,8 +1114,8 @@ async function main(): Promise<void> {
   coolDown();
   const strongUnknown = await say('Hey Cinderella blargh');
   check(
-    'a GREETED message she cannot understand DOES get the not-understood prompt',
-    strongUnknown.replies[0]?.includes('did not quite catch that') === true,
+    'a GREETED message she cannot understand IS still answered',
+    strongUnknown.replies[0]?.includes('could not find my words') === true,
   );
 
   coolDown();
@@ -1192,7 +1201,7 @@ async function main(): Promise<void> {
   const noSilence = await say('Cinderella now understands plain language');
   check(
     'switching silenceOnUnknown OFF makes her answer weak-signal UNKNOWNs again',
-    noSilence.replies[0]?.includes('did not quite catch that') === true,
+    noSilence.replies[0]?.includes('could not find my words') === true,
   );
 
   settings = normalizeInteraction({});
@@ -1229,15 +1238,15 @@ async function main(): Promise<void> {
   coolDown();
   const englishUnknown = await say('Cinderella blargh wibble frobnicate the thing');
   check(
-    'an English message gets an ENGLISH not-understood reply',
-    englishUnknown.replies[0]?.includes('did not quite catch that') === true,
+    'an English message gets an ENGLISH reply',
+    englishUnknown.replies[0]?.includes('could not find my words') === true,
     englishUnknown.replies[0]?.slice(0, 40),
   );
   coolDown();
   const germanUnknown = await say('Cinderella kannst du mir bitte sagen was das hier ist');
   check(
-    'a German message gets a GERMAN not-understood reply',
-    germanUnknown.replies[0]?.includes('nicht ganz erfasst') === true,
+    'a German message gets a GERMAN reply',
+    germanUnknown.replies[0]?.includes('meine Worte waren gerade nicht da') === true,
     germanUnknown.replies[0]?.slice(0, 40),
   );
   settings = normalizeInteraction({});
@@ -1813,6 +1822,87 @@ async function main(): Promise<void> {
     'choiceNotRevoked', 'alreadyHidden', 'alreadyDestroyed', 'deleteRetrying', 'restored',
     'restoreNotDeleted', 'restoreConfirm', 'redactedMember',
   ];
+  /* ── Free conversation (CCB-S4-027) ─────────────────────────────────────── */
+
+  section('Free conversation: she talks back, and commands still win');
+
+  // THE claim of this briefing is a conjunction, so it is checked as one: she chats
+  // freely AND she still obeys every command. Either alone would be a regression.
+  // A bare leading name stays SILENT on an unknown (CCB-S3-005); the greeted form is
+  // the strong signal that reaches this branch. Using it here keeps that rule asserted
+  // rather than accidentally relaxed.
+  const conversationBefore = personalizeCalls.filter((c) => c.kind === 'conversation').length;
+
+  coolDown();
+  modelConversationReply = 'The hearth is warm and the kettle is on. What is on your mind?';
+  const chat = await say('Hey Cinderella how has your evening been');
+  check(
+    'an addressed non-command gets the model own words',
+    chat.replies[0]?.includes('the kettle is on') === true,
+    chat.replies[0]?.slice(0, 60),
+  );
+  check('and is treated as a control message, not archived as content', chat.handled);
+
+  const conversationCalls = personalizeCalls.filter((c) => c.kind === 'conversation');
+  check(
+    'the model was asked exactly once for it',
+    conversationCalls.length === conversationBefore + 1,
+    `${conversationCalls.length - conversationBefore} call(s)`,
+  );
+  const lastConversation = conversationCalls.at(-1);
+  check(
+    'in conversation mode, which is the mode with no draft to rewrite',
+    lastConversation?.mode === 'conversation',
+    String(lastConversation?.mode),
+  );
+  check(
+    'with no required literals, because no command produced any facts',
+    lastConversation?.requiredLiterals.length === 0,
+  );
+  check(
+    'and the sender display name blocked, exactly as every other reply blocks it',
+    lastConversation?.blockedLiterals.length === 1,
+  );
+
+  // COMMANDS STILL WIN. Each of these matches a command intent, so free conversation
+  // must never be consulted for them.
+  const beforeCommands = personalizeCalls.filter((c) => c.kind === 'conversation').length;
+  coolDown();
+  const stillStatus = await say('Hey Cinderella what do you keep of mine');
+  check(
+    'a status request still answers with status, not with conversation',
+    stillStatus.replies[0]?.includes('keep') === true &&
+      stillStatus.replies[0]?.includes('the kettle is on') !== true,
+    stillStatus.replies[0]?.slice(0, 60),
+  );
+  coolDown();
+  const stillConsent = await say('Hey Cinderella please publish my messages');
+  check(
+    'a consent request still opens the consent question, not conversation',
+    stillConsent.replies[0]?.includes('the kettle is on') !== true &&
+      (stillConsent.replies[0]?.length ?? 0) > 0,
+    stillConsent.replies[0]?.slice(0, 60),
+  );
+  check(
+    'and NEITHER command consulted the model for conversation',
+    personalizeCalls.filter((c) => c.kind === 'conversation').length === beforeCommands,
+  );
+
+  // The model going quiet must not cost the member an answer, and must not accuse them
+  // of being unclear.
+  coolDown();
+  modelConversationReply = null;
+  const mute = await say('Hey Cinderella tell me something about the weather');
+  check(
+    'when the model cannot speak she says so honestly',
+    mute.replies[0]?.includes('could not find my words') === true,
+    mute.replies[0]?.slice(0, 60),
+  );
+  check(
+    'and does NOT claim the member was unclear',
+    mute.replies[0]?.includes('did not quite catch that') !== true,
+  );
+
   const consentOffered = personalizeCalls.filter((c) => CONSENT_BEARING.includes(c.kind));
   check(
     'no consent-bearing reply is ever offered to a model',

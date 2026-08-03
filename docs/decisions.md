@@ -13,6 +13,65 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-131 — Free conversation: the first time the model writes rather than rephrases
+
+**Status: IMPLEMENTED** (CCB-S4-027, the raw test). Proven live against the local model in
+a real SimpleX group: she holds a conversation, and every command still answers exactly as
+before. Conversation history, persona cards, sharpness and motif are the later personality
+work and none of it is here.
+
+**The boundary this crosses, stated plainly.** Every previous model call rephrased a
+decision the application had already made: the deterministic draft was the instruction, the
+safety net and the fallback all at once. Free conversation has no draft, because no command
+produced one, so **the model writes original words**. That is a different thing and it is
+worth naming rather than sliding into.
+
+**Decision 1: a named `conversation` mode, not `free` with an empty draft.** The lane's
+free-mode prompt says "rewrite the deterministic draft"; handing it an empty one would ask
+the model to rewrite nothing and let it invent the nothing. The mode carries its own task
+lines, omits the draft field entirely from the request, and keeps every other guard in that
+file: control characters stripped, dashes rewritten, blocked literals refused, length bound
+(500 rather than 700, because conversation is chat and not an essay).
+
+**Decision 2: it is reachable from exactly one place, after every command has declined.**
+The `UNKNOWN` case in the intent dispatch, past the `explicit` test and past the
+weak-signal silence rule. A command intent can therefore never be intercepted, and that is
+asserted rather than asserted-in-prose: a mutation routing `STATUS` into conversation fails
+nine checks. A bare leading name still stays silent (CCB-S3-005); the greeted form is what
+reaches this branch.
+
+**Decision 3: a failed model says so, and does not blame the member.** The fallback is a
+new persona string, not `notUnderstood`. "I did not quite catch that" told a member their
+words were unclear when the truth was that hers were unavailable, and that is a small
+untruth of exactly the kind this project does not tell. Mutating the fallback back to
+`notUnderstood` fails three checks.
+
+**Decision 4: its own archive category, excluded by default.** `conversation` joins
+`REPLY_CATEGORIES` rather than borrowing `notUnderstood`, so an operator switching one is
+not silently switching the other, and migration 027 replaces `bot_publish_settings` so the
+SQL default matches `DEFAULT_ARCHIVE`. `verify:archive` caught that drift the moment the
+TypeScript side changed alone, which is the check working exactly as 013's comment
+promised. Excluded by default matters more here than for any other category: it is the only
+one whose words the application did not decide, and a member chatting casually has not
+consented to that being republished.
+
+**What the model still cannot do.** It produced a sentence. A sentence is all that leaves
+the method. No consent, no command, no database, no transport, and the sender's display
+name is blocked as in every other reply.
+
+**Observed live**, in order: *"Evening's humming along nicely here, just chilling between
+the code streams. You making plans or just vibing tonight?"* and *"Long winter nights are
+perfect for cozying up with a good story or just staring into the fire."* Then, unchanged,
+a status answer whose deterministic count arrived intact under a model-written lead, the
+full help text, and the exact consent question.
+
+**One rough edge, reported rather than hidden:** one of the two conversational replies ended
+with a stray `}` from the structured-output envelope. Cosmetic, not a safety issue, and not
+pattern-matched away here because a raw test should show what the model actually does. It is
+on the backlog.
+
+---
+
 ### D-130 — She was already speaking with the model; success was silent, and the personalized set is nine keys
 
 **Status: IMPLEMENTED as one log line and a check** (CCB-S4-026). The requested fix was

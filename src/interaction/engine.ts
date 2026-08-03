@@ -63,7 +63,7 @@ import {
   type PersonaKey,
 } from './settings.js';
 import type { BotReplyMeta, ReplyMention } from '../capture/bot-message.js';
-import type { MemberCategory } from '../archive/settings.js';
+import type { MemberCategory, ReplyCategory } from '../archive/settings.js';
 import { detectLanguage, fuzzyEquals, normTokens } from './text.js';
 import type { PriceOutcome } from '../plugins/crypto-prices/service.js';
 import { formatAmount, formatValue, describeAge } from '../price/format.js';
@@ -753,7 +753,14 @@ export class InteractionEngine {
           this.noteNearMiss(msg, s, now, 'weak-signal-unknown', instruction, result);
           return false;
         }
-        await this.reply(msg, s, lang, 'notUnderstood', {});
+        // CCB-S4-027. She was addressed, clearly, and asked for nothing the catalog
+        // knows. That used to be the end of it: "I did not quite catch that", to a
+        // member who was simply talking to her. Now the model answers instead, and
+        // `notUnderstood` is what remains when it cannot.
+        //
+        // This branch is reachable ONLY here, after every command intent has been
+        // considered and declined, so free conversation can never intercept a command.
+        await this.freeConversation(msg, s, lang);
         return true;
     }
   }
@@ -1606,6 +1613,107 @@ export class InteractionEngine {
       );
       return deterministicDraft;
     }
+  }
+
+  /**
+   * Talk back when there was nothing to do (CCB-S4-027, D-131).
+   *
+   * ── WHAT IS DIFFERENT ABOUT THIS ONE ────────────────────────────────────────
+   *
+   * Every other model call in this engine rephrases a decision the application has
+   * already made, with the deterministic draft as both the instruction and the
+   * fallback. Here there is no decision and no draft: the model writes original words.
+   * That is a real boundary and it is why the reply lane gets a named `conversation`
+   * mode rather than an empty draft in `free` mode, which would have asked the model to
+   * rewrite nothing and let it invent the nothing.
+   *
+   * What does NOT change: the model still cannot act. It has produced a sentence, and a
+   * sentence is all that leaves this method. Consent, commands and every intent in the
+   * catalog were considered before this branch was reached.
+   */
+  private async freeConversation(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+  ): Promise<void> {
+    const personalize = this.deps.personalize;
+    let spoken: string | null = null;
+
+    if (personalize) {
+      try {
+        spoken =
+          (
+            await personalize({
+              kind: 'conversation',
+              lang,
+              memberMessage: msg.text,
+              // No draft, deliberately. See the note above.
+              deterministicDraft: '',
+              mode: 'conversation',
+              requiredLiterals: [],
+              // The same guard as every other reply: her words never carry the
+              // sender's display name, because the prefix is what names them.
+              blockedLiterals: [msg.senderDisplayName],
+            })
+          )?.trim() || null;
+      } catch (error) {
+        log.debug(
+          `Interaction: free conversation failed (${
+            error instanceof Error ? error.message : String(error)
+          }).`,
+        );
+      }
+    }
+
+    if (spoken === null) {
+      // NOT `notUnderstood`. She heard perfectly well; it is her words that were not
+      // available, and telling a member they were unclear when they were not is the
+      // kind of small untruth this project does not tell.
+      await this.reply(msg, s, lang, 'conversationUnavailable', {});
+      return;
+    }
+
+    await this.replyWithText(msg, s, lang, spoken, 'conversation');
+  }
+
+  /**
+   * Send text the application did not compose from a persona template.
+   *
+   * The tail of {@link reply} exactly: the same outbound formatting, the same name
+   * prefix and mention bookkeeping, the same rate limit, the same follow-up window.
+   * Only the body differs, which is the whole point of having it separate.
+   */
+  private async replyWithText(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+    text: string,
+    category: ReplyCategory,
+  ): Promise<void> {
+    const out = formatOutbound(text, {
+      mode: s.replyMode,
+      prefixTemplate: this.prefixTemplate(s, lang),
+      displayName: msg.senderDisplayName,
+      allowQuote: true,
+    });
+
+    const mentions: ReplyMention[] = [];
+    if (out.prefixName) {
+      mentions.push({ displayName: out.prefixName, memberId: msg.senderMemberId });
+    }
+
+    await this.sendReply(
+      msg,
+      s,
+      out,
+      {},
+      {
+        category,
+        lang,
+        mentions,
+        replyTo: { groupId: msg.groupId, itemId: msg.itemId },
+      },
+    );
   }
 
   private async reply(

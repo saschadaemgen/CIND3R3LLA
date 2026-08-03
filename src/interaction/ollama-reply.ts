@@ -9,7 +9,7 @@
 import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
 
-export type AiReplyMode = 'free' | 'locked';
+export type AiReplyMode = 'free' | 'locked' | 'conversation';
 
 export interface AiReplyRequest {
   /** Operational reply kind, for example status, help, or nickname. */
@@ -23,6 +23,12 @@ export interface AiReplyRequest {
   /**
    * Free mode rewrites the draft. Locked mode writes only a short lead and the
    * application appends the deterministic draft unchanged.
+   *
+   * CONVERSATION mode is the one that is different in kind (CCB-S4-027, D-131): there
+   * is no draft, because no command produced one, so the model writes original words
+   * rather than rephrasing a decision the application already made. Every other guard in
+   * this file still applies to it, which is why it is a mode here rather than a second
+   * transport somewhere else.
    */
   mode: AiReplyMode;
   /** Values that must survive a free rewrite exactly, such as counts and prices. */
@@ -35,6 +41,8 @@ export interface AiReplyRequest {
 
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
+/** Conversation is chat, not an essay. Shorter than a rewritten command answer. */
+const CONVERSATION_MAX_CHARS = 500;
 
 function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -80,7 +88,15 @@ function responseSchema(maxChars: number): Record<string, unknown> {
 
 function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
   const task =
-    request.mode === 'locked'
+    request.mode === 'conversation'
+      ? [
+          'The member is talking to you rather than asking the application to do something.',
+          'Reply to what they actually said, in your own words, as one turn of a conversation.',
+          'There is no draft to follow. Say something real and specific to their message.',
+          'You have taken no action and looked nothing up, so do not imply that you have.',
+          'If they seem to want something done, say plainly that they can ask you directly.',
+        ]
+      : request.mode === 'locked'
       ? [
           'Write one short, natural opening sentence only.',
           'The application appends the protected deterministic text after your sentence.',
@@ -164,7 +180,9 @@ export async function generateOllamaReply(
   const maxChars =
     request.mode === 'locked'
       ? LOCKED_LEAD_MAX_CHARS
-      : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
+      : request.mode === 'conversation'
+        ? Math.max(80, Math.min(request.maxChars ?? CONVERSATION_MAX_CHARS, 900))
+        : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -188,7 +206,11 @@ export async function generateOllamaReply(
               replyKind: request.kind.slice(0, 80),
               language: request.lang.slice(0, 16),
               memberMessage: request.memberMessage.slice(0, 2000),
-              deterministicDraft: request.deterministicDraft.slice(0, 5000),
+              // Omitted in conversation mode rather than sent empty: an empty field
+              // invites the model to invent something to rewrite.
+              ...(request.mode === 'conversation'
+                ? {}
+                : { deterministicDraft: request.deterministicDraft.slice(0, 5000) }),
               requiredLiterals: requiredLiterals(request),
             }),
           },

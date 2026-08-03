@@ -178,7 +178,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   request the core reports, keyed unique on the core's own id, because a public address
   can be used by more than one person at a time) · 026 group invitations (a row per
   invitation, with the role OFFERED and the role HELD kept apart, and neither of them the
-  operator's expected role).
+  operator's expected role) · 027 the free-conversation publication category (a view
+  replacement, because 013 carries the category defaults as a literal that must match
+  `DEFAULT_ARCHIVE`).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -186,7 +188,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **027**, since 026 landed with the group join). Stated as a rule
+  (currently **028**, since 027 landed with free conversation). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
