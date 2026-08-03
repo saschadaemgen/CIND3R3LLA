@@ -208,3 +208,46 @@ export async function rejectContactRequest(contactRequestId: number): Promise<vo
   );
   log.info('runtime: contact request rejected', { contactRequestId, simplexUserId });
 }
+
+export interface JoinedGroup {
+  groupId: number;
+  groupName: string;
+  /**
+   * The role the core reports for the bot's OWN membership after joining.
+   *
+   * Not the role the invitation offered, and not the operator's expected role.
+   * Verifying it against the expected one is step four; this is only what is true.
+   */
+  role: string;
+}
+
+/**
+ * Join a group the bot has been invited to, by the core's own group id (CCB-S4-025).
+ *
+ * Through the scheduler, and for the same reason as the contact accept:
+ * `apiJoinGroup(groupId)` takes NO user id, so it executes as whichever profile is
+ * active. With one profile hosted and pinned there is nothing to misroute to today; with
+ * two, this would join somebody else's group with nothing raised.
+ */
+export async function joinInvitedGroup(groupId: number): Promise<JoinedGroup> {
+  const { bot, simplexUserId } = requireReadyBot('this group cannot be joined');
+  const info = await bot.runScheduled(`group:join:${groupId}`, () =>
+    bot.chat.apiJoinGroup(groupId),
+  );
+  const role = info?.membership?.memberRole;
+  if (typeof role !== 'string' || !role) {
+    // The caller is about to record a membership on the strength of this. A join whose
+    // answer carries no role tells us the bot is in the group and nothing about what it
+    // can do there, which is the one thing step four needs from step three.
+    throw new Error(
+      'The SimpleX core accepted the join but reported no membership role. Nothing has ' +
+        'been recorded; the invitation is still pending.',
+    );
+  }
+  log.info('runtime: joined group', { groupId, role, simplexUserId });
+  return {
+    groupId: info.groupId,
+    groupName: info.groupProfile?.displayName ?? info.localDisplayName ?? 'unknown group',
+    role,
+  };
+}
