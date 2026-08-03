@@ -1,8 +1,11 @@
 /**
  * Persistent SimpleX bot onboarding configuration.
  *
- * This service stores desired BotOptions, address settings, workflow policy,
- * and safety controls. It does not invoke the SimpleX SDK.
+ * This service stores desired BotOptions, address settings, workflow policy, and
+ * safety controls. It still does not invoke the SimpleX SDK: the create-address action
+ * (CCB-S4-022) runs in `src/bot/runtime/admin-actions.ts` and hands the RESULT here.
+ * That split is the point. {@link recordContactAddress} can only be called with a link
+ * the core actually returned, so the workflow state cannot advance on an intention.
  */
 
 import { writeAudit } from '../db/audit.js';
@@ -60,13 +63,26 @@ export interface BotOnboardingProfile {
   contactRequestRetentionHours: number;
   groupInvitationRetentionHours: number;
   maxPendingContactRequests: number;
+  /** The contact link the core returned, or null while the address does not exist. */
+  contactAddressLink: string | null;
+  /** The SimpleX user the address was created on, so the link can be checked. */
+  contactAddressUserId: number | null;
+  contactAddressCreatedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
 export type BotOnboardingInput = Omit<
   BotOnboardingProfile,
-  'id' | 'workflowState' | 'sdkVersion' | 'sdkTypesVersion' | 'createdAt' | 'updatedAt'
+  | 'id'
+  | 'workflowState'
+  | 'sdkVersion'
+  | 'sdkTypesVersion'
+  | 'contactAddressLink'
+  | 'contactAddressUserId'
+  | 'contactAddressCreatedAt'
+  | 'createdAt'
+  | 'updatedAt'
 >;
 
 const COMMAND_MODES = new Set<CommandRegistryMode>(['disabled', 'cinderella_defaults', 'custom']);
@@ -225,6 +241,9 @@ function mapRow(row: {
   contact_request_retention_hours: number;
   group_invitation_retention_hours: number;
   max_pending_contact_requests: number;
+  contact_address_link: string | null;
+  contact_address_user_id: string | number | null;
+  contact_address_created_at: string | null;
   created_at: string;
   updated_at: string;
 }): BotOnboardingProfile {
@@ -258,6 +277,10 @@ function mapRow(row: {
     contactRequestRetentionHours: row.contact_request_retention_hours,
     groupInvitationRetentionHours: row.group_invitation_retention_hours,
     maxPendingContactRequests: row.max_pending_contact_requests,
+    contactAddressLink: row.contact_address_link,
+    contactAddressUserId:
+      row.contact_address_user_id === null ? null : numberOf(row.contact_address_user_id),
+    contactAddressCreatedAt: row.contact_address_created_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -293,6 +316,9 @@ const SELECT_COLUMNS = `
   contact_request_retention_hours,
   group_invitation_retention_hours,
   max_pending_contact_requests,
+  contact_address_link,
+  contact_address_user_id,
+  contact_address_created_at,
   created_at,
   updated_at
 `;
@@ -488,9 +514,15 @@ export async function resetBotOnboardingWorkflow(
 ): Promise<void> {
   if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
 
+  // The address is cleared with the state. A reset that left the link behind would
+  // show step one as not done while displaying its result, and the operator would have
+  // no way to tell which of the two the system believed.
   const result = await db.query(
     `UPDATE cinderella_bot_profiles
         SET workflow_state = 'configured',
+            contact_address_link = NULL,
+            contact_address_user_id = NULL,
+            contact_address_created_at = NULL,
             updated_at = now()
       WHERE id = $1`,
     [id],
@@ -503,6 +535,57 @@ export async function resetBotOnboardingWorkflow(
     simplexIdentityDeleted: false,
     simplexMembershipChanged: false,
     runtimeApplied: false,
+  });
+}
+
+/**
+ * Record a contact address the core actually returned, and advance the workflow.
+ *
+ * ── THE ONE THING THIS FUNCTION IS FOR ──────────────────────────────────────
+ *
+ * The link and the state move in a SINGLE statement, and the statement is only
+ * reachable with a link in hand. The wizard's whole failure to date was a page that
+ * described a step nothing performed; the way that becomes worse rather than better is
+ * a button that advances the state and stores an intention. So there is no
+ * `markAddressRequested`, no optimistic write, and no path that sets
+ * `waiting_contact_request` without a link: the parameter is not optional.
+ *
+ * Writing it again with the same link is a no-op in effect, which is what makes the
+ * button idempotent from end to end rather than only at the SDK call.
+ */
+export async function recordContactAddress(
+  db: Queryable,
+  id: number,
+  address: { link: string; simplexUserId: number },
+  actor: string,
+): Promise<void> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
+  if (!address.link.trim()) throw new Error('Refusing to record an empty contact address.');
+  if (!Number.isSafeInteger(address.simplexUserId) || address.simplexUserId <= 0) {
+    throw new Error('Refusing to record a contact address without a valid SimpleX user id.');
+  }
+
+  const result = await db.query(
+    `UPDATE cinderella_bot_profiles
+        SET contact_address_link = $2,
+            contact_address_user_id = $3,
+            contact_address_created_at = COALESCE(contact_address_created_at, now()),
+            workflow_state = 'waiting_contact_request',
+            updated_at = now()
+      WHERE id = $1`,
+    [id, address.link.trim(), address.simplexUserId],
+  );
+
+  if (result.rowCount !== 1) throw new Error('Bot onboarding profile not found.');
+
+  // The link itself is NOT audited. It is the credential a stranger needs to reach the
+  // bot, the audit log is rendered in the console, and the row already holds it; a
+  // second copy in an append-only table is a second place it can leak from.
+  await writeAudit(db, actor, 'cinderella.bot-profile.contact-address', `bot-profile:${id}`, {
+    simplexUserId: address.simplexUserId,
+    workflowState: 'waiting_contact_request',
+    linkRecorded: true,
+    runtimeApplied: true,
   });
 }
 
