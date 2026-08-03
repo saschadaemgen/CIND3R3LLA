@@ -915,6 +915,12 @@ briefings. Architecture §31 has the detail; the state of it is:
       telescope turned up on a baking profile. The model path has no such defect by
       construction, since the model writes its own emoji into the text; fixing it in the
       template path means tying the emoji pool to the interest, which is pool authoring.
+- [ ] **Profile creation, when it arrives, must not call `apiCreateActiveUser` directly.**
+      The SDK's `mkBotProfile` mutates the profile to set `peerType = Bot` and allow
+      files; skipping it produces profiles that silently cannot receive media, and nothing
+      surfaces until someone posts a picture. Use `botProfileFor` from
+      [`src/bot/runtime/core.ts`](../src/bot/runtime/core.ts). Recorded now because the
+      generator is the workstream most likely to hit it.
 - [ ] **Population layer** — composing a room rather than an avatar: who is in it, in what
       mix, with what collision behaviour. The trait sampler takes `archetypeMix` as an
       input and deliberately makes no claim about what a realistic one is.
@@ -1023,6 +1029,43 @@ Both arrived with the unbriefed AI block and failed from 2026-07-28. Full accoun
       `verify:public` now, so a deletion goes red either way. The open question is whether
       the data layer should be symmetric, which is a small change and deliberately **not**
       made under CCB-S4-008's "nothing further" scope.
+
+## The multi-profile runtime — merged, not wired (CCB-S4-004, D-096; merged under CCB-S4-020)
+
+Built on `feature/multi-profile-core-foundation` and merged to `main` on 2026-08-03 after
+its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls it**:
+`startBot()` is not wired, so the modules ship dormant. Architecture §32 has the detail.
+
+- [x] **Runtime, scheduler, router, state machine, benign-noise allowlist** —
+      `src/bot/runtime/`. `npm run verify:multi-profile`, 80 checks.
+- [x] **Persistent bot registry** — migration 023 + `src/profiles/bot-registry.ts`. Actor
+      types, automation modes, avatar sources, disclosure labels, the three-part
+      personality reference, and the §14 safety invariants split between CHECK
+      constraints and audited application logic.
+- [x] **Two SDK workarounds** — the reactions defect (both directions throw although the
+      operation succeeded) and `apiSendMessages` discarding the sending user.
+- [ ] **Multi-profile capture.** THE significant deferral. `registerCapture` is bound to
+      one profile; widening it without conversation canonicalisation stores N copies of
+      every message with N consent derivations and an N-times FTS index. Needs
+      `via_group_link_uri_hash` canonicalisation first (D-083).
+- [ ] **Conversation canonicalisation** via `groups.via_group_link_uri_hash`. Do not make
+      the column `NOT NULL` until the group-*creator* path has been checked against a
+      database containing one; all 27 sampled profiles had joined via a link.
+- [ ] **Wiring `startBot()` onto the runtime**, per-profile `status`, `deleteFromCore`
+      taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
+      on `runtime-policy.ts`.
+- [x] **`/_start` subscribes every user in a shared database** — verified two ways, and
+      it is the assumption the whole design rests on. 26 of 26 non-active profiles
+      received one message with the active user parked on a non-participant; and the
+      core's startup path calls `subscribeUsers` over the full user list. Architecture
+      §32 carries the evidence. This is what made profile rotation unnecessary.
+- [x] **The outgoing-event axis** — settled against a live core under CCB-S4-019 (D-124):
+      there is no `newChatItems` event for one's own send at all, and the outgoing
+      `chatItemsStatusesUpdated` events carry the true sender's `userId` even when
+      delivered after the active user has been switched.
+- [ ] **Live-core verification of the remaining items** — the *timing* of those
+      measurements, the 10 s / 120 s constants, `degraded`, and whether `fileId` is unique
+      across users in one core database.
 
 ## Carried into Season 4 (recorded under CCB-S3-028)
 

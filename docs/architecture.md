@@ -1528,10 +1528,104 @@ drawn for culture `de`, writing a German bio under an English name, which is the
 generator's documented fixture-corpus gap made visible for the first time by rendering
 names beside bios.
 
+**A constraint on this module's FUTURE creation path, recorded before it is built.** The
+generator will eventually create SimpleX profiles. If it calls `apiCreateActiveUser`
+directly it will produce profiles that **cannot receive media**, because the SDK's
+`mkBotProfile` mutates the profile it is given to set `peerType = Bot` and force
+`preferences.files`, and nothing raises when that is skipped: the failure surfaces only
+when someone posts a picture into a room full of generated avatars. Use
+[`botProfileFor`](../src/bot/runtime/core.ts) (architecture §32) or reproduce it exactly.
+Neither CCB-S4-002 nor CCB-S4-003 is affected, because neither creates anything.
+
 **Not built:** the model-backed text path, the
 population layer, the validation layer, bios, avatars, and persistence of any of it. See
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.
+
+## 32. The multi-profile runtime (CCB-S4-004, D-096)
+
+**On `feature/multi-profile-core-foundation`, not merged to main, and not wired to
+`startBot()`.** The live bot still boots through `bot.run()` exactly as §4 describes.
+
+`src/bot/runtime/` hosts many SimpleX profiles on one in-process core: one
+`ChatApi.init()`, one `startChat()`, every enabled profile subscribed simultaneously, no
+profile rotation. It sits under `src/bot/` because that is the only directory
+`verify:adapter-seam` permits the SDK in, and because D-085 recorded that this runtime is
+not to be built against the adapter seam as it stands. `src/adapter/` is untouched.
+
+| File | Role | SDK |
+|---|---|---|
+| [`core.ts`](../src/bot/runtime/core.ts) | Lifecycle, profile enumeration, subscription, the two SDK workarounds | yes |
+| [`scheduler.ts`](../src/bot/runtime/scheduler.ts) | Serializes active-user-dependent command **issuing** | no |
+| [`router.ts`](../src/bot/runtime/router.ts) | One subscriber per event tag, fan-out by receiving `userId` | no |
+| [`state.ts`](../src/bot/runtime/state.ts) | Six-state machine, injected clock | no |
+| [`errors.ts`](../src/bot/runtime/errors.ts) | The two-class benign-noise allowlist | no |
+| [`types.ts`](../src/bot/runtime/types.ts) | Domain types and the narrow core contract | no |
+
+**Five of six files import no SDK**, which is what lets `verify:multi-profile` drive the
+whole runtime against an in-process double with no Haskell core.
+
+**The scheduler is the load-bearing part.** Every command that does not take an explicit
+`userId` executes as whatever profile is currently active, and making a profile active is
+itself a command, so "become A, then send" has a gap. A concurrent "become B" landing in
+that gap makes the first send execute as B, and **the core raises nothing**, because a
+legal command was issued by a genuinely active profile. There is no serialization anywhere
+in the SDK to fall back on: `sendChatCmd` is a bare pass-through to the native addon. The
+scheduler serializes the *issuing* and not the waiting, so many operations are still in
+flight at once; a grouped workload pays 3 switches for 9 commands rather than 9.
+
+**`bot.run()` is reimplemented rather than called N times.** It calls `process.exit()` on
+three internal paths with no thrown error, its user resolution cannot select a named
+profile out of a populated database, and it calls `startChat()` itself. The one thing that
+must survive the reimplementation is `mkBotProfile`'s mutation: it forces
+`preferences.files` and sets `peerType = Bot`, so a bare `apiCreateActiveUser` creates
+profiles that are not marked as bots and **do not allow file transfer**, silently breaking
+media capture with nothing raised until the first image arrives.
+[`botProfileFor`](../src/bot/runtime/core.ts) reproduces it deliberately.
+
+**Two SDK defects are worked around in `core.ts`**, both verified present in the installed
+6.5.4. `apiChatItemReaction` checks the response against `chatItemsDeleted` although
+`/_reaction` answers `chatItemReaction` in both directions, so add and remove **both throw
+although the operation succeeded**; the thrown error carries the successful response on
+`.response` while `.chatError` is `undefined`, which is what makes it expensive to
+diagnose (upstream PR #7109, open). And `apiSendMessages` discards the `user` the
+underlying response carries, so sends are issued as raw commands to keep `r.user.userId`
+and verify attribution at the send site.
+
+**Registry:** `cinderella_bot_registry` (migration 023) carries the actor type, automation
+mode, avatar source, disclosure label, operator reference and the three-part personality
+reference. `simplex_user_id` is the first SimpleX user id anywhere in this schema. Half of
+the §14 safety invariants are CHECK constraints; the half containing the word *silently*
+is application logic in [`bot-registry.ts`](../src/profiles/bot-registry.ts), which audits
+every transition and refuses the two §14 forbids.
+
+**Capture stays bound to exactly one profile.** Under D-083 a conversation carries N group
+ids across N participating profiles, and `UNIQUE (group_id, group_msg_id)` permits all N
+rows, so widening capture without conversation canonicalisation would store N copies of
+every message with N consent derivations. See D-096 for the full deferral list.
+
+**`/_start` subscribes EVERY user in a shared database, not only the active one.**
+Verified, and it is the assumption the whole design rests on, so the evidence is recorded
+rather than referenced. Measured: 200 profiles in one database, 27 joined to one group,
+**one** `startChat()` and no per-profile activation, the active user then deliberately
+moved to a profile that is not in the group, one message sent. **26 of 26 other profiles
+received, each carrying its own `userId`, zero duplicates** (first at 153 ms, last at
+1771 ms). Had `/_start` subscribed only the active user, none of the 26 would have
+received anything. Independently, the core's startup path loads all profiles with
+`getUsers` and calls `subscribeUsers False users` over the full list; the active user id
+is passed additionally and prioritises rather than filters, and pending file transfers
+resume for all profiles. `apiSetActiveUser` changes the stored active user and
+`currentUser` only, and starts or stops no subscription. A profile that is both a member
+and the active user receives normally: no preference, no penalty.
+
+This is also why no profile-rotation design exists here. It was made unnecessary by this
+finding and deleted rather than shipped.
+
+**Untested against a live core**, and listed rather than implied: the *timing* of the
+measurements above (153 ms / 1771 ms), as distinct from the behaviour they demonstrate;
+that the 10 s quiet period and 120 s ceiling are the right constants; that a live core
+misroutes without the scheduler (the harness reproduces the mechanism, not the core);
+`degraded` in any form; and whether `fileId` is unique across users in one core database.
 
 ## Appendix: divergences (code wins)
 

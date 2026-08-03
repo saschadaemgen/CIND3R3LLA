@@ -133,6 +133,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
+  `bot/runtime/` (**the multi-profile runtime, merged under CCB-S4-020 and NOT YET WIRED**:
+  one core, many SimpleX profiles, a serialized active-user scheduler, event routing by
+  receiving `userId`. Nothing calls it, because `startBot()` is a later briefing, so it
+  ships dormant. Five of its six files import no SDK so it is testable with no core; see
+  architecture §32, D-096 and D-124),
   `generator/` (**offline tooling, no runtime caller**: the profile generator, built one
   component per briefing. Shared deterministic `rng.ts`, then `names/` and `traits/`.
   Nothing outside it imports it and nothing writes its output; see architecture §31.
@@ -189,6 +194,8 @@ the model transport, so no Ollama need be running.
 `verify:traits` gates CORRECTNESS and only REPORTS the two quality measures: both bounds
 were withdrawn under D-095 after measurement showed they named the wrong properties.
 `npm run calibrate:traits` prints the surface replacements get written from),
+`verify:multi-profile` (the multi-profile runtime, against PGlite and an in-process core
+double; merged to `main` under CCB-S4-020),
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
 proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture
