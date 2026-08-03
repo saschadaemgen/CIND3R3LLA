@@ -696,7 +696,11 @@ claims delivery on a branch states the pushed head.
 
 **Merges happen only after joint review with the operator.** A branch created because a
 briefing wanted a review gate is not merged by the agent that wrote it. `feature/multi-profile-core-foundation`
-stays unmerged at `9df4f6e` and this briefing does not touch it.
+stays unmerged at `9df4f6e` and this briefing does not touch it. *(Later: the gate was
+satisfied. The branch was reviewed by the CLI workstream, its three named pre-merge
+verifications were run under CCB-S4-019, and the operator directed the merge in CCB-S4-020,
+which landed it at `83e9a44`. The rule held; it is recorded here so the sentence above is
+not read as still-current status.)*
 
 ---
 

@@ -1544,8 +1544,11 @@ writes nothing.
 
 ## 32. The multi-profile runtime (CCB-S4-004, D-096)
 
-**On `feature/multi-profile-core-foundation`, not merged to main, and not wired to
-`startBot()`.** The live bot still boots through `bot.run()` exactly as §4 describes.
+**Merged to `main` under CCB-S4-020 (2026-08-03) and NOT WIRED to `startBot()`.** Built on
+`feature/multi-profile-core-foundation` and held there until the joint review and the three
+pre-merge verifications of CCB-S4-019 (D-124) had passed. Nothing calls any of it: the live
+bot still boots through `bot.run()` exactly as §4 describes, so these modules are present
+and dormant, and a deploy of this revision changes no running behaviour.
 
 `src/bot/runtime/` hosts many SimpleX profiles on one in-process core: one
 `ChatApi.init()`, one `startChat()`, every enabled profile subscribed simultaneously, no

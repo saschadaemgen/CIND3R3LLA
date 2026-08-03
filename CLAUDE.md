@@ -164,7 +164,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   018 capture write-ahead events · 019 formatted text · 020 revocation hide/delete +
   evidence holds (incl. the BEFORE DELETE hold trigger) · 021 consent gaps (a restore
   never publishes what was said while hidden) · 022 quarantine withholds (a hash match
-  or an escalation is served to nobody).
+  or an escalation is served to nobody) · 023 bot registry (one row per SimpleX profile
+  the core reports: actor type, automation mode, avatar source, the personality
+  reference; nothing hosts it yet).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -172,7 +174,8 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **023**). Stated as a rule rather than a fixed number, because the fixed
+  (currently **024**, since 023 landed with the multi-profile merge). Stated as a rule
+  rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
 - `deploy/` — `cinderella.service`, `nginx-admin.conf`, `RUNBOOK.md`, `backup.sh`.
