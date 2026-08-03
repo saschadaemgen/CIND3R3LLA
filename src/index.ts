@@ -25,6 +25,7 @@ import {
 import { log, setLogLevel } from './log.js';
 import { startBot, type BotHandle } from './bot/client.js';
 import { startRuntimeBot, type RuntimeBotHandle } from './bot/runtime/host.js';
+import { setRuntimeAdminHandle } from './bot/runtime/admin-actions.js';
 import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
@@ -123,6 +124,11 @@ async function startCaptureWorker(
       : null;
     const botHandle: BotHandle =
       runtimeBot ?? (await startBot(cfg, { getFileTimeoutMs: () => settings.fileTimeoutMs }));
+    // The admin console's onboarding actions need the running runtime (CCB-S4-022).
+    // Registered rather than passed in, because the console is deliberately started
+    // BEFORE the bot so it can show a failure when the bot fails to start, so there is
+    // no runtime to hand it at the moment its views are built.
+    setRuntimeAdminHandle(runtimeBot);
     // The core-erasure path needs a live chat client (CCB-S3-027). Registered here
     // rather than passed down, because the queue handler that uses it runs outside
     // the capture wiring entirely.
@@ -508,6 +514,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
         // keeps answering yes against a chat client that has been shut down, and the
         // erasure path would report a capability it no longer has (CCB-S3-023).
         setCoreDeleteHandle(null);
+        setRuntimeAdminHandle(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
         resolve();
