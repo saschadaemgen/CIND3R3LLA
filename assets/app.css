@@ -2361,6 +2361,78 @@ input[type='radio'] {
   user-select: all;
 }
 
+/* Incoming contact requests, step two of onboarding (CCB-S4-023). */
+.setup-requests {
+  margin-top: 16px;
+  border: 1px solid rgba(240, 196, 121, 0.24);
+  border-radius: 14px;
+  background: rgba(240, 196, 121, 0.05);
+  padding: 16px;
+}
+
+.setup-requests header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.setup-requests p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.setup-request-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.setup-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 10px 12px;
+}
+
+.setup-request[data-request-state='rejected'] {
+  opacity: 0.6;
+}
+
+.setup-request-who strong {
+  display: block;
+  font-size: 13px;
+}
+
+.setup-request-who small {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.setup-request-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.setup-request-state {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
 .setup-chip-row,
 .setup-detail-actions {
   display: flex;

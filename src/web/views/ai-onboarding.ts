@@ -25,10 +25,18 @@ import {
   type SdkGroupRole,
 } from '../../profiles/bot-onboarding.js';
 import {
+  acceptContactRequest,
   createOrShowBotAddress,
   hostedIdentity,
+  rejectContactRequest,
   type HostedIdentity,
 } from '../../bot/runtime/admin-actions.js';
+import {
+  listContactRequests,
+  recordAcceptedContactRequest,
+  recordRejectedContactRequest,
+  type BotContactRequest,
+} from '../../profiles/contact-requests.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, fmtDate, stat } from './ui.js';
@@ -308,14 +316,16 @@ function nextAction(profile: BotOnboardingProfile): { title: string; description
     case 'contact_request_pending':
       return {
         title: 'Review the contact request',
-        description: profile.autoAcceptContacts
-          ? 'Automatic acceptance is configured, but runtime event wiring is not active yet.'
-          : 'Accept or reject the request in the future review queue.',
+        description:
+          'Someone used the contact link. Accept it below to connect, or reject it if it ' +
+          'is not the request you were expecting.',
       };
     case 'contact_connected':
       return {
         title: 'Invite the bot into a group',
-        description: 'The group owner sends the invitation from the personal SimpleX profile.',
+        description:
+          'The direct contact is connected. Inviting the bot into a group is the next step ' +
+          'and is not built yet, so nothing here does it for you.',
       };
     case 'waiting_group_invitation':
       return {
@@ -779,14 +789,83 @@ function contactAddressPanel(profile: BotOnboardingProfile): SafeHtml | null {
       ${waiting ? badge('waiting for a contact request', 'amber') : badge('address created', 'green')}
     </header>
     <p>
-      Open your own SimpleX app, choose to add a contact, and paste this link. The bot
-      receives the request; accepting it is the next step and is not built yet.
+      Open your own SimpleX app, choose to add a contact, and paste this link. The request
+      then appears below for you to accept.
     </p>
     <code class="setup-address-link" data-address-link>${profile.contactAddressLink}</code>
     <p class="setup-inline-note">
       Created ${fmtDate(profile.contactAddressCreatedAt ?? profile.updatedAt)} on SimpleX user
       ${profile.contactAddressUserId ?? 'unknown'}.
     </p>
+  </section>`;
+}
+
+
+/**
+ * The contact requests the core has actually reported (CCB-S4-023).
+ *
+ * Every request is listed, pending ones first, because a public contact address can be
+ * used by anyone who has it and more than one can be outstanding. Showing only the
+ * newest would have the operator accept whichever one the page happened to render.
+ */
+function contactRequestPanel(requests: readonly BotContactRequest[], csrf: string): SafeHtml | null {
+  if (requests.length === 0) return null;
+  const pending = requests.filter((r) => r.state === 'pending');
+
+  const row = (r: BotContactRequest): SafeHtml => html`<li
+    class="setup-request"
+    data-request-state="${r.state}"
+    data-request-id="${r.contactRequestId}"
+  >
+    <div class="setup-request-who">
+      <strong>${r.requesterName}</strong>
+      <small>
+        Request ${r.contactRequestId}, received ${fmtDate(r.receivedAt)}${r.state === 'accepted'
+          ? html`, accepted as contact ${r.contactId}${r.connectedAt
+              ? html`, connected ${fmtDate(r.connectedAt)}`
+              : html`, <em>connecting</em>`}`
+          : r.state === 'rejected'
+            ? html`, rejected ${fmtDate(r.resolvedAt ?? r.receivedAt)}`
+            : null}
+      </small>
+    </div>
+    ${r.state === 'pending'
+      ? html`<div class="setup-request-actions">
+          <form method="post" action="/ai/onboarding">
+            <input type="hidden" name="_csrf" value="${csrf}" />
+            <input type="hidden" name="action" value="accept-contact" />
+            <input type="hidden" name="profileId" value="${r.botProfileId}" />
+            <input type="hidden" name="contactRequestId" value="${r.contactRequestId}" />
+            <button type="submit" class="setup-button setup-button-primary">Accept</button>
+          </form>
+          <form method="post" action="/ai/onboarding">
+            <input type="hidden" name="_csrf" value="${csrf}" />
+            <input type="hidden" name="action" value="reject-contact" />
+            <input type="hidden" name="profileId" value="${r.botProfileId}" />
+            <input type="hidden" name="contactRequestId" value="${r.contactRequestId}" />
+            <button type="submit" class="setup-button setup-button-quiet">Reject</button>
+          </form>
+        </div>`
+      : html`<span class="setup-request-state">${r.state}</span>`}
+  </li>`;
+
+  return html`<section class="setup-requests" data-request-panel>
+    <header>
+      <span class="setup-eyebrow">Contact requests</span>
+      ${pending.length > 0
+        ? badge(`${pending.length} awaiting your decision`, 'amber')
+        : badge('nothing pending', 'green')}
+    </header>
+    ${pending.length > 0
+      ? html`<p>
+          Someone used the contact link. Accepting connects the bot to them as a direct
+          contact and nothing else: it does not put the bot in any group. Rejecting is
+          silent, the sender is not told.
+        </p>`
+      : null}
+    <ul class="setup-request-list">
+      ${requests.map(row)}
+    </ul>
   </section>`;
 }
 
@@ -821,6 +900,7 @@ function profileDetails(
   profile: BotOnboardingProfile,
   csrf: string,
   hosted: HostedIdentity | null,
+  requests: readonly BotContactRequest[],
 ): SafeHtml {
   const action = nextAction(profile);
   const dialogId = `setup-edit-${profile.id}`;
@@ -862,6 +942,7 @@ function profileDetails(
       </section>
 
       ${contactAddressPanel(profile)}
+      ${contactRequestPanel(requests, csrf)}
 
       <div class="setup-chip-row">
         ${badge(profile.enabled ? 'enabled' : 'paused', profile.enabled ? 'green' : 'amber')}
@@ -994,6 +1075,9 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       // console did, and it may stop while the console stays up. A page that showed a
       // remembered identity would be describing a bot that is no longer there.
       const hosted = hostedIdentity();
+      // Read for the selected bot only: the page shows one record at a time, and a
+      // request belongs to the record it arrived for.
+      const requests = selected ? await listContactRequests(ctx.db, selected.id) : [];
 
       reply.type('text/html');
 
@@ -1083,7 +1167,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                       </p>
                     </aside>
                     <div class="setup-detail-panel">
-                      ${selected ? profileDetails(selected, csrf, hosted) : null}
+                      ${selected ? profileDetails(selected, csrf, hosted, requests) : null}
                     </div>
                   </div>`
             }
@@ -1115,6 +1199,26 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           await resetBotOnboardingWorkflow(ctx.db, profileId, actor);
           break;
+
+        // Step two (CCB-S4-023). Same order as step one and for the same reason: the
+        // SDK call first, the database write with its result in hand. A failed accept
+        // leaves the request pending and the workflow where it was, so the operator can
+        // try again rather than being told it worked.
+        case 'accept-contact': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const contactRequestId = positiveInteger(body['contactRequestId'], 'Contact request ID', 0);
+          const contact = await acceptContactRequest(contactRequestId);
+          await recordAcceptedContactRequest(ctx.db, profileId, contactRequestId, contact, actor);
+          break;
+        }
+
+        case 'reject-contact': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const contactRequestId = positiveInteger(body['contactRequestId'], 'Contact request ID', 0);
+          await rejectContactRequest(contactRequestId);
+          await recordRejectedContactRequest(ctx.db, profileId, contactRequestId, actor);
+          break;
+        }
 
         // The first onboarding step that actually does something (CCB-S4-022).
         //

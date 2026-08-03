@@ -26,6 +26,7 @@ import { log, setLogLevel } from './log.js';
 import { startBot, type BotHandle } from './bot/client.js';
 import { startRuntimeBot, type RuntimeBotHandle } from './bot/runtime/host.js';
 import { setRuntimeAdminHandle } from './bot/runtime/admin-actions.js';
+import { registerContactRequestListener } from './profiles/contact-requests.js';
 import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
@@ -129,6 +130,19 @@ async function startCaptureWorker(
     // BEFORE the bot so it can show a failure when the bot fails to start, so there is
     // no runtime to hand it at the moment its views are built.
     setRuntimeAdminHandle(runtimeBot);
+    if (runtimeBot) {
+      // Step two of onboarding (CCB-S4-023). Attached to the runtime's own event flow,
+      // so a contact request is recorded when it ARRIVES rather than when somebody
+      // happens to open the page. The bot record is looked up per event, because the
+      // operator can change which record is the runtime's between boots and a listener
+      // holding a stale id would file requests against the wrong bot.
+      registerContactRequestListener(runtimeBot.events, getPool(), async () => {
+        const { rows } = await getPool().query<{ id: string }>(
+          `SELECT id FROM cinderella_bot_profiles WHERE selected_for_runtime = TRUE LIMIT 1`,
+        );
+        return rows[0] ? Number(rows[0].id) : null;
+      });
+    }
     // The core-erasure path needs a live chat client (CCB-S3-027). Registered here
     // rather than passed down, because the queue handler that uses it runs outside
     // the capture wiring entirely.
