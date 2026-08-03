@@ -38,12 +38,21 @@ import { api as chatApi } from 'simplex-chat';
 import { T, CC } from '@simplex-chat/types';
 import { log } from '../../log.js';
 import { ActiveUserScheduler } from './scheduler.js';
-import { EventRouter } from './router.js';
-import { RuntimeStateMachine } from './state.js';
+import { EventRouter, type ProfileHandler } from './router.js';
+import { RuntimeStateMachine, type TransitionDetail } from './state.js';
 import { emptyBenignCounts, type BenignCounts } from './errors.js';
+import {
+  botProfileFor,
+  resolveProfileSpecs,
+  type RuntimeProfile,
+  type RuntimeProfileSpec,
+} from './profiles.js';
+
+export { botProfileFor, type RuntimeProfile, type RuntimeProfileSpec };
 import {
   emptyCounters,
   type ActiveUserCore,
+  type ReadyReason,
   type RoutableEvent,
   type RuntimeCounters,
   type RuntimeState,
@@ -59,13 +68,19 @@ import {
  * ceiling still declares readiness and logs that it did.
  */
 const SUBSCRIPTION_EVENT_TAGS: ReadonlySet<string> = new Set([
+  // Present in the 6.5.4 event union, and therefore the ones that actually feed the
+  // detector. Checked against `CEvt.Tag` under CCB-S4-021 rather than assumed.
   'subscriptionStatus',
   'hostConnected',
+  'contactConnected',
+  // NOT present in 6.5.4. Left listed on purpose: they are the per-subscription
+  // summaries other SimpleX versions emit, they cost nothing here, and removing them
+  // would make a future SDK bump silently narrow the detector instead of widening it.
+  // Stated so nobody reads this set as evidence that ten kinds of event are observed.
   'contactSubSummary',
   'memberSubSummary',
   'userContactSubSummary',
   'pendingSubSummary',
-  'contactConnected',
   'groupSubscribed',
   'rcvFileSubscribed',
   'sndFileSubscribed',
@@ -73,6 +88,10 @@ const SUBSCRIPTION_EVENT_TAGS: ReadonlySet<string> = new Set([
 
 /** The event tags the runtime subscribes to. Exactly one subscriber per tag. */
 const ROUTED_TAGS: readonly string[] = [
+  // `contactConnected` is here for the detector rather than for a handler: a tag that
+  // is never subscribed can never restart the quiet period, and readiness declared on
+  // evidence the runtime never asked for is readiness declared early.
+  'contactConnected',
   'newChatItems',
   'chatItemUpdated',
   'groupChatItemsDeleted',
@@ -87,41 +106,33 @@ const ROUTED_TAGS: readonly string[] = [
   'subscriptionStatus',
 ];
 
-export interface RuntimeProfile {
-  simplexUserId: number;
-  displayName: string;
-}
-
 export interface RuntimeOptions {
   /** SimpleX database file prefix. Produces `<prefix>_chat.db` and `<prefix>_agent.db`. */
   dbPrefix: string;
   encryptionKey?: string;
   /** Profiles to host. Normally the enabled rows of the bot registry. */
-  profiles: readonly RuntimeProfile[];
+  profiles: readonly RuntimeProfileSpec[];
+  /**
+   * Profile to write when `adopt: 'activeUser'` has to CREATE one. Defaults to
+   * {@link botProfileFor} of the spec's display name; the wiring passes one carrying
+   * the avatar so a fresh profile is not created imageless.
+   */
+  profileFor?: (displayName: string) => T.Profile;
+  /**
+   * The handler for each hosted profile, bound BEFORE the core starts.
+   *
+   * Registering from outside after `start()` resolves leaves a window in which the
+   * core is running and the profile has no handler, and every event in it is counted
+   * and dropped. Passing the factory closes it.
+   */
+  handlerFor?: (profile: RuntimeProfile) => ProfileHandler | undefined;
   /** Where a real failure is surfaced, beyond the log. */
   onError?: (message: string) => void;
-  onTransition?: (from: RuntimeState, to: RuntimeState) => void;
-}
-
-/**
- * Reproduce `mkBotProfile`'s mutation. See the header: losing this silently disables
- * file transfer on every profile the runtime creates.
- */
-export function botProfileFor(displayName: string): T.Profile {
-  return {
-    displayName,
-    fullName: '',
-    preferences: {
-      files: { allow: T.FeatureAllowed.Yes },
-      calls: { allow: T.FeatureAllowed.No },
-      voice: { allow: T.FeatureAllowed.No },
-    },
-    peerType: T.ChatPeerType.Bot,
-  };
+  onTransition?: (from: RuntimeState, to: RuntimeState, detail: TransitionDetail) => void;
 }
 
 export class MultiProfileRuntime {
-  private chat: api.ChatApi | undefined;
+  private chatApiInstance: api.ChatApi | undefined;
   private readonly options: RuntimeOptions;
 
   readonly counters: RuntimeCounters = emptyCounters();
@@ -131,6 +142,13 @@ export class MultiProfileRuntime {
 
   private schedulerInstance: ActiveUserScheduler | undefined;
   private hosted: RuntimeProfile[] = [];
+  private readonly users = new Map<number, T.User>();
+
+  /** Settled when the machine reaches `ready`, or rejected when it stops first. */
+  private readyResolve: (() => void) | undefined;
+  private readyReject: ((err: Error) => void) | undefined;
+  private readonly readyPromise: Promise<void>;
+  private readySettled = false;
 
   constructor(options: RuntimeOptions) {
     this.options = options;
@@ -139,10 +157,18 @@ export class MultiProfileRuntime {
       benign: this.benign,
       ...(options.onError ? { onError: options.onError } : {}),
     });
+    this.readyPromise = new Promise<void>((resolve, reject) => {
+      this.readyResolve = resolve;
+      this.readyReject = reject;
+    });
+    // Never an unhandled rejection: a runtime stopped before readiness rejects this
+    // promise whether or not anyone is waiting on it yet.
+    this.readyPromise.catch(() => undefined);
     this.machine = new RuntimeStateMachine({
-      ...(options.onTransition
-        ? { onTransition: (from, to) => options.onTransition!(from, to) }
-        : {}),
+      onTransition: (from, to, detail) => {
+        this.settleReady(to);
+        options.onTransition?.(from, to, detail);
+      },
     });
   }
 
@@ -152,6 +178,67 @@ export class MultiProfileRuntime {
 
   get profiles(): readonly RuntimeProfile[] {
     return this.hosted;
+  }
+
+  /** The `T.User` the core reports for a hosted profile, as read at start. */
+  user(simplexUserId: number): T.User | undefined {
+    return this.users.get(simplexUserId);
+  }
+
+  /**
+   * The chat handle, for commands this class does not wrap.
+   *
+   * ── READ THIS BEFORE USING IT ───────────────────────────────────────────────
+   *
+   * Every command that does NOT take an explicit `userId` executes as whichever
+   * profile is currently active, so with more than one profile hosted, issuing one
+   * here rather than through {@link scheduler} is the silent cross-profile execution
+   * D-085 measured. It is exposed because the single-bot wiring (CCB-S4-021) needs the
+   * handle for profile-independent commands (`/_files_folder`), for commands that take
+   * an explicit user id (`apiListGroups`), and for the file receiver. With one profile
+   * hosted there is nothing to misroute to.
+   *
+   * When the second profile arrives, every call site reached through this accessor has
+   * to be re-examined; the backlog says so rather than leaving it to be discovered.
+   */
+  get chat(): api.ChatApi {
+    return this.requireChat();
+  }
+
+  /**
+   * Resolves when the runtime is READY, not when `start()` returned.
+   *
+   * The difference is two orders of magnitude, not a nicety: `startChat()` returns in
+   * ~42 ms and subscriptions continue for up to a minute behind it, and a send issued
+   * into that window took 10 s to reach its first receiver against 153 ms on a settled
+   * core (D-085). Anything that SENDS must await this. Anything that only listens must
+   * not, or messages arriving during the warm-up would be missed.
+   *
+   * Rejects if the runtime stops before it ever became ready, so a caller waiting to
+   * send during shutdown fails rather than hanging.
+   */
+  whenReady(): Promise<void> {
+    return this.readyPromise;
+  }
+
+  /** How readiness was reached: a quiet period, or the ceiling (a fault signal). */
+  get readyReason(): ReadyReason | undefined {
+    return this.machine.readyReason;
+  }
+
+  private settleReady(to: RuntimeState): void {
+    if (this.readySettled) return;
+    if (to === 'ready') {
+      this.readySettled = true;
+      this.readyResolve?.();
+      return;
+    }
+    if (to === 'stopping' || to === 'offline') {
+      this.readySettled = true;
+      this.readyReject?.(
+        new Error('Runtime: stopped before it ever reached ready; nothing was sent.'),
+      );
+    }
   }
 
   /**
@@ -183,43 +270,89 @@ export class MultiProfileRuntime {
       ...(this.options.encryptionKey ? { encryptionKey: this.options.encryptionKey } : {}),
     };
     const chat = await chatApi.ChatApi.init(dbOpts);
-    this.chat = chat;
+    this.chatApiInstance = chat;
 
-    const core: ActiveUserCore = {
-      setActiveUser: async (userId: number): Promise<void> => {
-        await chat.apiSetActiveUser(userId);
-      },
-    };
-    this.schedulerInstance = new ActiveUserScheduler(core, { counters: this.counters });
+    // Everything past init is inside the guard. A throw here (a registry naming a
+    // profile the core does not have, an ambiguous adoption) would otherwise leave an
+    // OPEN SQLite database with no handle to close it, a machine stuck in `starting`,
+    // and `whenReady()` pending forever, so a caller awaiting readiness would hang
+    // rather than see the failure that already happened.
+    try {
+      const core: ActiveUserCore = {
+        setActiveUser: async (userId: number): Promise<void> => {
+          await chat.apiSetActiveUser(userId);
+        },
+      };
+      this.schedulerInstance = new ActiveUserScheduler(core, { counters: this.counters });
 
-    // Enumerate BEFORE startChat, matching bot.run's ordering.
-    const existing = await chat.apiListUsers();
-    const byId = new Map(existing.map((u: T.UserInfo) => [u.user.userId, u.user]));
-    this.hosted = [];
-    for (const profile of this.options.profiles) {
-      const found = byId.get(profile.simplexUserId);
-      if (found === undefined) {
-        // Loud. A registry row naming a profile the core does not have means the two
-        // have drifted, and hosting the rest while silently skipping this one would
-        // leave a profile that looks configured and never speaks.
-        throw new Error(
-          `Runtime: registry names SimpleX user ${profile.simplexUserId} ` +
-            `(${profile.displayName}), which does not exist in the core database. ` +
-            `Known ids: ${[...byId.keys()].join(', ') || 'none'}.`,
-        );
+      // Enumerate BEFORE startChat, matching bot.run's ordering.
+      await this.resolveProfiles(chat);
+
+      // Bind each profile's handler BEFORE the core starts, not after `start()`
+      // resolves. Events that arrive for a profile with no handler are counted as
+      // `eventsUnknownProfile` and dropped (router.ts), and the window between
+      // `startChat()` and a caller getting round to registering is real time: an
+      // active-user round trip, possibly a profile write, a files-folder command.
+      for (const profile of this.hosted) {
+        const handler = this.options.handlerFor?.(profile);
+        if (handler) this.router.register(profile.simplexUserId, handler);
       }
-      this.hosted.push(profile);
+
+      this.subscribe(chat);
+
+      await chat.startChat();
+    } catch (err) {
+      await this.abandonStart();
+      throw err;
     }
 
-    this.subscribe(chat);
-
-    await chat.startChat();
     // startChat() returning is NOT readiness. 42 ms with 200 profiles (D-085).
     this.machine.subscribing();
     log.info('runtime: startChat returned, subscribing', {
       profiles: this.hosted.length,
       note: 'not ready yet; readiness is a quiet period or the ceiling',
     });
+  }
+
+  /** Undo a failed start: close the core, settle the machine, settle `whenReady()`. */
+  private async abandonStart(): Promise<void> {
+    try {
+      await this.chatApiInstance?.close();
+    } catch (closeErr) {
+      log.warn('runtime: could not close the core after a failed start', {
+        error: closeErr instanceof Error ? closeErr.message : String(closeErr),
+      });
+    }
+    this.chatApiInstance = undefined;
+    this.schedulerInstance = undefined;
+    this.machine.stopping();
+    this.machine.offline();
+  }
+
+  /** Resolve the configured specs against the core, then host what came back. */
+  private async resolveProfiles(chat: api.ChatApi): Promise<void> {
+    const resolved = await resolveProfileSpecs(
+      this.options.profiles,
+      {
+        listUsers: () => chat.apiListUsers(),
+        getActiveUser: () => chat.apiGetActiveUser(),
+        createUser: (profile) => chat.apiCreateActiveUser(profile),
+      },
+      this.options.profileFor ?? botProfileFor,
+    );
+
+    this.hosted = [];
+    this.users.clear();
+    for (const { user, configuredName, how } of resolved) {
+      this.users.set(user.userId, user);
+      this.hosted.push({ simplexUserId: user.userId, displayName: user.profile.displayName });
+      log.info('runtime: hosting profile', {
+        simplexUserId: user.userId,
+        displayName: user.profile.displayName,
+        configuredName,
+        how,
+      });
+    }
   }
 
   /** Register exactly one subscriber per tag and fan out. */
@@ -234,13 +367,28 @@ export class MultiProfileRuntime {
     }
   }
 
+  /**
+   * Stop the core and CLOSE the database.
+   *
+   * Both, in that order, because `stopChat()` alone leaves the SQLite files open: the
+   * SDK's own `close()` is what releases them, and a process that stops the chat but
+   * never closes the store holds a single-writer database against the next boot.
+   */
   async stop(): Promise<void> {
     this.machine.stopping();
+    const chat = this.chatApiInstance;
     try {
-      await this.chat?.stopChat();
+      await chat?.stopChat();
     } finally {
+      try {
+        await chat?.close();
+      } catch (err) {
+        log.warn('runtime: could not close the core database', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
       this.machine.offline();
-      this.chat = undefined;
+      this.chatApiInstance = undefined;
       this.schedulerInstance = undefined;
     }
   }
@@ -268,14 +416,25 @@ export class MultiProfileRuntime {
     simplexUserId: number,
     groupId: number,
     text: string,
+    /** Quote this chat item above the answer, exactly as `apiSendTextReply` does. */
+    quotedItemId?: number,
   ): Promise<T.AChatItem[]> {
     const chat = this.requireChat();
     return await this.scheduler.run(simplexUserId, `sendGroupText:${groupId}`, async () => {
+      // Composed exactly as `apiSendTextMessage` composes it, `mentions` included:
+      // the SDK helper always sends that field, and this path exists to change WHO the
+      // send is attributed to, not what the message looks like on the wire.
       const cmd = CC.APISendMessages.cmdString({
-        sendRef: { type: 'direct', chatType: T.ChatType.Group, chatId: groupId },
+        sendRef: { chatType: T.ChatType.Group, chatId: groupId },
         liveMessage: false,
-        composedMessages: [{ msgContent: { type: 'text', text } }],
-      } as never);
+        composedMessages: [
+          {
+            msgContent: { type: 'text', text },
+            mentions: {},
+            ...(quotedItemId === undefined ? {} : { quotedItemId }),
+          },
+        ],
+      });
       const r = (await chat.sendChatCmd(cmd)) as { type: string; user?: T.User; chatItems?: T.AChatItem[] };
       if (r.type !== 'newChatItems' || r.chatItems === undefined) {
         throw new Error(`Runtime: send to group ${groupId} answered ${r.type}, not newChatItems.`);
@@ -322,10 +481,10 @@ export class MultiProfileRuntime {
   }
 
   private requireChat(): api.ChatApi {
-    if (this.chat === undefined) {
+    if (this.chatApiInstance === undefined) {
       throw new Error('Runtime: not started.');
     }
-    return this.chat;
+    return this.chatApiInstance;
   }
 }
 

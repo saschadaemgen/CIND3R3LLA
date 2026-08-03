@@ -34,7 +34,7 @@ export type ReadyReason = 'quiet' | 'ceiling';
 /**
  * The slice of the chat core the scheduler needs.
  *
- * Deliberately two methods. The scheduler's whole job is to own the active-user
+ * Deliberately one method. The scheduler's whole job is to own the active-user
  * transition, so it must not be handed anything that could change the active user
  * behind its back.
  */
