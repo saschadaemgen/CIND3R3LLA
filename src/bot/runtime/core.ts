@@ -90,8 +90,13 @@ const SUBSCRIPTION_EVENT_TAGS: ReadonlySet<string> = new Set([
 const ROUTED_TAGS: readonly string[] = [
   // `contactConnected` is here for the detector rather than for a handler: a tag that
   // is never subscribed can never restart the quiet period, and readiness declared on
-  // evidence the runtime never asked for is readiness declared early.
+  // evidence the runtime never asked for is readiness declared early. It carries a
+  // handler as well since CCB-S4-023, which stamps when an accepted contact actually
+  // connected.
   'contactConnected',
+  // The onboarding console's step two (CCB-S4-023). Without it the core raises the
+  // request, nothing listens, and the sender's app sits on "connecting" forever.
+  'receivedContactRequest',
   'newChatItems',
   'chatItemUpdated',
   'groupChatItemsDeleted',
