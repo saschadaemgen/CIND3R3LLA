@@ -196,6 +196,31 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### And can now join an invited group (CCB-S4-025, D-129)
+
+Step three. Once the bot is a connected contact, invite it into a group from your own
+SimpleX app. The invitation arrives on the console by itself: the page moves to **"Group
+invitation needs attention"**, naming the group, who invited it and the role the
+invitation offers, with a **Join the group** button.
+
+Joining puts the bot in the group and does nothing else. It changes no one's role, and it
+switches no capture or policy on.
+
+What to expect:
+
+- **"membership still settling" then a timestamp.** The join command returning and the
+  membership existing are two different moments, about a second apart. The row says which
+  one it has.
+- **The role is reported three ways and none of them says verified.** What the invitation
+  offered, what the bot actually holds, and what you expect. The page tells you whether
+  the last two match and then says plainly that nothing has verified or enforced it,
+  because that is step four.
+- **An unwanted invitation cannot be declined from the console.** SimpleX has no reject
+  command for invitations; refusing means deleting the chat in your own app. It will sit
+  pending on the page until then.
+
+Migration `026` adds one table.
+
 ### And can now accept the contact request (CCB-S4-023, D-127)
 
 Step two. After the operator adds the bot as a contact using the step-one link, the

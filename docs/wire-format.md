@@ -542,15 +542,18 @@ nothing private ever reaches the public archive.
 | Send (upload) a file | usable | `ComposedMessage.fileSource` on `apiSendMessages` (`t`) | send a generated image/report |
 | Cancel a transfer | usable | `apiCancelFile(fileId)` (`a:238`) | abort a stuck receipt |
 
-### 8b-bis. The contact-request pair, by their real names (CCB-S4-024, D-128)
+### 8b-bis. The onboarding events, by their real names (CCB-S4-024/025, D-128/D-129)
 
-Written out because a plausible-sounding wrong name cost a briefing, and because step
-three will need the group-invitation equivalent.
+Written out because a plausible-sounding wrong name cost a briefing. Step three's pair was
+then established the same way, from the union rather than from a guess, before its listener
+was written.
 
-| What | The real event tag | Where the id is | Where the requester is |
+| What | The real event tag | Where the id is | Where the rest is |
 |---|---|---|---|
 | A contact request arrives | **`receivedContactRequest`** | `ev.contactRequest.contactRequestId` | `ev.contactRequest.profile.displayName`, `localDisplayName` as fallback |
 | The contact comes up | **`contactConnected`** | `ev.contact.contactId` | `ev.contact.localDisplayName` |
+| A group invitation arrives | **`receivedGroupInvitation`** | `ev.groupInfo.groupId` | `ev.contact` is the inviter; `ev.memberRole` is the role OFFERED, `ev.fromMemberRole` the inviter's own |
+| The membership comes up | **`userJoinedGroup`** | `ev.groupInfo.groupId` | `ev.groupInfo.membership.memberRole` is the role actually HELD; `ev.hostMember` is the host |
 
 `contactRequest` is **not an event tag at all.** It is a `ChatInfo` kind, which is why it
 appears in `util.js`'s `chatInfoName` switch (`case "contactRequest": return \`request from
@@ -558,8 +561,13 @@ appears in `util.js`'s `chatInfoName` switch (`case "contactRequest": return \`r
 a list of event names is the trap; `CEvt.Tag` is the authority, and
 `verify:runtime-host` now checks every subscribed tag against it.
 
-The accept command is `apiAcceptContactRequest(contactReqId)` and it takes **no user id**,
-so it executes as the active profile and must go through the scheduler (D-127).
+The accept command is `apiAcceptContactRequest(contactReqId)` and the join command is
+`apiJoinGroup(groupId)`, which returns `T.GroupInfo`. **Neither takes a user id**, so both
+execute as the active profile and must go through the scheduler (D-127, D-129). Contrast
+the address step, whose `apiCreateUserAddress(userId)` does take one.
+
+`ev.memberRole` on the invitation and `membership.memberRole` after the join are **two
+different facts**, and neither is the operator's expected role. See D-129.
 
 ### 8c. Events — the full set, and what she ignores
 

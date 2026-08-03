@@ -13,6 +13,71 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-129 — The group join, and the three roles a page must never collapse into one
+
+**Status: IMPLEMENTED** (CCB-S4-025). Step three of four: joining an invited group.
+Proven live on both sides over real relays, driven through steps one and two first rather
+than from a fixture. Role verification is step four.
+
+**The event names, established from the SDK before a line was written**, which is the
+working rule CCB-S4-024 left behind:
+
+| What | Tag | Group id | The rest |
+|---|---|---|---|
+| Invitation arrives | **`receivedGroupInvitation`** | `ev.groupInfo.groupId` | `ev.contact` is the inviter; **`ev.memberRole`** is the role being offered, `ev.fromMemberRole` the inviter's own |
+| Membership is live | **`userJoinedGroup`** | `ev.groupInfo.groupId` | `ev.groupInfo.membership.memberRole` is the role actually held |
+
+`apiJoinGroup(groupId)` returns `T.GroupInfo` and, like the contact accept and unlike the
+address step, **takes no user id**, so it executes as the active profile and goes through
+the scheduler. Both tags were added to `ROUTED_TAGS`, and `verify:runtime-host`'s guard
+confirmed they exist and are routed before any of it was run: the deafness that guard was
+built in anticipation of is the one this step would otherwise have had.
+
+**Decision 1: the same split as step two, deliberately unchanged.** The listener records
+the arrival and moves `contact_connected` (or `waiting_group_invitation`) to
+`group_invitation_pending`; the console offers the action; the action's real result moves
+the state to `joined`. D-127 settled that shape so step three would not reinvent it, and
+this entry exists partly to confirm it survived contact with a second case.
+
+**Decision 2: the invitation advances from `contact_connected` too, not only from
+`waiting_group_invitation`.** Nothing moves the workflow into the latter: after step two
+the page says "invite the bot into a group" and the operator simply does it. Gating on the
+tidier state alone would have left a real invitation recorded against a workflow that
+never noticed it.
+
+**Decision 3: THREE roles, kept apart in the schema, the log and the page.**
+
+| | Where it comes from | What it means |
+|---|---|---|
+| `invited_as_role` | `receivedGroupInvitation.memberRole` | what the invitation OFFERED |
+| `joined_role` | `apiJoinGroup(...).membership.memberRole` | what the bot ACTUALLY holds |
+| `expectedGroupRole` | the operator's own setting | what they WANT |
+
+They are usually identical and they are not the same fact. Collapsing any two would let
+the page report a role as satisfied because a different role was observed, which is
+precisely the question step four exists to answer. So the page states the held role, says
+whether it matches the expected one, and then says it is **not verified either way**, and
+the audit row carries `roleVerified: false`. Joining is not verifying.
+
+**Decision 4: joining is not membership, the same distinction step two drew.**
+`apiJoinGroup` returning is the command being accepted; `userJoinedGroup` is the
+membership existing. The row carries `joined_role` from the first and `joined_at` from the
+second, and the page says *membership still settling* in between. Measured live: joined at
+17:16:43.003, membership live at 17:16:43.905, **902 ms** apart.
+
+**One check is a source scan, and the reason is stated rather than hidden.** Without a
+live core the join's success path cannot be driven, so nothing runtime-free could catch
+the view passing the expected or the offered role into `recordJoinedGroup` instead of the
+one the core returned. That link is asserted against the source. It was found by a
+mutation that passed silently, which is the argument for mutation-proving every new check
+rather than trusting that a green suite means a guarded one.
+
+**Not built here, and the page says so rather than implying it:** verifying or adjusting
+the role (`APIMembersRole`), declining an invitation (there is no reject command; refusing
+means deleting the chat), the group link, and any capture or policy activation.
+
+---
+
 ### D-128 — The contact-request listener was not deaf, and the check that would have settled it in a minute now exists
 
 **Status: IMPLEMENTED as a check, and as a correction of the record** (CCB-S4-024).

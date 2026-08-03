@@ -1064,9 +1064,17 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       `receivedContactRequest` is routed, recorded in the listener, presented with the
       requester named, and accepted or rejected through the runtime. Proven live on both
       sides with a second SimpleX core.
-- [ ] **Onboarding steps 3 and 4: join the group, set the role.** `apiJoinGroup`,
-      `apiListMembers` and the role change, one briefing each. Step three is the same
-      shape as step two (an event arrives, then an action), so D-127's split applies.
+- [x] **Onboarding step 3 of 4: join the group** (CCB-S4-025, D-129).
+      `receivedGroupInvitation` and `userJoinedGroup` are routed, the invitation is
+      recorded on arrival, and the join records the role the core reports. Proven live on
+      both sides through steps one and two on real relays.
+- [ ] **Onboarding step 4 of 4: verify and adjust the role.** `apiListMembers` to read it
+      and `APIMembersRole` to change it, reaching `role_verified` and then `ready`. The
+      three roles are already stored apart (D-129), so this step compares rather than
+      guesses.
+- [ ] **Declining a group invitation is not built.** There is no reject command for an
+      invitation the way there is for a contact request; refusing means deleting the chat.
+      An unwanted invitation currently sits pending on the page forever.
 - [ ] **Automatic contact acceptance is stored and not honoured.** `auto_accept_contacts`
       defaults to true and the accept is manual regardless: nothing reads the flag. That
       is the safe direction, and it is a setting that currently means nothing, which is

@@ -1698,7 +1698,7 @@ handler holding a chat handle is one import away from issuing an unscheduled com
 | Create address | `POST /ai/onboarding` `action=create-address` | `apiGetUserAddress` first, `apiCreateUserAddress` only if there is nothing there, both through the scheduler, both carrying an explicit `userId` so neither can execute as another profile |
 | Accept contact | `action=accept-contact` | `apiAcceptContactRequest(contactReqId)`, which takes **no** user id and therefore genuinely needs the scheduler (D-127) |
 | Reject contact | `action=reject-contact` | `apiRejectContactRequest`. The sender is not notified; the page says so before the operator presses it |
-| Join group | not built | its own briefing |
+| Join group | `action=join-group` | `apiJoinGroup(groupId)`, which also takes **no** user id and so also goes through the scheduler. Returns `GroupInfo`; the role recorded is `membership.memberRole` |
 | Set role | not built | its own briefing |
 
 **Step two adds an inbound half** (CCB-S4-023, D-127). A contact request arrives on its
@@ -1715,6 +1715,18 @@ afterwards, and the operator's own app shows "connecting" in between. The row ca
 `contact_id` from the accept and `connected_at` from the later `contactConnected` event,
 and the page renders *connecting* until the second lands. Measured live: accepted at
 15:04:06.275, connected 657 ms later.
+
+**Step three repeats both shapes** (CCB-S4-025, D-129). `receivedGroupInvitation` and
+`userJoinedGroup` join `ROUTED_TAGS`;
+[`group-invitations.ts`](../src/profiles/group-invitations.ts) records the arrival and the
+console offers the join. Joining is likewise not membership: `joined_role` comes from the
+join's answer and `joined_at` from the later event, 902 ms apart when measured.
+
+**Three roles, never collapsed.** `invited_as_role` (what the invitation offered),
+`joined_role` (what the bot holds, from `membership.memberRole`) and the profile's
+`expectedGroupRole` (what the operator wants) are three columns, three sentences on the
+page, and one audit field that says `roleVerified: false`. Joining proves the second and
+says nothing about the third; checking them against each other is step four.
 
 **The order is the honesty rule.** The SDK call happens first and the database write
 happens with its result in hand: `recordContactAddress` takes a non-optional link, and
