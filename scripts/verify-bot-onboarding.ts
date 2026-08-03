@@ -4,11 +4,19 @@
  * No SimpleX core is started and no production database is used.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import argon2 from 'argon2';
 import type { AdminConfig, Config } from '../src/config.js';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
+import {
+  listGroupInvitations,
+  recordGroupJoinConfirmed,
+  recordIncomingGroupInvitation,
+  recordJoinedGroup,
+} from '../src/profiles/group-invitations.js';
 import {
   listContactRequests,
   recordAcceptedContactRequest,
@@ -622,6 +630,167 @@ async function main(): Promise<void> {
   );
   check('acceptance is audited', Number(acceptAudit.rows[0]?.n) === 1);
   check('and so is rejection', Number(rejectAudit.rows[0]?.n) === 1);
+
+  /* ================================================== 8. Joining the group */
+  //
+  // CCB-S4-025, step three. Same two causes as step two: the state moves because an
+  // invitation ARRIVED and again because a join RETURNED a membership. What is extra
+  // here is the role, which is three different facts the page must not conflate.
+
+  console.log('\n8. Joining the group (CCB-S4-025)');
+
+  // Prose spans template line breaks, so a literal match asserts the indentation rather
+  // than the sentence. Collapse before matching; structural assertions stay literal.
+  const flat = (body: string): string => body.replace(/\s+/g, ' ');
+
+  const GROUP = 8801;
+  await recordIncomingGroupInvitation(db, targetId, {
+    groupId: GROUP,
+    simplexUserId: 1,
+    groupName: 'The Archive Group',
+    inviterName: 'Operator Phone',
+    invitedAsRole: 'admin',
+  });
+  const invited = (await listBotOnboardingProfiles(db))[0];
+  check(
+    'an arriving invitation moves the workflow to group_invitation_pending',
+    invited?.workflowState === 'group_invitation_pending',
+    invited?.workflowState ?? 'missing',
+  );
+  const invRows = await listGroupInvitations(db, targetId);
+  check('and is recorded with the core own group id', invRows[0]?.groupId === GROUP);
+  check('naming the group and the inviter', invRows[0]?.groupName === 'The Archive Group' &&
+    invRows[0]?.inviterName === 'Operator Phone');
+  check('and the role the invitation OFFERED', invRows[0]?.invitedAsRole === 'admin');
+  check('but nothing about the role held yet', invRows[0]?.joinedRole === null);
+
+  const dupInv = await recordIncomingGroupInvitation(db, targetId, {
+    groupId: GROUP,
+    simplexUserId: 1,
+    groupName: 'The Archive Group',
+    inviterName: 'Operator Phone',
+    invitedAsRole: 'admin',
+  });
+  check('the same invitation twice is not duplicated', dupInv.recorded === false);
+  check('and there is still one row', (await listGroupInvitations(db, targetId)).length === 1);
+
+  const invitationPage = await app.inject({
+    method: 'GET',
+    url: '/ai/onboarding',
+    headers: { cookie: session },
+  });
+  check('the page shows the pending invitation', invitationPage.body.includes('data-invitation-panel'));
+  check('naming the group', invitationPage.body.includes('The Archive Group'));
+  check(
+    'with a join control',
+    invitationPage.body.includes('name="action" value="join-group"') &&
+      invitationPage.body.includes('Join the group'),
+  );
+  check(
+    'and it says joining grants no role beyond the invitation',
+    // The apostrophe is NOT escaped by the template helper: it escapes &, < and >, and
+    // leaves ' alone. Asserted as it actually renders (D-111).
+    flat(invitationPage.body).includes(
+      "It does not change anyone's role and it does not switch any capture or policy on.",
+    ),
+  );
+
+  // A join with no runtime must leave everything exactly as it was.
+  const failedJoin = await app.inject({
+    method: 'POST',
+    url: '/ai/onboarding',
+    payload: {
+      _csrf: (/name="_csrf" value="([a-f0-9]{64})"/.exec(invitationPage.body) ?? [])[1] ?? '',
+      action: 'join-group',
+      profileId: String(targetId),
+      groupId: String(GROUP),
+    },
+    headers: { cookie: session },
+  });
+  check(
+    'a join with no runtime redirects with an error',
+    failedJoin.statusCode === 302 &&
+      String(failedJoin.headers['location'] ?? '').includes('error='),
+  );
+  check(
+    'and the invitation is STILL pending',
+    (await listGroupInvitations(db, targetId))[0]?.state === 'pending',
+  );
+  check(
+    'and the workflow did not advance',
+    (await listBotOnboardingProfiles(db))[0]?.workflowState === 'group_invitation_pending',
+  );
+
+  // The write path, with a membership role in hand. Deliberately NOT the expected role,
+  // so the page has to tell the truth about the difference.
+  await recordJoinedGroup(db, targetId, GROUP, { role: 'member' }, 'verify');
+  const joinedRow = (await listGroupInvitations(db, targetId))[0];
+  check('recording a join marks the row joined', joinedRow?.state === 'joined');
+  check('with the role the CORE reported, not the one offered', joinedRow?.joinedRole === 'member');
+  check('the offered role is still recorded separately', joinedRow?.invitedAsRole === 'admin');
+  check(
+    'and the workflow reaches joined',
+    (await listBotOnboardingProfiles(db))[0]?.workflowState === 'joined',
+  );
+  check('but the membership is not confirmed live yet', joinedRow?.joinedAt === null);
+
+  const confirmed = await recordGroupJoinConfirmed(db, 1, GROUP, 'member');
+  check('the userJoinedGroup event stamps the membership live', confirmed);
+
+  let roleless = false;
+  try {
+    await recordJoinedGroup(db, targetId, 9999, { role: '  ' }, 'verify');
+  } catch {
+    roleless = true;
+  }
+  check('a join with no role is refused rather than recorded', roleless);
+
+  const joinedPage = await app.inject({
+    method: 'GET',
+    url: '/ai/onboarding',
+    headers: { cookie: session },
+  });
+  check(
+    'the joined page reports the role actually held',
+    joinedPage.body.includes('joined as <strong>member</strong>'),
+  );
+  const expectedRole = (await listBotOnboardingProfiles(db))[0]?.expectedGroupRole ?? '';
+  check(
+    'and says plainly that it is NOT the expected role',
+    expectedRole !== 'member' &&
+      flat(joinedPage.body).includes(`is not the <strong>${expectedRole}</strong> role you expect`),
+    `expected ${expectedRole}, held member`,
+  );
+  check(
+    'and that the role is not verified either way, because that is step four',
+    joinedPage.body.includes('not verified'),
+  );
+  check(
+    'the join control is gone once the group is joined',
+    !joinedPage.body.includes('name="action" value="join-group"'),
+  );
+
+  // The one link no runtime-free test can exercise: the view passing the role the SDK
+  // reported into the record. Without a live core the POST cannot reach its success
+  // path, so this is asserted at the source, deliberately and with the reason stated.
+  // Passing the expected or the offered role here would be the exact conflation step
+  // four must not inherit, and nothing else would notice.
+  const viewSource = readFileSync(join('src', 'web', 'views', 'ai-onboarding.ts'), 'utf8');
+  check(
+    'the join records the role the CORE returned, not a literal or the expected role',
+    /recordJoinedGroup\(\s*ctx\.db,\s*profileId,\s*groupId,\s*\{\s*role:\s*joined\.role\s*\}/.test(
+      viewSource,
+    ),
+  );
+
+  const joinAudit = await db.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM audit_log WHERE action = 'cinderella.bot-profile.group-joined'",
+  );
+  check('the join is audited', Number(joinAudit.rows[0]?.n) === 1);
+  const auditSaysUnverified = await db.query<{ n: string }>(
+    "SELECT count(*)::text AS n FROM audit_log WHERE action = 'cinderella.bot-profile.group-joined' AND details->>'roleVerified' = 'false'",
+  );
+  check('and records that the role is NOT verified', Number(auditSaysUnverified.rows[0]?.n) === 1);
 
   await app.close();
   await pg.close();

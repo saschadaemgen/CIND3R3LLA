@@ -489,6 +489,7 @@ section('Event tags: subscribed to something the core emits, and something the r
     join('src', 'bot', 'runtime', 'host.ts'),
     join('src', 'capture', 'handler.ts'),
     join('src', 'profiles', 'contact-requests.ts'),
+    join('src', 'profiles', 'group-invitations.ts'),
   ];
   const ALL_SUBSCRIBERS = [
     ...ROUTED_SUBSCRIBERS,
@@ -512,7 +513,7 @@ section('Event tags: subscribed to something the core emits, and something the r
     }
   }
   measure('chat-event subscriptions found in src', String(subscribed));
-  check('subscriptions were found, so the scan is not vacuous', subscribed >= 9);
+  check('subscriptions were found, so the scan is not vacuous', subscribed >= 11);
   check(
     'every subscribed tag is an event the SDK actually defines',
     bogus.length === 0,
@@ -541,6 +542,16 @@ section('Event tags: subscribed to something the core emits, and something the r
   check(
     "and 'contactRequest' is NOT an event tag, it is a ChatInfo kind",
     !sdkTags.has('contactRequest'),
+  );
+  // Step three's pair, named for the same reason: this is the step CCB-S4-024's guard
+  // was written in anticipation of.
+  check(
+    "the group invitation is 'receivedGroupInvitation', routed",
+    sdkTags.has('receivedGroupInvitation') && routed.has('receivedGroupInvitation'),
+  );
+  check(
+    "and the join confirmation is 'userJoinedGroup', routed",
+    sdkTags.has('userJoinedGroup') && routed.has('userJoinedGroup'),
   );
 }
 
