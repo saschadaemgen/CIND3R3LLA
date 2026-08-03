@@ -437,10 +437,118 @@ section('D-105 scope review: the runtime files that must not import the SDK');
   );
 }
 
+/* ================= every subscribed event tag is real, and actually routed */
+
+section('Event tags: subscribed to something the core emits, and something the runtime routes');
+{
+  // WHY THIS CHECK EXISTS (CCB-S4-024). A handler subscribed to a tag the core never
+  // emits is not a compile error, not a lint error, and not a test failure. It is
+  // SILENCE: the feature simply never happens, and every log line says the boot went
+  // fine. That is unfalsifiable by any test that raises its own events, so the only
+  // defence is to check the names against the SDK's own union and against the tags the
+  // runtime actually routes.
+  //
+  // There are TWO ways to be deaf and the second is the one that will bite next:
+  //   1. the tag does not exist at all (a typo, or a name from another SDK version);
+  //   2. the tag exists, the core emits it, and the RUNTIME DOES NOT ROUTE IT, so the
+  //      handler is wired to a source that will never deliver. Step three of onboarding
+  //      subscribes to a group-invitation event, and forgetting ROUTED_TAGS would be
+  //      exactly this.
+  const eventTypes = readFileSync(
+    join('node_modules', '@simplex-chat', 'types', 'dist', 'events.d.ts'),
+    'utf8',
+  );
+  const union = /export type Tag = ([^;]+);/.exec(eventTypes)?.[1] ?? '';
+  const sdkTags = new Set(
+    union
+      .split('|')
+      .map((t) => t.trim().replace(/["']/g, ''))
+      .filter(Boolean),
+  );
+  measure('tags in the SDK event union', String(sdkTags.size));
+  check('the SDK union parsed at all, so the check is not vacuous', sdkTags.size > 20);
+
+  const core = readFileSync(join('src', 'bot', 'runtime', 'core.ts'), 'utf8');
+  const routedBlock = /const ROUTED_TAGS[^=]*=\s*\[([\s\S]*?)\];/.exec(core)?.[1] ?? '';
+  const routed = new Set(
+    [...routedBlock.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1] as string),
+  );
+  measure('tags the runtime routes', [...routed].sort().join(', '));
+
+  const unknownRouted = [...routed].filter((t) => !sdkTags.has(t));
+  check(
+    'every routed tag is an event the SDK actually defines',
+    unknownRouted.length === 0,
+    unknownRouted.join(', '),
+  );
+
+  // Files whose subscriptions are fed by the runtime's router in production. The
+  // pre-runtime path (`client.ts`, `connect.ts`) talks to the raw ChatApi and is
+  // deliberately not in this list: its tags must be real, but they need not be routed.
+  const ROUTED_SUBSCRIBERS = [
+    join('src', 'bot', 'runtime', 'host.ts'),
+    join('src', 'capture', 'handler.ts'),
+    join('src', 'profiles', 'contact-requests.ts'),
+  ];
+  const ALL_SUBSCRIBERS = [
+    ...ROUTED_SUBSCRIBERS,
+    join('src', 'bot', 'client.ts'),
+    join('src', 'bot', 'connect.ts'),
+  ];
+  // Node's own emitters share the `.on(` shape and are not chat events.
+  const NOT_CHAT_EVENTS = new Set(['SIGINT', 'SIGTERM', 'error', 'exit', 'close']);
+
+  const subscriptionsIn = (file: string): string[] =>
+    [...readFileSync(file, 'utf8').matchAll(/\.on\(\s*'([a-zA-Z]+)'/g)]
+      .map((m) => m[1] as string)
+      .filter((t) => !NOT_CHAT_EVENTS.has(t));
+
+  const bogus: string[] = [];
+  let subscribed = 0;
+  for (const file of ALL_SUBSCRIBERS) {
+    for (const tag of subscriptionsIn(file)) {
+      subscribed++;
+      if (!sdkTags.has(tag)) bogus.push(`${file}: ${tag}`);
+    }
+  }
+  measure('chat-event subscriptions found in src', String(subscribed));
+  check('subscriptions were found, so the scan is not vacuous', subscribed >= 9);
+  check(
+    'every subscribed tag is an event the SDK actually defines',
+    bogus.length === 0,
+    bogus.join(' | '),
+  );
+
+  const unrouted: string[] = [];
+  for (const file of ROUTED_SUBSCRIBERS) {
+    for (const tag of subscriptionsIn(file)) {
+      if (!routed.has(tag)) unrouted.push(`${file}: ${tag}`);
+    }
+  }
+  check(
+    'and every tag subscribed on the routed path is one the runtime routes',
+    unrouted.length === 0,
+    unrouted.length > 0
+      ? `${unrouted.join(' | ')} - the handler would never fire`
+      : '',
+  );
+
+  // The specific pair this briefing was about, named so the regression has a name.
+  check(
+    "the incoming contact request is 'receivedContactRequest', which is what 6.5.4 emits",
+    sdkTags.has('receivedContactRequest') && routed.has('receivedContactRequest'),
+  );
+  check(
+    "and 'contactRequest' is NOT an event tag, it is a ChatInfo kind",
+    !sdkTags.has('contactRequest'),
+  );
+}
+
 /* ---------------------------------------------------------------------- done */
 
 section('Coverage');
-console.log(`  proven here      profile resolution, incl. the renamed-bot and ambiguous-core cases
+console.log(`  proven here      every subscribed event tag exists AND is routed (CCB-S4-024)
+                   profile resolution, incl. the renamed-bot and ambiguous-core cases
                    the bot-profile guard (peerType Bot, files allowed, commands set)
                    capture through the router == capture through the SDK, call for call
                    one profile's events never reach another's handlers

@@ -13,6 +13,64 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-128 — The contact-request listener was not deaf, and the check that would have settled it in a minute now exists
+
+**Status: IMPLEMENTED as a check, and as a correction of the record** (CCB-S4-024).
+**No source file changed.** `src/` is byte-identical to the revision the fix was requested
+against, because the defect it described is not present.
+
+**What was reported.** Onboarding appeared to stall at `waiting_contact_request`: the
+operator added the bot from a separate device, their app showed "connecting", and no
+accept control appeared. The diagnosis handed to this briefing was that
+`src/profiles/contact-requests.ts` subscribes to `receivedContactRequest`, which "is not
+the event the SimpleX core emits", the real one being `contactRequest`.
+
+**What is actually true, established three ways before anything was touched.**
+
+1. **The SDK's own union.** `CEvt.Tag` (`@simplex-chat/types` 0.8.0) contains
+   `receivedContactRequest` and does **not** contain `contactRequest` at all.
+2. **The cited evidence says something else.** `util.js`'s `case "contactRequest"` is
+   inside `chatInfoName`, a switch over **`ChatInfo.type`**, sitting between `local` and
+   `contactConnection`. It is a chat KIND, not an event tag. `bot.js` contains no
+   occurrence of `contactRequest` in any form.
+3. **Production had already done it.** On the deployed revision, the log records
+   `onboarding: contact request received` twice, at 15:54:47 and 15:58:13, for real
+   requests sent from the operator's separate device over the relays, and the database
+   holds the resulting row with the workflow at `contact_request_pending`. The listener
+   fires, on the real event, in production, under the name it already uses.
+
+**So the requested change would have broken a working feature**, silently, in the way that
+is hardest to notice: subscribing to a tag nothing emits produces no error, no failed
+test, and no log line, only a feature that never happens. The standing rule about
+inspecting the source before changing behaviour on a verifier's say-so (D-111) is what
+this entry is an instance of, and it is the second time it has paid for itself.
+
+**Why the operator saw a stall anyway, which is a real thing and not a misreading.** The
+listener shipped in CCB-S4-023 and **was not deployed at the time of their test**; that
+briefing's report said so explicitly. The deploy landed at 15:49:02, and the first real
+request was recorded five minutes later. Nothing was wrong except the order of events.
+
+**What this briefing therefore delivered: the guard, which is what was actually missing.**
+`verify:runtime-host` now reads `CEvt.Tag` out of the SDK and checks two things that were
+checked by nothing:
+
+- every event tag subscribed to anywhere in `src/` is an event the SDK actually defines;
+- every tag subscribed on the ROUTED path is one the runtime's `ROUTED_TAGS` carries,
+  because a real tag the runtime does not route gives a handler that can never fire.
+
+The second is the one that will bite next: step three subscribes to a group-invitation
+event, and forgetting `ROUTED_TAGS` would be deafness of exactly this kind with a
+perfectly valid name. Mutation-proven both ways, including by making the change this
+briefing asked for, which fails three checks.
+
+**The real names, written down** (also in `docs/wire-format.md` §8b-bis): a request
+arrives as **`receivedContactRequest`** with the id at
+`ev.contactRequest.contactRequestId` and the requester at
+`ev.contactRequest.profile.displayName`; the connection completes as
+**`contactConnected`** with `ev.contact.contactId`. Both were already what the code read.
+
+---
+
 ### D-127 — An onboarding step driven by an incoming event: the listener owns the arrival, the console owns the decision
 
 **Status: IMPLEMENTED** (CCB-S4-023). Step two of four: accepting the contact request.

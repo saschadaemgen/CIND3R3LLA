@@ -542,11 +542,31 @@ nothing private ever reaches the public archive.
 | Send (upload) a file | usable | `ComposedMessage.fileSource` on `apiSendMessages` (`t`) | send a generated image/report |
 | Cancel a transfer | usable | `apiCancelFile(fileId)` (`a:238`) | abort a stuck receipt |
 
+### 8b-bis. The contact-request pair, by their real names (CCB-S4-024, D-128)
+
+Written out because a plausible-sounding wrong name cost a briefing, and because step
+three will need the group-invitation equivalent.
+
+| What | The real event tag | Where the id is | Where the requester is |
+|---|---|---|---|
+| A contact request arrives | **`receivedContactRequest`** | `ev.contactRequest.contactRequestId` | `ev.contactRequest.profile.displayName`, `localDisplayName` as fallback |
+| The contact comes up | **`contactConnected`** | `ev.contact.contactId` | `ev.contact.localDisplayName` |
+
+`contactRequest` is **not an event tag at all.** It is a `ChatInfo` kind, which is why it
+appears in `util.js`'s `chatInfoName` switch (`case "contactRequest": return \`request from
+@...\``) next to `direct`, `group`, `local` and `contactConnection`. Reading that switch as
+a list of event names is the trap; `CEvt.Tag` is the authority, and
+`verify:runtime-host` now checks every subscribed tag against it.
+
+The accept command is `apiAcceptContactRequest(contactReqId)` and it takes **no user id**,
+so it executes as the active profile and must go through the scheduler (D-127).
+
 ### 8c. Events — the full set, and what she ignores
 
 The SDK can deliver every event in `ChatEvent` (`events.d.ts:2`). Cinderella subscribes to
 `newChatItems`, `chatItemUpdated`, `chatItemsDeleted`, `groupChatItemsDeleted`, `groupUpdated`,
-`userJoinedGroup`, and the file events (`rcvFileComplete/Error/Warning`). Notable events she does
+`userJoinedGroup`, the file events (`rcvFileComplete/Error/Warning`), and, for onboarding,
+`receivedContactRequest` and `contactConnected`. Notable events she does
 **not** listen to, and what each would enable:
 
 - `chatItemReaction` — a member reacted; enables reading reactions (8b).
