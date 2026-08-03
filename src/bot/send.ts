@@ -52,3 +52,39 @@ export async function sendToChat(
   }
   return await chat.apiSendTextReply(msg.raw as T.AChatItem, text);
 }
+
+/** What the runtime host offers: send to a group as this bot, optionally quoting. */
+export type RuntimeGroupSend = (
+  groupId: number,
+  text: string,
+  quotedItemId?: number,
+) => Promise<T.AChatItem[]>;
+
+/**
+ * The same outbound decision as {@link sendToChat}, issued through the runtime
+ * (CCB-S4-021) so the send is serialized by the active-user scheduler and attributed
+ * from `r.user.userId` on the core's own response (D-124, D-096 Decision 5).
+ *
+ * ── WHY A GROUP ID IS ENOUGH, WHERE sendToChat NEEDED THE ChatInfo ──────────
+ *
+ * `apiSendTextMessage(chatInfo, …)` derives its send reference with `chatInfoRef`,
+ * which carries the `memberSupport` scope through when the item came from a private
+ * support thread. Dropping the scope would answer a private thread in the public
+ * group, which is the CCB-S3-019 leak, so this would be the wrong shortcut if such an
+ * item could reach here. It cannot: `parseGroupMessage` rejects every scoped item at
+ * `isPublicGroupChat` before anything else, so every {@link CapturedMessage} that
+ * exists is a scope-free public group message, and `{ chatType: Group, chatId:
+ * msg.groupId }` is exactly the reference `chatInfoRef` would have produced.
+ *
+ * There is no fallback branch either, for the same reason: `msg.groupId` is a required
+ * field parsed from the item, so the "no chat reference" case `sendToChat` guards
+ * against cannot arise.
+ */
+export async function sendViaRuntime(
+  send: RuntimeGroupSend,
+  msg: CapturedMessage,
+  text: string,
+  opts: SendOptions,
+): Promise<T.AChatItem[]> {
+  return await send(msg.groupId, text, opts.quote ? msg.itemId : undefined);
+}

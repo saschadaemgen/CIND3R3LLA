@@ -11,11 +11,25 @@
 import type { Config } from '../config.js';
 import { log } from '../log.js';
 import { status } from '../web/status.js';
-import type { BotHandle } from '../bot/client.js';
-import type { ReceivedFile } from '../bot/files.js';
+import type { FileReceiver, ReceivedFile } from '../bot/files.js';
+import type { ChatEventSource } from '../bot/runtime/events.js';
 import { parseConsentCommand, type ConsentCommand } from '../consent/commands.js';
 import type { CapturedMessage } from './message.js';
 import { isPublicGroupChat, parseGroupMessage } from '../bot/parse.js';
+
+/**
+ * What capture needs from whatever is hosting the bot.
+ *
+ * Two things only: somewhere to subscribe, and a file receiver. Deliberately NOT
+ * `BotHandle`, which carries the whole `ChatApi`: the multi-profile runtime feeds these
+ * handlers from its own router instead of from the SDK's subscriber table (CCB-S4-021,
+ * `src/bot/runtime/events.ts`), so that each profile's handlers see only that profile's
+ * events. `BotHandle` still satisfies this, so the pre-runtime path is unchanged.
+ */
+export interface CaptureHost {
+  chat: ChatEventSource;
+  fileReceiver: Pick<FileReceiver, 'receive'>;
+}
 
 export interface CaptureHooks {
   /** Called for every captured group message (before any file is received). */
@@ -64,7 +78,7 @@ export interface CaptureOptions {
 
 async function receiveAndReport(
   msg: CapturedMessage,
-  botHandle: BotHandle,
+  botHandle: CaptureHost,
   hooks: CaptureHooks,
 ): Promise<void> {
   if (!msg.file) return;
@@ -114,7 +128,7 @@ async function runDeleted(hooks: CaptureHooks, groupId: number, ids: number[]): 
  * Handles new messages (persist), edits, consent commands, and in-group deletions.
  */
 export function registerCapture(
-  botHandle: BotHandle,
+  botHandle: CaptureHost,
   cfg: Config,
   hooks: CaptureHooks,
   opts: CaptureOptions = {},

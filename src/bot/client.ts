@@ -35,7 +35,7 @@ export interface BotHandle {
  * every receive stalls. Putting temp on the same filesystem as the files folder
  * makes the move a cheap same-device rename.
  */
-async function ensureDirs(cfg: Config): Promise<void> {
+export async function ensureDirs(cfg: Config): Promise<void> {
   await mkdir(dirname(cfg.simplexDbPrefix), { recursive: true });
   await mkdir(cfg.simplexFilesFolder, { recursive: true });
   await mkdir(cfg.mediaRoot, { recursive: true });
@@ -50,7 +50,7 @@ async function ensureDirs(cfg: Config): Promise<void> {
  * deterministic place to put XFTP downloads. Sent as a raw core command since
  * the SDK does not wrap it.
  */
-async function configureFilesFolder(chat: Chat, filesFolder: string): Promise<void> {
+export async function configureFilesFolder(chat: Chat, filesFolder: string): Promise<void> {
   const r = await chat.sendChatCmd(`/_files_folder ${filesFolder}`);
   if (r.type === 'cmdOk') {
     log.info(`SimpleX files folder set to ${filesFolder}`);
