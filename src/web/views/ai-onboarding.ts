@@ -28,9 +28,15 @@ import {
   acceptContactRequest,
   createOrShowBotAddress,
   hostedIdentity,
+  joinInvitedGroup,
   rejectContactRequest,
   type HostedIdentity,
 } from '../../bot/runtime/admin-actions.js';
+import {
+  listGroupInvitations,
+  recordJoinedGroup,
+  type BotGroupInvitation,
+} from '../../profiles/group-invitations.js';
 import {
   listContactRequests,
   recordAcceptedContactRequest,
@@ -330,18 +336,21 @@ function nextAction(profile: BotOnboardingProfile): { title: string; description
     case 'waiting_group_invitation':
       return {
         title: 'Send the group invitation',
-        description: 'The AI bot is connected as a contact and can now be invited manually.',
+        description: 'The AI bot is connected as a contact and can now be invited to a group.',
       };
     case 'group_invitation_pending':
       return {
         title: 'Review the group invitation',
-        description: 'Manual invitation handling is currently configured.',
+        description:
+          'The bot has been invited to a group. Joining below puts it in the group; it does ' +
+          'not grant it any role beyond the one the invitation carries.',
       };
     case 'joined':
       return {
-        title: `Grant the ${profile.expectedGroupRole} role`,
+        title: `Verify the ${profile.expectedGroupRole} role`,
         description:
-          'The detected SimpleX role must be verified before Access Control is activated.',
+          'The bot is in the group. Checking the role it actually holds against the role you ' +
+          'expect is the next step and is not built yet.',
       };
     case 'waiting_expected_role':
       return {
@@ -869,6 +878,83 @@ function contactRequestPanel(requests: readonly BotContactRequest[], csrf: strin
   </section>`;
 }
 
+
+/**
+ * The group invitations the core has reported (CCB-S4-025).
+ *
+ * The role is shown three ways on purpose once a group is joined: what the invitation
+ * offered, what the bot actually holds, and what the operator expects. They are usually
+ * the same and they are not the same fact, and a page that showed one of them as all
+ * three would be answering step four's question by assuming it.
+ */
+function groupInvitationPanel(
+  invitations: readonly BotGroupInvitation[],
+  expectedRole: string,
+  csrf: string,
+): SafeHtml | null {
+  if (invitations.length === 0) return null;
+  const pending = invitations.filter((i) => i.state === 'pending');
+
+  const row = (g: BotGroupInvitation): SafeHtml => html`<li
+    class="setup-request"
+    data-invitation-state="${g.state}"
+    data-group-id="${g.groupId}"
+  >
+    <div class="setup-request-who">
+      <strong>${g.groupName}</strong>
+      <small>
+        Group ${g.groupId}, invited by ${g.inviterName} as ${g.invitedAsRole}, received
+        ${fmtDate(g.receivedAt)}${g.state === 'joined'
+          ? html`, joined as <strong>${g.joinedRole ?? 'unknown'}</strong>${g.joinedAt
+              ? html`, membership live ${fmtDate(g.joinedAt)}`
+              : html`, <em>membership still settling</em>`}`
+          : null}
+      </small>
+    </div>
+    ${g.state === 'pending'
+      ? html`<div class="setup-request-actions">
+          <form method="post" action="/ai/onboarding">
+            <input type="hidden" name="_csrf" value="${csrf}" />
+            <input type="hidden" name="action" value="join-group" />
+            <input type="hidden" name="profileId" value="${g.botProfileId}" />
+            <input type="hidden" name="groupId" value="${g.groupId}" />
+            <button type="submit" class="setup-button setup-button-primary">Join the group</button>
+          </form>
+        </div>`
+      : html`<span class="setup-request-state">joined</span>`}
+  </li>`;
+
+  const joined = invitations.filter((g) => g.state === 'joined');
+  const roleMismatch = joined.filter((g) => g.joinedRole !== expectedRole);
+
+  return html`<section class="setup-requests" data-invitation-panel>
+    <header>
+      <span class="setup-eyebrow">Group invitations</span>
+      ${pending.length > 0
+        ? badge(`${pending.length} awaiting your decision`, 'amber')
+        : badge('nothing pending', 'green')}
+    </header>
+    ${pending.length > 0
+      ? html`<p>
+          Joining puts the bot in the group with the role the invitation carries. It does
+          not change anyone's role and it does not switch any capture or policy on.
+        </p>`
+      : null}
+    <ul class="setup-request-list">
+      ${invitations.map(row)}
+    </ul>
+    ${joined.length > 0
+      ? html`<p class="setup-inline-note" data-tone="${roleMismatch.length > 0 ? 'warning' : ''}">
+          ${roleMismatch.length > 0
+            ? html`The role held is not the <strong>${expectedRole}</strong> role you expect.`
+            : html`The role held matches the <strong>${expectedRole}</strong> role you expect.`}
+          Either way it is <strong>not verified</strong>: checking and adjusting the role is
+          the next step and is not built yet, so nothing here has enforced it.
+        </p>`
+      : null}
+  </section>`;
+}
+
 function profileListItem(profile: BotOnboardingProfile, selected: boolean): SafeHtml {
   const issue =
     profile.workflowState === 'error' ||
@@ -901,6 +987,7 @@ function profileDetails(
   csrf: string,
   hosted: HostedIdentity | null,
   requests: readonly BotContactRequest[],
+  invitations: readonly BotGroupInvitation[],
 ): SafeHtml {
   const action = nextAction(profile);
   const dialogId = `setup-edit-${profile.id}`;
@@ -943,6 +1030,7 @@ function profileDetails(
 
       ${contactAddressPanel(profile)}
       ${contactRequestPanel(requests, csrf)}
+      ${groupInvitationPanel(invitations, profile.expectedGroupRole, csrf)}
 
       <div class="setup-chip-row">
         ${badge(profile.enabled ? 'enabled' : 'paused', profile.enabled ? 'green' : 'amber')}
@@ -1078,6 +1166,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       // Read for the selected bot only: the page shows one record at a time, and a
       // request belongs to the record it arrived for.
       const requests = selected ? await listContactRequests(ctx.db, selected.id) : [];
+      const invitations = selected ? await listGroupInvitations(ctx.db, selected.id) : [];
 
       reply.type('text/html');
 
@@ -1167,7 +1256,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                       </p>
                     </aside>
                     <div class="setup-detail-panel">
-                      ${selected ? profileDetails(selected, csrf, hosted, requests) : null}
+                      ${selected ? profileDetails(selected, csrf, hosted, requests, invitations) : null}
                     </div>
                   </div>`
             }
@@ -1199,6 +1288,18 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           await resetBotOnboardingWorkflow(ctx.db, profileId, actor);
           break;
+
+        // Step three (CCB-S4-025). Same order again: the SDK call first, the database
+        // write with its result in hand. The role recorded is the one the core reports
+        // for the membership, not the one the invitation offered and not the one the
+        // operator expects.
+        case 'join-group': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const groupId = positiveInteger(body['groupId'], 'Group ID', 0);
+          const joined = await joinInvitedGroup(groupId);
+          await recordJoinedGroup(ctx.db, profileId, groupId, { role: joined.role }, actor);
+          break;
+        }
 
         // Step two (CCB-S4-023). Same order as step one and for the same reason: the
         // SDK call first, the database write with its result in hand. A failed accept

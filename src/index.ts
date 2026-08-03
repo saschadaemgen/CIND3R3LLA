@@ -27,6 +27,7 @@ import { startBot, type BotHandle } from './bot/client.js';
 import { startRuntimeBot, type RuntimeBotHandle } from './bot/runtime/host.js';
 import { setRuntimeAdminHandle } from './bot/runtime/admin-actions.js';
 import { registerContactRequestListener } from './profiles/contact-requests.js';
+import { registerGroupInvitationListener } from './profiles/group-invitations.js';
 import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
@@ -136,12 +137,15 @@ async function startCaptureWorker(
       // happens to open the page. The bot record is looked up per event, because the
       // operator can change which record is the runtime's between boots and a listener
       // holding a stale id would file requests against the wrong bot.
-      registerContactRequestListener(runtimeBot.events, getPool(), async () => {
+      const runtimeBotProfileId = async (): Promise<number | null> => {
         const { rows } = await getPool().query<{ id: string }>(
           `SELECT id FROM cinderella_bot_profiles WHERE selected_for_runtime = TRUE LIMIT 1`,
         );
         return rows[0] ? Number(rows[0].id) : null;
-      });
+      };
+      registerContactRequestListener(runtimeBot.events, getPool(), runtimeBotProfileId);
+      // Step three (CCB-S4-025), same shape and the same reason for being here.
+      registerGroupInvitationListener(runtimeBot.events, getPool(), runtimeBotProfileId);
     }
     // The core-erasure path needs a live chat client (CCB-S3-027). Registered here
     // rather than passed down, because the queue handler that uses it runs outside
