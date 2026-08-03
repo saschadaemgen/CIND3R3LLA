@@ -196,6 +196,32 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### And can now accept the contact request (CCB-S4-023, D-127)
+
+Step two. After the operator adds the bot as a contact using the step-one link, the
+request now arrives on the console: the AI Bot Setup page moves to **"Contact request
+needs attention"** on its own, lists the request with the requester's name, and offers
+**Accept** and **Reject**.
+
+Accepting connects the direct contact and nothing else. **It does not put the bot in any
+group**; the page says so, and joining a group is the next briefing.
+
+What to expect:
+
+- **The page updates because a request arrived, not because you opened it.** The listener
+  records the arrival, so the state is already correct when you load the page. There is no
+  auto-refresh: reload to see a request that arrived while you were looking.
+- **"connecting" then "connected" is not a glitch.** Accepting returns a contact; the
+  contact comes up a moment later. The row says *connecting* until the core reports the
+  connection, which matches what the sender's own app shows.
+- **Rejecting is silent.** The SDK does not notify the sender; from their side the
+  invitation simply never completes.
+- **Automatic contact acceptance is stored but not honoured.** The setting exists and
+  nothing reads it; every acceptance is manual. That is the safe direction and it is on
+  the backlog.
+
+Migration `025` adds one table and nothing else.
+
 ### The onboarding wizard can now create the contact address (CCB-S4-022, D-126)
 
 `src/` changed, so this is an ordinary `sudo bash deploy.sh`. After it, the AI Bot Setup

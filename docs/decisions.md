@@ -13,6 +13,69 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-127 — An onboarding step driven by an incoming event: the listener owns the arrival, the console owns the decision
+
+**Status: IMPLEMENTED** (CCB-S4-023). Step two of four: accepting the contact request.
+Proven live on both sides, with a second independent SimpleX core standing in for the
+operator's app. Group join and role setting are the next two briefings.
+
+**Why this one needed a new pattern.** Step one was a button and a command. This one has
+a fact that arrives on its own: somebody uses the address, the core raises
+`receivedContactRequest`, and the console must know even if nobody has the page open.
+Step three is the same shape (a group invitation arrives, then an SDK action), so the
+split is settled here rather than improvised twice more.
+
+**Decision 1: the listener owns the arrival, the view owns the decision.**
+`waiting_contact_request` to `contact_request_pending` happens in the event listener,
+because it is caused by an event and not by a click. If a view moved it, the workflow
+would only be true while somebody had the page open. The page therefore renders what is
+already recorded and never infers state from what it can see.
+
+**Decision 2: the event is routed like any other.** `receivedContactRequest` joins
+`ROUTED_TAGS`, so it arrives through the same per-profile router capture uses and carries
+the receiving `userId`, which is stored on the row. A request can then never be accepted
+against a record belonging to a different identity in the same core database. The
+listener resolves the bot record per event rather than closing over an id, because the
+operator can change which record is the runtime's between boots.
+
+**Decision 3: rows, not columns.** A public contact address can be used by anyone who
+has it, so more than one request can be outstanding. Columns on the profile would hold
+the newest and silently lose the rest, and the operator would accept whichever one the
+page happened to render. Migration 025 is a table, keyed unique on the core's own
+`contactRequestId` so the same request arriving twice, after a restart or a reconnect,
+does not become two rows to choose between.
+
+**Decision 4: accepting is not connecting, and the console says so.**
+`apiAcceptContactRequest` returns a contact; the contact is not yet up. The operator's
+own app shows "connecting" in that window, so a page that reported "connected" on the
+accept would be telling them their app is wrong. The row carries `contact_id` from the
+accept and `connected_at` from the later `contactConnected` event, and the page renders
+*connecting* until the second one lands. Observed live: accepted at 15:04:06.275,
+connected at 15:04:06.932.
+
+**Decision 5: this one genuinely needs the scheduler, where step one did not.**
+`apiCreateUserAddress` and `apiGetUserAddress` take an explicit `userId` and cannot
+execute as the wrong profile. `apiAcceptContactRequest(contactReqId)` takes **no user
+id**: it executes as whichever profile is active, which is exactly the silent
+cross-profile execution D-085 measured. With one profile hosted and pinned there is
+nothing to misroute to today; the day a second exists, this call would accept somebody
+else's contact request with nothing raised. It goes through the scheduler for that day.
+
+**Decision 6: rejection returns the bot to waiting, not to an error.** Refusing a request
+the operator did not expect is a normal thing to do, and the bot is then exactly where it
+was: a live address, waiting for the right request. The workflow only returns to waiting
+when nothing else is outstanding, so rejecting one of two leaves the page saying the
+other is still pending. The SDK does not notify the sender, and the page says so before
+the operator presses it.
+
+**A stale sentence the live run caught, and the check that now holds it.** The address
+panel from D-126 still read "accepting it is the next step and is not built yet", which
+this briefing made false, and the rendered page showed it. Corrected, and
+`verify:bot-onboarding` now asserts both the new sentence and the absence of the old one:
+the same failure mode as the "No SDK actions in this phase" badge, and the same fix.
+
+---
+
 ### D-126 — The console reaches the runtime through a late-bound handle, and an onboarding step advances only on a result the core returned
 
 **Status: IMPLEMENTED** (CCB-S4-022). The create-address step, the first of the four SDK

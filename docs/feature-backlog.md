@@ -1060,11 +1060,17 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       wizard described this step and had no control behind it. It has one now, it produces
       a real link through the running runtime, and the workflow state advances only on a
       link the core returned.
-- [ ] **Onboarding step 2 of 4: accept the contact request.** `waiting_contact_request` to
-      `contact_connected`. Needs the `receivedContactRequest` event routed to the console
-      and `apiAcceptContactRequest` behind a control, following D-126's pattern.
+- [x] **Onboarding step 2 of 4: accept the contact request** (CCB-S4-023, D-127).
+      `receivedContactRequest` is routed, recorded in the listener, presented with the
+      requester named, and accepted or rejected through the runtime. Proven live on both
+      sides with a second SimpleX core.
 - [ ] **Onboarding steps 3 and 4: join the group, set the role.** `apiJoinGroup`,
-      `apiListMembers` and the role change, one briefing each.
+      `apiListMembers` and the role change, one briefing each. Step three is the same
+      shape as step two (an event arrives, then an action), so D-127's split applies.
+- [ ] **Automatic contact acceptance is stored and not honoured.** `auto_accept_contacts`
+      defaults to true and the accept is manual regardless: nothing reads the flag. That
+      is the safe direction, and it is a setting that currently means nothing, which is
+      its own kind of dishonesty. Either honour it or say on the page that it is not read.
 - [ ] **Nothing links an onboarding record to a runtime profile except the operator's
       `selected_for_runtime` flag.** D-096 Decision 3 left the FK for an operator to set
       deliberately and nothing populates `cinderella_bot_registry` yet, so the

@@ -1696,9 +1696,25 @@ handler holding a chat handle is one import away from issuing an unscheduled com
 | Step | Route | What it does |
 |---|---|---|
 | Create address | `POST /ai/onboarding` `action=create-address` | `apiGetUserAddress` first, `apiCreateUserAddress` only if there is nothing there, both through the scheduler, both carrying an explicit `userId` so neither can execute as another profile |
-| Accept contact | not built | CCB-S4-023 |
+| Accept contact | `action=accept-contact` | `apiAcceptContactRequest(contactReqId)`, which takes **no** user id and therefore genuinely needs the scheduler (D-127) |
+| Reject contact | `action=reject-contact` | `apiRejectContactRequest`. The sender is not notified; the page says so before the operator presses it |
 | Join group | not built | its own briefing |
 | Set role | not built | its own briefing |
+
+**Step two adds an inbound half** (CCB-S4-023, D-127). A contact request arrives on its
+own, so `receivedContactRequest` joins `ROUTED_TAGS` and
+[`contact-requests.ts`](../src/profiles/contact-requests.ts) records it and moves the
+workflow to `contact_request_pending` **in the listener**, not in a view: a workflow that
+only advanced while somebody had the page open would not be a workflow. Requests are
+rows, not columns, because a public address can be used by anyone who has it and more
+than one can be outstanding; the row is keyed unique on the core's own
+`contactRequestId`, so a reconnect does not produce a second one.
+
+**Accepting is not connecting.** The accept returns a contact; the contact comes up
+afterwards, and the operator's own app shows "connecting" in between. The row carries
+`contact_id` from the accept and `connected_at` from the later `contactConnected` event,
+and the page renders *connecting* until the second lands. Measured live: accepted at
+15:04:06.275, connected 657 ms later.
 
 **The order is the honesty rule.** The SDK call happens first and the database write
 happens with its result in hand: `recordContactAddress` takes a non-optional link, and
