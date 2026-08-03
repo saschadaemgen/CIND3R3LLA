@@ -97,6 +97,12 @@ const ROUTED_TAGS: readonly string[] = [
   // The onboarding console's step two (CCB-S4-023). Without it the core raises the
   // request, nothing listens, and the sender's app sits on "connecting" forever.
   'receivedContactRequest',
+  // Step three (CCB-S4-025). Same hazard one step later: the operator's app says
+  // "You sent group invitation" and the bot never hears it. `userJoinedGroup` is the
+  // confirmation that the membership is live, which is a later fact than the join
+  // command returning. `verify:runtime-host` checks both are real and both are here.
+  'receivedGroupInvitation',
+  'userJoinedGroup',
   'newChatItems',
   'chatItemUpdated',
   'groupChatItemsDeleted',
