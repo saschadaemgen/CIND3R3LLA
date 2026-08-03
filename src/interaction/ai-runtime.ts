@@ -458,6 +458,17 @@ export class AiRuntimeService implements OllamaResolverObserver {
         detail: request.mode,
       });
 
+      // SUCCESS IS LOGGED, and the reason is a briefing (CCB-S4-026, D-130). Only the
+      // FAILURE path used to say anything, so a working model lane was indistinguishable
+      // from a lane that was never called: both were silence. An operator grepping the
+      // journal while she answered found nothing and reasonably concluded she was never
+      // asking the model, when in fact she was asking and succeeding.
+      //
+      // The member's message, the deterministic draft and the model's output are all
+      // deliberately absent: this says THAT the model worded a reply and how long it
+      // took, never what anybody said.
+      log.info('Local AI worded a reply', { kind: operation, mode: request.mode, model, latencyMs });
+
       return reply;
     } catch (error) {
       const latencyMs = Math.round((performance.now() - started) * 10) / 10;

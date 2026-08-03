@@ -1075,6 +1075,12 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
 - [ ] **Declining a group invitation is not built.** There is no reject command for an
       invitation the way there is for a contact request; refusing means deleting the chat.
       An unwanted invitation currently sits pending on the page forever.
+- [ ] **Widening the personalized reply set is the personality work's first question.**
+      Nine of the 36 persona keys may be model-worded (D-130); the rest are deterministic
+      because they can change consent or report an action. An operator who mostly exchanges
+      greetings and consent commands will therefore never hear the model, which reads as a
+      broken feature and is the product working. Any widening is a consent-safety decision
+      and needs the injection review's attention, not a config toggle.
 - [ ] **Automatic contact acceptance is stored and not honoured.** `auto_accept_contacts`
       defaults to true and the accept is manual regardless: nothing reads the flag. That
       is the safe direction, and it is a setting that currently means nothing, which is

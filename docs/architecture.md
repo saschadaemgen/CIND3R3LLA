@@ -878,6 +878,19 @@ appended unchanged. `status` was moved there by the injection review because it 
 own publication state and `requiredLiterals` protects tokens rather than meaning. Gated in
 `verify:interaction` over real traffic.
 
+**This allowlist is why most replies look deterministic even when the model lane is
+healthy** (CCB-S4-026, D-130). An operator whose conversation is greetings and consent
+commands will correctly never see a model-worded reply, because none of those keys is in
+the nine. Widening the set is a consent-safety decision, not a configuration.
+
+**A successful wording is logged** since the same briefing, because it was not: only the
+failure path spoke, so a working lane and a lane nothing called were both silence in the
+journal, and the second was reported as a bug in the first. The line carries the reply
+kind, the mode, the model and the latency, and deliberately carries neither the member's
+message, nor the draft, nor what the model wrote. Measured live against the production
+model endpoint: a free-mode rewrite in about 2 s, with both required literals intact and
+the blocked sender name absent.
+
 ### 24.4 The environment contract, and what it enforces
 
 `LOCAL_AI_ENABLED` (default false) · `LOCAL_AI_BASE_URL` (default loopback) · `LOCAL_AI_MODEL` ·

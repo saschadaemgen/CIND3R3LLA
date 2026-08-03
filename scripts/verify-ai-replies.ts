@@ -14,6 +14,7 @@ import {
 } from '../src/interaction/ai-runtime.js';
 import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
+import { log } from '../src/log.js';
 
 let failures = 0;
 
@@ -197,6 +198,41 @@ async function main(): Promise<void> {
   const outage = await personalizeAiReply(statusRequest);
   check('an Ollama outage asks for deterministic fallback', outage === null);
   inferenceAvailable = true;
+
+  console.log('\n8. A successful wording is visible in the log, and says nothing private');
+  //
+  // CCB-S4-026. Only the FAILURE path used to log, so a working model lane and a lane
+  // that was never called looked identical from the journal: both silent. That cost a
+  // briefing. The success line must exist, and must carry none of the content.
+  const logged: string[] = [];
+  const realInfo = log.info.bind(log);
+  (log as unknown as { info: (m: string, meta?: unknown) => void }).info = (m, meta) => {
+    logged.push(`${m} ${meta ? JSON.stringify(meta) : ''}`);
+  };
+  nextReply = 'The ledger holds 216 entries, 108 of them public.';
+  await personalizeAiReply(statusRequest);
+  (log as unknown as { info: unknown }).info = realInfo;
+
+  const successLine = logged.find((l) => l.startsWith('Local AI worded a reply'));
+  check('a successful wording logs that the model was used', successLine !== undefined);
+  check(
+    'and names the reply kind, the mode and the model',
+    Boolean(
+      successLine?.includes(statusRequest.kind) &&
+        successLine?.includes(statusRequest.mode) &&
+        successLine?.includes('qwen3.5:9b'),
+    ),
+    successLine ?? '(no line)',
+  );
+  check(
+    'but never the member message, the draft, or what the model wrote',
+    Boolean(
+      successLine &&
+        !successLine.includes(statusRequest.memberMessage) &&
+        !successLine.includes(statusRequest.deterministicDraft) &&
+        !successLine.includes('ledger holds'),
+    ),
+  );
 
   resetAiRuntimeForTests();
 

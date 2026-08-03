@@ -13,6 +13,60 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-130 — She was already speaking with the model; success was silent, and the personalized set is nine keys
+
+**Status: IMPLEMENTED as one log line and a check** (CCB-S4-026). The requested fix was
+not made because the thing it fixes is not broken: the `personalize` hook has been wired
+since before the runtime landed, and the model lane works in production today.
+
+**What was reported.** She only ever answers with the deterministic fallback, and
+`journalctl | grep -iE "ollama|reply|fallback|model"` returns nothing while she answers,
+therefore she never asks the model. The diagnosis: `personalize` is not passed where the
+engine is built.
+
+**What is actually true, established before anything was changed.**
+
+1. **The hook is set.** `src/index.ts:221`, `personalize: personalizeAiReply`, imported at
+   line 49. It has been there since the reply lane was built.
+2. **The runtime is enabled in production**, both halves of `config.enabled &&
+   requestedEnabled`: `LOCAL_AI_ENABLED=true` and the `local-ai-runtime` setting reads
+   `{"enabled": true}`. Every boot logs `Local AI runtime enabled with intent model
+   "qwen3.5:9b" and reply model "qwen3.5:9b"`.
+3. **The endpoint is reachable from the VPS**: HTTP 200 in 87 ms, serving exactly that
+   model.
+4. **There has never been a reply-wording failure**, in the whole journal, not one.
+5. **She demonstrably speaks with the model.** Run locally against that same endpoint, in
+   a real SimpleX group: *"I keep nothing but your secrets safe in this digital hearth"*
+   before the deterministic status line, and two more model-worded replies. The
+   guarantees hold under a live rewrite: required literals `7` and `3` survived, the
+   blocked sender name did not appear, and pointing the same service at a dead endpoint
+   returned null so the deterministic draft stood.
+
+**Why the log was silent, which is the part worth fixing.** `personalize` logged **only on
+failure**. A successful model call wrote nothing at all, so a working lane and a lane that
+was never called were indistinguishable from the journal: both silence. The operator's
+grep was not evidence of absence, it was what success looked like. **That is the defect
+this briefing found**, and it is an observability defect, not a wiring one. A success line
+now says which reply kind, which mode, which model and how long it took, and deliberately
+carries **none** of the member's message, the deterministic draft, or the model's output.
+
+**Why most of her replies are deterministic anyway, and always will be.**
+`AI_PERSONALIZED_KEYS` is nine keys: `status`, `searchResult`, `notUnderstood`, `price`,
+`conversion`, `priceUnknownAsset`, `priceAmbiguous`, `priceUnavailable`, `priceThrottled`,
+plus `help` and `nickname` through their own call sites. Consent confirmations, refusals,
+undo and action outcomes stay on their deterministic strings **by design**, and the reason
+is recorded above them: those replies can change consent or report an action, and a model
+that rewords them can misreport what happened. `status` is further restricted to `locked`
+mode by D-116 after the CCB-S4-010 injection review, because `requiredLiterals` proves two
+counts still appear and says nothing about which is which.
+
+So an operator whose conversation is mostly greetings and consent commands will correctly
+see nothing but deterministic text, forever, and that is the product working. **Widening
+the set is a consent-safety decision, not a wiring fix**, and it belongs to the personality
+work rather than to a briefing about a missing hook.
+
+---
+
 ### D-129 — The group join, and the three roles a page must never collapse into one
 
 **Status: IMPLEMENTED** (CCB-S4-025). Step three of four: joining an invited group.
