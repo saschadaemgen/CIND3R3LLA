@@ -13,6 +13,74 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-126 — The console reaches the runtime through a late-bound handle, and an onboarding step advances only on a result the core returned
+
+**Status: IMPLEMENTED** (CCB-S4-022). The create-address step, the first of the four SDK
+actions the onboarding wizard has described since it was built. Proven live: a real
+contact link created through the button in a browser, against a real core. Contact
+acceptance, group join and role setting are the next three briefings and remain
+descriptions.
+
+**What was actually wrong.** The wizard was not incomplete, it was *inverted*. The
+onboarding work built the persistent model and the five-step journey and executed no SDK
+action at all, so the page reached `configured`, said "Create the SimpleX contact
+address", and offered nothing that created one. An operator following the instructions
+correctly arrived at a wall. This entry sets the pattern for closing that gap one step at
+a time, so the same three steps are not each solved differently.
+
+**Decision 1: the console reaches the runtime through a late-bound module handle, not
+through `ViewContext`.** `runApp` starts the admin server BEFORE the bot, deliberately,
+so the console is up and can show a failure when the bot fails to start. There is
+therefore no runtime to hand the views when they are registered, and threading a
+"maybe later" getter through `ServerDeps`, `ViewContext` and every harness that builds a
+server would change five files to express "not yet". `core-delete.ts` met exactly this
+and answered it exactly this way under CCB-S3-027; `admin-actions.ts` follows that
+precedent rather than inventing a second one. The web layer gets **operations returning
+plain data and never the `ChatApi`**: that is not tidiness, it is the reason a request
+handler cannot issue an unscheduled command.
+
+**Decision 2: an explicit `userId` is what makes this safe on the shared handle.**
+`apiCreateUserAddress` and `apiGetUserAddress` both take one, so neither can execute as
+the wrong profile, which is the whole hazard D-085 measured. They still go through the
+scheduler, because a rule that holds only while somebody remembers it is not a rule.
+
+**Decision 3: the SDK call happens first and the database write happens with its result
+in hand.** There is no `markAddressRequested`, no optimistic write, and no path that sets
+`waiting_contact_request` without a link: {@link recordContactAddress}'s link parameter
+is not optional, and the state and the link move in one statement. This is the specific
+defence against the failure this briefing exists to fix, which was a page describing a
+step nothing performed. The way that gets worse rather than better is a button that
+advances the state and stores an intention.
+
+**Decision 4: the link is stored with the SimpleX user it was created on** (migration
+024, three columns under one CHECK so a half-written row is impossible). A bare contact
+string cannot be checked against anything: an operator cannot tell whether it belongs to
+the bot the runtime hosts or to some other identity in the same core database. The page
+shows the hosted profile's name and id before the action, and the created-on id after it.
+
+**Decision 5: the action is idempotent by asking, not by catching.** It calls
+`apiGetUserAddress` first and only creates when there is nothing there. Pressing twice
+must not produce a second address and must not produce an error either, because an
+operator who sees an error reasonably concludes the first press did not work. Verified
+live: the first press logged `contact address created`, the second logged
+`contact address already existed, showing it`, the link was identical, and the
+created-at timestamp was preserved.
+
+**Decision 6: the record must be the runtime's.** The onboarding table and the runtime
+are linked by nothing in the schema (D-096 Decision 3 left the FK for an operator to set
+deliberately, and nothing populates the registry yet). So the action requires
+`selected_for_runtime`, which is the operator's own declaration of which record is the
+running bot, and refuses otherwise with that sentence. Where the stored display name and
+the hosted profile's name differ, the page says so and creates the address on the
+**hosted** profile, never on the record's name.
+
+**Not built, and named so the page does not imply otherwise:** accepting the contact
+request, joining the group, setting the role. The capability inventory now says
+"1 of 4 SDK actions wired" instead of "No SDK actions in this phase", and the harness
+checks that sentence, so the copy and the capability cannot drift apart again.
+
+---
+
 ### D-125 — The bot is hosted on the runtime, and the only behaviour that changes is that it cannot speak before the core has settled
 
 **Status: IMPLEMENTED** (CCB-S4-021, wiring half one). `src/index.ts` boots through

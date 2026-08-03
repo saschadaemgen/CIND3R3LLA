@@ -154,7 +154,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   phrases them. Determinism survives by caching on seed + conditioning version + model
   identity),
   `profiles/` (profile/group/authority config, runtime policy, bot onboarding —
-  configuration and policy only, they never drive the SDK; unconsolidated, D-068),
+  configuration and policy; the onboarding table now also holds the contact address the
+  console's create-address step produced, but this tree still never drives the SDK: the
+  action lives in `bot/runtime/admin-actions.ts` and hands the RESULT here, D-126;
+  unconsolidated, D-068),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
 - `migrations/` — 001 messages/links · 002 consent+views · 003 admin · 004
   moderation gate · 005 deletion provenance · 006 webauthn + TOTP · 007 admin
@@ -169,7 +172,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   never publishes what was said while hidden) · 022 quarantine withholds (a hash match
   or an escalation is served to nobody) · 023 bot registry (one row per SimpleX profile
   the core reports: actor type, automation mode, avatar source, the personality
-  reference; nothing hosts it yet).
+  reference; nothing hosts it yet) · 024 the onboarding contact address (the link the
+  console's create-address step produces, stored with the SimpleX user it was created
+  on, all three columns under one CHECK).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -177,7 +182,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **024**, since 023 landed with the multi-profile merge). Stated as a rule
+  (currently **025**, since 024 landed with the create-address step). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.

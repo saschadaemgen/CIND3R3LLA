@@ -196,6 +196,28 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### The onboarding wizard can now create the contact address (CCB-S4-022, D-126)
+
+`src/` changed, so this is an ordinary `sudo bash deploy.sh`. After it, the AI Bot Setup
+page has the control it has been describing: for the bot marked as the primary runtime
+bot, in state `configured`, a **Create the contact address** button.
+
+Pressing it asks the running SimpleX core for the bot's contact link, stores it with the
+SimpleX user it was created on, and moves the page to the Contact step showing the link
+and what it is waiting for. The operator then adds the bot as a contact from their own
+SimpleX app using that link. **Accepting the request is not built yet**, so the page waits
+there; that is the next briefing and the page says so rather than implying otherwise.
+
+Two things to expect rather than be surprised by:
+
+- **Right after a restart the button reports that the core is still starting up.** That is
+  the readiness gate of D-125, not a fault; it settles in about ten seconds.
+- **Pressing it twice is safe.** The second press reads the existing address back rather
+  than creating a second one, and the log line says which path it took
+  (`contact address created` versus `contact address already existed, showing it`).
+
+Nothing else changes, and the migration (`024`) only adds three nullable columns.
+
 ### The bot now starts differently (CCB-S4-021, D-125)
 
 This is the first deploy that changes **how the bot starts**: it boots on the

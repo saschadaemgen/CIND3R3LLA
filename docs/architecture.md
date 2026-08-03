@@ -1677,6 +1677,48 @@ that the 10 s quiet period and 120 s ceiling are the right constants; that a liv
 misroutes without the scheduler (the harness reproduces the mechanism, not the core);
 `degraded` in any form; and whether `fileId` is unique across users in one core database.
 
+### 32.2 The admin console's hand on the runtime (CCB-S4-022, D-126)
+
+The onboarding wizard describes a four-step SimpleX journey (address, contact, group,
+role) and, until CCB-S4-022, performed none of it: the page reached `configured`, said
+"Create the SimpleX contact address", and there was no control behind it. **Step one is
+now real.** The other three are still descriptions and the capability inventory says so.
+
+[`admin-actions.ts`](../src/bot/runtime/admin-actions.ts) is the seam. It holds a
+late-bound handle to the running bot, registered by `src/index.ts` after
+`startRuntimeBot`, for the same reason `core-delete.ts` does: `runApp` starts the admin
+server BEFORE the bot, so the console is up and can show a failure when the bot fails to
+start, which means there is no runtime to hand the views when they are registered.
+
+The web layer gets **operations returning plain data, never the `ChatApi`**. A request
+handler holding a chat handle is one import away from issuing an unscheduled command.
+
+| Step | Route | What it does |
+|---|---|---|
+| Create address | `POST /ai/onboarding` `action=create-address` | `apiGetUserAddress` first, `apiCreateUserAddress` only if there is nothing there, both through the scheduler, both carrying an explicit `userId` so neither can execute as another profile |
+| Accept contact | not built | CCB-S4-023 |
+| Join group | not built | its own briefing |
+| Set role | not built | its own briefing |
+
+**The order is the honesty rule.** The SDK call happens first and the database write
+happens with its result in hand: `recordContactAddress` takes a non-optional link, and
+writes the link and `workflow_state = 'waiting_contact_request'` in one statement. There
+is no path that advances the state on an intention, which is precisely how this step came
+to be described and never performed.
+
+**The link is stored with the SimpleX user it was created on** (migration 024, three
+columns under one CHECK). A bare contact string cannot be checked against anything; with
+the user id beside it, an operator can see whether it belongs to the bot the runtime is
+actually hosting. The page names the hosted profile before the action and the created-on
+id after it, and refuses entirely unless the record is the one marked
+`selected_for_runtime`, which is the operator's own statement of which record is the
+running bot.
+
+**Measured live** (CCB-S4-022 Stage 2, real core, browser): first press created a real
+address on an `smp*.simplex.im` relay and the page moved to the Contact step showing the
+link and "waiting for a contact request"; second press took the `apiGetUserAddress` path,
+returned the identical link, kept the original timestamp and raised nothing.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

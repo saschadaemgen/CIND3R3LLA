@@ -1056,6 +1056,20 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       the router instead of the SDK's subscriber table, with no change to their logic.
       Proven live: boot, readiness, receive, attributed send, quoting reply, consent
       command, and a restart that adopts the existing profile.
+- [x] **Onboarding step 1 of 4: create the contact address** (CCB-S4-022, D-126). The
+      wizard described this step and had no control behind it. It has one now, it produces
+      a real link through the running runtime, and the workflow state advances only on a
+      link the core returned.
+- [ ] **Onboarding step 2 of 4: accept the contact request.** `waiting_contact_request` to
+      `contact_connected`. Needs the `receivedContactRequest` event routed to the console
+      and `apiAcceptContactRequest` behind a control, following D-126's pattern.
+- [ ] **Onboarding steps 3 and 4: join the group, set the role.** `apiJoinGroup`,
+      `apiListMembers` and the role change, one briefing each.
+- [ ] **Nothing links an onboarding record to a runtime profile except the operator's
+      `selected_for_runtime` flag.** D-096 Decision 3 left the FK for an operator to set
+      deliberately and nothing populates `cinderella_bot_registry` yet, so the
+      create-address action guards on the flag and shows the hosted identity instead. When
+      the registry is populated, that guard should become the FK.
 - [ ] **Hosting a SECOND profile** (half two), per-profile `status`, `deleteFromCore`
       taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
       on `runtime-policy.ts`.
