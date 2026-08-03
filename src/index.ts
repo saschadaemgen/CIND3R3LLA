@@ -24,9 +24,10 @@ import {
 } from './config.js';
 import { log, setLogLevel } from './log.js';
 import { startBot, type BotHandle } from './bot/client.js';
+import { startRuntimeBot, type RuntimeBotHandle } from './bot/runtime/host.js';
 import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
-import { sendToChat } from './bot/send.js';
+import { sendToChat, sendViaRuntime } from './bot/send.js';
 import { registerCapture } from './capture/handler.js';
 import { makePersistenceHooks } from './capture/persist.js';
 import { withBotCapture, type BotReplyMeta } from './capture/bot-message.js';
@@ -113,7 +114,15 @@ async function startCaptureWorker(
   plugins: PluginService,
 ): Promise<BotHandle | null> {
   try {
-    const botHandle = await startBot(cfg, { getFileTimeoutMs: () => settings.fileTimeoutMs });
+    // CCB-S4-021: the bot is hosted on the multi-profile runtime. One profile, which
+    // is the whole scope of wiring half one. `BOT_RUNTIME_HOSTING=false` falls back to
+    // the pre-runtime `bot.run` path; it is the rollback lever for the first live
+    // boot, not a configuration to stay on.
+    const runtimeBot: RuntimeBotHandle | null = cfg.runtimeHosting
+      ? await startRuntimeBot(cfg, { getFileTimeoutMs: () => settings.fileTimeoutMs })
+      : null;
+    const botHandle: BotHandle =
+      runtimeBot ?? (await startBot(cfg, { getFileTimeoutMs: () => settings.fileTimeoutMs }));
     // The core-erasure path needs a live chat client (CCB-S3-027). Registered here
     // rather than passed down, because the queue handler that uses it runs outside
     // the capture wiring entirely.
@@ -138,14 +147,28 @@ async function startCaptureWorker(
         'that member'
       );
     };
+    /**
+     * The outbound transport. Under the runtime it is serialized by the active-user
+     * scheduler, held until the core is ready (D-085's factor-65 warm-up), and
+     * attributed from the core's own `r.user.userId` (D-124); on the pre-runtime path
+     * it is the SDK helper, exactly as before. The DECISION about quoting is the same
+     * in both, so the reply a member sees does not depend on how the bot is hosted.
+     */
+    const sendOut = (
+      msg: Parameters<typeof sendToChat>[1],
+      text: string,
+      opts: { quote: boolean },
+    ): Promise<readonly unknown[]> =>
+      runtimeBot
+        ? sendViaRuntime(runtimeBot.sendGroupText, msg, text, opts)
+        : sendToChat(botHandle.chat, msg, text, opts);
+
     const sendAndArchive = (
       msg: Parameters<typeof sendToChat>[1],
       text: string,
       opts: { quote: boolean } & BotReplyMeta,
     ): Promise<void> =>
-      withBotCapture(placeholderFor, (t, o: { quote: boolean }) =>
-        sendToChat(botHandle.chat, msg, t, o),
-      )(text, opts);
+      withBotCapture(placeholderFor, (t, o: { quote: boolean }) => sendOut(msg, t, o))(text, opts);
 
     // The engine is created below; the callback is late-bound so the slash path
     // can refresh the same follow-up window the engine owns.
@@ -216,11 +239,23 @@ async function startCaptureWorker(
       // Non-fatal; fall back to name-based scoping.
     }
 
-    registerCapture(botHandle, cfg, hooks, {
-      targetGroupId,
-    });
+    // Receiving is attached NOW, before readiness, deliberately. A message that
+    // arrives while the core is still subscribing is a real member's message and must
+    // be captured; it is only SENDING that waits (D-085).
+    registerCapture(
+      runtimeBot
+        ? { chat: runtimeBot.events, fileReceiver: runtimeBot.fileReceiver }
+        : botHandle,
+      cfg,
+      hooks,
+      { targetGroupId },
+    );
     await reportGroups(botHandle, cfg);
-    status.botRunning(groupNames);
+    if (!runtimeBot) {
+      status.botRunning(groupNames);
+    }
+    // Under the runtime the dashboard keeps saying "starting" until the core settles,
+    // which is what is actually true: capture is live, replies are held.
 
     const ia = interaction.get();
     log.info(
@@ -348,10 +383,48 @@ async function startCaptureWorker(
     // Push the avatar to group members: the core only sends the member-profile
     // update (XInfo, incl. avatar) when the bot next sends a GROUP message. This
     // sends one minimal message per distinct avatar (marker-gated — no spam).
-    try {
-      await flushAvatarToGroups(botHandle.chat, getPool());
-    } catch (err) {
-      log.warn(`Avatar group-flush failed: ${err instanceof Error ? err.message : String(err)}`);
+    //
+    // It is the one send the boot sequence makes, so under the runtime it is the one
+    // thing that has to wait for readiness. Detached rather than awaited: the queue,
+    // the sweeper and the shutdown handler must not sit behind a core that is still
+    // subscribing, and readiness is bounded by the state machine's ceiling anyway.
+    if (runtimeBot) {
+      void runtimeBot
+        .whenReady()
+        .then(async () => {
+          log.info('Bot is live: the core has settled and replies are being sent.', {
+            readyReason: runtimeBot.runtime.readyReason,
+            eventsRouted: runtimeBot.runtime.counters.eventsRouted,
+            eventsUnknownProfile: runtimeBot.runtime.counters.eventsUnknownProfile,
+          });
+          // The subscribe-before-capture-registers window (see RoutedEventSource):
+          // narrow, real, and now countable rather than assumed empty.
+          for (const [tag, n] of runtimeBot.events.unhandled) {
+            log.warn('Events arrived before anything subscribed to them', { tag, count: n });
+            if (tag === 'newChatItems') {
+              status.error(
+                `${n} incoming message event(s) arrived before capture was listening and were ` +
+                  `not archived. They were sent between the core starting and the bot finishing ` +
+                  `its boot; check the group for messages around the restart.`,
+              );
+            }
+          }
+          status.botRunning(groupNames);
+          await runtimeBot.runScheduled('avatar-flush', () =>
+            flushAvatarToGroups(botHandle.chat, getPool()),
+          );
+        })
+        .catch((err: unknown) => {
+          log.warn(
+            `Avatar group-flush skipped or failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
+    } else {
+      try {
+        await flushAvatarToGroups(botHandle.chat, getPool());
+      } catch (err) {
+        log.warn(`Avatar group-flush failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     return botHandle;
   } catch (err) {
@@ -431,6 +504,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
       void (async () => {
         await stopQueue().catch(() => undefined);
         await adminServer.close().catch(() => undefined);
+        // Before the handle is closed, not after: `coreDeleteAvailable()` otherwise
+        // keeps answering yes against a chat client that has been shut down, and the
+        // erasure path would report a capability it no longer has (CCB-S3-023).
+        setCoreDeleteHandle(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
         resolve();
