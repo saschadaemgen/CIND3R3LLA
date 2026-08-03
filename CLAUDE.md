@@ -133,11 +133,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
-  `bot/runtime/` (**the multi-profile runtime, merged under CCB-S4-020 and NOT YET WIRED**:
-  one core, many SimpleX profiles, a serialized active-user scheduler, event routing by
-  receiving `userId`. Nothing calls it, because `startBot()` is a later briefing, so it
-  ships dormant. Five of its six files import no SDK so it is testable with no core; see
-  architecture §32, D-096 and D-124),
+  `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
+  SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
+  Wired under CCB-S4-021 with **exactly one profile hosted** (`host.ts` is the caller,
+  `src/index.ts` calls it); hosting a second is half two. Nothing sends before the core is
+  ready, because `startChat()` returning is 44 ms and readiness is ten seconds later,
+  measured. `BOT_RUNTIME_HOSTING=false` falls back to the pre-runtime `bot.run` path and is
+  the rollback lever, not a configuration. Eight of its ten files import no SDK so it is
+  testable with no core; see architecture §32, D-096, D-124 and D-125),
   `generator/` (**offline tooling, no runtime caller**: the profile generator, built one
   component per briefing. Shared deterministic `rng.ts`, then `names/` and `traits/`.
   Nothing outside it imports it and nothing writes its output; see architecture §31.
@@ -199,6 +202,11 @@ were withdrawn under D-095 after measurement showed they named the wrong propert
 `npm run calibrate:traits` prints the surface replacements get written from),
 `verify:multi-profile` (the multi-profile runtime, against PGlite and an in-process core
 double; merged to `main` under CCB-S4-020),
+`verify:runtime-host` (the single-bot wiring: profile resolution, the bot-profile guard,
+capture through the router proven call-for-call identical to capture through the SDK, the
+readiness gate, and the assertion that the runtime's SDK-free files are still SDK-free,
+which `verify:adapter-seam` cannot catch because it permits the SDK anywhere under
+`src/bot/`),
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
 proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture

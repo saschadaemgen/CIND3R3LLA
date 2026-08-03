@@ -196,6 +196,36 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### The bot now starts differently (CCB-S4-021, D-125)
+
+This is the first deploy that changes **how the bot starts**: it boots on the
+multi-profile runtime with one profile hosted, instead of on the SDK's `bot.run`.
+
+**Watch the first boot reach readiness.** `start()` returning is not readiness, and the
+log says so at every step:
+
+```bash
+journalctl -u cinderella -n 60 --no-pager | grep -E "runtime:|Bot is live"
+```
+
+Expect, in order: `hosting profile ... how: 'adopted the core active user'` (adopted, not
+created - a *created* profile on a host that already had one would mean the bot is now a
+stranger with no group membership), then `startChat returned, subscribing`, then
+`runtime: ready` with `readyReason: 'quiet'` roughly ten seconds later, then
+`Bot is live`. **`readyReason: 'ceiling'` is a fault signal**, not a milestone: it means
+the core never went quiet, and it also raises an entry on the admin dashboard.
+
+**The bot is deliberately mute for those ten seconds.** It receives and archives
+normally throughout; only replies wait, and a question asked during the window is
+answered once the core settles rather than dropped.
+
+**Rollback, in order of cost.** If the first live boot misbehaves, add
+`BOT_RUNTIME_HOSTING=false` to `/etc/cinderella/cinderella.env` and
+`systemctl restart cinderella`: that returns the bot to the pre-runtime path with no
+rebuild and no checkout change. Only if that also fails is the previous revision the
+answer (`git checkout <sha> && npm ci && npm run build && systemctl restart cinderella`).
+No migration is involved either way, so nothing has to be undone in the database.
+
 > **Migration 013 rewrites the `messages` table.** It drops and recreates the
 > generated `search` column and its GIN index, which takes an `ACCESS EXCLUSIVE`
 > lock for the duration — the public archive is unavailable while it runs. That is

@@ -1051,9 +1051,35 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
 - [ ] **Conversation canonicalisation** via `groups.via_group_link_uri_hash`. Do not make
       the column `NOT NULL` until the group-*creator* path has been checked against a
       database containing one; all 27 sampled profiles had joined via a link.
-- [ ] **Wiring `startBot()` onto the runtime**, per-profile `status`, `deleteFromCore`
+- [x] **Wiring one bot onto the runtime** (CCB-S4-021, D-125). `src/index.ts` boots through
+      `startRuntimeBot`; capture, the interaction layer and the file receiver are fed from
+      the router instead of the SDK's subscriber table, with no change to their logic.
+      Proven live: boot, readiness, receive, attributed send, quoting reply, consent
+      command, and a restart that adopts the existing profile.
+- [ ] **Hosting a SECOND profile** (half two), per-profile `status`, `deleteFromCore`
       taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
       on `runtime-policy.ts`.
+- [ ] **The three call sites that still reach the core outside the scheduler** (D-125):
+      core erasure (`apiDeleteChatItems`, on the consent path), the consent handler's
+      fallback branch, and `flushAvatarToGroups`'s internals. Correct today only because
+      one profile is hosted and the host pins it active; each must be revisited before a
+      second profile exists.
+- [ ] **Close the boot event-loss window.** Capture subscribes after `startRuntimeBot`
+      returns, so an event in between reaches a tag with no handler. Narrower than the
+      pre-runtime path's and now COUNTED (`RoutedEventSource.unhandled`, with a
+      `status.error` when a `newChatItems` is among them) rather than assumed empty.
+      Closing it means buffering and replaying at boot, which is a behaviour change and
+      was out of scope for a cutover briefing.
+- [ ] **The readiness constants are compile-time.** `QUIET_PERIOD_MS` (10 s) and
+      `READY_CEILING_MS` (120 s) are not reachable through `RuntimeOptions`. Measured on a
+      live core: the last subscription event lands within a second or two on a small core,
+      so a restart leaves the bot mute for about ten seconds waiting out the quiet period
+      rather than waiting for subscription work. Nothing has measured a better value, so
+      nothing was changed; this is what a briefing that wants to change one has to beat.
+- [ ] **`degraded` is still never entered.** The state exists and `RuntimeStateMachine`
+      exposes it, and nothing in `core.ts` calls it, so a core fault leaves the runtime
+      reporting `ready`. D-096 ships it untested deliberately; a trigger needs the network
+      interruption D-085 never measured.
 - [x] **`/_start` subscribes every user in a shared database** — verified two ways, and
       it is the assumption the whole design rests on. 26 of 26 non-active profiles
       received one message with the active user parked on a non-participant; and the

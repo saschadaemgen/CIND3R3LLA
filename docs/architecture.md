@@ -1542,13 +1542,16 @@ population layer, the validation layer, bios, avatars, and persistence of any of
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.
 
-## 32. The multi-profile runtime (CCB-S4-004, D-096)
+## 32. The multi-profile runtime (CCB-S4-004, D-096), hosting one bot (CCB-S4-021, D-125)
 
-**Merged to `main` under CCB-S4-020 (2026-08-03) and NOT WIRED to `startBot()`.** Built on
-`feature/multi-profile-core-foundation` and held there until the joint review and the three
-pre-merge verifications of CCB-S4-019 (D-124) had passed. Nothing calls any of it: the live
-bot still boots through `bot.run()` exactly as §4 describes, so these modules are present
-and dormant, and a deploy of this revision changes no running behaviour.
+**Merged under CCB-S4-020 and WIRED under CCB-S4-021: the bot boots on the runtime, with
+exactly one profile hosted.** `src/index.ts` calls
+[`startRuntimeBot`](../src/bot/runtime/host.ts), not `startBot`. The pre-runtime `bot.run`
+path in [`client.ts`](../src/bot/client.ts) still exists, is still what `npm run connect`
+uses, and is reachable at runtime with `BOT_RUNTIME_HOSTING=false` as the rollback lever;
+it cannot host a second profile and half two removes it. **Hosting a second profile is not
+built** (D-096's deferral stands): capture is still bound to one group, and widening it
+needs conversation canonicalisation first.
 
 `src/bot/runtime/` hosts many SimpleX profiles on one in-process core: one
 `ChatApi.init()`, one `startChat()`, every enabled profile subscribed simultaneously, no
@@ -1558,15 +1561,59 @@ not to be built against the adapter seam as it stands. `src/adapter/` is untouch
 
 | File | Role | SDK |
 |---|---|---|
-| [`core.ts`](../src/bot/runtime/core.ts) | Lifecycle, profile enumeration, subscription, the two SDK workarounds | yes |
+| [`core.ts`](../src/bot/runtime/core.ts) | Lifecycle, subscription, readiness gate, the two SDK workarounds | yes |
+| [`host.ts`](../src/bot/runtime/host.ts) | **The caller**: boots one bot, reproduces what `bot.run` did for us | yes |
 | [`scheduler.ts`](../src/bot/runtime/scheduler.ts) | Serializes active-user-dependent command **issuing** | no |
 | [`router.ts`](../src/bot/runtime/router.ts) | One subscriber per event tag, fan-out by receiving `userId` | no |
 | [`state.ts`](../src/bot/runtime/state.ts) | Six-state machine, injected clock | no |
+| [`profiles.ts`](../src/bot/runtime/profiles.ts) | Spec-to-user resolution and the guarded bot profile | no |
+| [`events.ts`](../src/bot/runtime/events.ts) | Presents the SDK's `on(tag, handler)` shape, fed from the router | no |
+| [`gate.ts`](../src/bot/runtime/gate.ts) | Nothing sends before readiness | no |
 | [`errors.ts`](../src/bot/runtime/errors.ts) | The two-class benign-noise allowlist | no |
 | [`types.ts`](../src/bot/runtime/types.ts) | Domain types and the narrow core contract | no |
 
-**Five of six files import no SDK**, which is what lets `verify:multi-profile` drive the
-whole runtime against an in-process double with no Haskell core.
+**Eight of ten files import no SDK**, which is what lets `verify:multi-profile` and
+`verify:runtime-host` drive the runtime and the whole wiring against in-process doubles
+with no Haskell core. `verify:runtime-host` asserts that property directly, because
+`verify:adapter-seam` cannot: it permits the SDK anywhere under `src/bot/`, which is all
+of these.
+
+### 32.1 How one bot is hosted (CCB-S4-021)
+
+`startRuntimeBot` reproduces the five things `bot.run` was doing silently, and changes one
+thing deliberately.
+
+| What | Where it went |
+|---|---|
+| Resolve the user (active-user-else-create) | `adopt: 'activeUser'` in [`profiles.ts`](../src/bot/runtime/profiles.ts). **Never a display-name match**: group membership belongs to the SimpleX user, so matching by name would hand an operator who edited `BOT_DISPLAY_NAME` a new profile in no groups, on a boot that logged success |
+| Mark the profile as a bot | `botProfileFor`: `peerType = Bot`, `preferences.files` allowed. Without it the profile silently cannot receive media |
+| Update the stored profile (the avatar) | `applyProfileUpdate` in `host.ts`, gated on an avatar file actually loading, exactly as the old `updateProfile: image !== undefined` was |
+| `startChat()` | `MultiProfileRuntime.start()`, which then says `subscribing` rather than pretending to be ready |
+| Configure the files folder | `configureFilesFolder`, exported from `client.ts` and called by the host |
+| **CHANGED: nothing sends before readiness** | [`gate.ts`](../src/bot/runtime/gate.ts). Receiving attaches immediately, so a message arriving during the warm-up is still captured; only the answer waits |
+
+Capture does not subscribe to the SDK any more. It subscribes to
+[`RoutedEventSource`](../src/bot/runtime/events.ts), which presents the same
+`on(tag, handler)` shape and is fed from the router, so each profile's handlers see only
+that profile's events. `registerCapture` takes a `CaptureHost` (an event source and a file
+receiver) rather than a whole `BotHandle`; `BotHandle` still satisfies it, so the
+pre-runtime path and both harnesses that fake it are untouched. `verify:runtime-host`
+proves the two paths produce identical hook calls in identical order.
+
+**Measured against a live core** (two cores, one real group, CCB-S4-021 Stage 2): on a warm
+database `start()` resolved in **44 ms** and readiness came **10.3 s later**; on a fresh one,
+1.9 s and 13.8 s. Both reached ready on a **quiet period**, never the ceiling. That gap is
+the whole reason for the gate, measured from a second direction than D-085's.
+
+**Readiness rests on two event types, not ten.** `SUBSCRIPTION_EVENT_TAGS` lists ten, but
+seven of them (`contactSubSummary`, `memberSubSummary`, `userContactSubSummary`,
+`pendingSubSummary`, `groupSubscribed`, `rcvFileSubscribed`, `sndFileSubscribed`) **do not
+exist in the 6.5.4 event union at all**; checked, not assumed. What actually feeds the quiet
+detector is `subscriptionStatus`, `hostConnected` and `contactConnected`. On a small core the
+last subscription event lands within a second or two, so the wait is dominated by the 10 s
+quiet constant rather than by subscription work: a restart leaves the bot receiving but
+mute for about ten seconds. The constants are compile-time (`state.ts`) and nothing has
+measured a better value, so they were not changed here.
 
 **The scheduler is the load-bearing part.** Every command that does not take an explicit
 `userId` executes as whatever profile is currently active, and making a profile active is

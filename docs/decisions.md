@@ -13,6 +13,77 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-125 — The bot is hosted on the runtime, and the only behaviour that changes is that it cannot speak before the core has settled
+
+**Status: IMPLEMENTED** (CCB-S4-021, wiring half one). `src/index.ts` boots through
+[`startRuntimeBot`](../src/bot/runtime/host.ts) with **one** profile hosted. Proven by
+`npm run verify:runtime-host` (39 checks, five of them mutation-proven) and by a live
+two-core run against a real group. Hosting a second profile is half two; D-096's capture
+deferral is unchanged.
+
+**The measurement that settles the design, taken on a live core.** On a warm SimpleX
+database `start()` resolved in **44 ms** and readiness arrived **10.3 s later**; on a fresh
+one, 1.9 s and 13.8 s. Both reached ready on a quiet period, never on the ceiling. D-085
+measured the cost of ignoring that gap from the other side (10 s to first receiver against
+153 ms on a settled core, factor 65). So the gate is not a precaution: `start()` returning
+is two orders of magnitude away from the core being able to answer anybody.
+
+**What the gate does and does not do.** Receiving attaches immediately, so a member's
+message arriving during the warm-up is captured exactly as it is today. Only SENDING waits,
+and it waits rather than failing, because the alternative is dropping a question somebody
+asked. The wait is bounded by the state machine's ceiling. The consequence an operator will
+notice: **a restart leaves the bot receiving but mute for about ten seconds.**
+
+**Readiness rests on two event types, not the ten the code appeared to name.** Checked
+against the 6.5.4 event union rather than assumed: seven of the ten tags in
+`SUBSCRIPTION_EVENT_TAGS` do not exist in this SDK at all. What feeds the quiet detector is
+`subscriptionStatus`, `hostConnected`, and now `contactConnected`, which existed but was
+never subscribed. The list is kept whole and annotated, because removing the absent tags
+would let a future SDK bump silently narrow the detector instead of widening it. On a small
+core the last subscription event arrives within a second or two, so the ten-second quiet
+constant, not subscription work, is what the boot waits for. The constants are compile-time
+and nothing has measured a better value, so they were not changed; a briefing that wants to
+change one now knows what it has to measure.
+
+**The profile is ADOPTED, never matched by name, and that is the rule to guard.** Resolution
+reproduces `bot.run`: the core's active user, else create. Matching on `BOT_DISPLAY_NAME`
+would look obviously correct and would, the first time an operator edited that variable,
+create a second empty profile that is in no groups and captures nothing, while every log line
+said the boot had succeeded. The harness holds that case as a named check.
+
+**Capture is fed from the router, not from the SDK's subscriber table.** The SDK keys
+subscribers by tag alone with no user dimension, so a handler registered there receives every
+hosted profile's events, which is the thing the router exists to prevent.
+[`RoutedEventSource`](../src/bot/runtime/events.ts) presents the same `on(tag, handler)` shape
+and is fed by the router, so capture, the interaction layer and the file receiver moved onto
+per-profile routing **without one line of their logic changing**. `verify:runtime-host` drives
+the identical events through both paths and compares the hook calls call for call.
+
+**What still reaches the core outside the scheduler, named so half two does not have to find
+it.** Three call sites go through `runtime.chat` rather than `runtime.scheduler`: core erasure
+(`apiDeleteChatItems`, on the consent path, reached from a queue job with no relation to the
+bot's boot), the consent handler's fallback branch when no archiving transport was supplied,
+and `flushAvatarToGroups`'s internals (`apiGetActiveUser` + a send) although the call itself is
+now scheduled. All three are correct today for one reason only: one profile is hosted and the
+host pins it active at boot. Every one of them must be revisited when the second profile
+arrives.
+
+**A boot event-loss window exists, is narrower than before, and was deliberately not closed
+here.** Capture subscribes after `startRuntimeBot` returns, so an event arriving between the
+core starting and capture registering reaches a tag with no handler. The pre-runtime path had
+the same window and a much wider one (capture registered after the whole engine graph was
+built). It is now **counted** rather than assumed empty: `RoutedEventSource.unhandled` records
+it by tag, and a dropped `newChatItems` raises `status.error` naming the count. Closing it
+means buffering and replaying, which is a behaviour change in a briefing whose point was a
+safe cutover; it is in the backlog.
+
+**`BOT_RUNTIME_HOSTING` is a rollback lever, not a configuration.** Default on. It exists
+because this is the first deploy that changes how the bot starts, on a shared production host,
+and flipping an environment variable is a faster way back than a revert-and-rebuild. The
+pre-runtime path cannot host a second profile; half two removes both it and the switch.
+
+---
+
 ### D-124 — There is no outgoing creation event to survive a switch; the outgoing events that do exist survive it with correct attribution
 
 **Status: IMPLEMENTED as a measurement** (CCB-S4-019; recorded on `feature/multi-profile-core-foundation` and on `main` since the CCB-S4-020 merge. Nothing was built and nothing changed). **Qualifies D-096 Decision 5**; changes no rule. Numbered from the highest across `main` (D-123) and this branch (D-096), which is why the sequence here jumps.
