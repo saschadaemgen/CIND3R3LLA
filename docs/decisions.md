@@ -13,6 +13,20 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-124 — There is no outgoing creation event to survive a switch; the outgoing events that do exist survive it with correct attribution
+
+**Status: IMPLEMENTED as a measurement** (CCB-S4-019, on `feature/multi-profile-core-foundation`; nothing was built and nothing changed). **Qualifies D-096 Decision 5**; changes no rule. Numbered from the highest across `main` (D-123) and this branch (D-096), which is why the sequence here jumps.
+
+The review named one precondition for wiring `startBot()`: does an outgoing `groupSnd` event survive an active-user switch, and whose `userId` does it carry when it lands. Measured against a **live core** (SDK 6.5.4, two profiles in one SQLite database, one real group over the preset relays, seven sends, twelve outgoing events delivered while a different profile was active):
+
+**There is no `newChatItems` event for one's own send.** Not a wrongly attributed one, none at all: zero across every case. The `groupSnd` item exists only in the send command's return value. This is the same fact D-096 Decision 5 met from the other side when event-driven recording captured zero of ten sends, and it explains it: the event does not exist, so the recording was never merely unreliable.
+
+**The outgoing events that do exist are `chatItemsStatusesUpdated`**, carrying the `groupSnd` item as it reaches `sndSent` and then `sndRcvd`. Every one of them carried `user.userId` = **the true sender**, including the twelve delivered after the active user had been switched to the other profile (the first typically ~90 ms after the switch, the second ~300 ms after). The incoming counterpart behaves the same way: it carried the receiving profile's id while a different profile was active.
+
+**What this settles.** Event *attribution* is a property of the event, not of whoever is active when it is delivered, on the outgoing path as well as the incoming one. So per-profile delivery and read status is safe to drive from events after wiring. What is **not** available from events is the send itself, which is why D-096 Decision 5 stands unchanged: issue the raw command and record from `r.user.userId`. The harness's "live core only" line about outgoing messages is answered for the attribution half; the end-to-end recording half still needs the wiring it describes.
+
+---
+
 ### D-096 — The multi-profile runtime lives behind `src/bot/`, not at the adapter seam, and the registry is a new table
 
 **Status: IMPLEMENTED** (CCB-S4-004, on `feature/multi-profile-core-foundation`; **not merged to main**). Proven by `npm run verify:multi-profile` (80 checks). **Amends D-085**, which recorded this design as `PLANNED` and "not to be built against the seam as it stands"; that clause is honoured rather than overridden, and this entry records where it went instead.
