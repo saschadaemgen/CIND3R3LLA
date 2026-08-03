@@ -71,7 +71,8 @@
     "verify:bio-model": "tsx scripts/verify-bio-model.ts",
     "assemble": "tsx scripts/assemble.ts",
     "verify:assemble": "tsx scripts/verify-assemble.ts",
-    "verify:multi-profile": "tsx scripts/verify-multi-profile.ts"
+    "verify:multi-profile": "tsx scripts/verify-multi-profile.ts",
+    "verify:runtime-host": "tsx scripts/verify-runtime-host.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
