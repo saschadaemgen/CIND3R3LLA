@@ -881,7 +881,11 @@ own publication state and `requiredLiterals` protects tokens rather than meaning
 **Free conversation is the one path where the model WRITES rather than rephrases**
 (CCB-S4-027, D-131). It is reachable from a single place: the `UNKNOWN` case in the intent
 dispatch, after every command intent has declined and after the addressing checks, which is
-what makes it impossible for it to intercept a command. There is no deterministic draft
+what makes it impossible for it to intercept a command. **It runs before the weak-signal
+silence guard** (CCB-S4-028, D-132): a bare leading name in relaxed mode is an address but a
+weak one, and running the guard first made relaxed mode mean nothing at all. The guard now
+covers what its switch names, the not-understood FALLBACK, so a weak address gets a real
+answer when the model can speak and silence when it cannot. There is no deterministic draft
 because no command produced one, so the reply lane gains a named `conversation` mode rather
 than being handed an empty one; every other guard in that file still applies, and a failed
 model answers with its own honest string rather than telling the member they were unclear.

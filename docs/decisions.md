@@ -13,6 +13,61 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 
+### D-132 — Relaxed mode was honoured and then overruled one branch later
+
+**Status: IMPLEMENTED** (CCB-S4-028). A two-statement reorder in the engine. Proven live:
+the operator's exact message, `Cinderella how are you?` with no greeting, is answered.
+
+**The report was right and the diagnosis was wrong, in a way worth writing down.** The
+observation was exact: relaxed mode is set, its own label says "a message starting with
+her name counts as an address", a bare-name message is saved and never answered. The
+proposed cause was that `detectAddress` ignores the mode. It does not:
+
+```ts
+if (s.addressing.mode === 'strict' && !greeted) return NOT_ADDRESSED;
+return { kind: 'wake', instruction: instructionFrom(head), nickname: undefined, greeted };
+```
+
+Relaxed has always classified a bare leading name as `wake`. The `else` branch offered as
+the tell re-runs `detectAddress` in relaxed **only when the mode is strict**, which is the
+strict-mode near-miss log doing exactly what its comment says.
+
+**The actual cause is one branch later.** A bare name is `wake` but NOT `greeted`, so
+`strong` is false, and the `UNKNOWN` case ran `silenceOnUnknown && !strong` **before**
+anything could answer. Relaxed made her hear the message and the next line made her ignore
+it, which is why the setting appeared to do nothing at all.
+
+**The fix is the ORDER, not the classification.** Free conversation now runs first; the
+silence guard applies to what remains. That is what the guard's own switch says it is for:
+*"Stay silent on a weak, not-understood signal"*. Its recorded rationale is about the
+canned line, that "I did not quite catch that" is a bad thing to say to a forwarded
+announcement that merely begins with her name. Since D-131 a weak address no longer
+produces that line, it produces a conversation, and a real answer to somebody genuinely
+talking to her is not what the guard was protecting anyone from.
+
+**So the three states are now distinct and all reachable:** the model speaks and she
+answers; the model is mute and the signal was weak, so she stays silent rather than saying
+a canned sentence to something possibly not aimed at her; the model is mute and the
+operator has switched the guard off, so she says her honest unavailable line. Each is a
+check.
+
+**Nothing else moved.** Strict mode is untouched, because a bare name never reaches this
+branch there. Talking ABOUT her, a possessive, or a German compound is still not an address
+in EITHER mode: relaxed drops the greeting requirement and nothing else, asserted for both
+modes in both directions. Commands still win, with or without a greeting.
+
+**Why the silence looked like a settings problem and was not.** Two switches with sound
+individual rationales combined into a third behaviour neither of them describes. That is
+the class of defect a label cannot catch, and the reason the harness now asserts what the
+operator would DO rather than only what `detectAddress` RETURNS.
+
+**Observed live**, relaxed, no greeting: *"Just twirling in a digital gown and sipping
+starlight, thanks for asking! How's your world looking today?"* The same message in strict:
+silence. A possessive in relaxed: silence. A status command with no greeting: the
+deterministic count intact under a model-written lead.
+
+---
+
 ### D-131 — Free conversation: the first time the model writes rather than rephrases
 
 **Status: IMPLEMENTED** (CCB-S4-027, the raw test). Proven live against the local model in

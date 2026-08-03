@@ -1077,6 +1077,9 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       An unwanted invitation currently sits pending on the page forever.
 - [x] **Free conversation, the raw test** (CCB-S4-027, D-131). Addressed, no command
       intent, model writes the reply. Commands are untouched and proven so.
+- [x] **Relaxed addressing now means what its label says** (CCB-S4-028, D-132). A bare
+      leading name was classified as an address all along and then discarded by the
+      weak-signal silence guard one branch later.
 - [ ] **Conversation has no history.** Every turn is the current message alone, so she
       cannot follow a thread. History, persona cards, sharpness and motif are the
       personality work proper.

@@ -745,22 +745,33 @@ export class InteractionEngine {
         // to be ordinary conversation than a failed instruction, so she says
         // nothing and lets it be archived like any other message.
         if (!explicit) return false;
-        // §2 — "I did not quite catch that" is only appropriate when she is
-        // confident she was being addressed at all. A bare leading name is not
-        // that: it is how a forwarded announcement, a quote, or a sentence about
-        // her begins. Weak signal means stay out of it, and leave a trace.
+
+        // CCB-S4-028. The order of these two used to be the other way round, and it
+        // made relaxed mode mean nothing: `detectAddress` correctly returns `wake` for
+        // a bare leading name in relaxed (addressing.ts), but a bare name is WEAK, and
+        // the silence guard below ran first and swallowed it. An operator who set
+        // "a message starting with her name counts as an address" got silence.
+        //
+        // What that guard is FOR is written on its own switch: "Stay silent on a weak,
+        // not-understood signal". Its §2 rationale is about the canned line, not about
+        // answering: "I did not quite catch that" is a bad thing to say to a forwarded
+        // announcement that happens to begin with her name. Since CCB-S4-027 a weak
+        // address does not produce that line, it produces a conversation, and a real
+        // answer to somebody genuinely talking to her is not what the guard was
+        // protecting anyone from.
+        //
+        // So the guard now covers what it names: the FALLBACK. She converses when the
+        // model can speak, and stays silent on a weak signal when it cannot, rather
+        // than saying a canned sentence to something that may not have been aimed at
+        // her. Strict mode is untouched, because a bare name never gets this far.
+        if (await this.freeConversation(msg, s, lang)) return true;
+
         if (s.addressing.silenceOnUnknown && !strong) {
           this.noteNearMiss(msg, s, now, 'weak-signal-unknown', instruction, result);
           return false;
         }
-        // CCB-S4-027. She was addressed, clearly, and asked for nothing the catalog
-        // knows. That used to be the end of it: "I did not quite catch that", to a
-        // member who was simply talking to her. Now the model answers instead, and
-        // `notUnderstood` is what remains when it cannot.
-        //
-        // This branch is reachable ONLY here, after every command intent has been
-        // considered and declined, so free conversation can never intercept a command.
-        await this.freeConversation(msg, s, lang);
+        // The model could not speak and the signal was strong enough to answer anyway.
+        await this.reply(msg, s, lang, 'conversationUnavailable', {});
         return true;
     }
   }
@@ -1635,7 +1646,7 @@ export class InteractionEngine {
     msg: CapturedMessage,
     s: InteractionSettings,
     lang: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const personalize = this.deps.personalize;
     let spoken: string | null = null;
 
@@ -1665,15 +1676,14 @@ export class InteractionEngine {
       }
     }
 
-    if (spoken === null) {
-      // NOT `notUnderstood`. She heard perfectly well; it is her words that were not
-      // available, and telling a member they were unclear when they were not is the
-      // kind of small untruth this project does not tell.
-      await this.reply(msg, s, lang, 'conversationUnavailable', {});
-      return;
-    }
+    // The caller decides what to do with a silence, because only it knows how strong
+    // the address signal was. NOT `notUnderstood` either way: she heard perfectly well,
+    // and telling a member they were unclear when they were not is the kind of small
+    // untruth this project does not tell.
+    if (spoken === null) return false;
 
     await this.replyWithText(msg, s, lang, spoken, 'conversation');
+    return true;
   }
 
   /**

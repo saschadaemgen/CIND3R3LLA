@@ -1903,6 +1903,108 @@ async function main(): Promise<void> {
     mute.replies[0]?.includes('did not quite catch that') !== true,
   );
 
+  /* ── Relaxed mode actually means something (CCB-S4-028) ─────────────────── */
+
+  section('Relaxed addressing: a bare name wakes her, strict still does not');
+
+  // THE REGRESSION THIS GUARDS. `detectAddress` has always honoured the mode; what made
+  // relaxed mean nothing was the engine answering a bare name with silence, because a
+  // bare name is a WEAK signal and the not-understood silence guard ran before anything
+  // could answer. Both halves are asserted: the classification, and what she does.
+  const relaxedSettings = normalizeInteraction({ addressing: { mode: 'relaxed' } });
+  const strictSettings = normalizeInteraction({ addressing: { mode: 'strict' } });
+
+  check(
+    'relaxed classifies a bare leading name as an address',
+    detectAddress('Cinderella how are you', relaxedSettings).kind === 'wake',
+  );
+  check(
+    'and marks it NOT greeted, so it stays a weak signal',
+    detectAddress('Cinderella how are you', relaxedSettings).greeted === false,
+  );
+  check(
+    'strict still refuses a bare leading name',
+    detectAddress('Cinderella how are you', strictSettings).kind === 'none',
+  );
+  check(
+    'and strict still accepts it once greeted',
+    detectAddress('Hey Cinderella how are you', strictSettings).kind === 'wake',
+  );
+  // The safety cases hold in BOTH modes: relaxed drops the greeting requirement and
+  // nothing else.
+  for (const [label, text] of [
+    ['a sentence about her', 'I think Cinderella is great'],
+    ['a possessive', "Cinderella's archive is nice"],
+    ['a German compound', 'Cinderellas Archiv ist gut'],
+  ] as const) {
+    check(
+      `${label} is not an address in relaxed`,
+      detectAddress(text, relaxedSettings).kind === 'none',
+    );
+    check(
+      `${label} is not an address in strict`,
+      detectAddress(text, strictSettings).kind === 'none',
+    );
+  }
+
+  // Now the behaviour, which is what actually broke.
+  settings = relaxedSettings;
+  coolDown();
+  modelConversationReply = 'Evenings here are quiet and the kettle is on.';
+  const bareChat = await say('Cinderella how are you?');
+  check(
+    'RELAXED + bare name + no command: she answers',
+    bareChat.replies[0]?.includes('the kettle is on') === true,
+    bareChat.replies[0]?.slice(0, 60) ?? '(silence)',
+  );
+
+  // The guard still guards what it names: with the model mute, a WEAK address gets
+  // silence rather than a canned line aimed at something that may not have been for her.
+  coolDown();
+  modelConversationReply = null;
+  const bareMute = await say('Cinderella how are you?');
+  check(
+    'RELAXED + bare name + model mute: silent, because the guard covers the fallback',
+    bareMute.replies.length === 0,
+    bareMute.replies[0]?.slice(0, 50) ?? '(silent)',
+  );
+
+  // And switching the guard off restores the honest line rather than silence.
+  settings = normalizeInteraction({
+    addressing: { mode: 'relaxed', silenceOnUnknown: false },
+  });
+  coolDown();
+  const bareMuteLoud = await say('Cinderella how are you?');
+  check(
+    'with the silence guard off she says the honest unavailable line instead',
+    bareMuteLoud.replies[0]?.includes('could not find my words') === true,
+    bareMuteLoud.replies[0]?.slice(0, 50) ?? '(silent)',
+  );
+
+  // STRICT is untouched: a bare name never reaches any of this.
+  settings = strictSettings;
+  coolDown();
+  modelConversationReply = 'This must never be said in strict mode.';
+  const strictBareName = await say('Cinderella how are you?');
+  check(
+    'STRICT + bare name: still silent, model never consulted',
+    strictBareName.replies.length === 0,
+    strictBareName.replies[0]?.slice(0, 50) ?? '(silent)',
+  );
+
+  // Commands win in relaxed too, with no greeting.
+  settings = relaxedSettings;
+  coolDown();
+  const bareCommand = await say('Cinderella what do you keep of mine');
+  check(
+    'RELAXED + bare name + a command: the command answers, not conversation',
+    bareCommand.replies[0]?.includes('keep') === true &&
+      bareCommand.replies[0]?.includes('the kettle is on') !== true,
+    bareCommand.replies[0]?.slice(0, 60) ?? '(silence)',
+  );
+  modelConversationReply = null;
+  settings = normalizeInteraction({});
+
   const consentOffered = personalizeCalls.filter((c) => CONSENT_BEARING.includes(c.kind));
   check(
     'no consent-bearing reply is ever offered to a model',
