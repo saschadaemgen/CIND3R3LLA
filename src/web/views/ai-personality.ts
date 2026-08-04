@@ -243,16 +243,18 @@ function ceilingCard(): SafeHtml {
 }
 
 /** What the model is actually told, for the SAVED values. The proof the dial reaches it. */
-function promptCard(personality: BotPersonality): SafeHtml {
+function promptCard(personality: BotPersonality, botName: string): SafeHtml {
   return card(
     'What the model is told',
     html`
       <p class="text-sm text-slate-600">
-        The voice section of the conversation prompt, built from the values saved above. Command
-        replies do not use this: they rephrase a decision the application already made, and the
-        personality has no reach into those.
+        The voice section of the conversation prompt, built from the values saved above. Her name
+        comes from the wake word on the
+        <a class="underline" href="/interaction/addressing">Addressing page</a>, not from here.
+        Command replies do not use this: they rephrase a decision the application already made,
+        and the personality has no reach into those.
       </p>
-      <pre class="personality-prompt">${conversationVoice(personality).join('\n')}</pre>
+      <pre class="personality-prompt">${conversationVoice(personality, botName).join('\n')}</pre>
     `,
   );
 }
@@ -274,7 +276,12 @@ function emptyBody(): SafeHtml {
   );
 }
 
-function body(profiles: BotOnboardingProfile[], requested: string | undefined, csrf: string): SafeHtml {
+function body(
+  profiles: BotOnboardingProfile[],
+  requested: string | undefined,
+  csrf: string,
+  botName: string,
+): SafeHtml {
   const active = selectedProfile(profiles, requested);
   if (!active) return emptyBody();
 
@@ -282,7 +289,7 @@ function body(profiles: BotOnboardingProfile[], requested: string | undefined, c
     ${whichBotCard(profiles, active, csrf)}
     <div class="mt-4">${editorCard(active, csrf)}</div>
     <div class="mt-4 grid gap-4 lg:grid-cols-2">
-      ${ceilingCard()} ${promptCard(active.personality)}
+      ${ceilingCard()} ${promptCard(active.personality, botName)}
     </div>
   `;
 }
@@ -299,7 +306,10 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
       req.session?.csrfToken ?? '',
       req.query,
       aiRuntimeSnapshot(),
-      body(profiles, req.query.bot, req.session?.csrfToken ?? ''),
+      // Her name comes from the Addressing page's wake word, not from this page, and
+      // the preview must show the prompt that is actually built or it would be a
+      // second implementation of it that can quietly disagree (CCB-S4-030).
+      body(profiles, req.query.bot, req.session?.csrfToken ?? '', ctx.interaction.get().wakeWord),
       html`<script src="/assets/admin-personality.js" defer></script>`,
     );
   });
