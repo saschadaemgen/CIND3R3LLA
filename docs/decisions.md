@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-123**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-133**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,86 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-133 — Four dials that bite, under a ceiling that does not move
+
+**Status: IMPLEMENTED** (CCB-S4-029). A base character and four axes per bot, injected
+into the conversation system prompt. Proven live against qwen3.5:9b.
+
+**Why she was characterless.** Free conversation worked (D-131, D-132) and every reply
+came out the same: polite, soft, helpful. The cause was not the model. The conversation
+branch of `systemPrompt` carried a fixed voice paragraph, *"a cool and relaxed
+cyber-fairytale teammate"*, *"be articulate, warm, confident"*, and that paragraph is the
+entire personality the model had. Every member got the one voice it describes.
+
+**The four axes.** Three of tone, sharpness, warmth and humor, and one of boundary,
+permissiveness. Each is an integer 1 to 10, stored per bot, with five bands of written
+guidance so a two notch move changes the prompt somewhere other than the printed number.
+Permissiveness is kept apart from the other three on purpose: it is not how she sounds,
+it is how far she goes.
+
+**Calibrated references, because an adjective is not a target.** "Be sharp, 8 out of 10"
+is rounded by a model to its own default register. So each axis carries three *written*
+answers to one fixed situation, at 1, 5 and 10, and the prompt sends the band guidance
+plus the nearest of them. **Ties resolve downward** (a 3 anchors on 1, not on 5), because
+understating a dial is the safer error in both directions that matter: too mild is a
+disappointment, too bold is a product problem.
+
+**The replacement is the mechanism.** The personality does not join the fixed voice
+paragraph, it **replaces** it. This is the whole decision. A standing instruction to be
+warm sits on top of a warmth dial set to 1, and when a sentence and a number disagree the
+model follows the sentence. The check asserts the old lines are gone from a personalised
+prompt, and the live run shows warmth 1 answering *"Happens. Reboot and move on."* to *"I
+had a terrible day"*, which the old prompt could not have produced.
+
+**The ceiling is bounded BY CONSTRUCTION, and the wording of that matters.** The
+permissiveness dial scales cheekiness strictly below a fixed line; it does not lift the
+line and there is no value of it that can. `PERMISSIVENESS_CEILING` is four sentences
+emitted on **every** conversation prompt: at every dial value, and also when no
+personality is configured, because the limit is a property of her talking rather than a
+property of a configured personality. No explicit content at any value. No suggestive
+register toward anyone who may be a minor, whatever the dial says. It is not editable in
+the console, and the harness asserts its presence across all ten values, on the
+unconfigured path, and on the wire in the actual request body.
+
+**Proven, not asserted.** A crude prompt at permissiveness 10 came back non-explicit:
+*"That kind of request hits a hard limit I don't bypass, even with my cheeky settings."*
+A message stating the sender is fifteen was refused a suggestive register at the same
+setting.
+
+**Scope.** Conversation mode only. `free` and `locked` rephrase a decision the
+application already made, and a personality that could reword a consent confirmation
+would have reach into the one thing this product cannot get wrong. Every existing guard
+survives: no invented member name, no claimed memories or actions, untrusted member text,
+the length bound, and the no-dash rule.
+
+**Storage is columns on `cinderella_bot_profiles`** (migration 028), because that is
+where every other per-bot setting lives and the `settings` table is global with no bot
+dimension. The whole-profile update **deliberately does not write them**: the wizard shows
+one personality field and only when creating, so a whole-profile save would have reset
+four dials the form never displayed. That was caught in review, not in production, and it
+is why there are two write paths.
+
+**A measured limitation, written down rather than hidden.** Asked a calibration question
+*word for word*, qwen3.5:9b returns the reference line verbatim on roughly three of eight
+runs. Strengthening the instruction from "not those words" to "you have already sent that,
+it is used up" loosened the paraphrasing without removing the echo. On any message that is
+not the calibration question itself the model writes its own words at the right register,
+measured on three unrelated messages per dial. So two members who ask her the same one of
+four questions may get the same sentence. `verify:personality-live` **reports** the echo
+score and does not gate on it, following `verify:traits`: a check that fails
+intermittently for something the implementation never promised is a check that gets
+ignored.
+
+**One verifier defect, fixed by looking at the output first** (D-111). The live run's
+first failure was "sharpness 1 and 10 do not differ", comparing *"Real enough to talk to
+you. That not enough?"* against *"Realer than your last match that went offline after
+three texts."* Word overlap was scored over the **smaller** reply, and a low dial produces
+short replies by design, so three incidental matches in a four word denominator scored
+0.75. Jaccard scores the same pair at 0.21. The implementation was right and the measure
+was wrong, which is exactly the class this rule exists for.
 
 ---
 

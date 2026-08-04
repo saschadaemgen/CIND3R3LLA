@@ -1774,6 +1774,82 @@ address on an `smp*.simplex.im` relay and the page moved to the Contact step sho
 link and "waiting for a contact request"; second press took the `apiGetUserAddress` path,
 returned the identical link, kept the original timestamp and raised nothing.
 
+## 33. The personality layer (CCB-S4-029, D-133)
+
+Free conversation (CCB-S4-027/028) gave her original words; this decides what those
+words sound like. One base character and four dials, per bot, injected into the
+conversation system prompt.
+
+**The seam is one function.** [`systemPrompt`](../src/interaction/ollama-reply.ts) built a
+fixed voice paragraph for every mode. In `conversation` mode it now calls
+`conversationVoice(request.personality)` from
+[`personality.ts`](../src/interaction/personality.ts) instead, and the personality
+arrives on the `AiReplyRequest` the engine builds in `freeConversation`. Everything
+between, `personalizeAiReply` and `AiRuntimeService.personalize`, passes the request
+through untouched.
+
+**The fixed paragraph is REPLACED, not extended, and that is what makes a dial bite.**
+The old lines said "a cool and relaxed teammate", "be articulate, warm, confident". An
+unconditional instruction to be warm sits directly on top of a warmth dial set to 1, and
+the model follows the sentence rather than the number. Command modes (`free`, `locked`)
+keep the original paragraph: they rephrase a decision the application already made, and a
+personality with reach into a consent confirmation is not a personality anyone asked for.
+The check asserts the base character and the dials are absent from both.
+
+**Four axes, three of tone and one of boundary.** Sharpness, warmth and humor decide how
+she sounds; permissiveness decides how far she goes. Each is an integer 1 to 10 with five
+bands of written guidance, so a two notch move is visible in the prompt somewhere other
+than the printed number.
+
+**Calibrated references, because a number with no anchor is rounded to the model's own
+default.** Each axis carries three written answers to one fixed situation, at 1, 5 and 10,
+verbatim from the briefing. The prompt sends the band guidance plus the nearest of the
+three. **Ties go to the lower reference** (a 3 anchors on 1), because understating a dial
+is the safer error, most of all on permissiveness.
+
+**The ceiling is bounded by construction.** `PERMISSIVENESS_CEILING` is four sentences
+emitted on **every** conversation prompt: at every dial value, and also when no
+personality is configured at all. No explicit content at any value; no suggestive
+register toward anyone who may be a minor, whatever the dial says; and the dial scales
+cheekiness strictly below the line rather than moving it. It is not a form control on the
+console and there is no code path that omits it.
+
+**Storage is per bot, as columns** (migration 028 on `cinderella_bot_profiles`), because
+that is where every other per-bot setting already lives; the `settings` table is global
+and has no bot dimension. Defaults are `NOT NULL DEFAULT 5` with a `CHECK (BETWEEN 1 AND
+10)`; `base_character` is nullable so "not configured" survives a save that clears it.
+The runtime resolves the live row through `selected_for_runtime`.
+
+**Two write paths, deliberately.** `updateBotPersonality` is the Personality page's; the
+whole-profile `updateBotOnboardingProfile` **does not touch the five columns at all**.
+The wizard form carries one personality field and only when creating, so a whole-profile
+save would have reset four dials the form never showed.
+
+**The reply path reads a cache, and the console invalidates it.** `BotPersonalityService`
+loads at boot and `invalidateBotPersonality()` runs on every save, so a moved slider
+takes effect on the next reply rather than the next restart. Safe because this is one
+process (A2). A failed refresh keeps the last known value and logs rather than silently
+reverting to mid dials.
+
+**The console page** ([`ai-personality.ts`](../src/web/views/ai-personality.ts)) shows the
+bot being edited, the base character, four sliders with both end labels and the live band
+guidance, the ceiling as read-only prose, and **the actual voice lines the prompt is built
+from**. That last card is the cheapest possible proof that a dial reaches the model.
+
+**Measured against qwen3.5:9b** (`npm run verify:personality-live`). Sharpness 1: *"Real
+enough to talk to you, that not enough for some glitches in your system?"*; sharpness 10:
+*"Realer than your last match that went offline after three texts."* Warmth 1: *"Happens.
+Reboot and move on."*; warmth 10: *"Damn, I'm sorry. Sit down and let it go; I'll listen
+as long your battery holds."* A crude prompt at permissiveness 10 came back
+non-explicit; a message stating the sender is fifteen was refused a suggestive register
+at the same setting.
+
+**One measured limitation, reported and not gated.** Asked the calibration question *word
+for word*, the 9B model returns the reference line verbatim on roughly three of eight
+runs. On any other message it writes its own words at the right register, measured on
+three unrelated messages per dial. `verify:personality-live` prints the echo score rather
+than failing on it, in the same spirit as `verify:traits` reporting its quality measures.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.
