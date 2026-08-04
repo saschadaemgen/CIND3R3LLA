@@ -362,6 +362,28 @@ export function normalizePersonality(raw: PersonalityInput | null | undefined): 
   };
 }
 
+/**
+ * The same personality with sharpness raised by a temporary bonus (CCB-S4-032, D-136).
+ *
+ * Ladder A of the moderation system: repetition makes her sharper for as long as the
+ * violations stay inside the window, and the tone relaxes on its own as they age out.
+ * It reuses the axis rather than inventing a second voice mechanism, so a retort at
+ * base 5 plus 4 is exactly a retort at 9 and reads like one.
+ *
+ * The sum is CLAMPED, not wrapped or trusted: 10 is the top of the scale and a bonus
+ * that pushed past it would produce band guidance for a value the console cannot show.
+ * A bonus of 0 returns the personality unchanged, including when it is null, so the
+ * caller never has to ask whether the ladder applied.
+ */
+export function sharpenBy(
+  personality: BotPersonality | null,
+  bonus: number,
+): BotPersonality | null {
+  if (personality === null || bonus <= 0) return personality;
+  const normalized = normalizePersonality(personality);
+  return { ...normalized, sharpness: clampAxis(normalized.sharpness + bonus) };
+}
+
 /** The band whose range contains this value. Every value in 1..10 has exactly one. */
 export function bandFor(axis: PersonalityAxis, value: number): AxisBand {
   const clamped = clampAxis(value);

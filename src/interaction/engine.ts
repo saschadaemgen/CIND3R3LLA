@@ -73,8 +73,16 @@ import { formatOutbound, type OutboundReply } from './reply.js';
 import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
-import type { BotIdentity, BotPersonality } from './personality.js';
+import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
 import { recordConversation } from './conversation-log.js';
+import {
+  describeRule,
+  evaluateEnforcement,
+  evaluateVerbal,
+  type ModerationRules,
+  type ViolationType,
+} from '../moderation/rules.js';
+import { countViolations, recordSanction, recordViolation } from '../moderation/store.js';
 
 export interface InteractionDeps {
   db: Queryable;
@@ -159,6 +167,16 @@ export interface InteractionDeps {
    * prompt builder reads that as "not configured" and still emits the safety ceiling.
    */
   personality?: () => BotPersonality | null;
+  /**
+   * The moderation ladders (CCB-S4-032, D-136), read live so a threshold the operator
+   * just tuned applies to the next message.
+   *
+   * Absent, or returning null, means no bot profile is selected for the runtime and the
+   * ladders do not run at all. There is deliberately NO enforcement capability beside
+   * this: the engine's only outbound is `send`, so a computed sanction has nothing to
+   * act through, which is the no-act guarantee in its structural form.
+   */
+  moderationRules?: () => ModerationRules | null;
 }
 
 interface ReplyOptions {
@@ -1548,6 +1566,11 @@ export class InteractionEngine {
       return true;
     }
 
+    // Moderation (CCB-S4-032). Counted BEFORE the anti-spam check would have mattered
+    // and after it has passed, so the count reflects nicknames she actually answered.
+    // Both ladders are evaluated from the same count; only the verbal one does anything.
+    const ladders = await this.moderate(msg, 'nickname', now);
+
     const lang = this.replyLanguage(msg, s, msg.text, undefined, now);
     const list = this.retorts(s, lang);
     const index = this.state.pickRetort(msg.groupId, list.length, this.random);
@@ -1561,8 +1584,12 @@ export class InteractionEngine {
       // most-seen line she says arrived in the generic voice while everything else was
       // dialled. `retort` keeps the operator's retort as the CONTENT and puts her voice
       // on it: at sharpness 10 it cuts, at 1 it is gentle, and the ceiling comes along.
+      // Ladder A, live (CCB-S4-032). Repetition raises the sharpness dial above the
+      // operator's base and the sum is capped at the axis maximum. This is tone and
+      // nothing else: a sharper sentence harms nobody, which is why it ships live while
+      // the enforcement ladder only watches.
       const personalized = await this.personalizedBody(msg, lang, 'nickname', named, 'retort', [], {
-        personality: this.deps.personality?.() ?? null,
+        personality: sharpenBy(this.deps.personality?.() ?? null, ladders.sharpnessBonus),
         identity: botIdentity(s),
       });
       // A retort is a snub, not an address: no name prefix (that would read as
@@ -1619,6 +1646,116 @@ export class InteractionEngine {
    * network failure, malformed output, or lost required fact can escape this
    * method as a broken reply.
    */
+  /**
+   * Count the violation and run both ladders (CCB-S4-032, D-136).
+   *
+   * ── THE NO-ACT GUARANTEE, STRUCTURALLY ──────────────────────────────────────
+   *
+   * This method returns a number and writes two rows. It cannot change a role, block a
+   * member or remove one, and neither can anything it calls: `InteractionDeps` carries
+   * exactly one outbound capability, `send`, which puts text in a chat. There is no
+   * dependency here through which an enforcement action could reach the SDK even if
+   * something tried. That is why the guarantee is worth more than a mode flag would be.
+   *
+   * The enforcement rung is computed and recorded as `observed`, which is the only mode
+   * this briefing writes. The operator tunes thresholds against real traffic from the
+   * log; arming is a separate briefing on purpose.
+   *
+   * ── THE MODEL IS NOWHERE IN THIS METHOD ─────────────────────────────────────
+   *
+   * The count comes from a SQL `count(*)`, the rungs are integer comparisons, and the
+   * decision is a loop. No model output is read to pick a step. She may later SAY
+   * something about a step in her own voice; she does not choose one. Otherwise a
+   * member could talk her into sanctioning somebody, which is the injection the consent
+   * gate already exists to refuse.
+   *
+   * Failure here is contained: moderation must never stop her from replying, so a
+   * database problem is logged and the retort goes out unsharpened.
+   */
+  private async moderate(
+    msg: CapturedMessage,
+    type: ViolationType,
+    now: number,
+  ): Promise<{ sharpnessBonus: number }> {
+    const rules = this.deps.moderationRules?.() ?? null;
+    // No runtime bot means no operator-chosen policy. Running a ladder nobody configured
+    // against a real group is the worst available default, so nothing runs.
+    if (!rules) return { sharpnessBonus: 0 };
+
+    const at = new Date(now);
+    const scope = { groupId: msg.groupId, memberId: msg.senderMemberId, type };
+    const role = msg.senderRole ?? null;
+
+    try {
+      await recordViolation(this.deps.db, {
+        groupId: msg.groupId,
+        memberId: msg.senderMemberId,
+        memberDisplayName: msg.senderDisplayName,
+        memberRole: role,
+        type,
+      });
+
+      // Two counts, because the two ladders have their own windows: an operator may
+      // want the tone to relax sooner than the enforcement count does.
+      const verbalCount = await countViolations(
+        this.deps.db,
+        scope,
+        rules.verbalWindowSeconds,
+        at,
+      );
+      const enforcementCount = await countViolations(
+        this.deps.db,
+        scope,
+        rules.enforcementWindowSeconds,
+        at,
+      );
+
+      const verbal = evaluateVerbal(verbalCount, role, rules);
+      const enforcement = evaluateEnforcement(enforcementCount, role, rules);
+
+      if (enforcement.action !== 'none') {
+        await recordSanction(this.deps.db, {
+          groupId: msg.groupId,
+          memberId: msg.senderMemberId,
+          memberDisplayName: msg.senderDisplayName,
+          memberRole: role,
+          action: enforcement.action,
+          violationType: type,
+          violationCount: enforcement.count,
+          windowSeconds: rules.enforcementWindowSeconds,
+          rungThreshold: enforcement.rungThreshold,
+          reason: describeRule(
+            type,
+            enforcement.count,
+            rules.enforcementWindowSeconds,
+            enforcement.rungThreshold,
+          ),
+          // The only value this briefing writes. Not derived from `rules.mode`, so a
+          // stored 'enforce' cannot become an action by accident: arming is a code
+          // change, deliberately, not a column value.
+          mode: 'observed',
+        });
+        log.info('Moderation observed a step', {
+          action: enforcement.action,
+          count: enforcement.count,
+          group: msg.groupId,
+          enforced: false,
+        });
+      }
+
+      return { sharpnessBonus: verbal.sharpnessBonus };
+    } catch (error) {
+      // Never let moderation stop her from answering. A retort that goes out
+      // unsharpened is a small loss; silence because a count failed is a bigger one.
+      log.warn(
+        `Moderation: counting a ${type} violation failed, replying unsharpened (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
+      );
+      return { sharpnessBonus: 0 };
+    }
+  }
+
   private async personalizedBody(
     msg: CapturedMessage,
     lang: string,

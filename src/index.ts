@@ -54,6 +54,11 @@ import {
   currentBotPersonality,
   setBotPersonalityService,
 } from './profiles/bot-personality.js';
+import {
+  ModerationService,
+  currentModerationRules,
+  setModerationService,
+} from './moderation/service.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
@@ -228,6 +233,10 @@ async function startCaptureWorker(
       // above and for the same reason: an operator moving a slider expects the next
       // reply to sound different, not the next restart.
       personality: currentBotPersonality,
+      // The two ladders (CCB-S4-032). Verbal escalation is live; enforcement computes
+      // and records only. The engine has no capability to act on a computed sanction:
+      // `send` is its one outbound, which is the no-act guarantee in structural form.
+      moderationRules: currentModerationRules,
       // Handed over only while the plugin is enabled; when it is off, PRICE is
       // not in the active intent catalog either, so this is belt and braces.
       // Handed over only while the plugin is enabled; when it is off, PRICE is
@@ -489,6 +498,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   // console's Personality page invalidates this cache on every save and a save that
   // arrived before the first load would invalidate nothing.
   setBotPersonalityService(await BotPersonalityService.load(getPool()));
+  // The moderation ladders (CCB-S4-032). Loaded before the console starts, for the same
+  // reason as the personality: the Rules page invalidates this cache on every save, and
+  // a save that arrived before the first load would invalidate nothing.
+  setModerationService(await ModerationService.load(getPool()));
 
   // One process (A2): the admin web server and the capture worker together.
   const adminCfg = loadAdminConfig();
