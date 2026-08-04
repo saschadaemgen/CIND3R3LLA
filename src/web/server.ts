@@ -459,6 +459,32 @@ export function registerNav(): void {
       ],
     },
     {
+      key: 'moderation',
+      href: '/moderation/rules',
+      label: 'Moderation',
+      icon: icon('shield'),
+      children: [
+        {
+          key: 'moderation:rules',
+          href: '/moderation/rules',
+          label: 'Rules',
+          icon: icon('shield'),
+        },
+        {
+          key: 'moderation:active',
+          href: '/moderation/active',
+          label: 'Active',
+          icon: icon('shield'),
+        },
+        {
+          key: 'moderation:log',
+          href: '/moderation/log',
+          label: 'Log',
+          icon: icon('shield'),
+        },
+      ],
+    },
+    {
       key: 'ai',
       href: '/ai/overview',
       label: 'AI Control',

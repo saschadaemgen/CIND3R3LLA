@@ -142,6 +142,7 @@ function containsActive(item: NavItem, active: string | undefined): boolean {
 const MEGA_SECTION_DESCRIPTIONS: Record<string, string> = {
   content: 'Manage captured messages, publication consent, and review queues.',
   interaction: 'Control how CIND3R3LLA addresses people, responds, follows up, and archives.',
+  moderation: 'Two escalation ladders, who is under a sanction, and the record of every step.',
   ai: 'Configure models, profiles, runtime policy, knowledge, safety, and operational testing.',
   plugins: 'Review installed extensions and open each plugin control surface.',
   system: 'Manage core settings, security, embeds, and website delivery.',
@@ -166,6 +167,11 @@ const MEGA_GROUPS_BY_SECTION: Record<string, Record<string, string>> = {
     'interaction:consent': 'Behavior & Safety',
     'interaction:archiving': 'Operations',
     'interaction:diagnostics': 'Operations',
+  },
+  moderation: {
+    'moderation:rules': 'Policy',
+    'moderation:active': 'Enforcement',
+    'moderation:log': 'Enforcement',
   },
   ai: {
     'ai:overview': 'Foundation',
@@ -210,6 +216,9 @@ const MEGA_ITEM_DESCRIPTIONS: Record<string, string> = {
   'interaction:voice': 'Voice and audio interaction settings.',
   'interaction:archiving': 'Archive behavior and publication flow.',
   'interaction:diagnostics': 'Interaction diagnostics and evidence.',
+  'moderation:rules': 'Verbal and enforcement ladders, windows, and exemptions.',
+  'moderation:active': 'Members currently under a sanction.',
+  'moderation:log': 'Every violation counted and every step decided.',
   'ai:overview': 'Current AI state and operational summary.',
   'ai:onboarding': 'Create and configure SimpleX AI bots with a guided assistant.',
   'ai:profiles': 'Groups, roles, and access policy for configured AI bots.',
