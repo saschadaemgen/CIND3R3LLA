@@ -72,6 +72,7 @@ import { formatOutbound, type OutboundReply } from './reply.js';
 import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
+import type { BotPersonality } from './personality.js';
 
 export interface InteractionDeps {
   db: Queryable;
@@ -143,6 +144,19 @@ export interface InteractionDeps {
    * can omit it entirely.
    */
   personalize?: (request: AiReplyRequest) => Promise<string | null>;
+  /**
+   * Who she is and how she is dialled (CCB-S4-029, D-133), read live so a slider the
+   * operator just moved takes effect on the next reply rather than on the next restart.
+   *
+   * Used by free conversation only. It is deliberately NOT threaded into
+   * {@link InteractionEngine.personalized}, which rewrites decisions the application
+   * has already made: a personality that could reword a consent confirmation would be
+   * a personality with reach into the one thing this product cannot get wrong.
+   *
+   * Absent, or returning null, means no bot profile is selected for the runtime. The
+   * prompt builder reads that as "not configured" and still emits the safety ceiling.
+   */
+  personality?: () => BotPersonality | null;
 }
 
 interface ReplyOptions {
@@ -1665,6 +1679,10 @@ export class InteractionEngine {
               // The same guard as every other reply: her words never carry the
               // sender's display name, because the prefix is what names them.
               blockedLiterals: [msg.senderDisplayName],
+              // The dials (CCB-S4-029). Read here rather than held, so an operator who
+              // saves the Personality page and immediately talks to her hears the change
+              // on this reply and not on the next boot.
+              personality: this.deps.personality?.() ?? null,
             })
           )?.trim() || null;
       } catch (error) {

@@ -8,6 +8,7 @@
 
 import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
+import { conversationVoice, type BotPersonality } from './personality.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation';
 
@@ -37,6 +38,16 @@ export interface AiReplyRequest {
   blockedLiterals?: readonly string[];
   /** Maximum free reply length. Locked leads use their own smaller limit. */
   maxChars?: number;
+  /**
+   * Who she is and how she is dialled (CCB-S4-029, D-133). CONVERSATION MODE ONLY:
+   * the other two modes rephrase a decision the application already made, and a
+   * personality that could rewrite a consent confirmation or a price in its own voice
+   * would be a personality with reach into things this file exists to protect.
+   *
+   * Absent means the operator has configured no runtime bot, not that she has no
+   * boundaries: the permissiveness ceiling is emitted either way.
+   */
+  personality?: BotPersonality | null;
 }
 
 const DEFAULT_MAX_CHARS = 700;
@@ -86,7 +97,13 @@ function responseSchema(maxChars: number): Record<string, unknown> {
   };
 }
 
-function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
+/**
+ * Exported for `scripts/verify-personality.ts`, which asserts that moving a dial
+ * changes the text that is actually sent and that the safety ceiling is present in
+ * every conversation prompt. A check that reasoned about the prompt from the outside
+ * would be asserting on its own model of this function rather than on this function.
+ */
+export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
   const task =
     request.mode === 'conversation'
       ? [
@@ -108,11 +125,34 @@ function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
           'Do not add facts, numbers, promises, actions, or capabilities.',
         ];
 
+  /**
+   * The voice (CCB-S4-029, D-133).
+   *
+   * In CONVERSATION mode this is where the personality lands, and it REPLACES the fixed
+   * voice paragraph rather than joining it. That is what makes the dials bite: the old
+   * lines instructed her to be "warm" and "relaxed" unconditionally, and an unconditional
+   * instruction to be warm beats a warmth dial set to 1 every time, because one of them
+   * is a sentence and the other is a number. The result was the uniformly polite,
+   * characterless reply this briefing was written about.
+   *
+   * `conversationVoice` emits the permissiveness ceiling in BOTH of its branches, so a
+   * bot with no configured personality is bounded by exactly the same limit as one
+   * dialled to 10. Command modes keep the original paragraph unchanged: they rewrite a
+   * decision the application already made, and there is no voice to dial there.
+   */
+  const voice =
+    request.mode === 'conversation'
+      ? conversationVoice(request.personality ?? null)
+      : [
+          'You are a cool and relaxed cyber-fairytale teammate.',
+          'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
+          'Do not become theatrical, submissive, corporate, preachy, or excessively cute.',
+        ];
+
   return [
-    'You write chat replies as the bot named below, a cool and relaxed cyber-fairytale teammate.',
+    'You write chat replies as the bot named below.',
     'Adapt to the exact member message and its energy instead of sounding like a canned bot.',
-    'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
-    'Do not become theatrical, submissive, corporate, preachy, or excessively cute.',
+    ...voice,
     'Use the requested language. In German use natural du-form.',
     'Keep it concise. Use at most two fitting emoji and never use an em dash, en dash, or horizontal bar.',
     'Do not claim memories, personal knowledge, facts, or actions not supplied by the application.',
