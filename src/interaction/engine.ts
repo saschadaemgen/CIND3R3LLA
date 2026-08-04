@@ -79,6 +79,7 @@ import {
   describeRule,
   evaluateEnforcement,
   evaluateVerbal,
+  warningPosition,
   type ModerationRules,
   type ViolationType,
 } from '../moderation/rules.js';
@@ -1566,12 +1567,14 @@ export class InteractionEngine {
       return true;
     }
 
-    // Moderation (CCB-S4-032). Counted BEFORE the anti-spam check would have mattered
-    // and after it has passed, so the count reflects nicknames she actually answered.
-    // Both ladders are evaluated from the same count; only the verbal one does anything.
-    const ladders = await this.moderate(msg, 'nickname', now);
-
     const lang = this.replyLanguage(msg, s, msg.text, undefined, now);
+
+    // Moderation (CCB-S4-032, CCB-S4-033). Counted BEFORE the anti-spam check would have
+    // mattered and after it has passed, so the count reflects nicknames she actually
+    // answered. Both ladders run from the same count: the verbal one sharpens her, and
+    // the enforcement one may hand back a WARNING to say, while still acting on nothing.
+    const ladders = await this.moderate(msg, s, lang, 'nickname', now);
+
     const list = this.retorts(s, lang);
     const index = this.state.pickRetort(msg.groupId, list.length, this.random);
     const retort = index >= 0 ? list[index] : undefined;
@@ -1580,6 +1583,27 @@ export class InteractionEngine {
       // never went through placeholder substitution, so a renamed bot insisted on
       // a name that was not its own (CCB-S3-031 follow-up).
       const named = retort.split('{wake}').join(s.wakeWord);
+      // ── WHAT THE RETORT SAYS versus WHAT THE WARNING ADDS (CCB-S4-033) ──────
+      //
+      // The retort is the operator's, from their list, and says one thing: that is not
+      // my name. The warning is the ladder's, and adds what the retort cannot know: that
+      // this is being counted, which one of how many it is, and that continuing
+      // escalates. They travel as ONE message, because two sends for one nickname is
+      // noise, and the warning goes second so the snub still lands first.
+      //
+      // ── AND WHY THE WARNING IS PROTECTED TEXT ───────────────────────────────
+      //
+      // The model words the RETORT and never the warning. That was not the first design:
+      // the warning went into the draft with an instruction to keep its numbers exactly,
+      // and qwen3.5:9b was measured returning "warning 1 of 3" for the third warning. A
+      // warning that misstates its own count is worse than one carrying no count, and
+      // that number is the entire reason the count became a setting.
+      //
+      // So this follows the `locked` pattern the codebase already uses for prices and
+      // totals: the model writes the voiced part, the application appends the protected
+      // part verbatim. The message is still at the sharpness the ladder has reached; the
+      // one sentence that states a fact is simply not up for rewording.
+      //
       // CCB-S4-031 gap 1. This was `free` mode, which carries no personality, so the
       // most-seen line she says arrived in the generic voice while everything else was
       // dialled. `retort` keeps the operator's retort as the CONTENT and puts her voice
@@ -1588,10 +1612,11 @@ export class InteractionEngine {
       // operator's base and the sum is capped at the axis maximum. This is tone and
       // nothing else: a sharper sentence harms nobody, which is why it ships live while
       // the enforcement ladder only watches.
-      const personalized = await this.personalizedBody(msg, lang, 'nickname', named, 'retort', [], {
+      const voiced = await this.personalizedBody(msg, lang, 'nickname', named, 'retort', [], {
         personality: sharpenBy(this.deps.personality?.() ?? null, ladders.sharpnessBonus),
         identity: botIdentity(s),
       });
+      const personalized = ladders.warning ? `${voiced}\n${ladders.warning}` : voiced;
       // A retort is a snub, not an address: no name prefix (that would read as
       // her talking TO the member, contradicting "never opens a conversation")
       // and no quote.
@@ -1674,13 +1699,15 @@ export class InteractionEngine {
    */
   private async moderate(
     msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
     type: ViolationType,
     now: number,
-  ): Promise<{ sharpnessBonus: number }> {
+  ): Promise<{ sharpnessBonus: number; warning: string | null }> {
     const rules = this.deps.moderationRules?.() ?? null;
     // No runtime bot means no operator-chosen policy. Running a ladder nobody configured
     // against a real group is the worst available default, so nothing runs.
-    if (!rules) return { sharpnessBonus: 0 };
+    if (!rules) return { sharpnessBonus: 0, warning: null };
 
     const at = new Date(now);
     const scope = { groupId: msg.groupId, memberId: msg.senderMemberId, type };
@@ -1713,6 +1740,28 @@ export class InteractionEngine {
       const verbal = evaluateVerbal(verbalCount, role, rules);
       const enforcement = evaluateEnforcement(enforcementCount, role, rules);
 
+      // ── SPEECH IS LIVE, ACTION STAYS OBSERVED (CCB-S4-033, D-137) ──────────
+      //
+      // A warning changes nothing about anybody's membership. It is a message, of
+      // exactly the kind she already sends, so it happens now. Mute, block and remove
+      // touch a member's standing and stay recorded-only until the arming briefing.
+      // This is the line that makes observation mode comprehensible: she talks, she
+      // does not act.
+      //
+      // The text is a persona string, so an operator owns the wording, and its `{n}`
+      // and `{total}` are real: the ladder resolves to warn for exactly `warningCount`
+      // violations, so "3 of 5" is a fact rather than a figure of speech.
+      let warning: string | null = null;
+      if (enforcement.action === 'warn') {
+        const position = warningPosition(enforcement.count, rules);
+        if (position) {
+          warning = fillPersona(this.persona(s, lang, 'moderationWarning'), {
+            n: position.number,
+            total: position.total,
+          });
+        }
+      }
+
       if (enforcement.action !== 'none') {
         await recordSanction(this.deps.db, {
           groupId: msg.groupId,
@@ -1734,16 +1783,20 @@ export class InteractionEngine {
           // stored 'enforce' cannot become an action by accident: arming is a code
           // change, deliberately, not a column value.
           mode: 'observed',
+          // The Log has to distinguish a warning she actually said from a rung that was
+          // only recorded: one happened in the chat and the other did not.
+          spoken: warning !== null,
         });
         log.info('Moderation observed a step', {
           action: enforcement.action,
           count: enforcement.count,
           group: msg.groupId,
           enforced: false,
+          spoken: warning !== null,
         });
       }
 
-      return { sharpnessBonus: verbal.sharpnessBonus };
+      return { sharpnessBonus: verbal.sharpnessBonus, warning };
     } catch (error) {
       // Never let moderation stop her from answering. A retort that goes out
       // unsharpened is a small loss; silence because a count failed is a bigger one.
@@ -1752,7 +1805,7 @@ export class InteractionEngine {
           error instanceof Error ? error.message : String(error)
         }).`,
       );
-      return { sharpnessBonus: 0 };
+      return { sharpnessBonus: 0, warning: null };
     }
   }
 

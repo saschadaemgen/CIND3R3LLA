@@ -131,6 +131,11 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
       ? [
           'The member called you by a name that is not yours. The draft is your refusal of it.',
           'Rewrite the draft as ONE short line in your own voice, still refusing that name.',
+          // A moderation warning, when the ladder produces one, is appended by the
+          // application AFTER this reply and is never shown here (CCB-S4-033). It was
+          // shown here first, and the model was measured turning "warning 3 of 3" into
+          // "warning 1 of 3". A warning that misstates which warning it is has stopped
+          // being a warning, so its sentence is protected text rather than a draft.
           'Do not answer whatever else the message said. A retort is a snub, not a conversation.',
           'Do not add facts, numbers, promises, actions, or capabilities.',
         ]

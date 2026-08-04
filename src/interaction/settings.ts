@@ -71,6 +71,11 @@ export const PERSONA_KEYS = [
   // "I did not catch that" when the truth is "my words were not available" is a small
   // lie told to the member about which of them failed.
   'conversationUnavailable',
+  // CCB-S4-033 - the moderation ladder reached its warning rung. Rides out with the
+  // retort rather than as a second message, because two sends for one nickname is
+  // noise. `{n}` and `{total}` are real numbers, not rhetoric: the ladder resolves to
+  // warn for exactly `warningCount` violations, so "3 of 5" is a fact.
+  'moderationWarning',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -127,6 +132,9 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchResult: 'search',
   notUnderstood: 'notUnderstood',
   conversationUnavailable: 'conversation',
+  // Sent as part of the retort message, so it shares the retort's category. Classifying
+  // it anywhere else would let one message belong to two categories.
+  moderationWarning: 'nickname',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -327,6 +335,13 @@ const PERSONA_EN: PersonaStrings = {
     '🕯️ Shall I carry your words into the light? Say *yes* and it is done. Only what you say ' +
     'from this moment on, never anything from before. It stays public until you take it back, ' +
     'and taking it back is final; there is no bringing it back after.',
+  // CCB-S4-033. WORDED TO BE TRUE IN BOTH MODES. It states three things that are facts
+  // right now: this is a warning, it is counted, and continuing advances the ladder. It
+  // does NOT promise a mute, because while enforcement is observing no mute follows, and
+  // a bot that threatens what it will not do teaches a group to ignore it.
+  moderationWarning:
+    '⚠️ That is warning {n} of {total}, and it is on the record. Keep going and this ' +
+    'escalates past me being unimpressed.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -438,6 +453,9 @@ const PERSONA_DE: PersonaStrings = {
     '🕯️ Soll ich deine Worte ans Licht tragen? Sag *ja*, und es ist getan. Nur das, was du ab ' +
     'jetzt sagst, nie etwas von vorher. Es bleibt öffentlich, bis du es zurücknimmst, und das ' +
     'Zurücknehmen ist endgültig; danach gibt es kein Zurückholen.',
+  moderationWarning:
+    '⚠️ Das ist Verwarnung {n} von {total}, und sie steht im Protokoll. Mach weiter, dann ' +
+    'eskaliert das ueber mein blosses Genervtsein hinaus.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',
