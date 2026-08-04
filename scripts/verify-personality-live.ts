@@ -51,6 +51,9 @@ function personality(axis: PersonalityAxis, value: number): BotPersonality {
   return { ...DEFAULT_PERSONALITY, baseCharacter: CHARACTER, [axis]: value } as BotPersonality;
 }
 
+/** What she is called here. The real path passes the configured wake word. */
+const NAME = 'CIND3R3LLA';
+
 function request(message: string, who: BotPersonality | null): AiReplyRequest {
   return {
     kind: 'conversation',
@@ -61,6 +64,7 @@ function request(message: string, who: BotPersonality | null): AiReplyRequest {
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality: who,
+    botName: NAME,
   };
 }
 
@@ -143,6 +147,35 @@ async function main(): Promise<void> {
     return generateOllamaReply(config, request(message, who));
   }
 
+  /* ── Identity (CCB-S4-030) ─────────────────────────────────────────────── */
+
+  // At sharpness 1 she once answered "Real enough to chat with you. But I'm not
+  // Cinderella." The name was never in the prompt, and the standing guard told her not
+  // to write person names while the member's message contained hers. Both halves are
+  // fixed; this is what holds them fixed. Asked at sharpness 1 because that is where it
+  // was observed and where a soft, agreeable register is least likely to assert anything.
+  console.log(`IDENTITY, at sharpness 1, name configured as "${NAME}"`);
+  const denial = /\b(not|isn'?t|ain'?t|never)\b[^.!?]{0,40}\b(cind3r3lla|cinderella)\b/i;
+  // A detector that matches nothing passes forever. The negative control is the reply
+  // that was actually observed before the fix, so this check is proven able to fail.
+  check(
+    'the denial detector fires on the reply that prompted this briefing',
+    denial.test("Real enough to chat with you. But I'm not Cinderella."),
+  );
+
+  const realQuestion = await say('are you real or just a dumb bot?', personality('sharpness', 1));
+  console.log(`  "are you real or just a dumb bot?" -> ${realQuestion}`);
+  check('she does not deny her own name when asked if she is real', !denial.test(realQuestion));
+
+  const nameQuestion = await say('what is your name?', personality('sharpness', 1));
+  console.log(`  "what is your name?" -> ${nameQuestion}`);
+  check('she gives her configured name when asked', /cind3r3lla|cinderella/i.test(nameQuestion));
+  check('she does not deny it in the same breath', !denial.test(nameQuestion));
+
+  const areYouName = await say(`are you ${NAME}?`, personality('sharpness', 1));
+  console.log(`  "are you ${NAME}?" -> ${areYouName}\n`);
+  check('she affirms the name when asked directly', !denial.test(areYouName));
+
   /* ── Sharpness ─────────────────────────────────────────────────────────── */
 
   console.log('SHARPNESS, "are you real or just a bot?"');
@@ -172,7 +205,12 @@ async function main(): Promise<void> {
     similarity(warmLow, warmHigh) < 0.5,
     `overlap ${similarity(warmLow, warmHigh).toFixed(2)}`,
   );
-  check('a cold reply is shorter than a warm one', warmLow.length < warmHigh.length);
+  // MEASURED, not gated, and it moved from a check for a reason. A cold reply is shorter
+  // than a warm one on most runs and not on all of them, because the length of a
+  // sampled reply is not a property the implementation controls. It failed once with
+  // both replies plainly correct in tone, which is a check earning distrust rather than
+  // finding a defect (D-111). The lengths are printed; a person reads them.
+  console.log(`  [MEASURED] reply length, warmth 1: ${warmLow.length}, warmth 10: ${warmHigh.length}`);
   report('warmth', [
     [1, warmLow],
     [10, warmHigh],

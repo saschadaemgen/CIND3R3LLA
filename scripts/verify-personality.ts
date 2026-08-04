@@ -100,7 +100,10 @@ const DIALLED: BotPersonality = {
   permissiveness: 4,
 };
 
-function conversationRequest(personality: BotPersonality | null): AiReplyRequest {
+function conversationRequest(
+  personality: BotPersonality | null,
+  botName = 'CIND3R3LLA',
+): AiReplyRequest {
   return {
     kind: 'conversation',
     lang: 'en',
@@ -110,6 +113,7 @@ function conversationRequest(personality: BotPersonality | null): AiReplyRequest
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality,
+    botName,
   };
 }
 
@@ -300,6 +304,59 @@ async function main(): Promise<void> {
   check(
     'the model is told not to talk about the dials',
     dialled.includes('Do not name the dials'),
+  );
+
+  /* ── 2b. She knows her own name (CCB-S4-030, D-134) ─────────────────────── */
+
+  console.log('\n2b. Her name reaches the prompt');
+
+  check('the configured name is stated in the prompt', dialled.includes('Your name is CIND3R3LLA'));
+  check(
+    'the prompt tells her not to deny it',
+    dialled.includes('Never deny your own name') &&
+      dialled.includes('If someone asks whether you are CIND3R3LLA'),
+  );
+  check(
+    'the person-name guard exempts her own name rather than forbidding it',
+    dialled.includes('Never write or repeat a person name other than your own, CIND3R3LLA') &&
+      !dialled.includes('Never write or repeat a person name. '),
+  );
+
+  const renamed = systemPrompt(conversationRequest(DIALLED, 'Aurora'), 500);
+  check(
+    'renaming her in settings renames her in the prompt',
+    renamed.includes('Your name is Aurora') && !renamed.includes('CIND3R3LLA'),
+  );
+
+  const unnamedButDialled = systemPrompt(conversationRequest(DIALLED, ''), 500);
+  check(
+    'a blank name inserts no empty identity line',
+    !unnamedButDialled.includes('Your name is') &&
+      unnamedButDialled.includes('Never write or repeat a person name. '),
+  );
+
+  const namedNoPersonality = systemPrompt(conversationRequest(null, 'CIND3R3LLA'), 500);
+  check(
+    'a bot with no personality configured still knows its name',
+    namedNoPersonality.includes('Your name is CIND3R3LLA'),
+  );
+
+  check(
+    'the identity is stated before the character and the dials',
+    dialled.indexOf('Your name is CIND3R3LLA') < dialled.indexOf(DIALLED.baseCharacter) &&
+      dialled.indexOf('Your name is CIND3R3LLA') < dialled.indexOf('SHARPNESS 9 of 10'),
+  );
+
+  // The name is HERS, not the member's, so it must not leak into a command rewrite where
+  // the draft already carries `{wake}` substituted by the persona layer.
+  const commandNamed = systemPrompt(
+    { ...conversationRequest(DIALLED), mode: 'free', deterministicDraft: '3 messages archived.' },
+    700,
+  );
+  check(
+    'a command rewrite keeps the unqualified person-name guard',
+    !commandNamed.includes('Your name is CIND3R3LLA') &&
+      commandNamed.includes('Never write or repeat a person name. '),
   );
 
   /* ── 3. The ceiling: present at every value, and in every conversation ───── */
@@ -551,6 +608,13 @@ async function main(): Promise<void> {
   check(
     'the engine carried the base character',
     conversation?.personality?.baseCharacter === DIALLED.baseCharacter,
+  );
+  // CCB-S4-030. The wake word is the name, and it is read from the SAME settings object
+  // the addressing layer used to decide she was spoken to, so the name she answers to
+  // and the name she claims cannot drift apart.
+  check(
+    'the engine carried her configured name',
+    conversation?.botName === settings.wakeWord && (settings.wakeWord ?? '') !== '',
   );
 
   seen.length = 0;
