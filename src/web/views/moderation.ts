@@ -116,6 +116,24 @@ function actionField(name: string, current: EnforcementAction): SafeHtml {
 }
 
 /**
+ * The index of the rung whose threshold is derived from the warning count, or -1.
+ *
+ * Mirrors `deriveFromWarningCount`: the first live rung after the live `warn` rung. Kept
+ * here rather than exported from the rules module because it is a rendering question,
+ * and getting it wrong renders a field editable that the normaliser would overwrite,
+ * which the console check below catches.
+ */
+function derivedRungIndex(rules: ModerationRules): number {
+  if (rules.warningCount <= 0) return -1;
+  const live = rules.enforcement
+    .map((rung, index) => (rung.action === 'none' ? -1 : index))
+    .filter((index) => index >= 0);
+  const warnAt = live.find((index) => rules.enforcement[index]!.action === 'warn');
+  if (warnAt === undefined) return -1;
+  return live.find((index) => index > warnAt) ?? -1;
+}
+
+/**
  * The mode control.
  *
  * `enforce` is rendered and DISABLED. Offering it as a working choice would arm an
@@ -142,6 +160,13 @@ function modeCard(): SafeHtml {
         </label>
         ${badge('observing', 'amber')}
       </div>
+      <p class="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+        <strong>Speech is live, action stays observed.</strong> A warning changes nothing
+        about anybody's membership, so she <em>does</em> say it, in her own voice, at
+        whatever sharpness ladder A has reached. Mute, block and remove touch a member's
+        standing, so they are recorded and nothing more. That is the whole of what
+        observation mode means: she talks, she does not act.
+      </p>
       <p class="mt-3 text-xs text-slate-500">
         Enforce is deliberately not selectable yet. Arming it is its own piece of work,
         because it needs the parts that make a sanction reversible: remembering the role a
@@ -220,6 +245,11 @@ function verbalCard(rules: ModerationRules, csrf: string, botId: number): SafeHt
 }
 
 function enforcementCard(rules: ModerationRules, csrf: string, botId: number): SafeHtml {
+  // Which rung's threshold the warning count owns. Rendered read only rather than
+  // hidden: an operator needs to see the number they are steering, they just must not be
+  // able to type a second, contradicting one.
+  const derivedRung = derivedRungIndex(rules);
+
   return card(
     'Ladder B: what would happen',
     html`<form method="post" action="/moderation/rules" class="flex flex-col gap-4">
@@ -232,13 +262,30 @@ function enforcementCard(rules: ModerationRules, csrf: string, botId: number): S
         short without losing the capability; an inert rung is skipped, so a higher one still
         applies.
       </p>
-      <label class="flex flex-col gap-1 text-sm sm:w-72">
-        <span class="font-medium text-slate-700">Window (seconds)</span>
-        ${numberField('enforcementWindowSeconds', rules.enforcementWindowSeconds, 10, 604800)}
-        <span class="text-xs text-slate-500">
-          Counted separately from ladder A, so the tone can relax sooner than the count does.
-        </span>
-      </label>
+      <div class="flex flex-wrap gap-6">
+        <label class="flex flex-col gap-1 text-sm sm:w-72">
+          <span class="font-medium text-slate-700">Window (seconds)</span>
+          ${numberField('enforcementWindowSeconds', rules.enforcementWindowSeconds, 10, 604800)}
+          <span class="text-xs text-slate-500">
+            Counted separately from ladder A, so the tone can relax sooner than the count
+            does.
+          </span>
+        </label>
+        <label class="flex flex-col gap-1 text-sm sm:w-72">
+          <span class="font-medium text-slate-700">Warnings before escalating</span>
+          ${numberField('warningCount', rules.warningCount, 0, 100)}
+          <span class="text-xs text-slate-500">
+            <strong>She warns on every violation while the warning rung applies</strong>, so
+            this number is exactly how many warnings a member hears before the next rung is
+            reached. Set it to 0 for no warnings at all.
+          </span>
+        </label>
+      </div>
+      <p class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        The threshold of the rung after the warning is <strong>derived</strong> from that
+        number and is shown below as read only. There is one control for the gap, not two
+        that could disagree: change the warning count and the threshold follows.
+      </p>
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead>
@@ -254,7 +301,18 @@ function enforcementCard(rules: ModerationRules, csrf: string, botId: number): S
               (rung, index) => html`<tr class="border-b border-slate-100">
                 <td class="py-2 pr-3 text-slate-500">${String(index + 1)}</td>
                 <td class="py-2 pr-3">
-                  ${numberField(`enforcement.${index}.threshold`, rung.threshold, 1, 100000)}
+                  ${derivedRung === index
+                    ? html`<div class="flex flex-col gap-1">
+                        <input
+                          type="number"
+                          value="${String(rung.threshold)}"
+                          class="${INPUT_CLS} sm:w-32"
+                          readonly
+                          disabled
+                        />
+                        <span class="text-xs text-slate-500">derived</span>
+                      </div>`
+                    : numberField(`enforcement.${index}.threshold`, rung.threshold, 1, 100000)}
                 </td>
                 <td class="py-2 pr-3">${actionField(`enforcement.${index}.action`, rung.action)}</td>
                 <td class="py-2">
@@ -409,6 +467,11 @@ function activeBody(active: SanctionRow[]): SafeHtml {
 
 function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml {
   return html`
+    <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+      Two different questions, two badges. <strong>Applied</strong> is whether it happened
+      to the member: while the mode is observing, never. <strong>Heard</strong> is whether
+      she said it in the chat: warnings are, everything harder is not.
+    </div>
     ${card(
       'Steps decided',
       sanctions.length === 0
@@ -425,7 +488,7 @@ function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml
                   <th class="py-2 pr-3">Role</th>
                   <th class="py-2 pr-3">Step</th>
                   <th class="py-2 pr-3">Why</th>
-                  <th class="py-2">Applied</th>
+                  <th class="py-2">Applied / heard</th>
                 </tr>
               </thead>
               <tbody>
@@ -439,9 +502,14 @@ function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml
                     <td class="py-2 pr-3">${badge(row.action, 'amber')}</td>
                     <td class="py-2 pr-3 text-slate-600">${row.reason}</td>
                     <td class="py-2">
-                      ${row.mode === 'observed'
-                        ? badge('observed, nothing done', 'slate')
-                        : badge('enforced', 'red')}
+                      <div class="flex flex-col gap-1">
+                        ${row.mode === 'observed'
+                          ? badge('observed, nothing done', 'slate')
+                          : badge('enforced', 'red')}
+                        ${row.spokenAt
+                          ? badge('said in the chat', 'blue')
+                          : badge('not said', 'slate')}
+                      </div>
                     </td>
                   </tr>`,
                 )}
@@ -525,8 +593,14 @@ function ladderFrom(
     next['verbalExemptsStaff'] = 'verbalExemptsStaff' in body;
   } else if (section === 'enforcement') {
     next['enforcementWindowSeconds'] = bodyString(body, 'enforcementWindowSeconds');
+    next['warningCount'] = bodyString(body, 'warningCount');
     next['enforcement'] = Array.from({ length: LADDER_RUNGS }, (_unused, index) => ({
-      threshold: bodyString(body, `enforcement.${index}.threshold`),
+      // The derived rung renders disabled, so its field is absent from the post. Falling
+      // back to the CURRENT threshold rather than to a default keeps the normaliser's
+      // derivation the only thing that ever sets it.
+      threshold:
+        bodyString(body, `enforcement.${index}.threshold`) ||
+        String(current.enforcement[index]?.threshold ?? ''),
       action: bodyString(body, `enforcement.${index}.action`),
       durationSeconds: bodyString(body, `enforcement.${index}.durationSeconds`),
     }));
