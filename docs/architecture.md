@@ -1864,7 +1864,7 @@ builds an `AiReplyRequest`, the model writes original words, and `replyWithText(
 |---|---|---|
 | **Addressing** | | |
 | `naturalAddressing` | gate, off means neither path runs | gate |
-| `wakeWord` | detection; `{wake}` in persona copy and retorts | detection, **and now the prompt** (D-134; before this briefing, detection only) |
+| `wakeWord` | detection; `{wake}` in persona copy and retorts | detection **and the prompt** (D-134) |
 | `greetings` | detection, prefix strip, `greeted` strong signal | detection only; the model receives the raw `msg.text`, unstripped |
 | **Guards** | | |
 | `addressing.mode` (relaxed/strict) | gate | gate |
@@ -1873,7 +1873,7 @@ builds an `AiReplyRequest`, the model writes original words, and `replyWithText(
 | `strongSignalGreeting` / `Reply` / `Window` | same as above | same as above |
 | `confidenceThreshold`, `maxInstructionLength`, `lengthGuardConfidence` | resolver | route a message INTO free conversation by making it UNKNOWN; shape nothing |
 | `fillerPrefixes`, `maxPrefixWords`, `maxPrefixChars` | detection | detection only |
-| `logNearMisses` | records ignored candidates | **records nothing for a conversational reply**; only the silent fallback is logged |
+| `logNearMisses` | records ignored candidates | silences only; conversational replies get their own content-free log (D-135) |
 | **Follow-up** | | |
 | `followUpSeconds` | opens the window | opens the window (shared `sendReply`) |
 | `intentCarryover`, `carryOverStopWords` | resolver | never reaches the model |
@@ -1884,13 +1884,14 @@ builds an `AiReplyRequest`, the model writes original words, and `replyWithText(
 | `namePrefix` (enabled + templates) | yes | **yes** |
 | `replyLimitPerMember`, `replyLimitPerChat` | yes | **yes**, same `sendReply` |
 | **Nicknames** | | |
-| `nicknames.enabled`, `words`, `spamLimit` | retort path | **the model is never told the list** |
-| `retorts` | yes, model-reworded in `free` mode | n/a, but see the gap below |
+| `nicknames.enabled`, `words` | retort path (wake position) | **carried**, as a conditional refusal for the mid-sentence case (D-135) |
+| `nicknames.spamLimit` | retort path; ceiling raised to 1000 | n/a |
+| `retorts` | yes, model-reworded in **`retort` mode, dialled** (D-135) | n/a |
 | **Consent behaviour** | | |
 | `affirmations`, `declines`, `hideWords`, `deleteWords`, `undoWindowSeconds` | yes | **none of it, by design** |
 | **Voice** | | |
 | persona strings | yes, they are the drafts | **nothing**, there is no draft in conversation |
-| `archiveUrl`, `projectUrl`, `botLabel` | help reply only | no |
+| `archiveUrl`, `projectUrl`, `botLabel` | help reply | **carried as given facts** (D-135) |
 | **Archiving** | | |
 | `publishBotMessages`, `mentionGuard`, categories | yes | **yes**, category `conversation` (default off) |
 | **Diagnostics** | near-miss log | see `logNearMisses` above |
@@ -1903,24 +1904,31 @@ describes what she says and was never added to that request. It is a checkable r
 new setting in the second class needs a field on `AiReplyRequest` or it reaches one path
 only.
 
-**Open gaps, in priority order** (recorded, not fixed here):
+**All six gaps closed under CCB-S4-031** (D-135), in the order they were prioritised:
 
-1. **Nickname retorts are worded without the personality.** `handleNickname` calls
-   `personalizedBody(..., 'free')`, which carries no dials. An operator dials her to
-   sharpness 10 and her retort still arrives in the old generic voice.
-2. **Persona copy and free conversation are two unlinked voice surfaces.** An operator
-   who rewrites every persona string changes nothing about how she converses. The
-   Personality page is the conversational voice; the console does not say so.
-3. **The model does not know the nickname list.** Inside the follow-up window a member
-   can use a nickname mid-sentence and get an ordinary conversational reply instead of a
-   retort, because `detectAddress` only inspects the head token.
-4. **`silenceOnUnknown` and the strong-signal switches no longer mean what they say.**
-   Their labels describe silence on a weak signal; since D-132 she converses anyway and
-   they govern only the fallback.
-5. **Diagnostics has no view of free conversation.** The near-miss log covers the path
-   that now produces most replies only when it stays silent.
-6. **`botLabel`, `archiveUrl`, `projectUrl` are unknown to the model.** She cannot say
-   what she is or point at the archive in conversation.
+1. **Nickname retorts are dialled.** `handleNickname` now uses the new `retort` mode: the
+   operator's retort is the content, the four dials are the voice, and the permissiveness
+   ceiling comes with it. It was the most-seen line she says and the only one still in the
+   generic voice.
+2. **The two voice surfaces name each other.** The Voice page states it is the
+   deterministic voice and links the Personality page; the Personality page states it
+   governs conversation and retorts and touches no persona string.
+3. **The model is told the refused names**, as a conditional and never as a fact about
+   her, with an instruction not to raise them first. This covers the mid-sentence case
+   inside the follow-up window; a nickname in the wake position still belongs to the
+   deterministic retort path, which owns the operator's list.
+4. **The Guards page tells the truth.** Copy corrected to say these switches govern the
+   fallback, not whether she converses. No behaviour change.
+5. **Diagnostics has a free-conversation panel**: attempt count, outcome split, average
+   model latency, and a per-event table of when, which chat and how long. No member text,
+   no member name, no generated reply. `rate-limited` is a distinct outcome, because a
+   throttled reply is otherwise indistinguishable from silence.
+6. **`botLabel`, `archiveUrl` and `projectUrl` are given facts** in the prompt, fenced by
+   a line saying they are the only such facts she has.
+
+**Plus one limit change**: the nickname anti-spam ceiling moved from 20 to 1000 in both
+the validator and the console field, so an operator can let the nickname game run. Floor
+and shipped default unchanged.
 
 ## Appendix: divergences (code wins)
 

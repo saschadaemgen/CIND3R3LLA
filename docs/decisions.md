@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-134**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-135**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,86 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-135 — Identity is given, voice is dialled, and a retort is neither a command nor a chat
+
+**Status: IMPLEMENTED** (CCB-S4-031). All six gaps from the D-134 inventory closed, plus
+the nickname anti-spam ceiling raised from 20 to 1000.
+
+**The rule the closures establish**, and the reason this entry exists rather than six
+commit messages: what travels on an `AiReplyRequest` splits into exactly two kinds, and
+they have different rules.
+
+**IDENTITY is given fact.** Name, what she is, where the archive and the project live,
+and the names she refuses. Every one is an operator-configured value from the Interaction
+settings, none is member-supplied, and that is what makes it safe to state to a model as
+fact rather than as text to be careful with. It is grouped into one `BotIdentity` object
+because the list went from one field to five across two briefings and the next briefing
+will not be the last. One mapping builds it, `botIdentity()`, called by both the engine
+and the console preview: a preview is only worth showing if it is the prompt the model
+actually gets, and two hand-written copies is how a preview starts lying.
+
+**VOICE is dialled.** The base character and the four axes. Personality shapes how she
+sounds; identity shapes what she may state. Neither is allowed near a command rewrite.
+
+**A retort is a fourth mode, because the first three could not express it.** A nickname
+retort has a draft, like `free`, and must be spoken in her dialled voice, like
+`conversation`. It could not simply become `free`, because `free` is the command-rewrite
+lane and D-133 deliberately keeps the personality out of it: a personality able to reword
+a consent confirmation is not one anyone asked for. So the two properties were separated
+into a mode rather than obtained by loosening `free`. The operator's retort list stays
+the content; the dials supply the voice.
+
+**Observed**, same nickname, same draft: at sharpness 1, *"CIND3R3LLA is my only name,
+sweetie."*; at sharpness 10, *"Not Cindy, I'm CIND3R3LLA; try that if you want to reach
+me."*
+
+**Which path owns which nickname case, stated because it is not obvious.** The
+deterministic retort path owns a nickname in the WAKE POSITION, where `detectAddress`
+sees it at the head of the message and the operator's list answers. The prompt owns what
+that path cannot see: a nickname arriving mid-sentence inside the follow-up window, which
+previously reached free conversation and was accepted in silence. The model is
+deliberately not given the retort list. Two generators for one behaviour would be two
+voices for it. Observed: *"Stop calling me that; I'm CIND3R3LLA. As for the mess in here,
+it looks like a lot of noise and half-baked data to me."* One reply, refusal and answer.
+
+**D-134's worry was real and is bounded.** That entry warned that naming the refused names
+invites the model to raise them unprompted. So every nickname line is a CONDITIONAL, never
+a fact about her, and one line forbids raising them first. Measured: asked an ordinary
+question she never mentions them; asked *"what is your name?"* she contrasts with them
+about half the time (*"I'm CIND3R3LLA, not Cindy or Ella"*). That edge is the name topic
+itself, not an unprompted mention, and it reads well, so it is recorded rather than fought.
+
+**Diagnostics records the conversational path, and records it more strictly than the log
+beside it.** The near-miss buffer keeps an excerpt and a display name because its job is
+showing which message was wrongly ignored. This one answers did-it-fire, when, where, how
+fast, and did-it-reach-anybody, and none of those needs a word anybody wrote. So no
+excerpt, no member name, no member id. `rate-limited` is a distinct outcome rather than a
+missing row, because a throttled reply and a reply that never happened look identical from
+the group, and the AI operations buffer cannot tell them apart either: it sees a
+successful model call in both cases, since the throttle happens after it.
+
+**Console honesty is a fix, not documentation.** The Guards page described switches that
+since D-132 no longer decide whether she answers. A label that misdescribes a setting is
+worse than a missing setting, because the operator decides on it. Corrected, with no
+behaviour change. Likewise the two voice surfaces now name each other: the Voice page says
+it is the deterministic voice, the Personality page says it governs conversation and
+retorts and touches no persona string.
+
+**One verifier defect, again created by the fix it was checking.** The live denial
+detector matched a negation within 40 characters of her name. Correct until this briefing
+taught her to refuse nicknames; she now legitimately answers *"Not Cindy, I'm
+CIND3R3LLA"*, which the pattern read as denying the name she had just claimed. Excluding
+clause breaks separates them: a denial of her own name runs straight into it, a nickname
+refusal puts a comma first. A second control now asserts the detector does NOT fire on a
+refusal, so the pair can fail in both directions. Same lesson as D-111 and D-134: the
+implementation was right, the measure was wrong, and looking at the output settled it.
+
+**A second whitespace defect, in the same family.** A console-copy check asserted a
+sentence against raw rendered HTML and failed because the template literal wrapped between
+"no" and "longer". Every prose assertion now collapses whitespace first.
 
 ---
 

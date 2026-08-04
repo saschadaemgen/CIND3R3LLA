@@ -129,9 +129,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   deferred-destruction sweeper),
   `media/` (metadata detection and stripping, video matchers),
   `interaction/`
-  (wake word, intent resolver, dialogue engine, persona, help, and `personality.ts`: the
-  base character and the four 1-10 dials, pure, with the calibrated references and the
-  permissiveness ceiling that no dial value lifts. D-133), `plugins/` (plugin
+  (wake word, intent resolver, dialogue engine, persona, help, `personality.ts`: the
+  base character, the four 1-10 dials and the given identity, pure, with the calibrated
+  references and the permissiveness ceiling that no dial value lifts (D-133, D-135),
+  and `conversation-log.ts`: the content-free record of what the conversational path
+  did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
@@ -209,9 +211,10 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
-`verify:personality` (the four dials: that each one changes the prompt that is actually
-sent, that the permissiveness ceiling is in every conversation prompt at every value and
-also with no personality configured, and that the personality reaches no other reply mode.
+`verify:personality` (the four dials, her identity and the nickname retort lane: that each
+dial changes the prompt that is actually sent, that the permissiveness ceiling is in every
+conversation prompt at every value and also with no personality configured, that her name
+and the other given facts reach it, and that none of it reaches a command rewrite.
 `npm run verify:personality-live` is the companion that asks a REAL model the same
 question at a low and a high setting and prints both, since a prompt the model ignores is
 a dead slider with a passing test; it needs Ollama and is not in the offline set),
