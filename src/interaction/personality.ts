@@ -440,15 +440,78 @@ function axisLines(axis: PersonalityAxis, value: number): string[] {
  * Absent or blank leaves the identity lines out entirely rather than inserting an empty
  * name, because `You are called "".` is worse than saying nothing.
  */
-function identityLines(botName: string | undefined): string[] {
-  const name = (botName ?? '').trim();
+function identityLines(identity: BotIdentity | undefined): string[] {
+  const name = (identity?.name ?? '').trim();
   if (!name) return [];
 
-  return [
+  const lines = [
     `Your name is ${name}. That is who you are, it is what people in this chat call you, ` +
       `and it is the only name you answer to.`,
     `If someone asks whether you are ${name}, or whether you are real, say yes and stay in ` +
       `character. Never deny your own name and never claim to be something else.`,
+  ];
+
+  // What she IS, and where her work lives (CCB-S4-031 gap 6). Same class of defect as
+  // the name: asked what she is or where the archive is, she had nothing given and could
+  // invent or deny it. These are SUPPLIED values, so stating them does not cross the
+  // standing "do not claim facts not supplied by the application" guard, and the last
+  // line says so explicitly rather than trusting the model to infer the boundary.
+  const label = (identity?.label ?? '').trim();
+  if (label) lines.push(`What you are, if it comes up: ${label}. Say that plainly, not coyly.`);
+
+  const archiveUrl = (identity?.archiveUrl ?? '').trim();
+  if (archiveUrl) {
+    lines.push(
+      `The public archive of this group lives at ${archiveUrl}. Give that address if someone ` +
+        `asks where their published messages can be read.`,
+    );
+  }
+
+  const projectUrl = (identity?.projectUrl ?? '').trim();
+  if (projectUrl) {
+    lines.push(`If someone asks what project you are part of, it is at ${projectUrl}.`);
+  }
+
+  if (label || archiveUrl || projectUrl) {
+    lines.push(
+      'Those are the only such facts you have been given. Do not invent any others about ' +
+        'yourself, your capabilities, or where anything lives.',
+    );
+  }
+
+  return lines;
+}
+
+/**
+ * Names she is called and does not accept (CCB-S4-031 gap 3).
+ *
+ * ── WHY THIS IS PHRASED AS A CONDITIONAL AND NOT AS A FACT ──────────────────
+ *
+ * D-134 recorded a specific worry when the name was added: telling a model "you are also
+ * not called X" invites it to bring X up unprompted, which would be worse than the gap.
+ * That worry is the reason for the shape below. Nothing here states a fact about her.
+ * Every line is an IF: if someone uses one of these, do not accept it. And the last line
+ * forbids raising them first, which is the failure mode the worry names. Proven live by
+ * asking an ordinary question and checking no nickname appears in the answer.
+ *
+ * ── WHICH PATH OWNS WHICH CASE ──────────────────────────────────────────────
+ *
+ * The deterministic retort path still owns a nickname in the WAKE POSITION: `detectAddress`
+ * sees it at the head of the message, and she answers from the operator's retort list.
+ * This covers only what that path cannot see, a nickname arriving mid-sentence inside the
+ * follow-up window, where the message reached free conversation and she previously
+ * accepted the name in silence. The model is deliberately NOT given the retort list: two
+ * places generating retorts would be two voices for one behaviour.
+ */
+function nicknameLines(notMyNames: readonly string[] | undefined): string[] {
+  const names = [...new Set((notMyNames ?? []).map((n) => n.trim()).filter(Boolean))].slice(0, 40);
+  if (names.length === 0) return [];
+
+  return [
+    `If someone in the chat calls you ${names.join(', ')}, or any other pet form of your ` +
+      `name, do not accept it. Say in your own voice that this is not your name, then carry ` +
+      `on with whatever else they said.`,
+    'Never bring any of those names up yourself. They only matter if somebody else uses one.',
   ];
 }
 
@@ -466,9 +529,30 @@ function identityLines(botName: string | undefined): string[] {
  * With no personality configured, the caller passes null and gets the ceiling plus the
  * original voice lines, so this is additive for a bot nobody has dialled.
  */
+/**
+ * The given facts about her (CCB-S4-030 for the name, CCB-S4-031 for the rest).
+ *
+ * Grouped into one object rather than added as loose parameters, because the list grew
+ * from one to five in two briefings and the next one will not be the last. Every field is
+ * optional and every field is a value the OPERATOR configured somewhere in the console:
+ * nothing here is member-supplied, which is what makes it safe to state as fact.
+ */
+export interface BotIdentity {
+  /** The wake word: what she is called. */
+  name?: string;
+  /** What she is, e.g. "SimpleX AI Bot". From the Voice page's bot label. */
+  label?: string;
+  /** Where published messages can be read. */
+  archiveUrl?: string;
+  /** Where the project lives. */
+  projectUrl?: string;
+  /** Names she is called and refuses. See {@link nicknameLines}. */
+  notMyNames?: readonly string[];
+}
+
 export function conversationVoice(
   personality: BotPersonality | null,
-  botName?: string,
+  identity?: BotIdentity,
 ): string[] {
   const character =
     personality !== null && normalizePersonality(personality).baseCharacter
@@ -495,5 +579,11 @@ export function conversationVoice(
           'Do not name the dials, the numbers, or the calibration examples to anyone.',
         ];
 
-  return [...identityLines(botName), ...character, ...dials, ...PERMISSIVENESS_CEILING];
+  return [
+    ...identityLines(identity),
+    ...nicknameLines(identity?.notMyNames),
+    ...character,
+    ...dials,
+    ...PERMISSIVENESS_CEILING,
+  ];
 }

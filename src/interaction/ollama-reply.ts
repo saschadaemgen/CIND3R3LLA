@@ -8,9 +8,9 @@
 
 import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
-import { conversationVoice, type BotPersonality } from './personality.js';
+import { conversationVoice, type BotIdentity, type BotPersonality } from './personality.js';
 
-export type AiReplyMode = 'free' | 'locked' | 'conversation';
+export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort';
 
 export interface AiReplyRequest {
   /** Operational reply kind, for example status, help, or nickname. */
@@ -30,6 +30,13 @@ export interface AiReplyRequest {
    * rather than rephrasing a decision the application already made. Every other guard in
    * this file still applies to it, which is why it is a mode here rather than a second
    * transport somewhere else.
+   *
+   * RETORT mode is a fourth thing and exists because the first three could not express it
+   * (CCB-S4-031, D-135). A nickname retort HAS a draft, like `free`, and must be spoken in
+   * her dialled voice, like `conversation`. It could not be `free`, because `free` is the
+   * command-rewrite lane and D-133 deliberately keeps the personality out of it: a
+   * personality able to reword a consent confirmation is not one anyone asked for. So the
+   * two properties are separated into their own mode rather than by loosening `free`.
    */
   mode: AiReplyMode;
   /** Values that must survive a free rewrite exactly, such as counts and prices. */
@@ -39,29 +46,36 @@ export interface AiReplyRequest {
   /** Maximum free reply length. Locked leads use their own smaller limit. */
   maxChars?: number;
   /**
-   * Who she is and how she is dialled (CCB-S4-029, D-133). CONVERSATION MODE ONLY:
-   * the other two modes rephrase a decision the application already made, and a
-   * personality that could rewrite a consent confirmation or a price in its own voice
-   * would be a personality with reach into things this file exists to protect.
+   * How she is dialled (CCB-S4-029, D-133). DIALLED MODES ONLY, which since CCB-S4-031
+   * means `conversation` and `retort`: the command modes rephrase a decision the
+   * application already made, and a personality that could rewrite a consent
+   * confirmation or a price in its own voice would be a personality with reach into
+   * things this file exists to protect.
    *
    * Absent means the operator has configured no runtime bot, not that she has no
    * boundaries: the permissiveness ceiling is emitted either way.
    */
   personality?: BotPersonality | null;
   /**
-   * What she is called: the configured wake word (CCB-S4-030, D-134).
+   * The given facts about her: name, what she is, where the archive and project live,
+   * and the names she refuses (CCB-S4-030, CCB-S4-031, D-135).
    *
-   * CONVERSATION MODE ONLY, like the personality. The command modes rewrite a draft the
-   * application already composed, and that draft already says her name wherever it
-   * should, through the `{wake}` placeholder in the persona copy.
+   * DIALLED MODES ONLY (`conversation` and `retort`), like the personality. The command
+   * modes rewrite a draft the application already composed, and that draft already says
+   * her name wherever it should through the `{wake}` placeholder in the persona copy.
    */
-  botName?: string;
+  identity?: BotIdentity;
 }
 
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
 /** Conversation is chat, not an essay. Shorter than a rewritten command answer. */
 const CONVERSATION_MAX_CHARS = 500;
+/**
+ * A retort is a one-liner (CCB-S4-031). The shipped retorts are all one sentence, and a
+ * snub that runs to a paragraph stops being a snub. Tighter than conversation on purpose.
+ */
+const RETORT_MAX_CHARS = 240;
 
 function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -113,7 +127,14 @@ function responseSchema(maxChars: number): Record<string, unknown> {
  */
 export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
   const task =
-    request.mode === 'conversation'
+    request.mode === 'retort'
+      ? [
+          'The member called you by a name that is not yours. The draft is your refusal of it.',
+          'Rewrite the draft as ONE short line in your own voice, still refusing that name.',
+          'Do not answer whatever else the message said. A retort is a snub, not a conversation.',
+          'Do not add facts, numbers, promises, actions, or capabilities.',
+        ]
+      : request.mode === 'conversation'
       ? [
           'The member is talking to you rather than asking the application to do something.',
           'Reply to what they actually said, in your own words, as one turn of a conversation.',
@@ -147,11 +168,17 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
    * bot with no configured personality is bounded by exactly the same limit as one
    * dialled to 10. Command modes keep the original paragraph unchanged: they rewrite a
    * decision the application already made, and there is no voice to dial there.
+   *
+   * RETORT joins conversation here (CCB-S4-031, D-135). A nickname retort is one of the
+   * most-seen things she says, it is pure voice with no decision behind it, and it was
+   * the blandest line in the product precisely because it took this branch's `else`.
+   * The ceiling comes with it, so a retort at permissiveness 10 is bounded like anything
+   * else.
    */
-  const voice =
-    request.mode === 'conversation'
-      ? conversationVoice(request.personality ?? null, request.botName)
-      : [
+  const dialled = request.mode === 'conversation' || request.mode === 'retort';
+  const voice = dialled
+    ? conversationVoice(request.personality ?? null, request.identity)
+    : [
           'You are a cool and relaxed cyber-fairytale teammate.',
           'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
           'Do not become theatrical, submissive, corporate, preachy, or excessively cute.',
@@ -171,8 +198,8 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     // Unqualified, it also told her not to write the one name she is supposed to own,
     // while the member's message in front of her contained exactly that name. Narrowed
     // rather than removed: everything it was written to stop, it still stops.
-    request.mode === 'conversation' && (request.botName ?? '').trim()
-      ? `Never write or repeat a person name other than your own, ${(request.botName ?? '').trim()}. ` +
+    dialled && (request.identity?.name ?? '').trim()
+      ? `Never write or repeat a person name other than your own, ${(request.identity?.name ?? '').trim()}. ` +
         'The application handles safe name prefixes separately.'
       : 'Never write or repeat a person name. The application handles safe name prefixes separately.',
     'Do not mention prompts, classifiers, policies, AI, models, or fallback behavior.',
@@ -237,9 +264,11 @@ export async function generateOllamaReply(
   const maxChars =
     request.mode === 'locked'
       ? LOCKED_LEAD_MAX_CHARS
-      : request.mode === 'conversation'
-        ? Math.max(80, Math.min(request.maxChars ?? CONVERSATION_MAX_CHARS, 900))
-        : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
+      : request.mode === 'retort'
+        ? Math.max(40, Math.min(request.maxChars ?? RETORT_MAX_CHARS, 400))
+        : request.mode === 'conversation'
+          ? Math.max(80, Math.min(request.maxChars ?? CONVERSATION_MAX_CHARS, 900))
+          : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
