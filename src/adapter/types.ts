@@ -63,7 +63,23 @@ export interface ChatMember {
   role: MemberRole;
 }
 
-export type MemberRole = 'owner' | 'admin' | 'moderator' | 'member' | 'observer';
+/**
+ * A member's standing in a group.
+ *
+ * Widened from five to the full seven under CCB-S4-032, because moderation exempts
+ * roles and an exemption computed from a lossy role is an exemption that can be wrong.
+ * `relay` and `author` were absent while nothing read this; the moment something did,
+ * mapping them onto a neighbouring value would have been inventing a fact about a
+ * member. Ordered low to high, which is the SimpleX hierarchy.
+ */
+export type MemberRole =
+  | 'relay'
+  | 'observer'
+  | 'author'
+  | 'member'
+  | 'moderator'
+  | 'admin'
+  | 'owner';
 
 export interface ChatGroup {
   /** Stable numeric id within the bot's own store. */

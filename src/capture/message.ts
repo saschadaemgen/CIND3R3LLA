@@ -7,7 +7,7 @@
  * module reads those discriminants directly and never depends on runtime enums.
  */
 
-import type { RawItem } from '../adapter/types.js';
+import type { MemberRole, RawItem } from '../adapter/types.js';
 
 /** The capture type taxonomy from the briefing (§5 Stage 2). */
 export type CapturedType = 'text' | 'image' | 'video' | 'voice' | 'link' | 'file';
@@ -53,6 +53,22 @@ export interface CapturedMessage {
   senderMemberId: string;
   /** Sender's current display name (may collide across members). */
   senderDisplayName: string;
+  /**
+   * The sender's role in the group, or undefined when the adapter could not say
+   * (CCB-S4-032). Carried because moderation exempts staff, and because the arming
+   * briefing must refuse to aim a sanction at a member whose role is unknown: doing so
+   * risks aiming at an owner, which fails at the SDK and reads as a bug rather than as
+   * the policy it is.
+   *
+   * The in-memory adapter fake leaves it undefined, which is the honest value there.
+   */
+  senderRole: MemberRole | undefined;
+  /**
+   * The sender's numeric group-member id, which is what the moderation APIs take
+   * (`apiSetMembersRole`, `apiRemoveMembers`). Carried now so the arming briefing does
+   * not have to widen this type on a live deployment; nothing reads it today.
+   */
+  senderGroupMemberId: number | undefined;
   /** Group-message timestamp (ISO 8601). */
   sentAt: string;
   /** Capture type classification. */

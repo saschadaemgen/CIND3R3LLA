@@ -10,6 +10,7 @@
 
 import { writeAudit } from '../db/audit.js';
 import type { Queryable } from '../db/pool.js';
+import type { MemberRole } from '../adapter/types.js';
 import {
   normalizePersonality,
   type BotPersonality,
@@ -33,8 +34,13 @@ export type CommandRegistryMode = 'disabled' | 'cinderella_defaults' | 'custom';
 
 export type GroupInvitationMode = 'manual' | 'automatic' | 'approved_contacts' | 'approved_groups';
 
-export type SdkGroupRole =
-  'relay' | 'observer' | 'author' | 'member' | 'moderator' | 'admin' | 'owner';
+/**
+ * Alias of the adapter's {@link MemberRole} since CCB-S4-032, which widened that type to
+ * the same seven values. Two identical unions is one definition too many, and moderation
+ * needs the role from a captured message and the role from this config to be the same
+ * thing. The name stays because onboarding copy and columns speak of an SDK group role.
+ */
+export type SdkGroupRole = MemberRole;
 
 export type PolicyActivationMode = 'manual' | 'automatic_after_verification';
 

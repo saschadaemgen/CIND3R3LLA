@@ -15,7 +15,7 @@
 import type { T } from '@simplex-chat/types';
 
 import { recordUnknownScope } from '../capture/scope-diagnostics.js';
-import type { RawItem } from '../adapter/types.js';
+import type { MemberRole, RawItem } from '../adapter/types.js';
 import type { SentGroupItem } from '../capture/bot-message.js';
 import type {
   CapturedFile,
@@ -65,6 +65,29 @@ function buildLinkPreview(msgContent: T.MsgContent): LinkPreview | undefined {
     description: preview.description || undefined,
     image: preview.image || undefined,
   };
+}
+
+
+/**
+ * The protocol's role string, narrowed to Cinderella's own {@link MemberRole}.
+ *
+ * Returns undefined for anything unrecognised rather than casting. The SDK's role set
+ * and ours agree today; if a future core adds one, moderation must see "I do not know"
+ * instead of a value it will silently treat as ordinary.
+ */
+const MEMBER_ROLES: readonly string[] = [
+  'relay',
+  'observer',
+  'author',
+  'member',
+  'moderator',
+  'admin',
+  'owner',
+];
+
+function asMemberRole(role: unknown): MemberRole | undefined {
+  const value = typeof role === 'string' ? role.trim().toLowerCase() : '';
+  return MEMBER_ROLES.includes(value) ? (value as MemberRole) : undefined;
 }
 
 /**
@@ -174,6 +197,12 @@ export function parseGroupMessage(aChatItem: T.AChatItem): CapturedMessage | nul
     sharedMsgId: chatItem.meta.itemSharedMsgId,
     senderMemberId: member.memberId,
     senderDisplayName: member.memberProfile.displayName || member.localDisplayName,
+    // CCB-S4-032. Narrowed HERE, inside the adapter, which is the only place that knows
+    // what the protocol calls a role. An unrecognised value becomes undefined rather
+    // than being passed through: moderation exempts roles, and an exemption computed
+    // from a role nobody in this codebase recognises would be a guess.
+    senderRole: asMemberRole(member.memberRole),
+    senderGroupMemberId: member.groupMemberId,
     sentAt: chatItem.meta.itemTs,
     type: classifyType(msgContent, file !== undefined),
     text: msgContent.text ?? '',
