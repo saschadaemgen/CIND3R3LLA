@@ -59,6 +59,7 @@ import {
   DEFAULT_INTERACTION,
   PERSONA_CATEGORY,
   fillPersona,
+  botIdentity,
   type InteractionSettings,
   type PersonaKey,
 } from './settings.js';
@@ -72,7 +73,8 @@ import { formatOutbound, type OutboundReply } from './reply.js';
 import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
-import type { BotPersonality } from './personality.js';
+import type { BotIdentity, BotPersonality } from './personality.js';
+import { recordConversation } from './conversation-log.js';
 
 export interface InteractionDeps {
   db: Queryable;
@@ -1555,7 +1557,14 @@ export class InteractionEngine {
       // never went through placeholder substitution, so a renamed bot insisted on
       // a name that was not its own (CCB-S3-031 follow-up).
       const named = retort.split('{wake}').join(s.wakeWord);
-      const personalized = await this.personalizedBody(msg, lang, 'nickname', named, 'free');
+      // CCB-S4-031 gap 1. This was `free` mode, which carries no personality, so the
+      // most-seen line she says arrived in the generic voice while everything else was
+      // dialled. `retort` keeps the operator's retort as the CONTENT and puts her voice
+      // on it: at sharpness 10 it cuts, at 1 it is gentle, and the ceiling comes along.
+      const personalized = await this.personalizedBody(msg, lang, 'nickname', named, 'retort', [], {
+        personality: this.deps.personality?.() ?? null,
+        identity: botIdentity(s),
+      });
       // A retort is a snub, not an address: no name prefix (that would read as
       // her talking TO the member, contradicting "never opens a conversation")
       // and no quote.
@@ -1617,6 +1626,12 @@ export class InteractionEngine {
     deterministicDraft: string,
     mode: AiReplyMode,
     requiredLiterals: string[] = [],
+    /**
+     * Her voice and her identity. Supplied ONLY by the retort path (CCB-S4-031): the
+     * command rewrites that share this method must stay in the plain voice, because
+     * D-133 keeps the personality out of anything that rephrases a decision.
+     */
+    dialled?: { personality: BotPersonality | null; identity: BotIdentity },
   ): Promise<string> {
     const personalize = this.deps.personalize;
     if (!personalize) return deterministicDraft;
@@ -1630,6 +1645,7 @@ export class InteractionEngine {
         mode,
         requiredLiterals,
         blockedLiterals: [msg.senderDisplayName],
+        ...(dialled ? { personality: dialled.personality, identity: dialled.identity } : {}),
       });
       return personalized?.trim() || deterministicDraft;
     } catch (error) {
@@ -1663,6 +1679,9 @@ export class InteractionEngine {
   ): Promise<boolean> {
     const personalize = this.deps.personalize;
     let spoken: string | null = null;
+    // Wall clock around the model call, for Diagnostics (CCB-S4-031 gap 5). Measured
+    // whatever the outcome: a slow failure is the fact an operator most wants to see.
+    const startedAt = this.now();
 
     if (personalize) {
       try {
@@ -1683,11 +1702,12 @@ export class InteractionEngine {
               // saves the Personality page and immediately talks to her hears the change
               // on this reply and not on the next boot.
               personality: this.deps.personality?.() ?? null,
-              // Who she is (CCB-S4-030). The wake word is the authoritative name: it is
-              // what a member must type to reach her, and it is already what the persona
-              // copy substitutes for `{wake}`. Without it the model was told everything
-              // about her voice and nothing about her identity, and denied the name.
-              botName: s.wakeWord,
+              // Who she is (CCB-S4-030, widened in CCB-S4-031). The wake word is the
+              // authoritative name: it is what a member must type to reach her, and it is
+              // already what the persona copy substitutes for `{wake}`. Without it the
+              // model was told everything about her voice and nothing about her identity,
+              // and denied the name.
+              identity: botIdentity(s),
             })
           )?.trim() || null;
       } catch (error) {
@@ -1703,9 +1723,28 @@ export class InteractionEngine {
     // the address signal was. NOT `notUnderstood` either way: she heard perfectly well,
     // and telling a member they were unclear when they were not is the kind of small
     // untruth this project does not tell.
-    if (spoken === null) return false;
+    if (spoken === null) {
+      recordConversation({
+        at: this.now(),
+        groupId: msg.groupId,
+        outcome: 'unavailable',
+        latencyMs: this.now() - startedAt,
+      });
+      return false;
+    }
 
-    await this.replyWithText(msg, s, lang, spoken, 'conversation');
+    const sent = await this.replyWithText(msg, s, lang, spoken, 'conversation');
+    // 'rate-limited' is a separate outcome rather than a missing row, because a dropped
+    // reply and a reply that never happened look identical from the group and the
+    // operator has to be able to tell them apart. It is the one thing this log records
+    // that no existing telemetry could: the AI operations buffer sees a successful model
+    // call either way, since the throttle happens after it.
+    recordConversation({
+      at: this.now(),
+      groupId: msg.groupId,
+      outcome: sent ? 'spoken' : 'rate-limited',
+      latencyMs: this.now() - startedAt,
+    });
     return true;
   }
 
@@ -1722,7 +1761,8 @@ export class InteractionEngine {
     lang: string,
     text: string,
     category: ReplyCategory,
-  ): Promise<void> {
+    /** Whether it left. Threaded out for the free-conversation diagnostics. */
+  ): Promise<boolean> {
     const out = formatOutbound(text, {
       mode: s.replyMode,
       prefixTemplate: this.prefixTemplate(s, lang),
@@ -1735,7 +1775,7 @@ export class InteractionEngine {
       mentions.push({ displayName: out.prefixName, memberId: msg.senderMemberId });
     }
 
-    await this.sendReply(
+    return this.sendReply(
       msg,
       s,
       out,
@@ -1830,7 +1870,14 @@ export class InteractionEngine {
     out: OutboundReply,
     opts: ReplyOptions,
     meta: BotReplyMeta,
-  ): Promise<void> {
+    /**
+     * Whether the reply left. Added for the free-conversation diagnostics (CCB-S4-031
+     * gap 5): a reply the rate limit dropped is invisible from outside, and "she said
+     * nothing" and "she was throttled" are different facts an operator needs apart.
+     * Every existing caller ignores it, which is why this is a return value rather than
+     * a thrown error.
+     */
+  ): Promise<boolean> {
     const now = this.now();
     const openWindow = opts.openWindow !== false;
 
@@ -1848,7 +1895,7 @@ export class InteractionEngine {
       log.debug(
         `Interaction: reply rate limit hit for member ${msg.senderMemberId} in group ${msg.groupId}; staying silent.`,
       );
-      return;
+      return false;
     }
 
     try {
@@ -1859,13 +1906,14 @@ export class InteractionEngine {
           err instanceof Error ? err.message : String(err)
         }`,
       );
-      return;
+      return false;
     }
 
     // §2 — the window refreshes on every reply she actually sends.
     if (openWindow) {
       this.state.openFollowUp(msg.groupId, msg.senderMemberId, now, s.followUpSeconds * 1000);
     }
+    return true;
   }
 
   /* ── Helpers ───────────────────────────────────────────────────────────── */

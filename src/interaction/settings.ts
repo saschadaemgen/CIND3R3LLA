@@ -24,6 +24,29 @@ import type { Queryable } from '../db/pool.js';
 import { writeAudit } from '../db/audit.js';
 import type { ReplyCategory } from '../archive/settings.js';
 import { DEFAULT_HELP_TEMPLATE, missingHelpPlaceholders } from './help.js';
+import type { BotIdentity } from './personality.js';
+
+/**
+ * The given facts about her, read out of the settings (CCB-S4-031, D-135).
+ *
+ * ONE mapping, called by both readers. The dialogue engine builds it for the prompt and
+ * the Personality page builds it for the preview of that prompt, and a preview is only
+ * worth showing if it is the prompt the model actually gets. Two hand-written copies is
+ * how a preview starts lying, so there is one.
+ *
+ * The nickname list is included only when nickname handling is ENABLED. With it off
+ * these are not names she refuses, they are ordinary words, and instructing the model to
+ * reject them would invent a behaviour the operator switched off.
+ */
+export function botIdentity(s: InteractionSettings): BotIdentity {
+  return {
+    name: s.wakeWord,
+    label: s.botLabel,
+    archiveUrl: s.archiveUrl,
+    projectUrl: s.projectUrl,
+    notMyNames: s.nicknames.enabled ? s.nicknames.words : [],
+  };
+}
 
 /** Languages shipped with preconfigured copy. More can be added as keys. */
 export const SHIPPED_LANGS = ['en', 'de'] as const;
@@ -952,7 +975,11 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
         'words' in nick
           ? parseList(nick['words'], { max: 40, maxLen: 40 })
           : [...d.nicknames.words],
-      spamLimit: int(nick['spamLimit'], 1, 20, d.nicknames.spamLimit),
+      // Ceiling raised from 20 to 1000 (CCB-S4-031). Calling her by a nickname became a
+      // running game in the operator's group, and 20 consecutive tries is a cap that
+      // ends the game rather than bounding an abuse. The floor stays 1 and the shipped
+      // default is unchanged: this widens what an operator MAY choose, not what they get.
+      spamLimit: int(nick['spamLimit'], 1, 1000, d.nicknames.spamLimit),
     },
     persona,
     retorts,
