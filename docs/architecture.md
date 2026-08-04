@@ -1850,6 +1850,78 @@ runs. On any other message it writes its own words at the right register, measur
 three unrelated messages per dial. `verify:personality-live` prints the echo score rather
 than failing on it, in the same spirit as `verify:traits` reporting its quality measures.
 
+## 34. Which Interaction settings reach free conversation (CCB-S4-030, D-134)
+
+Free conversation (CCB-S4-027) added a second path that produces replies. The Interaction
+console was built for the deterministic one. This is the audit of what actually reaches
+which, read from the code rather than from the setting names.
+
+**Deterministic path**: `reply()` composes a persona template, optionally has the model
+reword it (`AI_PERSONALIZED_KEYS`), and sends. **Free conversation**: `freeConversation()`
+builds an `AiReplyRequest`, the model writes original words, and `replyWithText()` sends.
+
+| Setting | Deterministic | Free conversation |
+|---|---|---|
+| **Addressing** | | |
+| `naturalAddressing` | gate, off means neither path runs | gate |
+| `wakeWord` | detection; `{wake}` in persona copy and retorts | detection, **and now the prompt** (D-134; before this briefing, detection only) |
+| `greetings` | detection, prefix strip, `greeted` strong signal | detection only; the model receives the raw `msg.text`, unstripped |
+| **Guards** | | |
+| `addressing.mode` (relaxed/strict) | gate | gate |
+| `ignoreForwarded` | gate | gate |
+| `silenceOnUnknown` | governs the canned fallback | **no longer gates conversing** (D-132 reordered it); only decides what happens when the model is mute |
+| `strongSignalGreeting` / `Reply` / `Window` | same as above | same as above |
+| `confidenceThreshold`, `maxInstructionLength`, `lengthGuardConfidence` | resolver | route a message INTO free conversation by making it UNKNOWN; shape nothing |
+| `fillerPrefixes`, `maxPrefixWords`, `maxPrefixChars` | detection | detection only |
+| `logNearMisses` | records ignored candidates | **records nothing for a conversational reply**; only the silent fallback is logged |
+| **Follow-up** | | |
+| `followUpSeconds` | opens the window | opens the window (shared `sendReply`) |
+| `intentCarryover`, `carryOverStopWords` | resolver | never reaches the model |
+| **Language** | | |
+| `replyLanguageMode`, `defaultLanguage`, `rememberMemberLanguage` | yes | **yes**, `lang` is resolved once in `dispatch` and travels on the request |
+| **Replies** | | |
+| `replyMode` (plain/mention/quote) | yes | **yes**, same `formatOutbound` |
+| `namePrefix` (enabled + templates) | yes | **yes** |
+| `replyLimitPerMember`, `replyLimitPerChat` | yes | **yes**, same `sendReply` |
+| **Nicknames** | | |
+| `nicknames.enabled`, `words`, `spamLimit` | retort path | **the model is never told the list** |
+| `retorts` | yes, model-reworded in `free` mode | n/a, but see the gap below |
+| **Consent behaviour** | | |
+| `affirmations`, `declines`, `hideWords`, `deleteWords`, `undoWindowSeconds` | yes | **none of it, by design** |
+| **Voice** | | |
+| persona strings | yes, they are the drafts | **nothing**, there is no draft in conversation |
+| `archiveUrl`, `projectUrl`, `botLabel` | help reply only | no |
+| **Archiving** | | |
+| `publishBotMessages`, `mentionGuard`, categories | yes | **yes**, category `conversation` (default off) |
+| **Diagnostics** | near-miss log | see `logNearMisses` above |
+
+**The structural rule the table shows** (D-134): everything about **how a reply is
+delivered** is shared by construction, because both paths end in the same `sendReply`.
+Everything about **what she says** must be carried explicitly, and free conversation
+carries only what is on the `AiReplyRequest`. Every gap in the table is a value that
+describes what she says and was never added to that request. It is a checkable rule: a
+new setting in the second class needs a field on `AiReplyRequest` or it reaches one path
+only.
+
+**Open gaps, in priority order** (recorded, not fixed here):
+
+1. **Nickname retorts are worded without the personality.** `handleNickname` calls
+   `personalizedBody(..., 'free')`, which carries no dials. An operator dials her to
+   sharpness 10 and her retort still arrives in the old generic voice.
+2. **Persona copy and free conversation are two unlinked voice surfaces.** An operator
+   who rewrites every persona string changes nothing about how she converses. The
+   Personality page is the conversational voice; the console does not say so.
+3. **The model does not know the nickname list.** Inside the follow-up window a member
+   can use a nickname mid-sentence and get an ordinary conversational reply instead of a
+   retort, because `detectAddress` only inspects the head token.
+4. **`silenceOnUnknown` and the strong-signal switches no longer mean what they say.**
+   Their labels describe silence on a weak signal; since D-132 she converses anyway and
+   they govern only the fallback.
+5. **Diagnostics has no view of free conversation.** The near-miss log covers the path
+   that now produces most replies only when it stays silent.
+6. **`botLabel`, `archiveUrl`, `projectUrl` are unknown to the model.** She cannot say
+   what she is or point at the archive in conversation.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

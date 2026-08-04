@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-133**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-134**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,69 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-134 — Delivery is shared, voice is carried, and she did not know her own name
+
+**Status: IMPLEMENTED** (CCB-S4-030). One fix and one audit. The full setting-by-setting
+table is architecture §34.
+
+**What was observed.** At sharpness 1, asked *"are you real or just a dumb bot?"*, she
+answered *"Real enough to chat with you. But I'm not Cinderella."* She denied her own
+name.
+
+**Two causes, both in the prompt.** The conversation prompt carried the base character
+and four dials and never said what she is called, so there was nothing to affirm. And the
+standing guard read *"Never write or repeat a person name"*, while the member's message in
+front of her contained exactly that name, because the wake word is how a member reaches
+her. A model reading those together sees a name it has been told not to use, and denying
+it is a reasonable route out.
+
+**The fix is both halves.** The configured wake word is stated first, before the character
+and the dials, as a fact about her: what she is called, the only name she answers to, and
+an instruction never to deny it. The person-name guard is **narrowed rather than removed**
+to exempt her own name in conversation mode. Nothing it was written to stop is now
+allowed: member display names are still forbidden, and `blockedLiterals` still rejects the
+reply outright if the sender's name appears.
+
+**The wake word is the authoritative name** because it already is one everywhere else: it
+is what a member must type to reach her, and it is what the persona copy substitutes for
+`{wake}`. Reading it from the same settings object the addressing layer used means the
+name she answers to and the name she claims cannot drift apart.
+
+**Not a nickname.** Nicknames are names she REFUSES, answered with a retort on the
+deterministic path. The prompt claims one name and says nothing about any other; telling a
+model "you are also not called X" invites it to raise X unprompted.
+
+**Observed after the fix**, sharpness 1: *"I'm CIND3R3LLA, living in the wire and watching
+packets flicker past. You?"*, and to *"are you CIND3R3LLA?"*, *"Yes, I'm right here in the
+wire. That's who they call me."*
+
+**The structural rule, which is the point of the audit.** Everything about **how a reply
+is delivered** reaches both paths by construction, because both end in the same
+`sendReply`: reply mode, name prefix, both rate limits, the follow-up window, the archive
+category. Everything about **what she says** must be carried explicitly, and free
+conversation carries only what is on the `AiReplyRequest`. Every gap the audit found is a
+value in the second class that was never added to that request, and the name was simply
+the most visible of them. The rule is checkable: a new setting that shapes what she says
+needs a field on `AiReplyRequest`, or it reaches one path only.
+
+**The surprise was how much already worked.** Language, reply mode, name prefix, both rate
+limits, the follow-up window and archiving all reach free conversation, because
+`replyWithText` was deliberately written as the tail of `reply()`. The "two personalities"
+risk is real but narrow: it is confined to voice and identity, not to delivery.
+
+**One honest non-result.** The calibration echo measured 4, 5, 7, 6 and 4 verbatim replies
+out of 8 across five runs, before and after this change. It looked like the identity lines
+had made it worse; five runs cannot distinguish that from noise, and the measure itself
+swings (warmth scored 1.00 and 0.23 on identical prompts). It stays reported and not
+gated, as D-133 set it.
+
+**One check demoted, for the same reason as D-111.** "A cold reply is shorter than a warm
+one" failed once with both replies plainly correct in tone. Reply length is not a property
+the implementation controls, so it is now printed rather than asserted. A check that fails
+on correct behaviour is a check that gets ignored.
 
 ---
 
