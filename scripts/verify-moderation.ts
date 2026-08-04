@@ -35,8 +35,10 @@ import {
   DEFAULT_MODERATION_RULES,
   describeRule,
   evaluateEnforcement,
+  escalatesWithoutWarning,
   evaluateVerbal,
   normalizeModerationRules,
+  warningPosition,
   type ModerationRules,
 } from '../src/moderation/rules.js';
 import {
@@ -238,6 +240,137 @@ async function main(): Promise<void> {
     evaluateEnforcement(20, 'member', withGap).action === 'mute',
   );
 
+  /* ── 1c. The warning count owns the gap (CCB-S4-033) ────────────────────── */
+
+  console.log('\n1c. Warnings are stated, not derived by arithmetic');
+
+  check('the shipped count matches the gap 029 shipped implicitly', rules.warningCount === 5);
+  check(
+    'the rung after the warning sits exactly that many violations later',
+    rules.enforcement[0]?.threshold === 5 && rules.enforcement[1]?.threshold === 10,
+  );
+
+  // ONE SOURCE OF TRUTH: the threshold follows the count, on every normalisation, so a
+  // stored value and a form post cannot disagree.
+  const shortened = normalizeModerationRules({ ...rules, warningCount: 2 });
+  check(
+    'shortening the count moves the derived threshold',
+    shortened.enforcement.find((rung) => rung.action === 'mute')?.threshold === 7,
+  );
+  const lengthened = normalizeModerationRules({ ...rules, warningCount: 20 });
+  check(
+    'lengthening it moves the threshold too',
+    lengthened.enforcement.find((rung) => rung.action === 'mute')?.threshold === 25,
+  );
+  // Asserted by ACTION, not by index. Normalisation sorts the ladder, so a rung's
+  // position is not stable across it and an index-based assertion tests the sort rather
+  // than the derivation.
+  const typedOver = normalizeModerationRules({
+    ...rules,
+    warningCount: 3,
+    enforcement: rules.enforcement.map((rung, index) =>
+      index === 1 ? { ...rung, threshold: 999 } : rung,
+    ),
+  });
+  check(
+    'a threshold typed in against the count is overwritten by the derivation',
+    typedOver.enforcement.find((rung) => rung.action === 'mute')?.threshold === 8,
+  );
+  // The defect this section found: derivation ran after the sort, so the ladder could
+  // come back out of order, and evaluation took the LAST match rather than the highest.
+  check(
+    'the ladder is still in threshold order after the derivation',
+    typedOver.enforcement.every(
+      (rung, index, all) => index === 0 || rung.threshold >= all[index - 1]!.threshold,
+    ),
+  );
+  check(
+    'and the decision does not depend on the order anyway',
+    evaluateEnforcement(
+      50,
+      'member',
+      // Deliberately unsorted, which the normaliser would never now produce.
+      {
+        ...rules,
+        warningCount: 1,
+        enforcement: [
+          { threshold: 30, action: 'block', durationSeconds: 0 },
+          { threshold: 5, action: 'warn', durationSeconds: 0 },
+          { threshold: 8, action: 'mute', durationSeconds: 60 },
+        ],
+      },
+    ).action === 'block',
+  );
+  check(
+    'rungs above the derived one are pushed clear rather than left below it',
+    normalizeModerationRules({
+      ...rules,
+      warningCount: 40,
+      enforcement: [
+        { threshold: 5, action: 'warn', durationSeconds: 0 },
+        { threshold: 10, action: 'mute', durationSeconds: 60 },
+        { threshold: 20, action: 'block', durationSeconds: 0 },
+        { threshold: 30, action: 'remove', durationSeconds: 0 },
+      ],
+    }).enforcement.every((rung, index, all) => index === 0 || rung.threshold > all[index - 1]!.threshold),
+  );
+
+  // The count IS the number of warnings, by construction rather than by a second rule.
+  const warned: number[] = [];
+  for (let count = 1; count <= 12; count++) {
+    if (evaluateEnforcement(count, 'member', rules).action === 'warn') warned.push(count);
+  }
+  check('exactly the configured number of warnings fire', warned.length === rules.warningCount, JSON.stringify(warned));
+  check('and then the next rung takes over', evaluateEnforcement(10, 'member', rules).action === 'mute');
+  check('the warning positions run 1..N', warningPosition(5, rules)?.number === 1 &&
+    warningPosition(9, rules)?.number === 5 && warningPosition(9, rules)?.total === 5);
+  check('past the last warning there is no position', warningPosition(10, rules) === null);
+  check('before the first there is none either', warningPosition(4, rules) === null);
+
+  // Zero warnings is a deliberate choice, and it makes the warn rung inert.
+  const noWarnings = normalizeModerationRules({ ...rules, warningCount: 0 });
+  check('zero warnings makes the warn rung inert', evaluateEnforcement(5, 'member', noWarnings).action === 'none');
+  check('and the harder rung still applies', evaluateEnforcement(10, 'member', noWarnings).action === 'mute');
+  check('with no warning position to report', warningPosition(6, noWarnings) === null);
+  check(
+    'the warn rung is kept in the stored ladder rather than rewritten',
+    noWarnings.enforcement.some((rung) => rung.action === 'warn'),
+  );
+
+  /* ── 1d. The ordering guarantee ─────────────────────────────────────────── */
+
+  console.log('\n1d. A mute is never the first thing that happens');
+
+  check('the shipped ladder warns first', !escalatesWithoutWarning(rules));
+  const muteFirst = normalizeModerationRules({
+    ...rules,
+    enforcement: [
+      { threshold: 3, action: 'mute', durationSeconds: 60 },
+      { threshold: 8, action: 'warn', durationSeconds: 0 },
+      { threshold: 20, action: 'none', durationSeconds: 0 },
+      { threshold: 30, action: 'none', durationSeconds: 0 },
+    ],
+  });
+  check('a ladder that mutes before warning is detected', escalatesWithoutWarning(muteFirst));
+  check(
+    'an inert first rung does not count as the first thing that happens',
+    !escalatesWithoutWarning(
+      normalizeModerationRules({
+        ...rules,
+        enforcement: [
+          { threshold: 2, action: 'none', durationSeconds: 0 },
+          { threshold: 5, action: 'warn', durationSeconds: 0 },
+          { threshold: 10, action: 'mute', durationSeconds: 60 },
+          { threshold: 30, action: 'none', durationSeconds: 0 },
+        ],
+      }),
+    ),
+  );
+  check(
+    'zero warnings is a deliberate choice, not a violation',
+    !escalatesWithoutWarning(normalizeModerationRules({ ...muteFirst, warningCount: 0 })),
+  );
+
   /* ── 2. Exemptions ──────────────────────────────────────────────────────── */
 
   console.log('\n2. Exemptions');
@@ -390,6 +523,11 @@ async function main(): Promise<void> {
       { threshold: 4, sharpnessBonus: 3 },
       { threshold: 5, sharpnessBonus: 4 },
     ],
+    // One warning, so six messages still walk the whole ladder: warn at 2, then mute at
+    // 3 (2 + 1), block at 4, remove at 5. With the shipped count of five this same ladder
+    // would derive to 2/7/8/9 and six messages would never reach the top, which is the
+    // derivation working rather than a ladder that failed to fire.
+    warningCount: 1,
     enforcement: [
       { threshold: 2, action: 'warn', durationSeconds: 0 },
       { threshold: 3, action: 'mute', durationSeconds: 60 },
@@ -418,7 +556,12 @@ async function main(): Promise<void> {
   for (let i = 0; i < 6; i++) await engine.handle(makeMessage('Cindy hello'));
 
   check('every nickname was answered', sent.length === 6);
-  check('every reply was the retort text and nothing else', sent.every((text) => text === 'Wrong name.'));
+  // The spy stands in for the engine's ONLY outbound. Warnings and retorts are the only
+  // things it may ever see; an enforcement call has no path to it at all.
+  check(
+    'every reply was retort or warning text and nothing else',
+    sent.every((text) => text === 'Wrong name.' || text.startsWith('Wrong name.')),
+  );
 
   const sanctions = await listSanctions(db, 100);
   check('the ladder recorded steps', sanctions.length > 0, `${sanctions.length} rows`);
@@ -455,6 +598,72 @@ async function main(): Promise<void> {
     observedEnforcedRefused = true;
   }
   check('the database refuses an observed row that claims to be enforced', observedEnforcedRefused);
+
+  /* ── 5d. The warning is spoken, the harder rungs are not (CCB-S4-033) ──── */
+
+  console.log('\n5d. Speech is live, action stays observed');
+
+  const spokenRows = sanctions.filter((row) => row.spokenAt !== null);
+  const silentRows = sanctions.filter((row) => row.spokenAt === null);
+  check('at least one step was spoken', spokenRows.length > 0, `${spokenRows.length} spoken`);
+  check('everything spoken was a warning', spokenRows.every((row) => row.action === 'warn'));
+  check(
+    'nothing harder than a warning was said',
+    silentRows.every((row) => row.action !== 'warn') || silentRows.length === 0,
+  );
+  check(
+    'the mute, block and remove rungs were recorded and not said',
+    sanctions
+      .filter((row) => row.action !== 'warn')
+      .every((row) => row.spokenAt === null && row.mode === 'observed'),
+  );
+
+  // THE CHAT SIDE, asserted on what the spy on the engine's only outbound actually saw.
+  // That is where a member's experience lives: not what was drafted and not what was
+  // asked of the model, but the bytes that left. It is also the assertion that survived
+  // this briefing changing the warning from model-worded to protected text, because it
+  // never depended on which of the two produced it.
+  const warningSends = sent.filter((text) => text.includes('on the record'));
+  check('the warning reached the chat', warningSends.length > 0, `${warningSends.length} of ${sent.length}`);
+  check(
+    'it travelled with the retort as one message rather than two',
+    warningSends.every((text) => {
+      const lines = text.split('\n');
+      return lines.length === 2 && lines[0] === 'Wrong name.' && lines[1]!.includes('on the record');
+    }),
+    warningSends[0] ?? '',
+  );
+  check(
+    'the retort is first, so the snub still lands before the paperwork',
+    warningSends.every((text) => !text.startsWith('⚠️')),
+  );
+  // THE NUMBERS ARE THE FACT, and this asserts the exact string a member reads. While
+  // the model was allowed to reword this sentence it was measured turning "warning 3 of
+  // 3" into "warning 1 of 3", which is why the sentence is now appended verbatim.
+  check(
+    'and it states exactly which warning it is',
+    warningSends.some((text) => text.includes('warning 1 of 1, and it is on the record')),
+    warningSends[0] ?? '',
+  );
+  check(
+    'the model never sees the warning, so it cannot reword the count',
+    requests.every((request) => !request.deterministicDraft.includes('on the record')),
+  );
+
+  // The schema half of the line: while observed, only a warning may be spoken.
+  let spokenMuteRefused = false;
+  try {
+    await db.query(
+      `INSERT INTO cinderella_sanctions
+         (group_id, member_id, member_display_name, action, violation_type, violation_count,
+          window_seconds, reason, mode, spoken_at)
+       VALUES ($1, $2, 'Alice', 'mute', 'nickname', 9, 600, 'x', 'observed', now())`,
+      [GROUP, ALICE],
+    );
+  } catch {
+    spokenMuteRefused = true;
+  }
+  check('the database refuses an observed mute that claims to have been announced', spokenMuteRefused);
 
   /* ── 6. Ladder A actually reaches the retort ────────────────────────────── */
 
@@ -644,9 +853,115 @@ async function main(): Promise<void> {
   check('the verbal ladder persisted', afterSave?.verbal[0]?.threshold === 3 && afterSave.verbalWindowSeconds === 300);
   check(
     'and saving one ladder left the other alone',
-    afterSave?.enforcement[1]?.action === 'mute' && afterSave.enforcement[1].durationSeconds === 60,
+    afterSave?.enforcement.find((rung) => rung.action === 'mute')?.durationSeconds === 60,
   );
   check('the mode is still observe after a save', afterSave?.mode === 'observe');
+
+  /* ── 7b. The warning count on the page, and the refusal (CCB-S4-033) ────── */
+
+  check(
+    'the warning count is an editable control',
+    flat(rulesPage.body).includes('name="warningCount"') &&
+      flat(rulesPage.body).includes('Warnings before escalating'),
+  );
+  check(
+    'the repeat behaviour is stated in one sentence',
+    flat(rulesPage.body).includes('She warns on every violation while the warning rung applies'),
+  );
+  check(
+    'the page says speech is live while action is observed',
+    flat(rulesPage.body).includes('Speech is live, action stays observed'),
+  );
+  check(
+    'the derived threshold is shown but not editable',
+    flat(rulesPage.body).includes('>derived<') &&
+      (rulesPage.body.match(/name="enforcement\.\d\.threshold"/g) ?? []).length === 3,
+  );
+
+  // THE ORDERING GUARANTEE, at the only place it can be enforced: the save.
+  const badLadder = await app.inject({
+    method: 'POST',
+    url: '/moderation/rules',
+    payload: {
+      _csrf: rulesCsrf,
+      bot: String(botId),
+      section: 'enforcement',
+      enforcementWindowSeconds: '600',
+      warningCount: '5',
+      'enforcement.0.threshold': '3',
+      'enforcement.0.action': 'mute',
+      'enforcement.0.durationSeconds': '60',
+      'enforcement.1.threshold': '8',
+      'enforcement.1.action': 'warn',
+      'enforcement.1.durationSeconds': '0',
+      'enforcement.2.threshold': '20',
+      'enforcement.2.action': 'none',
+      'enforcement.2.durationSeconds': '0',
+      'enforcement.3.threshold': '30',
+      'enforcement.3.action': 'none',
+      'enforcement.3.durationSeconds': '0',
+      'exempt:owner': 'on',
+    },
+    headers: { cookie: session },
+  });
+  check('a ladder that mutes before warning is refused', badLadder.statusCode === 302);
+  check(
+    'and the refusal says what to do about it',
+    decodeURIComponent(String(badLadder.headers['location'] ?? '')).includes(
+      'without ever warning them',
+    ),
+    String(badLadder.headers['location'] ?? ''),
+  );
+  const unchanged = await botModerationRules(db, botId);
+  check(
+    'the refused ladder was not written',
+    unchanged?.enforcement.find((rung) => rung.action !== 'none')?.action === 'warn',
+  );
+
+  // Zero warnings is a deliberate choice and must still save.
+  const zeroWarnings = await app.inject({
+    method: 'POST',
+    url: '/moderation/rules',
+    payload: {
+      _csrf: rulesCsrf,
+      bot: String(botId),
+      section: 'enforcement',
+      enforcementWindowSeconds: '600',
+      warningCount: '0',
+      'enforcement.0.threshold': '3',
+      'enforcement.0.action': 'mute',
+      'enforcement.0.durationSeconds': '60',
+      'enforcement.1.threshold': '8',
+      'enforcement.1.action': 'warn',
+      'enforcement.1.durationSeconds': '0',
+      'enforcement.2.threshold': '20',
+      'enforcement.2.action': 'none',
+      'enforcement.2.durationSeconds': '0',
+      'enforcement.3.threshold': '30',
+      'enforcement.3.action': 'none',
+      'enforcement.3.durationSeconds': '0',
+      'exempt:owner': 'on',
+    },
+    headers: { cookie: session },
+  });
+  check(
+    'the same ladder saves once the operator says no warnings',
+    String(zeroWarnings.headers['location'] ?? '').includes('saved=1'),
+  );
+  check('and the count persisted', (await botModerationRules(db, botId))?.warningCount === 0);
+
+  // The Log distinguishes the two questions.
+  const logPage2 = await app.inject({
+    method: 'GET',
+    url: '/moderation/log',
+    headers: { cookie: session },
+  });
+  check(
+    'the Log separates what was applied from what was heard',
+    flat(logPage2.body).includes('Applied / heard') &&
+      flat(logPage2.body).includes('not said') &&
+      flat(logPage2.body).includes('Two different questions, two badges'),
+  );
 
   await app.close();
   await pg.close();

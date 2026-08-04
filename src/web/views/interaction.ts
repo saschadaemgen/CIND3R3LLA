@@ -232,6 +232,7 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   searchResult: { label: 'Search answer', vars: '{n} {query}' },
   notUnderstood: { label: 'Not understood', vars: '' },
   conversationUnavailable: { label: 'Free conversation unavailable', vars: '' },
+  moderationWarning: { label: 'Moderation warning (rides out with the retort)', vars: '{n} {total}' },
   undo: { label: 'Undo — done', vars: '' },
   undoNothing: { label: 'Undo — nothing to undo', vars: '' },
   undoNotRevocation: {

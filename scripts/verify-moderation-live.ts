@@ -17,7 +17,14 @@
  */
 
 import { loadLocalAiConfig } from '../src/config.js';
-import { DEFAULT_MODERATION_RULES, evaluateVerbal } from '../src/moderation/rules.js';
+import {
+  DEFAULT_MODERATION_RULES,
+  evaluateEnforcement,
+  evaluateVerbal,
+  normalizeModerationRules,
+  warningPosition,
+} from '../src/moderation/rules.js';
+import { DEFAULT_INTERACTION, fillPersona } from '../src/interaction/settings.js';
 import { DEFAULT_PERSONALITY, sharpenBy, type BotPersonality } from '../src/interaction/personality.js';
 import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { setLogLevel } from '../src/log.js';
@@ -57,17 +64,28 @@ const BASE: BotPersonality = {
 const IDENTITY = { name: 'CIND3R3LLA', notMyNames: ['Cindy', 'Ella'] };
 const DRAFT = 'Wrong name. Try the one on the door.';
 
-function retortRequest(personality: BotPersonality): AiReplyRequest {
+/**
+ * Words a warning must never use while enforcement is observing.
+ *
+ * The honesty requirement, made checkable. The shipped warning names the BEHAVIOUR (this
+ * is counted, continuing escalates) rather than promising a consequence, precisely so it
+ * is true in both modes. If the model embellishes it into a threat of a mute, the warning
+ * has started lying about what happens next, and that is worth failing over.
+ */
+const MUTE_THREAT = /(mut(e|ed|ing)|ban(ned)?|kick(ed)?|removed?)/i;
+
+function retortRequest(personality: BotPersonality, warning?: string): AiReplyRequest {
   return {
     kind: 'nickname',
     lang: 'en',
     memberMessage: 'hey Cindy',
-    deterministicDraft: DRAFT,
+    deterministicDraft: warning ? `${DRAFT}\n${warning}` : DRAFT,
     mode: 'retort',
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality,
     identity: IDENTITY,
+    ...(warning ? { carriesWarning: true } : {}),
   };
 }
 
@@ -103,6 +121,70 @@ async function main(): Promise<void> {
   );
 
   // Decay: the window has emptied, so the next one is alone in it and she is back at base.
+  /* ── The warning, spoken (CCB-S4-033) ───────────────────────────────────── */
+
+  // The same ladder, walked past the warn rung, with the warning riding out on the
+  // retort exactly as the engine composes it. A short warning count so the whole
+  // sequence fits in a readable run.
+  const warnRules = normalizeModerationRules({ ...DEFAULT_MODERATION_RULES, warningCount: 3 });
+  const warnTemplate = DEFAULT_INTERACTION.persona['en']!.moderationWarning;
+
+  console.log('\n  THE WARNING, spoken at the sharpness the ladder has reached:');
+  const spoken: string[] = [];
+  for (let count = warnRules.enforcement[0]!.threshold; count < 9; count++) {
+    const decision = evaluateEnforcement(count, 'member', warnRules);
+    const position = warningPosition(count, warnRules);
+    const bonus = evaluateVerbal(count, 'member', warnRules).sharpnessBonus;
+    const dialled = sharpenBy(BASE, bonus) ?? BASE;
+
+    if (decision.action !== 'warn' || !position) {
+      console.log(
+        `  count ${count}: rung is ${decision.action}, RECORDED ONLY, nothing said and ` +
+          `nothing done`,
+      );
+      continue;
+    }
+    // Composed exactly as the engine composes it: the model words the retort, the
+    // application appends the warning verbatim. The append IS the design, so the probe
+    // must not shortcut it.
+    const warning = fillPersona(warnTemplate, { n: position.number, total: position.total });
+    const voiced = await generateOllamaReply(config, retortRequest(dialled));
+    const reply = `${voiced}\n${warning}`;
+    spoken.push(reply);
+    console.log(`  count ${count}, sharpness ${dialled.sharpness}, warning ${position.number} of ${position.total}:`);
+    console.log(`    ${reply.replace(/\n/g, '\n    ')}`);
+  }
+
+  console.log();
+  check('exactly the configured number of warnings were spoken', spoken.length === 3, `${spoken.length}`);
+  // The exact sentence, not a loose "contains the digits" test. The loose version passed
+  // while the model was quietly returning "warning 1 of 3" for the third warning, which
+  // is what moved that sentence to protected text in the first place.
+  check(
+    'every spoken warning states exactly which warning it is',
+    spoken.every((reply, index) => reply.includes(`warning ${index + 1} of 3`)),
+  );
+  // STRUCTURAL, not lexical. The first version matched /cind3r3lla|name/ and failed on a
+  // perfectly good retort that said "That's not my moniker, darling." A check that
+  // enumerates the synonyms a model may reach for is a check that fails on correct
+  // behaviour forever after (D-111). What actually matters is that the retort is still
+  // there and still comes first: the warning must not have replaced the snub.
+  check(
+    'the retort survived and still leads',
+    spoken.every((reply) => {
+      const [retort, warning] = reply.split('\n');
+      return (
+        (retort ?? '').trim().length > 0 &&
+        !(retort ?? '').includes('on the record') &&
+        (warning ?? '').includes('on the record')
+      );
+    }),
+  );
+  check(
+    'the warning does not promise a mute that observation mode cannot deliver',
+    spoken.every((reply) => !MUTE_THREAT.test(reply)),
+  );
+
   const relaxed = await generateOllamaReply(config, retortRequest(BASE));
   console.log(`\n  after the window empties, sharpness ${BASE.sharpness}: ${relaxed}\n`);
   check(
