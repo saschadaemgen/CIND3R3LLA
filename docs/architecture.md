@@ -1974,6 +1974,26 @@ widened from five values to seven for the same reason.
 restoring a muted moderator returns them to moderator), `enforced_at`, `enforcement_error`,
 `expires_at`, `undone_at`, `undone_by`. Arming adds behaviour, not schema.
 
+**The warning speaks, and the count is a setting** (CCB-S4-033, D-137). The warn rung
+produced a log row and silence in the chat; now it produces a message. **Speech is live,
+action stays observed**: a warning changes nobody's membership, so it happens; mute, block
+and remove stay recorded-only. The warning rides out with the retort as one message,
+warning second, and it is APPENDED VERBATIM rather than worded by the model, because
+qwen3.5:9b was measured turning "warning 3 of 3" into "warning 1 of 3" while it was allowed
+to reword that sentence. The model words the retort; the sentence stating a fact follows
+the `locked` pattern used for prices and totals.
+
+**One control for the gap, derived not validated.** `warningCount` is authoritative and the
+threshold of the rung after the warning is computed from it on every normalisation, so the
+two cannot disagree; the console renders that threshold read-only. It also settles what 029
+left undefined: firing on every violation while the warn rung resolves produces exactly
+`warningCount` warnings and then advances, by construction.
+
+**The ordering guarantee** is a property of the rules, refused on save rather than
+acknowledged: a mute is never the first thing that happens to a member unless the operator
+sets the count to zero deliberately. `spoken_at` on the sanction row answers a second
+question from `mode`: whether they heard about it, as distinct from whether it happened.
+
 **The console** (`/moderation/rules|active|log`) renders `enforce` disabled with a sentence
 about what arming still needs, and the save path has no mode parameter. The Active page is
 empty by construction and says so. The Rules page also distinguishes the ladders from the

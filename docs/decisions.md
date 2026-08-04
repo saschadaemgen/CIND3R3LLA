@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-136**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-137**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,80 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-137 - The warning is spoken, and the count is a setting
+
+**Status: IMPLEMENTED** (CCB-S4-033). Refines D-136. Enforcement still acts on nobody.
+
+**THE LINE, and it is what makes observation mode comprehensible: speech is live, action
+stays observed.** A warning changes nothing about anybody's membership, so it happens now,
+in her own voice, at whatever sharpness ladder A has reached. Mute, block and remove touch
+a member's standing, so they remain recorded-only until arming. Before this, the warn rung
+produced a log row and complete silence in the chat, which meant that when enforcement is
+eventually armed the first thing a member would notice is being muted, with no warning
+ever having been heard.
+
+**The warning count is now stated, not computed.** It was implied by the arithmetic gap
+between two thresholds (5 and 10), so an operator wanting "warn three times, then
+escalate" had to do subtraction. The count is the operator-facing control and the
+threshold of the rung after the warning is **derived** from it in
+`normalizeModerationRules`, on every read and every write. Not validated: DERIVED. A
+contradiction between the two cannot exist rather than being caught after it does, and the
+console renders the derived threshold read-only so there is one control, not two.
+
+**And that settles the repeat question 029 left undefined.** With the next rung exactly
+`warningCount` violations above the warn rung, firing on every violation while the warn
+rung resolves produces exactly that many warnings and then advances. The count is the
+number of warnings by construction, not by a second rule that could drift from it.
+
+**The ordering guarantee is a property of the rules, checked on save.** A mute is never the
+first thing that happens to a member. **Refused, not acknowledged**: an acknowledgement
+checkbox on a moderation form is a box an operator ticks once and then ticks forever,
+which converts a guarantee into a habit. Refusing costs one edit and cannot be
+absent-mindedly agreed to. Setting the count to zero stays available, because that is a
+deliberate statement rather than an accident.
+
+**The warning names the behaviour, not a guaranteed consequence.** The briefing offered two
+honest routes and this is the first: *"That is warning 1 of 3, and it is on the record.
+Keep going and this escalates past me being unimpressed."* True while observing and true
+when armed. The alternative, wording that changes with the mode, would mean members are
+trained during tuning on a threat the system cannot carry out, and an operator reading the
+observed log would see warnings promising something that did not happen.
+
+**THE WARNING IS PROTECTED TEXT, and that was a correction made from measurement.** The
+first design put the warning in the draft with an instruction to keep its numbers exactly.
+qwen3.5:9b was then measured returning *"warning 1 of 3"* for the third warning. A warning
+that misstates its own count is worse than one carrying no count, and that number is the
+entire reason the count became a setting. So it follows the `locked` pattern this codebase
+already uses for prices and totals: the model words the retort, the application appends the
+warning verbatim. The message is still at the ladder's sharpness; the one sentence that
+states a fact is not up for rewording.
+
+**What the retort says versus what the warning adds.** The retort is the operator's, from
+their list, and says one thing: that is not my name. The warning is the ladder's, and adds
+what the retort cannot know: that this is counted, which one of how many it is, and that
+continuing escalates. One message, warning second, so the snub still lands first.
+
+**The Log answers two questions, not one.** `mode` is whether it happened to the member;
+the new `spoken_at` is whether they heard about it. An armed system will have enforced
+steps that are announced and enforced steps that are not, so collapsing them now would make
+that unsayable. A schema CHECK encodes the line: while a row is observed, only a warning
+may carry a `spoken_at`.
+
+**One defect found by the checks themselves.** Deriving a threshold could leave the ladder
+out of threshold order, and `evaluateEnforcement` took the LAST matching rung in array
+order rather than the highest. The two were the same while the ladder was always sorted;
+this briefing made that false. A member past the block rung could have resolved back to a
+mute purely because of where a rung sat in a list. Fixed twice over: the normaliser now
+sorts after deriving, and the evaluation picks by highest threshold regardless of order.
+
+**Two verifier defects, both the D-111 shape.** A check asserted rung POSITIONS survive
+normalisation, which sorting makes false; rewritten to assert by action. A live check
+matched `/cind3r3lla|name/` and failed on a correct retort that said "moniker"; rewritten
+to assert that the retort survived and leads, which is the property that matters rather
+than the vocabulary a model happened to reach for.
 
 ---
 
