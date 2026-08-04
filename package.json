@@ -74,7 +74,9 @@
     "verify:multi-profile": "tsx scripts/verify-multi-profile.ts",
     "verify:runtime-host": "tsx scripts/verify-runtime-host.ts",
     "verify:personality": "tsx scripts/verify-personality.ts",
-    "verify:personality-live": "tsx scripts/verify-personality-live.ts"
+    "verify:personality-live": "tsx scripts/verify-personality-live.ts",
+    "verify:moderation": "tsx scripts/verify-moderation.ts",
+    "verify:moderation-live": "tsx scripts/verify-moderation-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
