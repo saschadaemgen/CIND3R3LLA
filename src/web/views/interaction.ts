@@ -33,6 +33,11 @@ import {
   type ArchiveSettings,
 } from '../../archive/settings.js';
 import { NEAR_MISS_REASONS, recentNearMisses } from '../../interaction/near-misses.js';
+import {
+  CONVERSATION_OUTCOMES,
+  conversationSummary,
+  recentConversations,
+} from '../../interaction/conversation-log.js';
 import { missingHelpPlaceholders } from '../../interaction/help.js';
 import {
   aiRuntimeSnapshot,
@@ -82,6 +87,20 @@ function checkbox(name: string, label: string, checked: boolean): SafeHtml {
     <input type="checkbox" name="${name}" ${checked ? raw('checked') : ''} class="rounded" />
     ${label}
   </label>`;
+}
+
+/**
+ * A checkbox with a line of explanation under it.
+ *
+ * Not `labelled(…, checkbox(…))`: that nests a `<label>` inside a `<label>`, which is
+ * invalid and costs the click-to-toggle behaviour of the inner one. The help text is a
+ * sibling of the label, not a child of it.
+ */
+function checkboxWithHelp(name: string, label: string, isChecked: boolean, help: string): SafeHtml {
+  return html`<div class="flex flex-col gap-1">
+    ${checkbox(name, label, isChecked)}
+    <span class="text-xs text-slate-500">${help}</span>
+  </div>`;
 }
 
 function labelled(text: string, control: SafeHtml, help?: string): SafeHtml {
@@ -413,13 +432,30 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 independently — turning them all off restores the behaviour that made her answer a
                 forwarded announcement.
               </p>
+              <p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Since free conversation arrived, the three signal switches and the silence switch no
+                longer decide whether she <em>answers</em>. When she has nothing to execute she now
+                talks back in her own words first, and these settings decide what happens when the
+                model cannot speak: either silence, or the canned "I could not find my words" line.
+                They still decide nothing about consent, commands, or the deterministic replies.
+              </p>
               ${form(
                 'guards',
                 html`
                   ${labelled('Addressing mode', selectField('addressingMode', s.addressing.mode, ADDRESSING_MODES.map((m) => [m, ADDRESSING_MODE_LABELS[m] ?? m] as [string, string])), 'Strict mode still allows direct replies, the follow-up window and slash commands.')}
                   ${checkbox('ignoreForwarded', 'Ignore forwarded messages', s.addressing.ignoreForwarded)}
-                  ${checkbox('silenceOnUnknown', 'Stay silent on a weak, not-understood signal', s.addressing.silenceOnUnknown)}
-                  ${checkbox('strongSignalGreeting', 'A greeting is a strong signal (Hey CIND3R3LLA ...)', s.addressing.strongSignalGreeting)}
+                  ${checkboxWithHelp(
+                    'silenceOnUnknown',
+                    'Stay silent when the model cannot speak and the signal was weak',
+                    s.addressing.silenceOnUnknown,
+                    'Applies only after free conversation has already failed. On: she says nothing rather than a canned line to something that may not have been aimed at her. Off: she sends the "I could not find my words" reply instead.',
+                  )}
+                  ${checkboxWithHelp(
+                    'strongSignalGreeting',
+                    'A greeting is a strong signal (Hey CIND3R3LLA ...)',
+                    s.addressing.strongSignalGreeting,
+                    'A strong signal is what lets the canned line through when the model is unavailable. None of the three decides whether she converses.',
+                  )}
                   ${checkbox('strongSignalReply', 'A direct reply is a strong signal', s.addressing.strongSignalReply)}
                   ${checkbox('strongSignalWindow', 'Being mid-conversation is a strong signal', s.addressing.strongSignalWindow)}
                   ${labelled('Confidence threshold', numberField('confidenceThreshold', s.confidenceThreshold, 0, 1, '0.05'), 'Below this she asks instead of acting. Higher is more cautious.')}
@@ -499,7 +535,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 html`
                   ${checkbox('enabled', 'Nickname retorts enabled', s.nicknames.enabled)}
                   ${labelled('Nicknames', textField('words', s.nicknames.words.join(', ')), 'Comma separated. Matched exactly, so short names never fire on ordinary words.')}
-                  ${labelled('Anti-spam limit', numberField('spamLimit', s.nicknames.spamLimit, 1, 20), 'Consecutive nicknames from one member before she stops answering.')}
+                  ${labelled('Anti-spam limit', numberField('spamLimit', s.nicknames.spamLimit, 1, 1000), 'Consecutive nicknames from one member before she stops answering. Set it high to let the nickname game run.')}
                   ${saveButton()}
                 `,
               )}`,
@@ -530,7 +566,28 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
               )}`,
           ),
         voice: () =>
-          html`${Object.keys(s.persona)
+          html`${card(
+            'Two voices, and which one this page sets',
+            html`<p class="text-sm text-slate-600">
+                <strong>This page is her deterministic voice.</strong> Every string below is a
+                reply the application composes when a command or a consent decision produced an
+                answer: what she says when someone publishes, when she reports a count, when she
+                quotes a price. The local model may reword some of them, but the meaning is the
+                application's and these strings are the source.
+              </p>
+              <p class="mt-3 text-sm text-slate-600">
+                <strong>Her conversational voice is set elsewhere.</strong> When nobody asked her
+                to do anything and she simply talks back, none of the copy below is used: there is
+                no draft to follow. That voice is her base character and the four dials on the
+                <a class="underline" href="/ai/personality">Personality page</a>, and since
+                CCB-S4-031 the same dials shape her nickname retorts.
+              </p>
+              <p class="mt-3 text-xs text-slate-500">
+                So rewriting every field on this page changes what she says when she is executing,
+                and changes nothing about how she sounds when she is chatting.
+              </p>`,
+          )}
+          ${Object.keys(s.persona)
             .sort()
             .map((lang) =>
               card(
@@ -545,6 +602,8 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         archiving: () => archiveCard(ctx.archive.get(), csrf),
         diagnostics: () => {
           const nearMisses = recentNearMisses(25);
+          const conversations = recentConversations(25);
+          const conversationStats = conversationSummary();
           const runtime = aiRuntimeSnapshot();
           const metrics = runtime.metrics;
           const probe = runtime.probe;
@@ -646,6 +705,50 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     </tbody>
                   </table>
                 </div>`,
+          )}
+          ${card(
+            'Free conversation',
+            html`<p class="mb-3 text-sm text-slate-500">
+                When she answered in her own words rather than executing something. Content free
+                on purpose: no member text and no generated reply is kept here, only that it
+                happened, where, and how long the model took.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Since restart</dt>
+                <dd>
+                  ${conversationStats.total} attempt(s): ${conversationStats.spoken} answered,
+                  ${conversationStats.rateLimited} dropped by the reply limit,
+                  ${conversationStats.unavailable} with the model unable to speak
+                </dd>
+                <dt class="text-slate-500">Average model latency</dt>
+                <dd>
+                  ${conversationStats.averageLatencyMs === null
+                    ? '-'
+                    : `${conversationStats.averageLatencyMs.toFixed(1)} ms`}
+                </dd>
+              </dl>
+              ${conversations.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    She has not held a free conversation since the last restart. Buffer holds the
+                    most recent 50 and does not survive a restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Chat</th><th class="py-2 pr-3">Outcome</th><th class="py-2">Model latency</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${conversations.map((c) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(c.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${String(c.groupId)}</td>
+                          <td class="py-2 pr-3 ${c.outcome === 'spoken' ? 'text-slate-600' : 'text-amber-700'}">${CONVERSATION_OUTCOMES[c.outcome]}</td>
+                          <td class="whitespace-nowrap py-2 text-slate-500">${c.latencyMs} ms</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
           )}
           ${card(
             'Reset',
