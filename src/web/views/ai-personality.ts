@@ -29,6 +29,7 @@ import {
   AXIS_MAX,
   AXIS_MIN,
   BASE_CHARACTER_MAX_CHARS,
+  ORIGIN_MAX_CHARS,
   PERMISSIVENESS_CEILING,
   PERSONALITY_AXES,
   bandFor,
@@ -208,6 +209,27 @@ ${personality.baseCharacter}</textarea
         </span>
       </label>
 
+      <label class="flex flex-col gap-1 text-sm">
+        <span class="font-medium text-slate-700">Origin</span>
+        <textarea
+          name="origin"
+          rows="14"
+          maxlength="${String(ORIGIN_MAX_CHARS)}"
+          placeholder="What she is and where she came from. Left empty, she simply has no history to draw on."
+          class="w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-xs leading-relaxed"
+        >
+${personality.origin}</textarea
+        >
+        <span class="text-xs text-slate-500">
+          Up to ${String(ORIGIN_MAX_CHARS)} characters. The base character above is
+          <strong>how she sounds</strong>; this is <strong>what she is and where she came
+          from</strong>. It is sent as background she may speak from when someone asks who or what
+          she is, never as a script: she is told not to recite it, not to quote it, and not to
+          raise it unprompted. She may not invent a past, so this is where a true one comes from.
+          Leaving it empty is a valid choice and means she has no history to draw on.
+        </span>
+      </label>
+
       <div class="personality-axes">
         ${PERSONALITY_AXES.map((axis) => axisControl(axis, personality[axis]))}
       </div>
@@ -251,8 +273,9 @@ function promptCard(personality: BotPersonality, identity: BotIdentity): SafeHtm
     'What the model is told',
     html`
       <p class="text-sm text-slate-600">
-        The voice section of the prompt, built from the values saved above. Her name, what she is,
-        the links and the names she refuses all come from the
+        The voice section of the prompt, built from the values saved above, including the origin
+        in full and the instructions that tell her to draw on it rather than recite it. Her name,
+        what she is, the links and the names she refuses all come from the
         <a class="underline" href="/interaction/addressing">Interaction settings</a>, not from
         here.
       </p>
@@ -347,6 +370,7 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
         // the DDL refuses anything that somehow gets past that.
         {
           baseCharacter: text(req.body['baseCharacter']),
+          origin: text(req.body['origin']),
           sharpness: text(req.body['sharpness']),
           warmth: text(req.body['warmth']),
           humor: text(req.body['humor']),

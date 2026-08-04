@@ -21,7 +21,7 @@ import {
   createBotOnboardingProfile,
   updateBotPersonality,
 } from '../src/profiles/bot-onboarding.js';
-import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
+import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -145,6 +145,11 @@ async function main(): Promise<void> {
       baseCharacter:
         'A neon courier who lives in the wire, reads a room in one packet, and has never ' +
         'once been impressed by a cheap line.',
+      // Passed explicitly, and it has to be (CCB-S4-034). `createBotOnboardingProfile`
+      // above lets migration 031's column default seed the origin, and this call writes
+      // every personality field, so leaving it out here would clear the history the row
+      // was just created with and the Personality page would preview an empty field.
+      origin: DEFAULT_ORIGIN,
       sharpness: 8,
       warmth: 4,
       humor: 7,

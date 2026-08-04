@@ -513,9 +513,10 @@ function wizardDialog(
             // here would be a control that appears to save and does not.
             profile
               ? html`<div class="setup-inline-note">
-                  This bot already has a character and four voice dials.
+                  This bot already has a character, an origin and four voice dials.
                   <a href="/ai/personality?bot=${String(profile.id)}">Open its Personality page</a>
-                  to change how it sounds. Nothing on this dialog affects that.
+                  to change how it sounds and what it says about where it came from. Nothing on
+                  this dialog affects that.
                 </div>`
               : html`<label class="setup-field">
                   <span>Base character</span>
@@ -530,7 +531,9 @@ ${input.personality.baseCharacter}</textarea
                   <small
                     >Sent at the top of every conversation prompt, where it outranks any generic
                     idea of a chat assistant. The four voice dials start at their middle and are
-                    turned on the Personality page. Optional, and editable later.</small
+                    turned on the Personality page, which is also where the origin lives: a new
+                    bot ships with her written history already in it, and you can rewrite or
+                    clear it there. Optional, and editable later.</small
                   >
                 </label>`
           }
