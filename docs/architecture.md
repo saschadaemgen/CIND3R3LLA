@@ -1930,6 +1930,55 @@ only.
 the validator and the console field, so an operator can let the nickname game run. Floor
 and shipped default unchanged.
 
+## 35. Moderation: two ladders and an enforcer that watches (CCB-S4-032, D-136)
+
+Calling her by a nickname became a running game, and a retort that costs nothing is not
+an answer to repetition. This is the foundation: a deterministic counter, two ladders,
+and a console section. **Enforcement does not act.**
+
+**The counter** (`cinderella_violations`, migration 029) is append-only and counted over
+a rolling window, per member per chat, per rule type. Ageing out of the window IS the
+decay; there is no second knob, because one that restated the window would be dead. The
+two ladders carry their own window lengths instead, so tone can relax sooner than the
+enforcement count.
+
+**Ladder A, verbal, is live.** Repetition raises the sharpness axis above the operator's
+base and the sum is capped at 10. It reuses the D-133 dial rather than inventing a second
+voice mechanism, which is why base 5 plus 4 reads exactly like a retort at 9. Measured
+against qwen3.5:9b, the same nickname five times: *"CIND3R3LLA is who I am, not some pet
+version."* through to *"Cindy? That's not my code, sweetie."*, then back to *"Not my name,
+try again."* once the window empties.
+
+**Ladder B, enforcement, computes and records.** Four rungs, each with a threshold, an
+action (`none` / `warn` / `mute` / `block` / `remove`) and a duration. A `none` rung is
+inert rather than blocking, so a live rung above it still applies. Every fired rung is
+written to `cinderella_sanctions` with `mode = 'observed'` and the rule, count, window and
+rung that produced it. Nothing happens to anybody.
+
+**The no-act guarantee, three ways.** Structural: the engine's one outbound is `send`, and
+nothing under `src/moderation/` imports anything that reaches the SDK, so a computed
+sanction has nothing to act through. Behavioural: driving a member past every rung with a
+spy on `send` yields only retort text. Schema: a CHECK refuses a row that claims to be
+observed and carries `enforced_at`. `mode: 'observed'` is a literal in the engine, not
+derived from the stored mode, so a column value can never turn a recording into an action.
+
+**The model is nowhere in the decision.** Count from SQL, thresholds as integers, rung by
+comparison. She may speak about a step in her voice; she does not choose one.
+
+**Exemptions** cover owners, admins and moderators for enforcement, and by default not for
+the verbal ladder. The member's role now travels on `CapturedMessage`, narrowed inside the
+adapter, with an unrecognised value becoming undefined rather than being cast; `MemberRole`
+widened from five values to seven for the same reason.
+
+**Reserved for the arming briefing** and documented as unpopulated: `previous_role` (so
+restoring a muted moderator returns them to moderator), `enforced_at`, `enforcement_error`,
+`expires_at`, `undone_at`, `undone_by`. Arming adds behaviour, not schema.
+
+**The console** (`/moderation/rules|active|log`) renders `enforce` disabled with a sentence
+about what arming still needs, and the save path has no mode parameter. The Active page is
+empty by construction and says so. The Rules page also distinguishes the ladders from the
+nickname anti-spam limit, which suppresses her REPLY and does nothing to the member.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

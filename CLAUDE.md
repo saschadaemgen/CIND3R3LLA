@@ -186,7 +186,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   replacement, because 013 carries the category defaults as a literal that must match
   `DEFAULT_ARCHIVE`) · 028 the personality layer (a base character and four 1-10 dials per
   bot, on `cinderella_bot_profiles` because that is where per-bot settings live; the
-  `settings` table is global and has no bot dimension).
+  `settings` table is global and has no bot dimension) · 029 moderation (append-only
+  violations counted over a rolling window per member per chat, the sanction record whose
+  `mode` is only ever `observed` today, and the two ladders per bot).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -194,7 +196,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **029**, since 028 landed with the personality layer). Stated as a rule
+  (currently **030**, since 029 landed with moderation). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -218,6 +220,12 @@ and the other given facts reach it, and that none of it reaches a command rewrit
 `npm run verify:personality-live` is the companion that asks a REAL model the same
 question at a low and a high setting and prints both, since a prompt the model ignores is
 a dead slider with a passing test; it needs Ollama and is not in the offline set),
+`verify:moderation` (the two ladders, the rolling window and its decay, per-member
+per-chat scoping, exemptions, and above all the NO-ACT guarantee, asserted structurally by
+scanning for every enforcement API name, behaviourally by driving a member past every rung
+with a spy on the engine's only outbound, and by the schema CHECK that refuses an observed
+row claiming to be enforced. `npm run verify:moderation-live` walks the same nickname up
+the ladder against a real model and prints every rung; it needs Ollama),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
 `verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
 the model transport, so no Ollama need be running.

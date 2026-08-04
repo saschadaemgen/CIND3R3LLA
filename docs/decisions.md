@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-135**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-136**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,75 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-136 — Two ladders, a deterministic decision, and an enforcer that only watches
+
+**Status: IMPLEMENTED** (CCB-S4-032). The verbal ladder is live; the enforcement ladder
+computes and records and does nothing. Arming is a separate briefing on purpose.
+
+**Why two ladders and not one.** How sharply she SPEAKS and what HAPPENS to a member are
+different kinds of thing, and one control for both would make either a sharper sentence
+need the caution of a ban, or a ban as casual as a sharper sentence. So verbal escalation
+ships live, because it harms nobody and reuses the sharpness axis from D-133 rather than
+inventing a second voice mechanism; enforcement ships watching.
+
+**Observed live**, base sharpness 5, the same nickname repeated: *"CIND3R3LLA is who I
+am, not some pet version."* → *"Cindy? That's not my name, cut it out."* → *"That's not my
+name, dummy."* → *"That ain't mine, dummy. Ask for CIND3R3LLA if you want to talk."* →
+*"Cindy? That's not my code, sweetie."* Once the window empties: *"Not my name, try
+again."*
+
+**THE MODEL NEVER DECIDES A SANCTION.** The count is a SQL `count(*)`, the thresholds are
+integers, and the rung follows from a comparison. No model output is read anywhere in the
+decision. She may later SAY something about a step in her own voice; she does not choose
+one. Otherwise a member could talk her into sanctioning somebody, which is precisely the
+injection the consent gate already exists to refuse. Model words, rules decide.
+
+**The no-act guarantee is structural, not a flag.** The engine's only outbound capability
+is `send`, which puts text in a chat, and nothing in `src/moderation/` imports anything
+that could reach the SDK. A computed sanction has nothing to act through even if
+something tried. That is worth more than a mode check, because a mode check is one
+`if` away from being wrong. It is asserted three ways: a source scan for every
+enforcement API name (mutation-proven by planting a call), a behavioural run driving a
+member past every rung with a spy on `send` that sees only retort text, and a schema
+CHECK that refuses a row claiming to be both observed and enforced.
+
+**`mode: 'observed'` is written as a literal, not derived from the stored mode.** A column
+value must never be the thing that turns a recording into an action; arming is a code
+change, visibly.
+
+**Decay is the window, and there is no second knob for it.** A separate decay number that
+merely restated the rolling window would be a dead control. The two ladders get their own
+window lengths instead, which is a real distinction: the tone can relax sooner than the
+enforcement count does.
+
+**The violation type is generic from the first commit.** Nicknames are the first trigger
+and deliberately not the only one the ladder can express. Nothing in the evaluation reads
+the type; it is carried so two rules can never be summed together and so the log can say
+which rule produced a count.
+
+**Counting is per member per chat**, so somebody noisy in one group accumulates nothing
+elsewhere. Exemptions apply to enforcement and, by default, not to the verbal ladder: a
+cheeky admin can still get a sharp retort, because a sharper sentence is not a sanction.
+
+**An unknown role is recorded as unknown rather than resolved.** The adapter now carries
+the member's role, narrowed inside `src/bot/parse.ts`, and an unrecognised value becomes
+undefined instead of being cast. In observation mode it changes nothing; the arming
+briefing must refuse to act on it, because aiming a sanction at a member who might be an
+owner fails at the SDK and reads as a bug rather than as the policy it is.
+
+**`MemberRole` was widened from five values to seven** as part of this. It was lossy while
+nothing read it; the moment an exemption depended on it, mapping `relay` and `author` onto
+a neighbouring value would have been inventing a fact about a member. `SdkGroupRole` is
+now an alias of it, so the role on a captured message and the role in a config are one
+type.
+
+**The console refuses to ship a dead toggle.** `enforce` renders disabled beside a
+sentence saying what arming still needs; the save path has no mode parameter at all. The
+Active page is empty by construction and says that emptiness is correct rather than
+looking like a page that failed to load.
 
 ---
 
