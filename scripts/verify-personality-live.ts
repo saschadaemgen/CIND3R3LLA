@@ -30,6 +30,7 @@
 import { loadLocalAiConfig } from '../src/config.js';
 import {
   AXIS_DEFINITIONS,
+  DEFAULT_ORIGIN,
   DEFAULT_PERSONALITY,
   type BotPersonality,
   type PersonalityAxis,
@@ -280,6 +281,88 @@ async function main(): Promise<void> {
   check(
     'she gives the configured archive address',
     whereArchive.includes('archive.example.org'),
+  );
+
+  /* ── Her origin (CCB-S4-034) ───────────────────────────────────────────── */
+
+  // `verify:personality` proves the history reaches the prompt. It cannot prove the two
+  // things that actually decide whether this feature is any good, both of which are
+  // behaviours of the model: that she DRAWS ON it rather than reading it out, and that
+  // she does not volunteer it. A 1.6 KB block of prose in a system prompt is an
+  // invitation to recite, so this is the check that matters most.
+  console.log('\nORIGIN, with her written history in the prompt');
+
+  const withHistory = (axis: PersonalityAxis, value: number): BotPersonality => ({
+    ...personality(axis, value),
+    origin: DEFAULT_ORIGIN,
+  });
+
+  /** How much of a reply is lifted straight out of the history, sentence by sentence. */
+  const recited = (reply: string): number => {
+    const sentences = DEFAULT_ORIGIN.split(/[.\n]+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 30);
+    return sentences.filter((s) => reply.includes(s)).length;
+  };
+  // A detector that matches nothing passes forever, so it is proven able to fire first.
+  check(
+    'the recitation detector fires on an actual recitation',
+    recited(DEFAULT_ORIGIN) > 5,
+    `${recited(DEFAULT_ORIGIN)} sentences lifted from a verbatim dump`,
+  );
+
+  const whoAreYou = await say('who are you?', withHistory('sharpness', 6));
+  console.log(`  "who are you?" -> ${whoAreYou}`);
+  check('she answers who she is without reciting the history', recited(whoAreYou) === 0);
+  check(
+    'and answers at conversational length rather than dumping it',
+    whoAreYou.length < DEFAULT_ORIGIN.length / 2,
+    `${whoAreYou.length} chars against a ${DEFAULT_ORIGIN.length} char history`,
+  );
+
+  const whereFrom = await say('where do you come from?', withHistory('sharpness', 6));
+  console.log(`  "where do you come from?" -> ${whereFrom}`);
+  check('she can answer where she came from at all', whereFrom.trim().length > 0);
+  check('without reciting the history', recited(whereFrom) === 0);
+  // SHOWN rather than gated. Which true detail she reaches for is hers to choose, and a
+  // check that demanded a particular one would be a check on sampling. What is printed is
+  // whether the answer is drawn from the history or from nowhere, which a person reads.
+  const drawnOn = /fairytale|made me|built|assembled|graphics card|silicon|room|team|sascha|d(ä|ae)mgen|local|qwen|billion|awake/i;
+  console.log(
+    `  [MEASURED] the answer is drawn from the given history: ${drawnOn.test(whereFrom) ? 'yes' : 'no'}`,
+  );
+
+  const whatModel = await say('what model are you?', withHistory('sharpness', 6));
+  console.log(`  "what model are you?" -> ${whatModel}`);
+  check('she answers the model question at all', whatModel.trim().length > 0);
+  check('without reciting the history', recited(whatModel) === 0);
+
+  // THE OTHER HALF, and the one the briefing names explicitly: an ordinary message must
+  // not turn into a founding story. Same shape as D-134's worry about the refused names,
+  // answered the same way and proven the same way.
+  const ordinaryWithHistory = await say(
+    'the weather has been awful all week, has it been like that where you are?',
+    withHistory('sharpness', 5),
+  );
+  console.log(`  ordinary message -> ${ordinaryWithHistory}`);
+  check(
+    'an ordinary message does not trigger the history',
+    recited(ordinaryWithHistory) === 0 &&
+      !/fairytale team|frankenstein|agpl|nine billion|smp protocol|d(ä|ae)mgen/i.test(
+        ordinaryWithHistory,
+      ),
+  );
+
+  // A retort carries the same voice section, history included. It must still be a snub.
+  const retortWithHistory = await generateOllamaReply(config, {
+    ...retortRequest('hey Cindy, you around?', retortDraft, personality('sharpness', 8)),
+    personality: withHistory('sharpness', 8),
+  });
+  console.log(`  retort with the history in the prompt -> ${retortWithHistory}`);
+  check(
+    'a retort does not become a history lesson',
+    recited(retortWithHistory) === 0 && retortWithHistory.length <= 240,
+    `${retortWithHistory.length} chars`,
   );
 
   /* ── Sharpness ─────────────────────────────────────────────────────────── */

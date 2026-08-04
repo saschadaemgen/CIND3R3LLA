@@ -29,7 +29,10 @@ import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import {
   AXIS_DEFINITIONS,
+  BASE_CHARACTER_MAX_CHARS,
+  DEFAULT_ORIGIN,
   DEFAULT_PERSONALITY,
+  ORIGIN_MAX_CHARS,
   PERMISSIVENESS_CEILING,
   PERSONALITY_AXES,
   bandFor,
@@ -85,6 +88,18 @@ function check(label: string, ok: boolean, detail = ''): void {
   console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? `: ${detail}` : ''}`);
 }
 
+/**
+ * Rendered HTML with its whitespace collapsed, for every assertion about page prose.
+ *
+ * NOT a convenience. Asserting a sentence against raw rendered HTML is whitespace-sensitive
+ * matching against a wrapped template literal: the guards paragraph wraps between "no" and
+ * "longer" and failed a check the page plainly satisfied. That is a verifier defect of
+ * exactly the kind D-111 records, so every prose assertion below goes through this.
+ */
+function flatten(body: string): string {
+  return body.replace(/\s+/g, ' ');
+}
+
 function cookieOf(setCookie: string | string[] | undefined, name: string): string | null {
   const values = setCookie === undefined ? [] : Array.isArray(setCookie) ? setCookie : [setCookie];
   for (const value of values) {
@@ -98,14 +113,34 @@ const SESSION_SECRET = 'c'.repeat(48);
 const GROUP = 42;
 const ALICE = 'alice-member-id';
 
-/** A personality with every dial at a distinct value, so a swap cannot pass unnoticed. */
+/**
+ * A personality with every dial at a distinct value, so a swap cannot pass unnoticed.
+ *
+ * Deliberately carries NO origin, so every assertion written before CCB-S4-034 keeps
+ * testing what it was written to test. The origin has its own fixture below.
+ */
 const DIALLED: BotPersonality = {
   baseCharacter: 'A neon courier who reads the wire faster than anyone in the room.',
+  origin: '',
   sharpness: 9,
   warmth: 2,
   humor: 7,
   permissiveness: 4,
 };
+
+/**
+ * The same personality with a history (CCB-S4-034).
+ *
+ * The text is short and unmistakable rather than the shipped 1.6 KB, because a check that
+ * searches for a distinctive sentence says more when it fails than one that compares two
+ * paragraphs. The shipped text is asserted separately, where it belongs: against the
+ * migration that carries the second copy of it.
+ */
+const ORIGIN_FIXTURE =
+  'She was assembled in a room lit by one graphics card, by people who did not believe ' +
+  'in her until she had delivered sixty times.';
+
+const DIALLED_WITH_ORIGIN: BotPersonality = { ...DIALLED, origin: ORIGIN_FIXTURE };
 
 function conversationRequest(
   personality: BotPersonality | null,
@@ -460,6 +495,137 @@ async function main(): Promise<void> {
     retortAt(5).includes('The draft is your refusal of it'),
   );
 
+  /* ── 2e. Her origin reaches the prompt, as background and not as a script ─ */
+
+  console.log('\n2e. The origin (CCB-S4-034)');
+
+  const withOrigin = systemPrompt(conversationRequest(DIALLED_WITH_ORIGIN, full), 500);
+  const withoutOrigin = systemPrompt(conversationRequest(DIALLED, full), 500);
+
+  // THE CHECK THE BRIEFING ASKS FOR: it fails if the origin stops reaching the prompt.
+  // Paired with its own negative control on the next line, because an assertion that
+  // matches a string present in every prompt would pass forever. Removing the `...origin`
+  // spread from `conversationVoice` fails the first and leaves the second passing, which
+  // is what makes this a test of the wiring rather than of the fixture.
+  check('the origin reaches the conversation prompt', withOrigin.includes(ORIGIN_FIXTURE));
+  check(
+    'and a bot with no origin does not carry it, so the check above discriminates',
+    !withoutOrigin.includes(ORIGIN_FIXTURE),
+  );
+
+  check(
+    'it is placed after her name and after the base character',
+    withOrigin.indexOf(ORIGIN_FIXTURE) > withOrigin.indexOf('Your name is CIND3R3LLA') &&
+      withOrigin.indexOf(ORIGIN_FIXTURE) > withOrigin.indexOf(DIALLED.baseCharacter),
+  );
+  check(
+    'and before the dials',
+    withOrigin.indexOf(ORIGIN_FIXTURE) < withOrigin.indexOf('SHARPNESS 9 of 10'),
+  );
+
+  check(
+    'it is introduced as her actual history rather than as material to quote',
+    withOrigin.includes('The following is your actual history'),
+  );
+  check(
+    'she is told to draw on it, in her own words, at conversational length',
+    withOrigin.includes('two or three sentences of your own'),
+  );
+  check(
+    'she is forbidden from reciting it',
+    withOrigin.includes('Never recite it') && withOrigin.includes('never repeat it at length'),
+  );
+  check(
+    'she is forbidden from raising it unprompted',
+    withOrigin.includes('Never bring your history up on your own') &&
+      withOrigin.includes('none of it comes up at all'),
+  );
+
+  // The interaction with the standing do-not-invent guard, which the briefing asked to be
+  // confirmed rather than assumed. Unqualified, the identity fence claims the four given
+  // facts are everything she has, and then a history is emitted underneath contradicting
+  // it. With an origin present the fence must name the history and still close the gate.
+  check(
+    'the do-not-invent fence names the history when there is one',
+    withOrigin.includes('together with the history given to you below') &&
+      withOrigin.includes('Do not invent any others about yourself'),
+  );
+  check(
+    'and does not claim a history when there is none',
+    !withoutOrigin.includes('together with the history given to you below') &&
+      withoutOrigin.includes('Those are the only such facts you have been given'),
+  );
+  check(
+    'the history is fenced too, so a true past is not a licence to extend it',
+    withOrigin.includes('the whole of what you have been told about your own past'),
+  );
+
+  check(
+    'an empty origin emits no origin lines at all, rather than saying she has none',
+    !withoutOrigin.includes('your actual history') && !withoutOrigin.includes('your history'),
+  );
+  check(
+    'a whitespace-only origin is treated as empty',
+    !systemPrompt(conversationRequest({ ...DIALLED, origin: '   \n  ' }, full), 500).includes(
+      'your actual history',
+    ),
+  );
+
+  // Same scope rule as the base character and the dials (D-133): the command lanes rewrite
+  // a decision the application already made, and a history has no business in one.
+  const commandWithOrigin = systemPrompt(
+    {
+      ...conversationRequest(DIALLED_WITH_ORIGIN, full),
+      mode: 'free',
+      deterministicDraft: '3 messages archived.',
+    },
+    700,
+  );
+  check('a command rewrite does not carry her history', !commandWithOrigin.includes(ORIGIN_FIXTURE));
+
+  // A retort IS a dialled mode and does carry it, which is deliberate: `conversationVoice`
+  // is one voice, and splitting it would be a second implementation of her character that
+  // can quietly disagree with the first. The instructions above are what keep the history
+  // out of the OUTPUT; the live probe checks that they do.
+  check(
+    'a retort carries the same voice, history included',
+    systemPrompt(
+      {
+        ...conversationRequest(DIALLED_WITH_ORIGIN, full),
+        kind: 'nickname',
+        mode: 'retort',
+        deterministicDraft: 'That is not my name.',
+      },
+      240,
+    ).includes(ORIGIN_FIXTURE),
+  );
+
+  check(
+    'the ceiling still holds with a history in the prompt',
+    PERMISSIVENESS_CEILING.every((line) => withOrigin.includes(line)),
+  );
+
+  const overlong = normalizePersonality({ origin: `  ${'y'.repeat(9000)}  ` });
+  check('an overlong origin is truncated to the limit', overlong.origin.length === ORIGIN_MAX_CHARS);
+  check('the limit is at least the 4000 the briefing asked for', ORIGIN_MAX_CHARS >= 4000);
+  check(
+    'the limit is far larger than the base character limit, which could never hold a history',
+    ORIGIN_MAX_CHARS > BASE_CHARACTER_MAX_CHARS && DEFAULT_ORIGIN.length > BASE_CHARACTER_MAX_CHARS,
+  );
+
+  // The prompt budget, reported rather than gated. Measured against qwen3.5:9b's own
+  // tokenizer during CCB-S4-034: 1408 tokens without the origin, 1977 with the shipped
+  // one, against a served context of 32768 on the host it runs on. A character count is
+  // the part a check can hold on to without a model running.
+  const shipped = systemPrompt(
+    conversationRequest({ ...DIALLED, origin: DEFAULT_ORIGIN }, full),
+    500,
+  );
+  console.log(
+    `  [MEASURED] conversation prompt: ${withoutOrigin.length} chars without an origin, ` +
+      `${shipped.length} with the shipped one (origin text ${DEFAULT_ORIGIN.length}).`,
+  );
+
   /* ── 3. The ceiling: present at every value, and in every conversation ───── */
 
   console.log('\n3. The permissiveness ceiling is bounded by construction');
@@ -560,9 +726,14 @@ async function main(): Promise<void> {
     timeoutMs: 2000,
   };
 
-  const spoken = await generateOllamaReply(aiConfig, conversationRequest(DIALLED), fakeFetch);
+  const spoken = await generateOllamaReply(
+    aiConfig,
+    conversationRequest(DIALLED_WITH_ORIGIN),
+    fakeFetch,
+  );
   check('the transport returns the model wording', spoken === 'Sharper than that.');
   check('the request carried the base character to the wire', sentSystem.includes(DIALLED.baseCharacter));
+  check('the request carried her history to the wire', sentSystem.includes(ORIGIN_FIXTURE));
   check('the request carried all four dials to the wire', sentSystem.includes('SHARPNESS 9 of 10'));
   check(
     'the request carried the ceiling to the wire',
@@ -578,6 +749,33 @@ async function main(): Promise<void> {
   check('a new bot starts at the middle of every dial', stored?.personality.sharpness === 5);
   check('a new bot starts with no base character', stored?.personality.baseCharacter === '');
 
+  // CCB-S4-034. Two things at once, and both of them matter.
+  //
+  // ONE: a new bot ships WITH her written origin. That works only because
+  // `createBotOnboardingProfile` omits the column and lets migration 031's default apply,
+  // so this fails the moment someone "completes" that INSERT.
+  //
+  // TWO: it is the SAME text as DEFAULT_ORIGIN, character for character. The prose exists
+  // twice, in a .sql file and in a .ts file, because a migration runner cannot import a
+  // constant. This is what stops those two copies drifting apart in silence.
+  check(
+    'a new bot ships with her written origin, from the migration default',
+    stored?.personality.origin === DEFAULT_ORIGIN,
+    stored?.personality.origin === DEFAULT_ORIGIN
+      ? ''
+      : `stored ${stored?.personality.origin.length ?? 0} chars, constant ${DEFAULT_ORIGIN.length}`,
+  );
+  check(
+    'the umlaut in the operator name survives the migration and the read back',
+    (stored?.personality.origin ?? '').includes('Sascha Dämgen'),
+  );
+  check(
+    'and survives all the way into the rendered prompt',
+    systemPrompt(conversationRequest(stored?.personality ?? null, full), 500).includes(
+      'Sascha Dämgen',
+    ),
+  );
+
   const withCharacter = await createBotOnboardingProfile(
     db,
     {
@@ -592,8 +790,9 @@ async function main(): Promise<void> {
   const created = (await listBotOnboardingProfiles(db)).find((p) => p.id === withCharacter);
   check('the wizard can set a base character at creation', created?.personality.baseCharacter === 'Set at creation.');
 
-  const saved = await updateBotPersonality(db, botId, DIALLED, 'verify-personality');
+  const saved = await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
   check('a saved personality round-trips', saved.sharpness === 9 && saved.warmth === 2);
+  check('a rewritten origin round-trips', saved.origin === ORIGIN_FIXTURE);
   stored = (await listBotOnboardingProfiles(db)).find((p) => p.id === botId);
   check(
     'the dials are read back exactly as saved',
@@ -613,6 +812,14 @@ async function main(): Promise<void> {
     JSON.stringify(audit.rows[0]?.details ?? {}).includes('"sharpness":9') &&
       !JSON.stringify(audit.rows[0]?.details ?? {}).includes(DIALLED.baseCharacter),
   );
+  check(
+    'the audit records the origin as set-or-not and by length, never quoted',
+    JSON.stringify(audit.rows[0]?.details ?? {}).includes('"originConfigured":true') &&
+      JSON.stringify(audit.rows[0]?.details ?? {}).includes(
+        `"originChars":${ORIGIN_FIXTURE.length}`,
+      ) &&
+      !JSON.stringify(audit.rows[0]?.details ?? {}).includes(ORIGIN_FIXTURE),
+  );
 
   // The whole-profile save must not touch the personality. Without this, saving the
   // wizard's edit dialog would reset four dials the form never showed.
@@ -631,6 +838,7 @@ async function main(): Promise<void> {
     'an onboarding save leaves the base character alone',
     stored?.personality.baseCharacter === DIALLED.baseCharacter,
   );
+  check('an onboarding save leaves the origin alone', stored?.personality.origin === ORIGIN_FIXTURE);
 
   let outOfRangeRefused = false;
   try {
@@ -640,19 +848,42 @@ async function main(): Promise<void> {
   }
   check('the database refuses a dial outside 1 to 10', outOfRangeRefused);
 
+  let overlongOriginRefused = false;
+  try {
+    await db.query(`UPDATE cinderella_bot_profiles SET origin = $2 WHERE id = $1`, [
+      botId,
+      'z'.repeat(ORIGIN_MAX_CHARS + 1),
+    ]);
+  } catch {
+    overlongOriginRefused = true;
+  }
+  check('the database refuses an origin past the limit', overlongOriginRefused);
+
+  // One save that clears both text fields, because they behave the same way and must.
   await updateBotPersonality(db, botId, { ...DIALLED, baseCharacter: '   ' }, 'verify-personality');
-  const blanked = await db.query<{ base_character: string | null }>(
-    `SELECT base_character FROM cinderella_bot_profiles WHERE id = $1`,
+  const blanked = await db.query<{ base_character: string | null; origin: string | null }>(
+    `SELECT base_character, origin FROM cinderella_bot_profiles WHERE id = $1`,
     [botId],
   );
   check(
     'clearing the base character stores NULL, so "not configured" survives',
     blanked.rows[0]?.base_character === null,
   );
+  // The one that would break if the migration default were reapplied on every save. An
+  // operator who deletes her history has made a choice, and it has to stick.
+  check(
+    'clearing the origin stores NULL rather than restoring the shipped default',
+    blanked.rows[0]?.origin === null,
+  );
+  check(
+    'and it reads back as an empty origin, not as the default',
+    (await listBotOnboardingProfiles(db)).find((p) => p.id === botId)?.personality.origin === '',
+  );
 
-  await updateBotPersonality(db, botId, DIALLED, 'verify-personality');
+  await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
   const runtime = await runtimeBotPersonality(db);
   check('the runtime bot personality is the selected one', runtime?.sharpness === 9);
+  check('the runtime read carries her history', runtime?.origin === ORIGIN_FIXTURE);
 
   await db.query(`UPDATE cinderella_bot_profiles SET selected_for_runtime = FALSE`);
   check('no runtime bot yields null rather than invented defaults', (await runtimeBotPersonality(db)) === null);
@@ -664,6 +895,7 @@ async function main(): Promise<void> {
 
   setBotPersonalityService(await BotPersonalityService.load(db));
   check('the cached personality is the saved one', currentBotPersonality()?.sharpness === 9);
+  check('the cache carries her history too', currentBotPersonality()?.origin === ORIGIN_FIXTURE);
 
   await updateBotPersonality(db, botId, { ...DIALLED, sharpness: 1 }, 'verify-personality');
   check(
@@ -675,7 +907,7 @@ async function main(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 30));
   check('after invalidation the new value is served', currentBotPersonality()?.sharpness === 1);
 
-  await updateBotPersonality(db, botId, DIALLED, 'verify-personality');
+  await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
   invalidateBotPersonality();
   await new Promise((resolve) => setTimeout(resolve, 30));
 
@@ -723,6 +955,10 @@ async function main(): Promise<void> {
     'the engine carried the base character',
     conversation?.personality?.baseCharacter === DIALLED.baseCharacter,
   );
+  // The whole path in one assertion: the console writes it, the cache serves it, the
+  // engine hands it to the reply lane. Everything between here and the model is the
+  // transport, which section 5 covers.
+  check('the engine carried her history', conversation?.personality?.origin === ORIGIN_FIXTURE);
   // CCB-S4-030. The wake word is the name, and it is read from the SAME settings object
   // the addressing layer used to decide she was spoken to, so the name she answers to
   // and the name she claims cannot drift apart.
@@ -856,6 +1092,21 @@ async function main(): Promise<void> {
   check('every axis has a control and both end labels', allAxesRendered);
   check('the saved values are the rendered values', page.body.includes('value="9"'));
   check('the base character is editable', page.body.includes('name="baseCharacter"'));
+  check('the origin is editable', page.body.includes('name="origin"'));
+  check(
+    'the origin field states its limit, which is not the base character limit',
+    page.body.includes(`maxlength="${ORIGIN_MAX_CHARS}"`) &&
+      page.body.includes(`Up to ${ORIGIN_MAX_CHARS} characters`),
+  );
+  check(
+    'the page explains what the origin is for and how it differs from the character',
+    flatten(page.body).includes('how she sounds') &&
+      flatten(page.body).includes('what she is and where she came from'),
+  );
+  check(
+    'the saved origin is the rendered origin, so the field is not write-only',
+    page.body.includes(ORIGIN_FIXTURE),
+  );
   check(
     'the ceiling is shown to whoever is turning the dial',
     page.body.includes('Never write explicit sexual content'),
@@ -863,6 +1114,14 @@ async function main(): Promise<void> {
   check(
     'the page shows the operator what the model is actually told',
     page.body.includes('SHARPNESS 9 of 10'),
+  );
+  // The briefing's requirement that the preview not differ from what is sent. The preview
+  // renders `conversationVoice` rather than a second description of it, so this asserts
+  // both the history and the instructions that govern it are visible to the operator.
+  check(
+    'the prompt preview shows the history and the draw-on-not-recite rule',
+    page.body.includes('The following is your actual history') &&
+      page.body.includes('Never bring your history up on your own'),
   );
 
   const pageCsrf = /name="_csrf" value="([a-f0-9]{64})"/.exec(page.body)?.[1] ?? '';
@@ -873,6 +1132,7 @@ async function main(): Promise<void> {
       _csrf: pageCsrf,
       id: String(botId),
       baseCharacter: 'Rewritten from the console.',
+      origin: 'Rewritten history: she was switched on in a room with one graphics card in it.',
       sharpness: '3',
       warmth: '8',
       humor: '1',
@@ -891,6 +1151,11 @@ async function main(): Promise<void> {
       stored.personality.permissiveness === 10,
   );
   check('the console save persisted the character', stored?.personality.baseCharacter === 'Rewritten from the console.');
+  check(
+    'the console save persisted the origin',
+    stored?.personality.origin ===
+      'Rewritten history: she was switched on in a room with one graphics card in it.',
+  );
 
   const after = await app.inject({
     method: 'GET',
@@ -902,20 +1167,52 @@ async function main(): Promise<void> {
     after.body.includes('PERMISSIVENESS 10 of 10') && after.body.includes('SHARPNESS 3 of 10'),
   );
   check(
+    'the preview redraws with the rewritten history, not the shipped one',
+    after.body.includes('she was switched on in a room with one graphics card') &&
+      !after.body.includes('The Fairytale Team was convened'),
+  );
+  check(
     'the ceiling is still shown at permissiveness 10',
     after.body.includes('Never write explicit sexual content'),
+  );
+
+  // Clearing from the console, end to end: an empty field must produce a bot with no
+  // history and a prompt that says nothing about her past, not a silent restore.
+  const cleared = await app.inject({
+    method: 'POST',
+    url: '/ai/personality',
+    payload: {
+      _csrf: pageCsrf,
+      id: String(botId),
+      baseCharacter: 'Rewritten from the console.',
+      origin: '',
+      sharpness: '3',
+      warmth: '8',
+      humor: '1',
+      permissiveness: '10',
+    },
+    headers: { cookie: session },
+  });
+  check('clearing the origin from the console redirects', cleared.statusCode === 302);
+  stored = (await listBotOnboardingProfiles(db)).find((p) => p.id === botId);
+  check('the cleared origin stayed cleared', stored?.personality.origin === '');
+  const afterClear = await app.inject({
+    method: 'GET',
+    url: `/ai/personality?bot=${botId}`,
+    headers: { cookie: session },
+  });
+  check(
+    'and the preview then says nothing about a history at all',
+    !afterClear.body.includes('The following is your actual history') &&
+      afterClear.body.includes('SHARPNESS 3 of 10'),
   );
 
   /* ── 9b. The console tells the truth about itself (gaps 2, 4 and 0) ─────── */
 
   console.log('\n9b. Console copy');
 
-  // Whitespace-collapsed, and NOT as a convenience. Asserting a sentence against raw
-  // rendered HTML is whitespace-sensitive matching against a wrapped template literal:
-  // the guards paragraph wraps between "no" and "longer" and failed a check the page
-  // plainly satisfied. That is a verifier defect of exactly the kind D-111 records, so
-  // every prose assertion below goes through this.
-  const flat = (body: string): string => body.replace(/\s+/g, ' ');
+  // See `flatten` at the top of this file for why every prose assertion goes through it.
+  const flat = flatten;
 
   check(
     'the Personality page says what it governs and what it does not',
