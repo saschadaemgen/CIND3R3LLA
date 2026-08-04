@@ -33,6 +33,7 @@ import {
   updateBotOnboardingProfile,
   type BotOnboardingInput,
 } from '../src/profiles/bot-onboarding.js';
+import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
 import { buildServer, registerNav } from '../src/web/server.js';
@@ -85,6 +86,9 @@ function defaults(): BotOnboardingInput {
     contactRequestRetentionHours: 168,
     groupInvitationRetentionHours: 168,
     maxPendingContactRequests: 100,
+    // CCB-S4-029. The personality lives on this record too, but the wizard's own save
+    // path does not write it; `verify:personality` owns that half.
+    personality: { ...DEFAULT_PERSONALITY },
   };
 }
 

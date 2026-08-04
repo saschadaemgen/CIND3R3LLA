@@ -72,7 +72,9 @@
     "assemble": "tsx scripts/assemble.ts",
     "verify:assemble": "tsx scripts/verify-assemble.ts",
     "verify:multi-profile": "tsx scripts/verify-multi-profile.ts",
-    "verify:runtime-host": "tsx scripts/verify-runtime-host.ts"
+    "verify:runtime-host": "tsx scripts/verify-runtime-host.ts",
+    "verify:personality": "tsx scripts/verify-personality.ts",
+    "verify:personality-live": "tsx scripts/verify-personality-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

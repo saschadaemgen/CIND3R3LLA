@@ -231,12 +231,17 @@ async function main(): Promise<void> {
       telemetry.body.includes('Recent AI operations'),
   );
 
+  // CCB-S4-029 replaced this page's placeholder copy ("Personality training roadmap",
+  // "Moderator approval") with a real editor, so the old assertions describe a page that
+  // no longer exists. This harness seeds no bot profile, so what it should see is the
+  // empty state pointing at the thing a personality belongs to. The editor itself is
+  // asserted by `verify:personality`, which seeds a bot; duplicating it here would mean
+  // two checks that must be kept in step.
   const personality = await app.inject({ method: 'GET', url: '/ai/personality', headers });
   check(
-    'personality page shows training and approval boundaries',
-    personality.body.includes('Personality training roadmap') &&
-      personality.body.includes('Moderator approval') &&
-      personality.body.includes('No personality training data is sent to a cloud provider'),
+    'personality page points at the bot a personality belongs to',
+    personality.body.includes('No bot profile yet') &&
+      personality.body.includes('href="/ai/onboarding"'),
   );
 
   const privacy = await app.inject({ method: 'GET', url: '/ai/privacy', headers });

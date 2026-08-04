@@ -129,6 +129,12 @@ const backstopFiles = [
   join(ROOT, 'src/interaction/help.ts'),
   join(ROOT, 'src/interaction/settings.ts'),
   join(ROOT, 'src/consent/commands.ts'),
+  // CCB-S4-029. The calibrated reference lines are examples of her voice sent INTO the
+  // prompt, and a 9B model returns one verbatim when the member's message happens to be
+  // the calibration question. That makes them member-facing in the only sense that
+  // matters here, so they are scanned like any other copy. Added by walking the standing
+  // checks against a new file, which is the D-105 rule.
+  join(ROOT, 'src/interaction/personality.ts'),
 ];
 walk(join(ROOT, 'src/plugins'), backstopFiles);
 

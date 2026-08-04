@@ -437,11 +437,14 @@ async function main(): Promise<void> {
     headers: authed,
   });
 
+  // CCB-S4-029. The old assertion read "Permanent personality profile: Not configured",
+  // which is a page describing a feature rather than offering it. With a real editor and
+  // no bot profile seeded here, the truthful state is that there is nothing to dial, and
+  // the page must say so rather than render four sliders bound to nothing.
   check(
-    'personality page exposes truthful current and future state',
-    personality.body.includes('Permanent personality profile') &&
-      personality.body.includes('Not configured') &&
-      personality.body.includes('Moderator approval'),
+    'personality page states the truthful empty state instead of inventing a personality',
+    personality.body.includes('No bot profile yet') &&
+      !personality.body.includes('type="range"'),
   );
 
   const privacy = await app.inject({ method: 'GET', url: '/ai/privacy', headers: authed });
