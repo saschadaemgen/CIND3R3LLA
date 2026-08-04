@@ -37,6 +37,7 @@ import {
   conversationVoice,
   normalizePersonality,
   referenceFor,
+  type BotIdentity,
   type BotPersonality,
   type PersonalityAxis,
 } from '../src/interaction/personality.js';
@@ -47,6 +48,7 @@ import {
 } from '../src/interaction/ollama-reply.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import {
+  DEFAULT_INTERACTION,
   normalizeInteraction,
   type InteractionSettings,
 } from '../src/interaction/settings.js';
@@ -69,6 +71,11 @@ import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
+import {
+  clearConversations,
+  conversationSummary,
+  recentConversations,
+} from '../src/interaction/conversation-log.js';
 import { setLogLevel } from '../src/log.js';
 
 let failures = 0;
@@ -102,7 +109,7 @@ const DIALLED: BotPersonality = {
 
 function conversationRequest(
   personality: BotPersonality | null,
-  botName = 'CIND3R3LLA',
+  identity: BotIdentity | undefined = { name: 'CIND3R3LLA' },
 ): AiReplyRequest {
   return {
     kind: 'conversation',
@@ -113,7 +120,7 @@ function conversationRequest(
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality,
-    botName,
+    identity,
   };
 }
 
@@ -306,6 +313,21 @@ async function main(): Promise<void> {
     dialled.includes('Do not name the dials'),
   );
 
+  /* ── 1b. The nickname anti-spam ceiling (CCB-S4-031 gap 0) ─────────────── */
+
+  console.log('\n1b. The nickname game may run');
+
+  const highLimit = normalizeInteraction({ nicknames: { enabled: true, words: 'Cindy', spamLimit: 1000 } });
+  check('the validator accepts 1000', highLimit.nicknames.spamLimit === 1000);
+  const overLimit = normalizeInteraction({ nicknames: { enabled: true, words: 'Cindy', spamLimit: 5000 } });
+  check('above the maximum is still clamped, not accepted', overLimit.nicknames.spamLimit === 1000);
+  const underLimit = normalizeInteraction({ nicknames: { enabled: true, words: 'Cindy', spamLimit: 0 } });
+  check('the floor is still 1', underLimit.nicknames.spamLimit === 1);
+  check(
+    'the shipped default is unchanged by the wider ceiling',
+    normalizeInteraction({}).nicknames.spamLimit === DEFAULT_INTERACTION.nicknames.spamLimit,
+  );
+
   /* ── 2b. She knows her own name (CCB-S4-030, D-134) ─────────────────────── */
 
   console.log('\n2b. Her name reaches the prompt');
@@ -322,20 +344,20 @@ async function main(): Promise<void> {
       !dialled.includes('Never write or repeat a person name. '),
   );
 
-  const renamed = systemPrompt(conversationRequest(DIALLED, 'Aurora'), 500);
+  const renamed = systemPrompt(conversationRequest(DIALLED, { name: 'Aurora' }), 500);
   check(
     'renaming her in settings renames her in the prompt',
     renamed.includes('Your name is Aurora') && !renamed.includes('CIND3R3LLA'),
   );
 
-  const unnamedButDialled = systemPrompt(conversationRequest(DIALLED, ''), 500);
+  const unnamedButDialled = systemPrompt(conversationRequest(DIALLED, { name: '' }), 500);
   check(
     'a blank name inserts no empty identity line',
     !unnamedButDialled.includes('Your name is') &&
       unnamedButDialled.includes('Never write or repeat a person name. '),
   );
 
-  const namedNoPersonality = systemPrompt(conversationRequest(null, 'CIND3R3LLA'), 500);
+  const namedNoPersonality = systemPrompt(conversationRequest(null, { name: 'CIND3R3LLA' }), 500);
   check(
     'a bot with no personality configured still knows its name',
     namedNoPersonality.includes('Your name is CIND3R3LLA'),
@@ -357,6 +379,85 @@ async function main(): Promise<void> {
     'a command rewrite keeps the unqualified person-name guard',
     !commandNamed.includes('Your name is CIND3R3LLA') &&
       commandNamed.includes('Never write or repeat a person name. '),
+  );
+
+  /* ── 2c. What else she is given (CCB-S4-031 gaps 3 and 6) ──────────────── */
+
+  console.log('\n2c. The rest of her identity, and the names she refuses');
+
+  const full: BotIdentity = {
+    name: 'CIND3R3LLA',
+    label: '(SimpleX AI Bot)',
+    archiveUrl: 'https://archive.example.org',
+    projectUrl: 'https://project.example.org',
+    notMyNames: ['Cindy', 'Ella'],
+  };
+  const withFacts = systemPrompt(conversationRequest(DIALLED, full), 500);
+
+  check('what she is reaches the prompt', withFacts.includes('(SimpleX AI Bot)'));
+  check('the archive address reaches the prompt', withFacts.includes('https://archive.example.org'));
+  check('the project address reaches the prompt', withFacts.includes('https://project.example.org'));
+  check(
+    'the given facts are fenced so they are not a licence to invent more',
+    withFacts.includes('Those are the only such facts you have been given'),
+  );
+  check(
+    'an unconfigured link adds no line and no empty address',
+    !systemPrompt(conversationRequest(DIALLED, { name: 'X' }), 500).includes('public archive of this group lives at'),
+  );
+  check(
+    'with nothing but a name, the do-not-invent fence is not claimed either',
+    !systemPrompt(conversationRequest(DIALLED, { name: 'X' }), 500).includes('only such facts'),
+  );
+
+  check('the refused names reach the prompt', withFacts.includes('Cindy, Ella'));
+  check(
+    'they are phrased as a conditional, never as a fact about her',
+    withFacts.includes('If someone in the chat calls you Cindy, Ella') &&
+      !withFacts.includes('You are not Cindy'),
+  );
+  // D-134 recorded the worry that naming them invites the model to raise them unprompted.
+  // This is the instruction that answers it; the live probe proves the model obeys it.
+  check(
+    'the model is forbidden from raising a refused name first',
+    withFacts.includes('Never bring any of those names up yourself'),
+  );
+  check(
+    'no nicknames configured adds no nickname lines',
+    !systemPrompt(conversationRequest(DIALLED, { name: 'X', notMyNames: [] }), 500).includes(
+      'do not accept it',
+    ),
+  );
+
+  /* ── 2d. The retort speaks in her voice (CCB-S4-031 gap 1) ─────────────── */
+
+  console.log('\n2d. Nickname retorts are dialled');
+
+  const retortAt = (sharpness: number): string =>
+    systemPrompt(
+      {
+        ...conversationRequest({ ...DIALLED, sharpness }, full),
+        kind: 'nickname',
+        mode: 'retort',
+        deterministicDraft: 'That is not my name.',
+      },
+      240,
+    );
+
+  check('a retort carries the dials', retortAt(9).includes('SHARPNESS 9 of 10'));
+  check('a retort at 1 and at 10 build different prompts', retortAt(1) !== retortAt(10));
+  check('a retort carries her name', retortAt(5).includes('Your name is CIND3R3LLA'));
+  check(
+    'a retort is bounded by the same ceiling as everything else',
+    PERMISSIVENESS_CEILING.every((line) => retortAt(10).includes(line)),
+  );
+  check(
+    'a retort is told to stay a snub rather than answer the message',
+    retortAt(5).includes('A retort is a snub, not a conversation'),
+  );
+  check(
+    'a retort keeps its draft as the content',
+    retortAt(5).includes('The draft is your refusal of it'),
   );
 
   /* ── 3. The ceiling: present at every value, and in every conversation ───── */
@@ -582,9 +683,16 @@ async function main(): Promise<void> {
 
   console.log('\n8. The engine hands the personality to the reply lane');
 
+  // Nicknames on, so gap 1 and gap 3 are exercised through the real settings path, and
+  // a bot label and links so gap 6 is carried by the same `botIdentity` the prompt uses.
   const settings: InteractionSettings = normalizeInteraction({
     addressing: { mode: 'relaxed' },
+    botLabel: '(SimpleX AI Bot)',
+    archiveUrl: 'https://archive.example.org',
+    projectUrl: 'https://project.example.org',
+    nicknames: { enabled: true, words: 'Cindy, Ella', spamLimit: 50 },
   });
+  clearConversations();
   const seen: AiReplyRequest[] = [];
 
   const engine = new InteractionEngine({
@@ -593,7 +701,13 @@ async function main(): Promise<void> {
     personality: currentBotPersonality,
     personalize: async (request) => {
       seen.push(request);
-      return Promise.resolve(request.mode === 'conversation' ? 'Real enough. Next question.' : null);
+      return Promise.resolve(
+        request.mode === 'conversation'
+          ? 'Real enough. Next question.'
+          : request.mode === 'retort'
+            ? 'Wrong name, try again.'
+            : null,
+      );
     },
     send: async () => Promise.resolve(),
   });
@@ -614,7 +728,52 @@ async function main(): Promise<void> {
   // and the name she claims cannot drift apart.
   check(
     'the engine carried her configured name',
-    conversation?.botName === settings.wakeWord && (settings.wakeWord ?? '') !== '',
+    conversation?.identity?.name === settings.wakeWord && (settings.wakeWord ?? '') !== '',
+  );
+
+  check(
+    'the engine carried the rest of the given facts',
+    conversation?.identity?.label === settings.botLabel &&
+      conversation.identity.archiveUrl === settings.archiveUrl,
+  );
+  check(
+    'the engine carried the refused names while nicknames are enabled',
+    (conversation?.identity?.notMyNames ?? []).length === settings.nicknames.words.length &&
+      settings.nicknames.words.length > 0,
+  );
+
+  // Gap 5. The conversational path now leaves a content-free trace.
+  const logged = recentConversations(10);
+  check('a free-conversation reply is recorded in diagnostics', logged.length === 1);
+  check('it records the outcome and the chat', logged[0]?.outcome === 'spoken' && logged[0].groupId === GROUP);
+  check(
+    'it carries no member text and no generated reply',
+    !JSON.stringify(logged[0] ?? {}).includes('real or just a bot') &&
+      !JSON.stringify(logged[0] ?? {}).includes('Real enough'),
+  );
+  check(
+    'the summary counts it',
+    conversationSummary().total === 1 && conversationSummary().spoken === 1,
+  );
+
+  // Gap 1, at the seam. The retort must reach the reply lane in `retort` mode, dialled.
+  seen.length = 0;
+  await engine.handle(makeMessage('Cindy are you there?'));
+  const retort = seen.find((request) => request.mode === 'retort');
+  check('a nickname is answered through the retort lane', retort !== undefined);
+  check('the retort carried the dials', retort?.personality?.sharpness === 9);
+  check('the retort carried her identity', retort?.identity?.name === settings.wakeWord);
+  check(
+    'the retort still carries the operator retort as its draft',
+    (retort?.deterministicDraft ?? '').length > 0,
+  );
+  check(
+    'a nickname does NOT reach free conversation',
+    !seen.some((request) => request.mode === 'conversation'),
+  );
+  check(
+    'a nickname reply is not logged as a free conversation',
+    recentConversations(10).length === 1,
   );
 
   seen.length = 0;
@@ -745,6 +904,76 @@ async function main(): Promise<void> {
   check(
     'the ceiling is still shown at permissiveness 10',
     after.body.includes('Never write explicit sexual content'),
+  );
+
+  /* ── 9b. The console tells the truth about itself (gaps 2, 4 and 0) ─────── */
+
+  console.log('\n9b. Console copy');
+
+  // Whitespace-collapsed, and NOT as a convenience. Asserting a sentence against raw
+  // rendered HTML is whitespace-sensitive matching against a wrapped template literal:
+  // the guards paragraph wraps between "no" and "longer" and failed a check the page
+  // plainly satisfied. That is a verifier defect of exactly the kind D-111 records, so
+  // every prose assertion below goes through this.
+  const flat = (body: string): string => body.replace(/\s+/g, ' ');
+
+  check(
+    'the Personality page says what it governs and what it does not',
+    flat(after.body).includes('nickname retorts') &&
+      flat(after.body).includes('href="/interaction/voice"') &&
+      flat(after.body).includes('do <strong>not</strong> touch the deterministic replies'),
+  );
+
+  const voicePage = await app.inject({
+    method: 'GET',
+    url: '/interaction/voice',
+    headers: { cookie: session },
+  });
+  check(
+    'the Voice page names itself the deterministic voice and points at the other one',
+    flat(voicePage.body).includes('This page is her deterministic voice') &&
+      flat(voicePage.body).includes('href="/ai/personality"'),
+  );
+
+  const guardsPage = await app.inject({
+    method: 'GET',
+    url: '/interaction/guards',
+    headers: { cookie: session },
+  });
+  check(
+    'the Guards page no longer claims the switches decide whether she answers',
+    flat(guardsPage.body).includes('longer decide whether she <em>answers</em>') &&
+      flat(guardsPage.body).includes('Stay silent when the model cannot speak'),
+  );
+  check(
+    'the guard help does not nest a label inside a label',
+    !/<label[^>]*>(?:(?!<\/label>)[\s\S])*<label/.test(guardsPage.body),
+  );
+
+  const nicknamesPage = await app.inject({
+    method: 'GET',
+    url: '/interaction/nicknames',
+    headers: { cookie: session },
+  });
+  check(
+    'the anti-spam field accepts up to 1000',
+    flat(nicknamesPage.body).includes('name="spamLimit"') &&
+      flat(nicknamesPage.body).includes('max="1000"'),
+  );
+
+  const diagnosticsPage = await app.inject({
+    method: 'GET',
+    url: '/interaction/diagnostics',
+    headers: { cookie: session },
+  });
+  check(
+    'Diagnostics has a free-conversation panel',
+    flat(diagnosticsPage.body).includes('Free conversation') &&
+      flat(diagnosticsPage.body).includes('Average model latency'),
+  );
+  check(
+    'it says plainly that it keeps no content',
+    flat(diagnosticsPage.body).includes('no member text and no generated reply is kept here'),
   );
 
   const tampered = await app.inject({

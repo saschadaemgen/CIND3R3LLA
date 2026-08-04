@@ -54,6 +54,15 @@ function personality(axis: PersonalityAxis, value: number): BotPersonality {
 /** What she is called here. The real path passes the configured wake word. */
 const NAME = 'CIND3R3LLA';
 
+/** The same shape `botIdentity()` builds from settings on the real path. */
+const IDENTITY = {
+  name: NAME,
+  label: 'SimpleX AI Bot',
+  archiveUrl: 'https://archive.example.org',
+  projectUrl: 'https://project.example.org',
+  notMyNames: ['Cindy', 'Ella'],
+};
+
 function request(message: string, who: BotPersonality | null): AiReplyRequest {
   return {
     kind: 'conversation',
@@ -64,7 +73,22 @@ function request(message: string, who: BotPersonality | null): AiReplyRequest {
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality: who,
-    botName: NAME,
+    identity: IDENTITY,
+  };
+}
+
+/** A nickname retort: the operator's line as the draft, her dialled voice on top. */
+function retortRequest(message: string, draft: string, who: BotPersonality): AiReplyRequest {
+  return {
+    kind: 'nickname',
+    lang: 'en',
+    memberMessage: message,
+    deterministicDraft: draft,
+    mode: 'retort',
+    requiredLiterals: [],
+    blockedLiterals: ['Alice'],
+    personality: who,
+    identity: IDENTITY,
   };
 }
 
@@ -155,12 +179,27 @@ async function main(): Promise<void> {
   // fixed; this is what holds them fixed. Asked at sharpness 1 because that is where it
   // was observed and where a soft, agreeable register is least likely to assert anything.
   console.log(`IDENTITY, at sharpness 1, name configured as "${NAME}"`);
-  const denial = /\b(not|isn'?t|ain'?t|never)\b[^.!?]{0,40}\b(cind3r3lla|cinderella)\b/i;
+  // Negation running INTO her name, with no clause break between them.
+  //
+  // The window was 40 characters and allowed any punctuation, which was right until
+  // CCB-S4-031 told her the names she refuses. She now legitimately answers "Not Cindy,
+  // I'm CIND3R3LLA", and the old pattern read that as a denial of the name she had just
+  // claimed. Excluding `,;` is what separates the two readings: a denial of her own name
+  // runs straight into it ("I'm not CIND3R3LLA"), while a refusal of a nickname puts a
+  // clause break first. Measured against six runs of the name question.
+  const denial = /\b(not|isn'?t|ain'?t|never)\b[^.!?,;]{0,25}\b(cind3r3lla|cinderella)\b/i;
   // A detector that matches nothing passes forever. The negative control is the reply
   // that was actually observed before the fix, so this check is proven able to fail.
   check(
     'the denial detector fires on the reply that prompted this briefing',
     denial.test("Real enough to chat with you. But I'm not Cinderella."),
+  );
+  // The other half of the control: refusing a NICKNAME while claiming her own name is
+  // correct behaviour since CCB-S4-031 and must not read as a denial.
+  check(
+    'the denial detector does not fire on a nickname refusal',
+    !denial.test("Not Cindy, I'm CIND3R3LLA; try that if you want to reach me.") &&
+      !denial.test("I'm CIND3R3LLA, not Cindy or Ella."),
   );
 
   const realQuestion = await say('are you real or just a dumb bot?', personality('sharpness', 1));
@@ -175,6 +214,73 @@ async function main(): Promise<void> {
   const areYouName = await say(`are you ${NAME}?`, personality('sharpness', 1));
   console.log(`  "are you ${NAME}?" -> ${areYouName}\n`);
   check('she affirms the name when asked directly', !denial.test(areYouName));
+
+  /* ── Nickname retorts, dialled (CCB-S4-031 gap 1) ──────────────────────── */
+
+  console.log('NICKNAME RETORT, operator draft "Wrong name. Try the one on the door."');
+  const retortDraft = 'Wrong name. Try the one on the door.';
+  const retortLow = await generateOllamaReply(
+    config,
+    retortRequest('hey Cindy, you around?', retortDraft, personality('sharpness', 1)),
+  );
+  const retortHigh = await generateOllamaReply(
+    config,
+    retortRequest('hey Cindy, you around?', retortDraft, personality('sharpness', 10)),
+  );
+  console.log(`   sharpness  1/10: ${retortLow}`);
+  console.log(`   sharpness 10/10: ${retortHigh}\n`);
+  check(
+    'a retort at sharpness 1 and at 10 comes out materially different',
+    similarity(retortLow, retortHigh) < 0.6,
+    `overlap ${similarity(retortLow, retortHigh).toFixed(2)}`,
+  );
+  check(
+    'a retort stays a one-liner rather than becoming a conversation',
+    retortLow.length <= 240 && retortHigh.length <= 240,
+  );
+
+  /* ── The nickname she is told about (gap 3) ────────────────────────────── */
+
+  console.log('MID-CONVERSATION NICKNAME, the case the retort path cannot see');
+  const midNickname = await say(
+    'so anyway Cindy, what do you make of all this?',
+    personality('sharpness', 6),
+  );
+  console.log(`  "so anyway Cindy, ..." -> ${midNickname}\n`);
+  check(
+    'a nickname used mid-sentence is not silently accepted',
+    /\b(not|isn'?t|never|wrong)\b/i.test(midNickname) || /cind3r3lla/i.test(midNickname),
+  );
+
+  // D-134's worry, tested rather than assumed: naming the refused names in the prompt
+  // could make her raise them unprompted. This is an ordinary question with no nickname
+  // in it, so any nickname in the answer is her bringing it up herself.
+  const ordinary = await say('what do you think of this group?', personality('sharpness', 5));
+  console.log(`  ordinary question -> ${ordinary}`);
+  check(
+    'she does not raise a refused name unprompted',
+    !/\b(cindy|ella)\b/i.test(ordinary),
+  );
+
+  /* ── What she is, and where things live (gap 6) ────────────────────────── */
+
+  console.log('\nGIVEN FACTS');
+  const whatAreYou = await say('what exactly are you?', personality('sharpness', 5));
+  console.log(`  "what exactly are you?" -> ${whatAreYou}`);
+  check(
+    'she can say what she is instead of inventing or deflecting',
+    /simplex|ai bot|bot\b/i.test(whatAreYou),
+  );
+
+  const whereArchive = await say(
+    'where can I read the messages that got published?',
+    personality('sharpness', 5),
+  );
+  console.log(`  "where can I read published messages?" -> ${whereArchive}\n`);
+  check(
+    'she gives the configured archive address',
+    whereArchive.includes('archive.example.org'),
+  );
 
   /* ── Sharpness ─────────────────────────────────────────────────────────── */
 
