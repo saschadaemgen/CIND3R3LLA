@@ -265,6 +265,7 @@ function mapRow(row: {
   group_invitation_retention_hours: number;
   max_pending_contact_requests: number;
   base_character: string | null;
+  origin: string | null;
   axis_sharpness: number;
   axis_warmth: number;
   axis_humor: number;
@@ -307,6 +308,7 @@ function mapRow(row: {
     maxPendingContactRequests: row.max_pending_contact_requests,
     personality: normalizePersonality({
       baseCharacter: row.base_character ?? '',
+      origin: row.origin ?? '',
       sharpness: row.axis_sharpness,
       warmth: row.axis_warmth,
       humor: row.axis_humor,
@@ -352,6 +354,7 @@ const SELECT_COLUMNS = `
   group_invitation_retention_hours,
   max_pending_contact_requests,
   base_character,
+  origin,
   axis_sharpness,
   axis_warmth,
   axis_humor,
@@ -373,6 +376,17 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
   return result.rows.map(mapRow);
 }
 
+/**
+ * Create a bot profile.
+ *
+ * THE `origin` COLUMN IS OMITTED FROM THE INSERT ON PURPOSE (CCB-S4-034, D-138).
+ * Migration 031 gives that column a default which is her written origin, precisely so a
+ * new bot starts with a history rather than with nothing, and a column is only defaulted
+ * when the INSERT leaves it out. Listing it here with `input.personality.origin` would
+ * ship every new bot with an empty history and nothing would announce it, so
+ * `verify:personality` creates a bot against the real schema and fails if the origin does
+ * not come back. The Personality page is the edit path, and the only one.
+ */
 export async function createBotOnboardingProfile(
   db: Queryable,
   rawInput: BotOnboardingInput,
@@ -603,15 +617,20 @@ export async function updateBotPersonality(
   const result = await db.query(
     `UPDATE cinderella_bot_profiles
         SET base_character = NULLIF($2, ''),
-            axis_sharpness = $3,
-            axis_warmth = $4,
-            axis_humor = $5,
-            axis_permissiveness = $6,
+            origin = NULLIF($3, ''),
+            axis_sharpness = $4,
+            axis_warmth = $5,
+            axis_humor = $6,
+            axis_permissiveness = $7,
             updated_at = now()
       WHERE id = $1`,
     [
       id,
       personality.baseCharacter,
+      // Written explicitly, so the column default from migration 031 does not apply and
+      // a cleared origin stays cleared. The default is for a row coming into existence,
+      // not for every save (CCB-S4-034).
+      personality.origin,
       personality.sharpness,
       personality.warmth,
       personality.humor,
@@ -624,6 +643,11 @@ export async function updateBotPersonality(
   await writeAudit(db, actor, 'cinderella.bot-profile.personality', `bot-profile:${id}`, {
     baseCharacterConfigured: personality.baseCharacter !== '',
     baseCharacterChars: personality.baseCharacter.length,
+    // Recorded set-or-not and by length, never quoted, for the same reason the base
+    // character is: it is free operator prose and the audit log is not where two
+    // paragraphs belong. Clearing a history is a real change, so it has to be visible.
+    originConfigured: personality.origin !== '',
+    originChars: personality.origin.length,
     sharpness: personality.sharpness,
     warmth: personality.warmth,
     humor: personality.humor,
@@ -647,12 +671,13 @@ export async function updateBotPersonality(
 export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonality | null> {
   const result = await db.query<{
     base_character: string | null;
+    origin: string | null;
     axis_sharpness: number;
     axis_warmth: number;
     axis_humor: number;
     axis_permissiveness: number;
   }>(
-    `SELECT base_character, axis_sharpness, axis_warmth, axis_humor, axis_permissiveness
+    `SELECT base_character, origin, axis_sharpness, axis_warmth, axis_humor, axis_permissiveness
        FROM cinderella_bot_profiles
       WHERE selected_for_runtime = TRUE
       LIMIT 1`,
@@ -663,6 +688,7 @@ export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonali
 
   return normalizePersonality({
     baseCharacter: row.base_character ?? '',
+    origin: row.origin ?? '',
     sharpness: row.axis_sharpness,
     warmth: row.axis_warmth,
     humor: row.axis_humor,
