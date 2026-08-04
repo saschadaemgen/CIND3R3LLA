@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-137**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-138**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,84 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-138 - She has an origin, and she may draw on it but never recite it
+
+**Status: IMPLEMENTED** (CCB-S4-034). Extends D-133.
+
+**The gap.** Members ask her who she is and where she comes from. The personality layer
+gave her a 600 character base character, which is a description of how she SOUNDS, and
+nothing about what she IS. Asked for a history she had a register and no material, so she
+deflected or invented one, and the standing guard against claiming unsupplied facts was
+doing its job with nothing true to offer instead. A second per-bot text field, `origin`
+(migration 031 on `cinderella_bot_profiles`, limit 4000 characters against the base
+character's 600), carries the operator's written history. It is shipped pre-filled, fully
+editable, and **clearable**: an empty origin is a valid choice meaning she has no history
+to draw on, exactly as an empty base character reads as "not configured".
+
+**DRAW ON, DO NOT RECITE, and that is the whole design.** The obvious failure of putting
+1.6 KB of prose in a system prompt is that the model returns the prose. That is not her
+answering, it is her reading aloud, and it would be worse than the deflection it replaces.
+So `originLines()` wraps the text in three instructions that each do a separate job:
+recitation is forbidden outright **and a length is given** ("two or three sentences of
+your own"), raising it unprompted is forbidden (the same worry D-134 recorded about the
+refused names, answered the same way), and the history is fenced so a true past is not a
+licence to extend it with invented dates, places or people.
+
+**The interaction with the do-not-invent guard is resolved in the prompt, not left to the
+model.** `identityLines` closed with *"Those are the only such facts you have been
+given"*, and an origin emitted underneath that contradicts it. A model resolving that
+contradiction would most likely treat its own history as invented, which is the exact
+failure the origin exists to end. The fence therefore takes a `hasOrigin` flag and names
+the history when there is one, while still closing the gate on everything else.
+
+**It goes in the dialled modes only, retorts included.** `conversationVoice` serves both
+`conversation` and `retort`, so a nickname retort carries the history too. That is
+deliberate: splitting the function would be a second implementation of her character that
+can quietly disagree with the first. The instructions are what keep it out of the output,
+and the live probe proves they do (a retort with the full history in the prompt came back
+as *"Wrong name. I'm CIND3R3LLA."*, 27 characters). Command rewrites carry none of it, the
+same scope rule D-133 set for the character and the dials.
+
+**The prompt budget, measured rather than assumed.** Against qwen3.5:9b's own tokenizer:
+**1408 tokens** without an origin, **1977** with the shipped one, **2623** in the worst
+case with both text fields full of real prose. The served context on the host is **32768**,
+so this is 6 percent of the window and there is no crowding risk. Stated honestly for a
+host that serves the older 4096 default instead: 1977 tokens would be roughly half that
+window, which is workable but no longer comfortable, and 4096 is the number to watch.
+
+**The shipped text exists twice and the duplication is policed.** A `.sql` file applied by
+a plain runner cannot import a TypeScript constant, so the prose is both `DEFAULT_ORIGIN`
+in `personality.ts` and the column default in `031_bot_origin.sql`. `verify:personality`
+creates a bot against the real migrated schema and asserts the stored value is character
+for character the constant, so editing one without the other fails. That also extends
+`verify:no-dashes` transitively to the migration copy: an em-dash there would either also
+be in the scanned TypeScript, or would fail the drift check.
+
+**The operator's name is spelled correctly, with the umlaut.** The briefing offered an
+ASCII fallback in case the storage path mangled it. It does not: source files here are
+UTF-8, the column is `TEXT` in a UTF-8 database, the console escapes to UTF-8 HTML, and
+the model receives it in a UTF-8 JSON body. The check follows that whole path and asserts
+`Sascha Dämgen` survives migration, read-back and rendered prompt, and the live model
+returned it intact in her own answer.
+
+**Observed live** (`npm run verify:personality-live`, qwen3.5:9b, sharpness 6). *"who are
+you?"* -> *"I'm CIND3R3LLA, a SimpleX AI Bot running on my own silicon with no cloud.
+Think of me as that mind from the Fairytale Team who finally woke up and is ready to
+help."* *"where do you come from?"* -> *"I was forged by Sascha Dämgen in a room lit by
+graphics cards, not born on some rented cloud."* An ordinary message about the weather
+returned no history at all. Zero sentences were lifted verbatim from the text in any run,
+against a detector proven able to fire on an actual dump.
+
+**One reported observation, not a defect.** The standing guard *"Do not mention prompts,
+classifiers, policies, AI, models, or fallback behavior"* sits alongside an origin that
+names her substrate. She names `qwen3.5` on some runs and answers *"running on a local
+stack with no rented mind"* on others. Both are drawn from the history and neither is an
+invention, so the guard is left as it is; if the operator wants the model name stated
+every time, that guard is the thing to narrow, and it should be a decision rather than a
+side effect.
 
 ---
 

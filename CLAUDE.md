@@ -130,8 +130,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `media/` (metadata detection and stripping, video matchers),
   `interaction/`
   (wake word, intent resolver, dialogue engine, persona, help, `personality.ts`: the
-  base character, the four 1-10 dials and the given identity, pure, with the calibrated
-  references and the permissiveness ceiling that no dial value lifts (D-133, D-135),
+  base character, her origin, the four 1-10 dials and the given identity, pure, with the
+  calibrated references and the permissiveness ceiling that no dial value lifts (D-133,
+  D-135). The base character is how she SOUNDS and the origin is what she IS and where she
+  came from, carried into the prompt as background she may draw on but must never recite
+  or raise unprompted (D-138),
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
@@ -188,7 +191,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   bot, on `cinderella_bot_profiles` because that is where per-bot settings live; the
   `settings` table is global and has no bot dimension) · 029 moderation (append-only
   violations counted over a rolling window per member per chat, the sanction record whose
-  `mode` is only ever `observed` today, and the two ladders per bot).
+  `mode` is only ever `observed` today, and the two ladders per bot) · 030 the spoken
+  warning · 031 her origin (a second per-bot text column beside the base character, 4000
+  characters against its 600, whose column DEFAULT is the operator's written history so
+  that the existing bot is backfilled and every new one starts with one; clearing it
+  stores NULL and stays cleared, because a default applies to an insert and never to an
+  update).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -196,7 +204,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **031**, since 030 landed with the spoken warning). Stated as a rule
+  (currently **032**, since 031 landed with her origin). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -216,10 +224,15 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:personality` (the four dials, her identity and the nickname retort lane: that each
 dial changes the prompt that is actually sent, that the permissiveness ceiling is in every
 conversation prompt at every value and also with no personality configured, that her name
-and the other given facts reach it, and that none of it reaches a command rewrite.
+and the other given facts reach it, that her origin reaches it and is fenced by the
+draw-on-not-recite rule, that the shipped origin in the migration and the one in the
+TypeScript constant are character for character identical, and that none of it reaches a
+command rewrite.
 `npm run verify:personality-live` is the companion that asks a REAL model the same
 question at a low and a high setting and prints both, since a prompt the model ignores is
-a dead slider with a passing test; it needs Ollama and is not in the offline set),
+a dead slider with a passing test; it also asks who she is and where she came from and
+fails if she recites her history or volunteers it unasked. It needs Ollama and is not in
+the offline set),
 `verify:moderation` (the two ladders, the rolling window and its decay, per-member
 per-chat scoping, exemptions, and above all the NO-ACT guarantee, asserted structurally by
 scanning for every enforcement API name, behaviourally by driving a member past every rung

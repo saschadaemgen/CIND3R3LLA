@@ -1850,6 +1850,47 @@ runs. On any other message it writes its own words at the right register, measur
 three unrelated messages per dial. `verify:personality-live` prints the echo score rather
 than failing on it, in the same spirit as `verify:traits` reporting its quality measures.
 
+### 33a. Her origin (CCB-S4-034, D-138)
+
+The base character above says how she SOUNDS. It says nothing about what she IS, so asked
+where she came from she had a register and no material, and either deflected or invented.
+A second per-bot text column, `origin` (migration 031, limit **4000** characters against
+the base character's 600), carries the operator's written history.
+
+**Shipped pre-filled, and clearable.** The migration's column default both backfills the
+existing bot and seeds every new one, which is why
+[`createBotOnboardingProfile`](../src/profiles/bot-onboarding.ts) deliberately **omits the
+column from its INSERT**. `updateBotPersonality` writes it explicitly and stores `NULL`
+when blank, so an operator who deletes the history keeps it deleted; a column default
+applies to an inserted row, never to an update.
+
+**In the prompt after the identity and the character, before the dials.** `originLines()`
+emits the text wrapped in instructions that do three separate jobs, because the obvious
+failure of 1.6 KB of prose in a system prompt is that the model returns the prose:
+recitation is forbidden **and a length is given** ("two or three sentences of your own"),
+raising it unprompted is forbidden, and the history is fenced so a true past is not a
+licence to invent more of one. The `identityLines` do-not-invent fence takes a `hasOrigin`
+flag and names the history when there is one, so the prompt does not contradict itself.
+
+**Dialled modes only, retorts included.** `conversationVoice` serves `conversation` and
+`retort`, and splitting it would be a second implementation of her character. Command
+rewrites carry none of it, the same scope rule as the character and the dials.
+
+**Prompt budget, measured against qwen3.5:9b's tokenizer:** 1408 tokens without an origin,
+**1977** with the shipped one, 2623 with both text fields full of real prose. Served
+context on the host is 32768, so 6 percent; on a host serving the older 4096 default it
+would be roughly half, which is the number to watch.
+
+**The text exists twice** (`DEFAULT_ORIGIN` in `personality.ts` and the column default in
+`031_bot_origin.sql`, because a migration runner cannot import a constant) and
+`verify:personality` asserts the two are character for character identical, which also
+extends `verify:no-dashes` to the migration copy transitively.
+
+**Observed live**: *"who are you?"* -> *"I'm CIND3R3LLA, a SimpleX AI Bot running on my own
+silicon with no cloud. Think of me as that mind from the Fairytale Team who finally woke up
+and is ready to help."* An ordinary message about the weather returned no history at all,
+and no run lifted a sentence verbatim.
+
 ## 34. Which Interaction settings reach free conversation (CCB-S4-030, D-134)
 
 Free conversation (CCB-S4-027) added a second path that produces replies. The Interaction
