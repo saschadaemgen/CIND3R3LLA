@@ -49,6 +49,11 @@ import { InteractionEngine } from './interaction/engine.js';
 import { AiRuntimeService, personalizeAiReply } from './interaction/ai-runtime.js';
 import { activeResolverName } from './interaction/resolver.js';
 import { RuntimePolicyService } from './profiles/runtime-policy.js';
+import {
+  BotPersonalityService,
+  currentBotPersonality,
+  setBotPersonalityService,
+} from './profiles/bot-personality.js';
 import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
@@ -219,6 +224,10 @@ async function startCaptureWorker(
       db: getPool(),
       settings: () => interaction.get(),
       personalize: personalizeAiReply,
+      // Her character and the four dials (CCB-S4-029), read live like the settings
+      // above and for the same reason: an operator moving a slider expects the next
+      // reply to sound different, not the next restart.
+      personality: currentBotPersonality,
       // Handed over only while the plugin is enabled; when it is off, PRICE is
       // not in the active intent catalog either, so this is belt and braces.
       // Handed over only while the plugin is enabled; when it is off, PRICE is
@@ -476,6 +485,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   const interaction = await InteractionService.load(getPool());
   const plugins = await PluginService.load(getPool());
   await AiRuntimeService.load(getPool(), localAi);
+  // The personality dials (CCB-S4-029). Loaded before the console starts, because the
+  // console's Personality page invalidates this cache on every save and a save that
+  // arrived before the first load would invalidate nothing.
+  setBotPersonalityService(await BotPersonalityService.load(getPool()));
 
   // One process (A2): the admin web server and the capture worker together.
   const adminCfg = loadAdminConfig();

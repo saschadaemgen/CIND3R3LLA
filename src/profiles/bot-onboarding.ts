@@ -10,6 +10,11 @@
 
 import { writeAudit } from '../db/audit.js';
 import type { Queryable } from '../db/pool.js';
+import {
+  normalizePersonality,
+  type BotPersonality,
+  type PersonalityInput,
+} from '../interaction/personality.js';
 
 export type BotWorkflowState =
   | 'configured'
@@ -63,6 +68,13 @@ export interface BotOnboardingProfile {
   contactRequestRetentionHours: number;
   groupInvitationRetentionHours: number;
   maxPendingContactRequests: number;
+  /**
+   * Who this bot is and how it sounds (CCB-S4-029, migration 028). Stored per bot here
+   * because that is where every other per-bot setting lives; the `settings` table has
+   * no bot dimension. Read live by `src/profiles/bot-personality.ts` and turned into
+   * prompt text by `src/interaction/personality.ts`.
+   */
+  personality: BotPersonality;
   /** The contact link the core returned, or null while the address does not exist. */
   contactAddressLink: string | null;
   /** The SimpleX user the address was created on, so the link can be checked. */
@@ -190,6 +202,11 @@ function validateInput(input: BotOnboardingInput): BotOnboardingInput {
       1,
       10000,
     ),
+    // Clamped rather than rejected. Every one of these arrives from a range input or a
+    // textarea, so an out-of-range value means a tampered or stale form rather than an
+    // operator decision worth failing a whole save over, and the DDL still refuses what
+    // this would somehow miss.
+    personality: normalizePersonality(input.personality),
   };
 }
 
@@ -241,6 +258,11 @@ function mapRow(row: {
   contact_request_retention_hours: number;
   group_invitation_retention_hours: number;
   max_pending_contact_requests: number;
+  base_character: string | null;
+  axis_sharpness: number;
+  axis_warmth: number;
+  axis_humor: number;
+  axis_permissiveness: number;
   contact_address_link: string | null;
   contact_address_user_id: string | number | null;
   contact_address_created_at: string | null;
@@ -277,6 +299,13 @@ function mapRow(row: {
     contactRequestRetentionHours: row.contact_request_retention_hours,
     groupInvitationRetentionHours: row.group_invitation_retention_hours,
     maxPendingContactRequests: row.max_pending_contact_requests,
+    personality: normalizePersonality({
+      baseCharacter: row.base_character ?? '',
+      sharpness: row.axis_sharpness,
+      warmth: row.axis_warmth,
+      humor: row.axis_humor,
+      permissiveness: row.axis_permissiveness,
+    }),
     contactAddressLink: row.contact_address_link,
     contactAddressUserId:
       row.contact_address_user_id === null ? null : numberOf(row.contact_address_user_id),
@@ -316,6 +345,11 @@ const SELECT_COLUMNS = `
   contact_request_retention_hours,
   group_invitation_retention_hours,
   max_pending_contact_requests,
+  base_character,
+  axis_sharpness,
+  axis_warmth,
+  axis_humor,
+  axis_permissiveness,
   contact_address_link,
   contact_address_user_id,
   contact_address_created_at,
@@ -367,11 +401,17 @@ export async function createBotOnboardingProfile(
          persistent_changes_enabled,
          contact_request_retention_hours,
          group_invitation_retention_hours,
-         max_pending_contact_requests
+         max_pending_contact_requests,
+         base_character,
+         axis_sharpness,
+         axis_warmth,
+         axis_humor,
+         axis_permissiveness
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10, $11, $12,
-         $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25
+         $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
+         NULLIF($26, ''), $27, $28, $29, $30
        )
        RETURNING id`,
       [
@@ -400,6 +440,11 @@ export async function createBotOnboardingProfile(
         input.contactRequestRetentionHours,
         input.groupInvitationRetentionHours,
         input.maxPendingContactRequests,
+        input.personality.baseCharacter,
+        input.personality.sharpness,
+        input.personality.warmth,
+        input.personality.humor,
+        input.personality.permissiveness,
       ],
     );
 
@@ -412,6 +457,16 @@ export async function createBotOnboardingProfile(
       autoAcceptContacts: input.autoAcceptContacts,
       groupInvitationMode: input.groupInvitationMode,
       expectedGroupRole: input.expectedGroupRole,
+      // The dials are audited; the base character is recorded as set-or-not rather than
+      // quoted, because it is free operator prose and the audit log is not where a
+      // paragraph belongs. The Personality page audits its own edits in the same shape.
+      baseCharacterConfigured: input.personality.baseCharacter !== '',
+      personalityAxes: {
+        sharpness: input.personality.sharpness,
+        warmth: input.personality.warmth,
+        humor: input.personality.humor,
+        permissiveness: input.personality.permissiveness,
+      },
       runtimeApplied: false,
     });
 
@@ -421,6 +476,17 @@ export async function createBotOnboardingProfile(
   }
 }
 
+/**
+ * Save the onboarding settings.
+ *
+ * DELIBERATELY DOES NOT WRITE THE PERSONALITY COLUMNS, even though the input type
+ * carries them. The wizard form has one personality field on it, the base character,
+ * and it only has that one when CREATING. If this statement wrote all five, then every
+ * save from the wizard's edit dialog would post four axes the form never showed and
+ * reset an operator's dials to the middle without saying so. {@link updateBotPersonality}
+ * is the edit path, and the Personality page is where the values are visible while they
+ * are being changed.
+ */
 export async function updateBotOnboardingProfile(
   db: Queryable,
   id: number,
@@ -505,6 +571,97 @@ export async function updateBotOnboardingProfile(
   } catch (error) {
     throw dbError(error);
   }
+}
+
+/**
+ * Save the personality alone (CCB-S4-029).
+ *
+ * Separate from {@link updateBotOnboardingProfile} because the Personality page edits
+ * five fields and nothing else. Routing it through the whole-profile update would mean
+ * the page had to round-trip and re-submit every onboarding setting on the record, and
+ * a form that resubmits values nobody looked at is how an unrelated setting gets
+ * silently reverted by whoever opened the wrong page.
+ *
+ * The base character is stored NULL when blank, so "not configured" survives a save
+ * that clears it rather than becoming an empty character somebody chose.
+ */
+export async function updateBotPersonality(
+  db: Queryable,
+  id: number,
+  raw: PersonalityInput,
+  actor: string,
+): Promise<BotPersonality> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
+
+  const personality = normalizePersonality(raw);
+  const result = await db.query(
+    `UPDATE cinderella_bot_profiles
+        SET base_character = NULLIF($2, ''),
+            axis_sharpness = $3,
+            axis_warmth = $4,
+            axis_humor = $5,
+            axis_permissiveness = $6,
+            updated_at = now()
+      WHERE id = $1`,
+    [
+      id,
+      personality.baseCharacter,
+      personality.sharpness,
+      personality.warmth,
+      personality.humor,
+      personality.permissiveness,
+    ],
+  );
+
+  if (result.rowCount !== 1) throw new Error('Bot onboarding profile not found.');
+
+  await writeAudit(db, actor, 'cinderella.bot-profile.personality', `bot-profile:${id}`, {
+    baseCharacterConfigured: personality.baseCharacter !== '',
+    baseCharacterChars: personality.baseCharacter.length,
+    sharpness: personality.sharpness,
+    warmth: personality.warmth,
+    humor: personality.humor,
+    permissiveness: personality.permissiveness,
+    runtimeApplied: false,
+  });
+
+  return personality;
+}
+
+/**
+ * The personality of the bot the runtime is hosting, or null when there is no runtime
+ * bot at all.
+ *
+ * NULL IS A REAL ANSWER AND NOT A DEFAULT. An operator who has created no bot profile,
+ * or selected none for the runtime, has configured no personality, and handing back
+ * mid-value dials would be inventing one. The prompt builder distinguishes the two:
+ * null gets the original voice paragraph plus the safety ceiling, a real row gets the
+ * dials. See `conversationVoice` in src/interaction/personality.ts.
+ */
+export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonality | null> {
+  const result = await db.query<{
+    base_character: string | null;
+    axis_sharpness: number;
+    axis_warmth: number;
+    axis_humor: number;
+    axis_permissiveness: number;
+  }>(
+    `SELECT base_character, axis_sharpness, axis_warmth, axis_humor, axis_permissiveness
+       FROM cinderella_bot_profiles
+      WHERE selected_for_runtime = TRUE
+      LIMIT 1`,
+  );
+
+  const row = result.rows[0];
+  if (!row) return null;
+
+  return normalizePersonality({
+    baseCharacter: row.base_character ?? '',
+    sharpness: row.axis_sharpness,
+    warmth: row.axis_warmth,
+    humor: row.axis_humor,
+    permissiveness: row.axis_permissiveness,
+  });
 }
 
 export async function resetBotOnboardingWorkflow(
