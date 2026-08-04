@@ -43,6 +43,11 @@ import {
   recordRejectedContactRequest,
   type BotContactRequest,
 } from '../../profiles/contact-requests.js';
+import {
+  BASE_CHARACTER_MAX_CHARS,
+  DEFAULT_PERSONALITY,
+  normalizePersonality,
+} from '../../interaction/personality.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, fmtDate, stat } from './ui.js';
@@ -206,6 +211,10 @@ function defaults(): BotOnboardingInput {
     contactRequestRetentionHours: 168,
     groupInvitationRetentionHours: 168,
     maxPendingContactRequests: 100,
+    // Mid dials and no character (CCB-S4-029). The wizard collects the character, which
+    // is the part only a person can write; the dials are left at their middle and are
+    // turned on the Personality page, where each one shows what its value means.
+    personality: { ...DEFAULT_PERSONALITY },
   };
 }
 
@@ -248,6 +257,12 @@ function formInput(body: Record<string, unknown>): BotOnboardingInput {
       'Maximum pending contact requests',
       100,
     ),
+    // The wizard posts the base character only. The dials are absent from this form on
+    // purpose, and `normalizePersonality` fills them with the middle value rather than
+    // with zero, so a wizard save can never dial a bot to the bottom of every axis by
+    // omission. Editing an existing bot re-posts its stored character (see `wizardDialog`),
+    // so a save from here does not silently clear it.
+    personality: normalizePersonality({ baseCharacter: text(body['baseCharacter']) }),
   };
 }
 
@@ -491,6 +506,34 @@ function wizardDialog(
               >
             </label>
           </div>
+          ${
+            // The base character is collected at creation and edited on the Personality
+            // page (CCB-S4-029). It is NOT rendered on the edit dialog, and that is the
+            // point: this form's save does not write the personality columns, so a field
+            // here would be a control that appears to save and does not.
+            profile
+              ? html`<div class="setup-inline-note">
+                  This bot already has a character and four voice dials.
+                  <a href="/ai/personality?bot=${String(profile.id)}">Open its Personality page</a>
+                  to change how it sounds. Nothing on this dialog affects that.
+                </div>`
+              : html`<label class="setup-field">
+                  <span>Base character</span>
+                  <textarea
+                    name="baseCharacter"
+                    rows="4"
+                    maxlength="${String(BASE_CHARACTER_MAX_CHARS)}"
+                    placeholder="Who she is, in your own words. Cyberpunk, sharp, whatever you want her to be."
+                  >
+${input.personality.baseCharacter}</textarea
+                  >
+                  <small
+                    >Sent at the top of every conversation prompt, where it outranks any generic
+                    idea of a chat assistant. The four voice dials start at their middle and are
+                    turned on the Personality page. Optional, and editable later.</small
+                  >
+                </label>`
+          }
           <div class="setup-toggle-grid">
             ${toggle('enabled', 'Enabled', 'Allows this setup to be used later.', input.enabled)}
             ${toggle(

@@ -17,12 +17,19 @@ import { registerAdminViews } from '../src/web/views/index.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { recordMediaError, updateMedia, upsertMessage } from '../src/db/messages.js';
 import { recordOptIn } from '../src/db/consent.js';
+import {
+  createBotOnboardingProfile,
+  updateBotPersonality,
+} from '../src/profiles/bot-onboarding.js';
+import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
 
-const PORT = Number(process.env['PREVIEW_PORT']) || 8788;
+// `PORT` as well as `PREVIEW_PORT`, so a launcher that assigns a free port can hand one
+// over when 8788 is already taken by an older preview.
+const PORT = Number(process.env['PREVIEW_PORT'] ?? process.env['PORT']) || 8788;
 const PASSWORD = 'preview-password';
 
 async function main(): Promise<void> {
@@ -94,6 +101,56 @@ async function main(): Promise<void> {
     'text',
     'Posted before Alice opted in — stays unpublished.',
     '2026-07-08T09:00:00Z',
+  );
+
+  // A bot profile, so the Personality page (CCB-S4-029) has dials to render rather than
+  // its empty state. Placeholder character, off-centre dials, so the preview shows what
+  // a configured bot looks like instead of four identical sliders at 5.
+  const previewBotId = await createBotOnboardingProfile(
+    db,
+    {
+      slug: 'cinderella',
+      displayName: 'CIND3R3LLA',
+      enabled: true,
+      selectedForRuntime: true,
+      createAddress: true,
+      updateAddress: true,
+      updateProfile: true,
+      autoAcceptContacts: true,
+      welcomeMessage: '',
+      businessAddress: false,
+      allowFiles: true,
+      commandRegistryMode: 'cinderella_defaults',
+      customCommands: [],
+      useBotProfile: true,
+      logContacts: true,
+      logNetwork: false,
+      groupInvitationMode: 'manual',
+      expectedGroupRole: 'admin',
+      roleVerificationRequired: true,
+      policyActivationMode: 'manual',
+      remoteCommandsEnabled: false,
+      persistentChangesEnabled: false,
+      contactRequestRetentionHours: 168,
+      groupInvitationRetentionHours: 168,
+      maxPendingContactRequests: 100,
+      personality: { ...DEFAULT_PERSONALITY },
+    },
+    'admin-preview',
+  );
+  await updateBotPersonality(
+    db,
+    previewBotId,
+    {
+      baseCharacter:
+        'A neon courier who lives in the wire, reads a room in one packet, and has never ' +
+        'once been impressed by a cheap line.',
+      sharpness: 8,
+      warmth: 4,
+      humor: 7,
+      permissiveness: 6,
+    },
+    'admin-preview',
   );
 
   const adminCfg: AdminConfig = {

@@ -9,6 +9,7 @@ import { registerSettings } from './settings.js';
 import { registerInteraction } from './interaction.js';
 import { registerAi } from './ai.js';
 import { registerAiOnboarding } from './ai-onboarding.js';
+import { registerAiPersonality } from './ai-personality.js';
 import { registerAiProfiles } from './ai-profiles.js';
 import { registerPlugins } from './plugins.js';
 import { registerEmbeds } from './embeds.js';
@@ -27,6 +28,7 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerInteraction(app, ctx);
   registerAi(app, ctx);
   registerAiOnboarding(app, ctx);
+  registerAiPersonality(app, ctx);
   registerAiProfiles(app, ctx);
   registerPlugins(app, ctx);
   registerSecurity(app, ctx);

@@ -4734,3 +4734,169 @@ input[type='radio'] {
   }
 }
 /* END CIND3R3LLA AI Hardware */
+
+/* CIND3R3LLA Personality dials (CCB-S4-029) */
+
+.personality-axes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.personality-axis {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: rgba(5, 10, 18, 0.36);
+  padding: 16px;
+}
+
+.personality-axis-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.personality-axis-label {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.personality-axis-value {
+  border: 1px solid rgba(111, 210, 228, 0.34);
+  border-radius: 8px;
+  background: rgba(111, 210, 228, 0.12);
+  padding: 1px 9px;
+  color: var(--accent-strong);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.personality-axis-summary {
+  margin: 4px 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.personality-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  margin: 0;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(111, 210, 228, 0.5) 0%,
+    rgba(111, 210, 228, 0.16) 100%
+  );
+  height: 5px;
+  cursor: pointer;
+}
+
+.personality-slider:focus-visible {
+  outline: 2px solid rgba(111, 210, 228, 0.6);
+  outline-offset: 6px;
+}
+
+.personality-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.personality-slider::-moz-range-thumb {
+  width: 17px;
+  height: 17px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface-solid);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: pointer;
+}
+
+.personality-slider::-moz-range-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(111, 210, 228, 0.22);
+}
+
+.personality-axis-ends {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  color: var(--text-faint);
+  font-size: 10px;
+  text-transform: lowercase;
+}
+
+.personality-axis-guidance {
+  margin: 12px 0 0;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.personality-axis-references {
+  margin-top: 12px;
+}
+
+.personality-axis-references summary {
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.personality-axis-references ul {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.personality-axis-references li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 10px;
+  color: var(--text-soft);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.personality-axis-references strong {
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.personality-prompt {
+  margin: 12px 0 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: rgba(5, 10, 18, 0.55);
+  padding: 14px;
+  overflow-x: auto;
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .personality-axes {
+    grid-template-columns: 1fr;
+  }
+}
+/* END CIND3R3LLA Personality dials */

@@ -23,7 +23,13 @@ import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader, stat } from './ui.js';
 
-interface AiPageQuery {
+/**
+ * Exported with {@link renderAiPage} so the Personality page (CCB-S4-029) can be its
+ * own module and still wear the same chrome. It grew past a `definitionList` of
+ * "Not configured" rows into a real editor, and a 2000 line `ai.ts` was not the place
+ * for it; sharing the header rather than copying it keeps the AI section one section.
+ */
+export interface AiPageQuery {
   saved?: string;
   tested?: string;
   refreshed?: string;
@@ -168,7 +174,7 @@ function statusBadges(snapshot: AiRuntimeSnapshot): SafeHtml {
   </div>`;
 }
 
-function renderAiPage(
+export function renderAiPage(
   title: string,
   description: string,
   active: string,
@@ -176,11 +182,13 @@ function renderAiPage(
   query: AiPageQuery,
   snapshot: AiRuntimeSnapshot,
   body: SafeHtml,
+  head?: SafeHtml,
 ): string {
   return page({
     title,
     active,
     csrfToken: csrf,
+    ...(head ? { head } : {}),
     body: html`
       ${pageHeader(title, description)} ${notice(query)} ${statusBadges(snapshot)} ${body}
     `,
@@ -1632,60 +1640,10 @@ function telemetryBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
   `;
 }
 
-function personalityBody(snapshot: AiRuntimeSnapshot): SafeHtml {
-  return html`
-    ${card(
-      'Current personality layer',
-      definitionList([
-        ['Individualized reply wording', 'Enabled for guarded read-only replies'],
-        ['Reply model', snapshot.routing.replyModel],
-        ['Language support', 'German and English'],
-        ['Deterministic facts preserved', 'Enforced'],
-        ['Display name exposure check', 'Enforced'],
-        ['Permanent personality profile', 'Not configured'],
-        ['Moderator approval for permanent changes', 'Required by design'],
-        ['Training knowledge index', 'Not configured'],
-      ]),
-    )}
-    <div class="mt-4 grid gap-4 lg:grid-cols-2">
-      ${card(
-        'Personality training roadmap',
-        html`<ul class="space-y-2 text-sm text-slate-700">
-          <li>
-            <strong>Core voice:</strong> cool, relaxed, technically competent, and team-oriented.
-          </li>
-          <li><strong>Adaptation:</strong> match language, context, and member familiarity.</li>
-          <li>
-            <strong>Humor boundary:</strong> playful without weakening security or consent clarity.
-          </li>
-          <li>
-            <strong>Technical depth:</strong> concise for members, detailed for operators and
-            developers.
-          </li>
-          <li>
-            <strong>Persistence:</strong> permanent changes require moderator confirmation and
-            audit.
-          </li>
-          <li>
-            <strong>Training sources:</strong> private protocols and approved project documentation
-            only.
-          </li>
-        </ul>`,
-      )}
-      ${card(
-        'Current safety boundary',
-        html`<ul class="space-y-2 text-sm text-slate-700">
-          <li>Personality wording cannot execute an action.</li>
-          <li>Consent confirmations and outcomes remain deterministic.</li>
-          <li>Required facts must survive every rewrite.</li>
-          <li>Unsafe, malformed, or incomplete output falls back to the deterministic reply.</li>
-          <li>No permanent profile can be changed from member conversation today.</li>
-          <li>No personality training data is sent to a cloud provider.</li>
-        </ul>`,
-      )}
-    </div>
-  `;
-}
+// The Personality page moved to `ai-personality.ts` under CCB-S4-029, where it became
+// an editor instead of a description of one. What stood here was a definition list
+// whose own rows said "Permanent personality profile: Not configured" next to a roadmap
+// of things nothing implemented.
 
 function privacyBody(snapshot: AiRuntimeSnapshot): SafeHtml {
   return html`
@@ -1938,20 +1896,6 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       req.query,
       snapshot,
       telemetryBody(snapshot, csrf),
-    );
-  });
-
-  app.get<{ Querystring: AiPageQuery }>('/ai/personality', async (req, reply) => {
-    const snapshot = aiRuntimeSnapshot();
-    reply.type('text/html');
-    return renderAiPage(
-      'AI Personality',
-      'Current wording behavior, permanent personality boundaries, and the private training roadmap.',
-      'ai:personality',
-      req.session?.csrfToken ?? '',
-      req.query,
-      snapshot,
-      personalityBody(snapshot),
     );
   });
 
