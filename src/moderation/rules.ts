@@ -92,6 +92,20 @@ export interface ModerationRules {
   enforcementWindowSeconds: number;
   verbal: VerbalRung[];
   enforcement: EnforcementRung[];
+  /**
+   * How many warnings are spoken before the ladder advances (CCB-S4-033, D-137).
+   *
+   * THE OPERATOR-FACING CONTROL, and the single source of truth for the gap. The
+   * threshold of the rung after the warning is DERIVED from it by
+   * {@link normalizeModerationRules} on every read and every write, so there is no code
+   * path that can hold the two in disagreement. Before this, the number of warnings was
+   * implied by the arithmetic gap between two thresholds, which is a thing to state, not
+   * a thing to compute.
+   *
+   * 0 means the operator has deliberately chosen no warnings: the warn rung goes inert
+   * and the ordering guarantee does not apply.
+   */
+  warningCount: number;
   /** Roles enforcement never applies to. She cannot touch an owner in any case. */
   exemptRoles: SdkGroupRole[];
   /**
@@ -132,6 +146,9 @@ export const DEFAULT_MODERATION_RULES: Readonly<ModerationRules> = Object.freeze
     { threshold: 20, action: 'none', durationSeconds: 0 },
     { threshold: 30, action: 'none', durationSeconds: 0 },
   ],
+  // Five, which is exactly the gap 029 shipped implicitly (warn at 5, mute at 10). The
+  // behaviour is unchanged by this default; what changes is that it is now stated.
+  warningCount: 5,
   exemptRoles: ['owner', 'admin', 'moderator'],
   verbalExemptsStaff: false,
   announce: false,
@@ -225,8 +242,11 @@ export function normalizeModerationRules(raw: unknown): ModerationRules {
           ),
         ];
 
+  const warningCount = clampInt(o['warningCount'], 0, 100, d.warningCount);
+
   return {
     mode,
+    warningCount,
     verbalWindowSeconds: clampInt(o['verbalWindowSeconds'], 10, 604_800, d.verbalWindowSeconds),
     enforcementWindowSeconds: clampInt(
       o['enforcementWindowSeconds'],
@@ -235,7 +255,12 @@ export function normalizeModerationRules(raw: unknown): ModerationRules {
       d.enforcementWindowSeconds,
     ),
     verbal,
-    enforcement,
+    // Derived, never stored independently. See `deriveFromWarningCount`. Sorted AFTER
+    // the derivation and not only before it: the derived threshold can land anywhere,
+    // and a ladder listed out of threshold order reads as broken in the console.
+    enforcement: deriveFromWarningCount(enforcement, warningCount).sort(
+      (a, b) => a.threshold - b.threshold,
+    ),
     exemptRoles,
     verbalExemptsStaff:
       typeof o['verbalExemptsStaff'] === 'boolean'
@@ -243,6 +268,110 @@ export function normalizeModerationRules(raw: unknown): ModerationRules {
         : d.verbalExemptsStaff,
     announce: typeof o['announce'] === 'boolean' ? o['announce'] : d.announce,
   };
+}
+
+/**
+ * The first rung that actually does something, and the first live rung after it.
+ *
+ * "Live" means an action other than `none`: an inert rung is skipped rather than
+ * treated as a ceiling, which is the rule {@link evaluateEnforcement} already follows.
+ * Returned as indices so the caller can rewrite a threshold in place.
+ */
+function liveRungIndices(enforcement: readonly EnforcementRung[]): number[] {
+  return enforcement
+    .map((rung, index) => (rung.action === 'none' ? -1 : index))
+    .filter((index) => index >= 0);
+}
+
+/**
+ * Make the ladder agree with the warning count (CCB-S4-033, D-137).
+ *
+ * ── WHY THIS IS DERIVATION AND NOT VALIDATION ────────────────────────────────
+ *
+ * The briefing's requirement is that the warning count and the thresholds cannot
+ * contradict each other. Validation would catch a contradiction after it existed;
+ * derivation means it cannot exist. The threshold of the rung after the warning is
+ * COMPUTED here, on every normalisation, which is every read out of the database and
+ * every write into it. A stored value, a form post and an in-memory object therefore
+ * cannot disagree, because only one of the two numbers is ever authoritative.
+ *
+ * ── AND WHY IT ALSO SETTLES THE REPEAT QUESTION ──────────────────────────────
+ *
+ * 029 left "does warn fire once or on every violation" undefined. With the next rung
+ * sitting exactly `warningCount` violations above the warn rung, firing on EVERY
+ * violation while the warn rung resolves produces exactly `warningCount` warnings and
+ * then advances. The count is the number of warnings by construction rather than by a
+ * second rule that could drift from it.
+ */
+function deriveFromWarningCount(
+  enforcement: EnforcementRung[],
+  warningCount: number,
+): EnforcementRung[] {
+  if (warningCount <= 0) return enforcement;
+
+  const live = liveRungIndices(enforcement);
+  const warnAt = live.find((index) => enforcement[index]!.action === 'warn');
+  if (warnAt === undefined) return enforcement;
+
+  const next = live.find((index) => index > warnAt);
+  if (next === undefined) return enforcement;
+
+  const derived = enforcement[warnAt]!.threshold + warningCount;
+  const result = enforcement.map((rung, index) =>
+    index === next ? { ...rung, threshold: derived } : rung,
+  );
+
+  // Rungs above the derived one must stay above it. An operator who shortens the
+  // warning run should not silently produce a ladder whose third rung sits below its
+  // second, which `evaluateEnforcement` would resolve in threshold order and surprise
+  // them with.
+  let floor = derived;
+  for (let index = next + 1; index < result.length; index++) {
+    const rung = result[index]!;
+    if (rung.action !== 'none' && rung.threshold <= floor) {
+      result[index] = { ...rung, threshold: floor + 1 };
+    }
+    if (rung.action !== 'none') floor = Math.max(floor, result[index]!.threshold);
+  }
+
+  return result;
+}
+
+/**
+ * Whether this ladder can escalate without ever having warned (CCB-S4-033).
+ *
+ * The guarantee: a mute, or anything harder, must never be the first thing that happens
+ * to a member. Expressed as a property OF THE RULES rather than as a hope resting on how
+ * the thresholds happen to be arranged, so it can be checked once on save instead of
+ * being re-derived by whoever next reads the ladder.
+ *
+ * A warning count of 0 is the operator saying explicitly that they want no warnings, and
+ * is therefore not a violation of anything.
+ */
+export function escalatesWithoutWarning(rules: ModerationRules): boolean {
+  if (rules.warningCount <= 0) return false;
+  const live = liveRungIndices(rules.enforcement);
+  const first = live[0];
+  return first !== undefined && rules.enforcement[first]!.action !== 'warn';
+}
+
+/**
+ * Which warning this is, out of how many.
+ *
+ * Both numbers are real: the ladder resolves to warn for exactly `warningCount`
+ * violations, so "3 of 5" is a fact rather than a figure of speech. Returns null when
+ * the count is not a warning at all.
+ */
+export function warningPosition(
+  count: number,
+  rules: ModerationRules,
+): { number: number; total: number } | null {
+  if (rules.warningCount <= 0) return null;
+  const warnRung = rules.enforcement.find((rung) => rung.action === 'warn');
+  if (!warnRung || count < warnRung.threshold) return null;
+  const position = count - warnRung.threshold + 1;
+  if (position > rules.warningCount) return null;
+  return { number: position, total: rules.warningCount };
 }
 
 /** Whether a role escapes ENFORCEMENT. An unknown role is not exempt; see below. */
@@ -280,7 +409,9 @@ export function evaluateVerbal(
   let rungThreshold: number | null = null;
 
   for (const rung of rules.verbal) {
-    if (count >= rung.threshold) {
+    // Highest threshold wins, for the same reason as the enforcement ladder: the
+    // decision must not depend on where a rung happens to sit in the array.
+    if (count >= rung.threshold && (rungThreshold === null || rung.threshold >= rungThreshold)) {
       bonus = rung.sharpnessBonus;
       rungThreshold = rung.threshold;
     }
@@ -339,7 +470,19 @@ export function evaluateEnforcement(
   let rungThreshold: number | null = null;
 
   for (const rung of rules.enforcement) {
-    if (count >= rung.threshold && rung.action !== 'none') {
+    // A warning rung with the count set to zero is inert (CCB-S4-033). The operator has
+    // said they want no warnings; the rung is left in the stored ladder rather than
+    // rewritten, so raising the count again brings it straight back.
+    const inert = rung.action === 'none' || (rung.action === 'warn' && rules.warningCount <= 0);
+    if (inert || count < rung.threshold) continue;
+    // HIGHEST THRESHOLD WINS, not last-in-the-array. The two were the same while the
+    // ladder was always sorted, and CCB-S4-033 made that assumption false for one
+    // normalisation: the derived threshold can land out of order. Depending on array
+    // order here meant a member past the block rung could resolve back to a mute purely
+    // because of where a rung sat in the list. The normaliser sorts as well, so this is
+    // belt and braces, which is the right amount for a decision about sanctioning
+    // somebody.
+    if (rungThreshold === null || rung.threshold >= rungThreshold) {
       action = rung.action;
       durationSeconds = rung.durationSeconds;
       rungThreshold = rung.threshold;

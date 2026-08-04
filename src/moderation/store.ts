@@ -18,6 +18,7 @@ import type { Queryable } from '../db/pool.js';
 import { writeAudit } from '../db/audit.js';
 import type { SdkGroupRole } from '../profiles/bot-onboarding.js';
 import {
+  escalatesWithoutWarning,
   normalizeModerationRules,
   type EnforcementAction,
   type ModerationRules,
@@ -92,12 +93,21 @@ export interface SanctionInput {
    * have to be rewritten rather than called.
    */
   mode: 'observed' | 'enforced';
+  /**
+   * Whether she actually said it in the chat (CCB-S4-033). Only a warning is ever spoken
+   * while the mode is observing, and the table's CHECK enforces that: a recorded mute
+   * claiming to have been announced would mean she told somebody they were muted when
+   * they were not.
+   */
+  spoken: boolean;
 }
 
-export interface SanctionRow extends Omit<SanctionInput, 'mode'> {
+export interface SanctionRow extends Omit<SanctionInput, 'mode' | 'spoken'> {
   id: string;
   mode: 'observed' | 'enforced';
   decidedAt: string;
+  /** When she said it. Null means recorded and nothing said. */
+  spokenAt: string | null;
   /** Arming-briefing fields. Always null today. */
   enforcedAt: string | null;
   expiresAt: string | null;
@@ -108,8 +118,10 @@ export async function recordSanction(db: Queryable, input: SanctionInput): Promi
   await db.query(
     `INSERT INTO cinderella_sanctions
        (group_id, member_id, member_display_name, member_role, action,
-        violation_type, violation_count, window_seconds, rung_threshold, reason, mode)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        violation_type, violation_count, window_seconds, rung_threshold, reason, mode,
+        spoken_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+             CASE WHEN $12::boolean THEN now() ELSE NULL END)`,
     [
       input.groupId,
       input.memberId,
@@ -122,6 +134,7 @@ export async function recordSanction(db: Queryable, input: SanctionInput): Promi
       input.rungThreshold,
       input.reason,
       input.mode,
+      input.spoken,
     ],
   );
 }
@@ -140,6 +153,7 @@ interface SanctionDbRow {
   reason: string;
   mode: 'observed' | 'enforced';
   decided_at: string;
+  spoken_at: string | null;
   enforced_at: string | null;
   expires_at: string | null;
   undone_at: string | null;
@@ -160,6 +174,7 @@ function toSanction(row: SanctionDbRow): SanctionRow {
     reason: row.reason,
     mode: row.mode,
     decidedAt: row.decided_at,
+    spokenAt: row.spoken_at,
     enforcedAt: row.enforced_at,
     expiresAt: row.expires_at,
     undoneAt: row.undone_at,
@@ -168,7 +183,8 @@ function toSanction(row: SanctionDbRow): SanctionRow {
 
 const SANCTION_COLUMNS = `id, group_id, member_id, member_display_name, member_role, action,
                           violation_type, violation_count, window_seconds, rung_threshold,
-                          reason, mode, decided_at, enforced_at, expires_at, undone_at`;
+                          reason, mode, decided_at, spoken_at, enforced_at, expires_at,
+                          undone_at`;
 
 export async function listSanctions(db: Queryable, limit = 100): Promise<SanctionRow[]> {
   const { rows } = await db.query<SanctionDbRow>(
@@ -234,12 +250,14 @@ interface RulesDbRow {
   moderation_exempt_roles: unknown;
   moderation_verbal_exempts_staff: boolean;
   moderation_announce: boolean;
+  moderation_warning_count: number;
 }
 
 const RULES_COLUMNS = `moderation_mode, moderation_verbal_window_secs,
                        moderation_enforce_window_secs, moderation_verbal_ladder,
                        moderation_enforce_ladder, moderation_exempt_roles,
-                       moderation_verbal_exempts_staff, moderation_announce`;
+                       moderation_verbal_exempts_staff, moderation_announce,
+                       moderation_warning_count`;
 
 function toRules(row: RulesDbRow): ModerationRules {
   return normalizeModerationRules({
@@ -251,6 +269,7 @@ function toRules(row: RulesDbRow): ModerationRules {
     exemptRoles: row.moderation_exempt_roles,
     verbalExemptsStaff: row.moderation_verbal_exempts_staff,
     announce: row.moderation_announce,
+    warningCount: row.moderation_warning_count,
   });
 }
 
@@ -301,6 +320,25 @@ export async function updateModerationRules(
   }
 
   const rules = normalizeModerationRules(raw);
+
+  // THE ORDERING GUARANTEE (CCB-S4-033, D-137). A mute, or anything harder, must never be
+  // the first thing that happens to a member.
+  //
+  // REFUSED rather than acknowledged. An acknowledgement checkbox on a moderation form is
+  // a box an operator ticks once and then ticks forever, which converts a guarantee into
+  // a habit. Refusing costs one edit and cannot be absent-mindedly agreed to. Setting the
+  // warning count to zero remains available and is a deliberate statement rather than an
+  // accident, so it is not blocked.
+  if (escalatesWithoutWarning(rules)) {
+    const first = rules.enforcement.find((rung) => rung.action !== 'none');
+    throw new Error(
+      `This ladder would ${first?.action ?? 'escalate'} a member without ever warning them. ` +
+        `The first rung that does anything must be a warning. Either make rung ${
+          rules.enforcement.findIndex((rung) => rung.action !== 'none') + 1
+        } a warning, or set the warning count to 0 if you deliberately want no warnings.`,
+    );
+  }
+
   const result = await db.query(
     `UPDATE cinderella_bot_profiles
         SET moderation_verbal_window_secs = $2,
@@ -310,6 +348,7 @@ export async function updateModerationRules(
             moderation_exempt_roles = $6::jsonb,
             moderation_verbal_exempts_staff = $7,
             moderation_announce = $8,
+            moderation_warning_count = $9,
             updated_at = now()
       WHERE id = $1`,
     [
@@ -321,6 +360,7 @@ export async function updateModerationRules(
       JSON.stringify(rules.exemptRoles),
       rules.verbalExemptsStaff,
       rules.announce,
+      rules.warningCount,
     ],
   );
 
@@ -334,6 +374,7 @@ export async function updateModerationRules(
     exemptRoles: rules.exemptRoles,
     verbalExemptsStaff: rules.verbalExemptsStaff,
     announce: rules.announce,
+    warningCount: rules.warningCount,
     // Recorded on every save so the audit trail shows the mode never changed here.
     modeUnchanged: 'observe',
   });
