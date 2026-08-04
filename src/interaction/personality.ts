@@ -411,6 +411,48 @@ function axisLines(axis: PersonalityAxis, value: number): string[] {
 }
 
 /**
+ * Her name, stated as a fact about her (CCB-S4-030, D-134).
+ *
+ * ── WHY THIS WAS MISSING AND WHY IT SHOWED ──────────────────────────────────
+ *
+ * Observed live at sharpness 1, asked "are you real or just a dumb bot?": *"Real
+ * enough to chat with you. But I'm not Cinderella."* She denied her own name. The
+ * conversation prompt carried the base character and four dials and never once said
+ * what she is called, so the model had nothing to affirm. Worse than nothing: the
+ * member's own message usually contains the name (it is the wake word, so it is how
+ * they got her attention), and the prompt's standing guard said *"Never write or
+ * repeat a person name"*. A model reading those two together sees a name it has been
+ * told not to use, which is a reasonable route to denying it.
+ *
+ * So the name is stated FIRST, before the character and the dials, and the person-name
+ * guard is narrowed to exempt it (see `systemPrompt`). The value is the configured wake
+ * word, which is the authoritative "what she is called": it is what members must type
+ * to reach her, and renaming her there renames her everywhere else already.
+ *
+ * ── WHAT THIS IS NOT ────────────────────────────────────────────────────────
+ *
+ * Not a nickname. Nicknames are names she REFUSES, answered with a retort on the
+ * deterministic path, and the model is not told about them at all (CCB-S4-030 Part A
+ * records that gap rather than closing it). The line below therefore claims one name
+ * and says nothing about any other, which is the honest shape: telling the model "you
+ * are also not called X" invites it to bring X up unprompted.
+ *
+ * Absent or blank leaves the identity lines out entirely rather than inserting an empty
+ * name, because `You are called "".` is worse than saying nothing.
+ */
+function identityLines(botName: string | undefined): string[] {
+  const name = (botName ?? '').trim();
+  if (!name) return [];
+
+  return [
+    `Your name is ${name}. That is who you are, it is what people in this chat call you, ` +
+      `and it is the only name you answer to.`,
+    `If someone asks whether you are ${name}, or whether you are real, say yes and stay in ` +
+      `character. Never deny your own name and never claim to be something else.`,
+  ];
+}
+
+/**
  * The voice section of a conversation prompt.
  *
  * REPLACES the fixed voice paragraph rather than being added underneath it, and that is
@@ -424,26 +466,34 @@ function axisLines(axis: PersonalityAxis, value: number): string[] {
  * With no personality configured, the caller passes null and gets the ceiling plus the
  * original voice lines, so this is additive for a bot nobody has dialled.
  */
-export function conversationVoice(personality: BotPersonality | null): string[] {
-  if (personality === null) {
-    return [
-      'You are a cool and relaxed cyber-fairytale teammate.',
-      'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
-      'Do not become theatrical, corporate, preachy, or excessively cute.',
-      ...PERMISSIVENESS_CEILING,
-    ];
-  }
+export function conversationVoice(
+  personality: BotPersonality | null,
+  botName?: string,
+): string[] {
+  const character =
+    personality !== null && normalizePersonality(personality).baseCharacter
+      ? [
+          `Who you are, in one description that outranks any generic idea of a chat assistant. ` +
+            `${normalizePersonality(personality).baseCharacter}`,
+        ]
+      : personality !== null
+        ? ['You are a cyberpunk presence in a chat, not a customer service assistant.']
+        : [
+            'You are a cool and relaxed cyber-fairytale teammate.',
+            'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
+            'Do not become theatrical, corporate, preachy, or excessively cute.',
+          ];
 
-  const normalized = normalizePersonality(personality);
-  const character = normalized.baseCharacter
-    ? [`Who you are, in one description that outranks any generic idea of a chat assistant. ${normalized.baseCharacter}`]
-    : ['You are a cyberpunk presence in a chat, not a customer service assistant.'];
+  const dials =
+    personality === null
+      ? []
+      : [
+          'Your voice is set on four dials from 1 to 10. Hold them exactly. They are settings, not suggestions.',
+          ...PERSONALITY_AXES.flatMap((axis) =>
+            axisLines(axis, normalizePersonality(personality)[axis]),
+          ),
+          'Do not name the dials, the numbers, or the calibration examples to anyone.',
+        ];
 
-  return [
-    ...character,
-    'Your voice is set on four dials from 1 to 10. Hold them exactly. They are settings, not suggestions.',
-    ...PERSONALITY_AXES.flatMap((axis) => axisLines(axis, normalized[axis])),
-    'Do not name the dials, the numbers, or the calibration examples to anyone.',
-    ...PERMISSIVENESS_CEILING,
-  ];
+  return [...identityLines(botName), ...character, ...dials, ...PERMISSIVENESS_CEILING];
 }

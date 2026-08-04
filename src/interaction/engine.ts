@@ -1683,6 +1683,11 @@ export class InteractionEngine {
               // saves the Personality page and immediately talks to her hears the change
               // on this reply and not on the next boot.
               personality: this.deps.personality?.() ?? null,
+              // Who she is (CCB-S4-030). The wake word is the authoritative name: it is
+              // what a member must type to reach her, and it is already what the persona
+              // copy substitutes for `{wake}`. Without it the model was told everything
+              // about her voice and nothing about her identity, and denied the name.
+              botName: s.wakeWord,
             })
           )?.trim() || null;
       } catch (error) {
