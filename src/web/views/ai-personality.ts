@@ -233,6 +233,15 @@ ${personality.origin}</textarea
       <div class="personality-axes">
         ${PERSONALITY_AXES.map((axis) => axisControl(axis, personality[axis]))}
       </div>
+      <p class="text-xs text-slate-500">
+        <strong>Verbosity buys length and nothing else.</strong> It raises the character
+        bound as well as telling her to be expansive, so the two agree instead of the cap
+        quietly truncating her. Everything above it is unchanged at every value: the
+        permissiveness ceiling, the blocked names, the placeholder and mention stripping.
+        Be honest with yourself about the room, though. A busy group and a setting of 9 is a
+        wall of text arriving every time somebody speaks to her, and the members who did not
+        ask are the ones who pay for it.
+      </p>
 
       <button
         type="submit"
@@ -372,6 +381,7 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
           baseCharacter: text(req.body['baseCharacter']),
           origin: text(req.body['origin']),
           sharpness: text(req.body['sharpness']),
+          verbosity: text(req.body['verbosity']),
           warmth: text(req.body['warmth']),
           humor: text(req.body['humor']),
           permissiveness: text(req.body['permissiveness']),

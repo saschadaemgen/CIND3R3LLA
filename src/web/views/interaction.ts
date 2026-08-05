@@ -238,6 +238,7 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     vars: '{sources}',
   },
   searchUnavailable: { label: 'Web search could not be reached', vars: '' },
+  searchEmpty: { label: 'Web search ran and found nothing (closes an announcement)', vars: '' },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
     vars: '{action} {duration}',
