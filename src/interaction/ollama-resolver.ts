@@ -71,6 +71,15 @@ const INTENT_DEFINITIONS: Record<Intent, string> = {
   PRICE:
     'A price, value, exchange-rate, or asset-conversion question. Put the asset in slots.base, ' +
     'the requested quote in slots.quote, and the amount in slots.amount when present.',
+  // CCB-S4-037. The model may RECOGNISE the request; it never performs the search, and the
+  // deterministic side decides whether to honour it. This description is deliberately
+  // narrow, matching the rule patterns: an EXPLICIT request to look something up, never a
+  // judgement that a question sounds like it wants current information. A resolver that
+  // could widen the trigger would be a resolver that decides when to spend money.
+  LOOKUP:
+    'An EXPLICIT request to look something up on the web, search online, or google it. ' +
+    'Put the thing to search for in slots.query. A question that merely happens to be ' +
+    'about current events is NOT this: only an actual request to go and look.',
   UNKNOWN:
     'Anything unclear, conversational, negated, quoted, hypothetical, descriptive, or outside ' +
     'the active catalog.',

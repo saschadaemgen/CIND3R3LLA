@@ -183,6 +183,24 @@ export interface InteractionDeps {
    * host's resolved zone; supplied by harnesses so a rendered prompt is deterministic.
    */
   timeZone?: string;
+  /**
+   * Web search (CCB-S4-037, D-141).
+   *
+   * ── WHAT THIS DEPENDENCY CAN AND CANNOT DO ────────────────────────────────
+   *
+   * It takes a query and returns text. That is the whole interface, and it is the whole
+   * of the no-action property: there is no way for a search result to become anything
+   * other than the return value of this call, because the only thing the engine can do
+   * with a `WebSearchLookup` is call it and read what comes back.
+   *
+   * Same shape and the same reasoning as the enforcement port (D-139): the capability is
+   * handed in, so a harness can substitute it and prove exactly what was and was not
+   * attempted, and the plugin's own module cannot be reached from here at all.
+   *
+   * Absent means the plugin is off or unconfigured, in which case LOOKUP is not in the
+   * active catalog either, so this is the second line of defence rather than the first.
+   */
+  webSearch?: WebSearchLookup;
   moderationRules?: () => ModerationRules | null;
   /**
    * The capability that makes a sanction real (CCB-S4-035, D-139).
@@ -212,6 +230,27 @@ export interface InteractionDeps {
    * page's overdue flag is what catches it if it ever does not.
    */
   scheduleUnmute?: (sanctionId: string, at: Date) => Promise<void>;
+}
+
+/**
+ * The only shape of web search the engine knows about (CCB-S4-037).
+ *
+ * DELIBERATELY NOT the plugin's `WebSearchService` type. The engine declaring the narrow
+ * thing it needs, rather than importing the wide thing that exists, is what keeps the
+ * interaction layer independent of a plugin and what makes the no-action property
+ * readable: a reader can see, in five lines, that the only thing a search can produce
+ * here is a list of strings.
+ */
+export interface WebSearchLookup {
+  /** Whether a search could be attempted at all right now. */
+  available(): boolean;
+  search(
+    query: string,
+    scope: { groupId: number; memberId: string },
+  ): Promise<
+    | { kind: 'results'; results: { title: string; snippet: string; url: string }[]; provider: string }
+    | { kind: 'failed'; failure: string; detail: string }
+  >;
 }
 
 interface ReplyOptions {
@@ -816,6 +855,9 @@ export class InteractionEngine {
       case 'PRICE':
         return this.answerPrice(msg, s, lang, result.slots, now, carried);
 
+      case 'LOOKUP':
+        return this.answerLookup(msg, s, lang, result.slots, instruction);
+
       case 'UNKNOWN':
       default:
         // Inside the follow-up window an unrecognised message is far more likely
@@ -983,6 +1025,138 @@ export class InteractionEngine {
    * consent involvement, nothing journalled — it is a lookup, and the only state
    * it touches is a cache, a rate-limit counter, and the pinned mapping table.
    */
+  /**
+   * Look something up, and answer from what came back (CCB-S4-037, D-141).
+   *
+   * ── THE NO-ACTION PROPERTY, AND WHERE IT LIVES ───────────────────────────
+   *
+   * Read this method top to bottom and there is exactly one thing it does with what the
+   * search returned: it puts the strings on an `AiReplyRequest` and sends ONE reply to the
+   * chat the question came from. It does not branch on their content, does not parse them
+   * for commands, does not touch consent, does not reach moderation, and cannot address
+   * anybody but the asker. That is not a rule being followed, it is the only code there is.
+   *
+   * The guarantee therefore rests on three things a check can hold on to: the dependency
+   * can only return data (see {@link WebSearchLookup}), this method is the only caller,
+   * and everything it produces goes through `replyWithText` to `msg.groupId`.
+   *
+   * ── AND WHY THE SOURCES ARE APPENDED, NOT WRITTEN ────────────────────────
+   *
+   * The model words the answer; the application appends the source list verbatim. D-137
+   * settled this once for the moderation warning and the lesson transfers exactly: asked
+   * to preserve a fact inside prose it is rewriting, the model corrupts it. A warning that
+   * misstates its own count is bad; a source that names the wrong page is worse, because a
+   * member can act on it. So the sources are protected text, like the warning and the
+   * announcement, and she cannot claim a source she was not given.
+   */
+  private async answerLookup(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+    slots: { query?: string },
+    instruction: string,
+  ): Promise<boolean> {
+    const search = this.deps.webSearch;
+    if (!search || !search.available()) {
+      // The plugin is off or has no key. LOOKUP should not be in the active catalog at
+      // all in that case, so this is the second line of defence, and it is honest rather
+      // than silent: she says she could not look it up.
+      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      return true;
+    }
+
+    // The query is the member's own words with the trigger phrase removed where the
+    // resolver supplied one. It is passed to the provider and to nothing else.
+    const query = (slots.query ?? instruction).trim();
+    if (!query) {
+      await this.reply(msg, s, lang, 'notUnderstood', {});
+      return true;
+    }
+
+    const outcome = await search.search(query, {
+      groupId: msg.groupId,
+      memberId: msg.senderMemberId,
+    });
+
+    if (outcome.kind === 'failed') {
+      // EVERY failure says the same honest thing, and none of them falls through to
+      // answering from training data. That fallback is the one this feature exists to
+      // prevent: an answer that sounds current and is two years old is worse than no
+      // answer, because nobody can tell.
+      log.debug(`Lookup: search failed (${outcome.failure}: ${outcome.detail}).`);
+      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      return true;
+    }
+
+    const personalize = this.deps.personalize;
+    if (!personalize) {
+      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      return true;
+    }
+
+    let spoken: string | null = null;
+    try {
+      spoken =
+        (
+          await personalize({
+            kind: 'lookup',
+            lang,
+            memberMessage: msg.text,
+            deterministicDraft: '',
+            mode: 'conversation',
+            requiredLiterals: [],
+            blockedLiterals: [msg.senderDisplayName],
+            personality: this.deps.personality?.() ?? null,
+            identity: botIdentity(s),
+            now: { at: new Date(this.now()), timeZone: this.timeZone },
+            // The untrusted material. Fenced and labelled by `systemPrompt`; see the
+            // field's own documentation for why it rides in the user message.
+            webResults: outcome.results,
+          })
+        )?.trim() || null;
+    } catch (error) {
+      log.debug(
+        `Lookup: wording the results failed (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
+      );
+    }
+
+    if (!spoken) {
+      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      return true;
+    }
+
+    // PROTECTED TEXT, appended verbatim. The hosts only: a full URL list turns a two line
+    // answer into a wall, and the host is what tells a member whether to trust it.
+    const sources = [
+      ...new Set(
+        outcome.results.map((result) => {
+          try {
+            return new URL(result.url).host.replace(/^www\./, '');
+          } catch {
+            return '';
+          }
+        }),
+      ),
+    ]
+      .filter(Boolean)
+      .slice(0, 4);
+
+    const attribution = sources.length
+      ? fillPersona(this.persona(s, lang, 'searchSources'), { sources: sources.join(', ') })
+      : '';
+
+    await this.replyWithText(
+      msg,
+      s,
+      lang,
+      attribution ? `${spoken}\n${attribution}` : spoken,
+      'lookup',
+    );
+    return true;
+  }
+
   private async answerPrice(
     msg: CapturedMessage,
     s: InteractionSettings,

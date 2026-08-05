@@ -81,6 +81,11 @@ export const PERSONA_KEYS = [
   // nothing happened. `{action}` and `{duration}` are appended by the application
   // verbatim, never worded by the model, for the reason D-137 records about the count.
   'moderationAction',
+  // CCB-S4-037. Two lines about looking things up. `searchSources` is PROTECTED TEXT:
+  // the application appends it verbatim, because a source the model reworded is a
+  // source that may name the wrong page, and a wrong source is worse than none.
+  'searchSources',
+  'searchUnavailable',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -143,6 +148,8 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // Same reasoning as the warning: it rides on the retort message, so it shares the
   // retort's category rather than belonging to a second one.
   moderationAction: 'nickname',
+  searchSources: 'lookup',
+  searchUnavailable: 'lookup',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -357,6 +364,13 @@ const PERSONA_EN: PersonaStrings = {
   moderationAction:
     '🔒 That is a {action}{duration}. It is on the record, and it was not my idea, it was ' +
     'the count.',
+  // CCB-S4-037. Appended verbatim after whatever she wrote from the results, so a member
+  // can always tell an answer that came from the web from one that came from her.
+  searchSources: '🔎 From the web: {sources}',
+  // Said when she could not look it up. She does NOT then answer from training data and
+  // present it as current: that is the failure the whole feature exists to avoid.
+  searchUnavailable:
+    '🔌 I could not look that up just now, so I am not going to guess at it. Try me again in a bit.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -474,6 +488,9 @@ const PERSONA_DE: PersonaStrings = {
   moderationAction:
     '🔒 Das ist jetzt {action}{duration}. Es steht im Protokoll, und es war nicht meine ' +
     'Idee, es war die Zaehlung.',
+  searchSources: '🔎 Aus dem Netz: {sources}',
+  searchUnavailable:
+    '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',

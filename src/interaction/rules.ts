@@ -280,6 +280,75 @@ const LEXICON: LexEntry[] = [
     ],
     keywords: ['hilfe', 'befehle'],
   },
+  /**
+   * LOOKUP: the web-search trigger (CCB-S4-037, D-141).
+   *
+   * ── WHY THE TRIGGER IS HERE AND NOT IN THE MODEL ─────────────────────────
+   *
+   * The briefing asked for it to be deterministic and inspectable, and this file is where
+   * every other decision in this system already is. An operator can read these phrases,
+   * the resolver can be driven over them offline, and a check can assert exactly which
+   * sentences do and do not cost an outbound request. A model deciding for itself when to
+   * search would be a model deciding when to spend the operator's money and when to pull
+   * a stranger's text into its own prompt.
+   *
+   * ── EXPLICIT FIRST, AND THAT IS THE PART THAT MATTERS ────────────────────
+   *
+   * The phrases below are all EXPLICIT REQUESTS: somebody asking her to look something
+   * up, search for it, or google it. They are unambiguous, they are what the briefing
+   * calls the clearest trigger, and they are the whole of the shipped trigger.
+   *
+   * There is deliberately NO "this looks like it wants current information" heuristic.
+   * Such a rule fires on ordinary conversation, and the cost of a false positive here is
+   * not a clumsy answer: it is an outbound request, a bill, and untrusted text entering
+   * the prompt. When somebody says "I wonder what the weather is doing", she should talk
+   * to them, not silently query a search API. The operator can see the trigger, and
+   * widening it is a decision for somebody who is watching the bill.
+   */
+  {
+    intent: 'LOOKUP',
+    lang: 'en',
+    phrases: [
+      'look up',
+      'look that up',
+      'search the web for',
+      'search the web',
+      'search online for',
+      'search online',
+      'search for',
+      'google',
+      'web search',
+      'find out about',
+      'find out what',
+      'can you look',
+      'could you look',
+      'check the web',
+      'check online',
+      'what does the internet say',
+    ],
+    keywords: [],
+  },
+  {
+    intent: 'LOOKUP',
+    lang: 'de',
+    phrases: [
+      'schau nach',
+      'schau mal nach',
+      'schlag nach',
+      'such im netz',
+      'such im internet',
+      'suche im netz',
+      'suche im internet',
+      'im internet suchen',
+      'google mal',
+      'googel mal',
+      'kannst du nachschauen',
+      'kannst du nachsehen',
+      'finde heraus',
+      'recherchiere',
+    ],
+    keywords: [],
+  },
   {
     intent: 'PRICE',
     lang: 'en',

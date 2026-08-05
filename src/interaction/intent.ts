@@ -26,6 +26,7 @@ export const INTENTS = [
   'UNDO', // revert the last action
   'PRICE', // what is an asset worth (CCB-S3-004)
   'RESTORE', // bring hidden content back (CCB-S3-013)
+  'LOOKUP', // look something up on the web (CCB-S4-037)
   'UNKNOWN', // not understood
 ] as const;
 
