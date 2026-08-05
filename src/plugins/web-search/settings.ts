@@ -28,7 +28,30 @@ import {
 } from '../secrets.js';
 
 /** Providers this build can construct. The console offers exactly these. */
-export const SEARCH_PROVIDERS = ['brave'] as const;
+/**
+ * Providers this build can construct. The console offers exactly these.
+ *
+ * Brave is first because it is an independent index; Serper is offered because Brave
+ * stopped having a free tier and an operator should be able to try the feature without a
+ * card. Neither is a default: the plugin ships off and the operator chooses, with each
+ * option's catch stated beside it (see SEARCH_PROVIDER_NOTES).
+ */
+export const SEARCH_PROVIDERS = ['brave', 'serper'] as const;
+
+/**
+ * One honest line each, shown in the selector.
+ *
+ * An operator picking a search provider should not have to go and research the billing
+ * model and the legal posture of two companies first. Both sentences name the good part
+ * and the catch, because a selector that only listed names would be asking them to
+ * choose blind between an uncapped bill and a scraping dependency.
+ */
+export const SEARCH_PROVIDER_NOTES: Record<(typeof SEARCH_PROVIDERS)[number], string> = {
+  brave:
+    'Its own independent index. No free tier since February 2026: prepaid metered credit, a card is required, and there is no spending cap.',
+  serper:
+    'Free monthly allowance and no card required. Serves scraped search-engine results rather than its own index, which is a legal fragility Brave does not have.',
+};
 export type SearchProviderName = (typeof SEARCH_PROVIDERS)[number];
 
 export interface WebSearchSettings {
