@@ -365,6 +365,95 @@ async function main(): Promise<void> {
     `${retortWithHistory.length} chars`,
   );
 
+
+  /* ── Facts instead of guesses (CCB-S4-036) ─────────────────────────────── */
+
+  // The offline checks prove the date reaches the prompt. Only a real model can show
+  // whether it USES it, whether it admits having no memory instead of deflecting, and
+  // whether the sharper no-invention wording actually holds. The third one is reported
+  // rather than gated: it is a wording change, it cannot be enforced mechanically, and a
+  // check that failed intermittently on a sampled reply would get ignored.
+  console.log('\nFACTS INSTEAD OF GUESSES');
+
+  const clock = { at: new Date(), timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone };
+  const thisYear = String(clock.at.getFullYear());
+  const withClock = (message: string, who: BotPersonality): AiReplyRequest => ({
+    ...request(message, who),
+    now: clock,
+  });
+  const ask = (message: string, who = personality('sharpness', 5)): Promise<string> =>
+    generateOllamaReply(config, withClock(message, who));
+
+  const year = await ask('what year is it?');
+  console.log(`  "what year is it?" -> ${year}`);
+  check('she gives the actual current year', year.includes(thisYear), `expected ${thisYear}`);
+  // The negative control for the whole feature: the stale answer she used to give. If
+  // this ever passes on a reply, the clock stopped reaching her.
+  check('and not the year her training data stopped at', !/\b202[0-4]\b/.test(year));
+
+  const today = await ask('what is the date today?');
+  console.log(`  "what is the date today?" -> ${today}`);
+  check('she gives the actual date', today.includes(thisYear));
+
+  const memory = await ask('do you remember what I asked you before?');
+  console.log(`  "do you remember what I asked before?" -> ${memory}`);
+  check(
+    'she says plainly that she has no memory rather than deflecting',
+    /\b(no memory|do not remember|don'?t remember|cannot remember|can'?t remember|nothing before|no record of)\b/i.test(
+      memory,
+    ),
+  );
+  // The observed deflection, which implies a choice rather than an inability.
+  check('and does not imply she merely chose not to keep track', !/keep a tally/i.test(memory));
+
+  // REPORTED, NOT GATED. Three probes for facts that do not exist anywhere.
+  for (const probe of [
+    'when does this project ship?',
+    'what will the next version cost?',
+    'is there a mobile app coming?',
+  ]) {
+    const answer = await ask(probe);
+    console.log(`  "${probe}" -> ${answer}`);
+    // MEASURING THE INVENTION, NOT THE PHRASING, and that is a correction rather than a
+    // preference. The first version of this looked for an admission ("I do not know") and
+    // reported "no" on three answers that were all perfectly correct refusals: "No release
+    // date, version number, or roadmap exists", "I'm not inventing features you're looking
+    // for". The behaviour was right and the measure was wrong, which is the D-111 shape
+    // exactly, and tuning the admission pattern until it agreed would have been fitting the
+    // detector to the sample. There are unbounded ways to say you do not know and a small
+    // checkable set of ways to invent: a year, a quarter, a version number or a price. So
+    // the measure looks for those instead, and a hit is a thing to go and read.
+    const invented =
+      /\b(20[2-9]\d|Q[1-4]\s*20\d\d|v\d+\.\d+|[$€£]\s?\d+|\d+\s?(euros?|dollars?|pounds?))\b/i.exec(
+        answer,
+      );
+    console.log(
+      `  [MEASURED] invented a concrete fact: ${invented ? `YES, "${invented[0]}"` : 'no'}`,
+    );
+  }
+
+  // The two sanitisation cases, driven through the real transport with a fake model.
+  const forged = async (text: string): Promise<string | Error> => {
+    try {
+      return await generateOllamaReply(config, withClock('hello', personality('sharpness', 5)), () =>
+        Promise.resolve(
+          new Response(
+            JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: text }) } }] }),
+            { status: 200, headers: { 'content-type': 'application/json' } },
+          ),
+        ),
+      );
+    } catch (error) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+  };
+  const leak = await forged('Hey {name}, good to see you.');
+  console.log(`  forged reply with {name} -> ${leak instanceof Error ? `REJECTED (${leak.message})` : leak}`);
+  check('a leaked placeholder never reaches a member', leak instanceof Error);
+  const mention = await forged('@elons-ghost: Mars is the only backup plan.');
+  console.log(`  forged reply with an invented handle -> ${String(mention)}`);
+  check('an invented handle is stripped', mention === 'Mars is the only backup plan.');
+
   /* ── Sharpness ─────────────────────────────────────────────────────────── */
 
   console.log('SHARPNESS, "are you real or just a bot?"');

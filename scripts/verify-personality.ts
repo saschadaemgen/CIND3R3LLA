@@ -42,13 +42,16 @@ import {
   referenceFor,
   type BotIdentity,
   type BotPersonality,
+  type CurrentTime,
   type PersonalityAxis,
 } from '../src/interaction/personality.js';
 import {
   generateOllamaReply,
+  stripInventedMention,
   systemPrompt,
   type AiReplyRequest,
 } from '../src/interaction/ollama-reply.js';
+import { formatOutbound } from '../src/interaction/reply.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import {
   DEFAULT_INTERACTION,
@@ -626,6 +629,209 @@ async function main(): Promise<void> {
       `${shipped.length} with the shipped one (origin text ${DEFAULT_ORIGIN.length}).`,
   );
 
+
+  // Declared here rather than in section 5, because the sanitisation checks in 2g drive
+  // the real transport with a fake fetch and need it first. One config, one transport,
+  // every output check going through the code that actually ships.
+  const aiConfig: LocalAiConfig = {
+    enabled: true,
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'qwen3.5:9b',
+    timeoutMs: 2000,
+  };
+
+  /* ── 2f. The clock, and the two things she was not saying (CCB-S4-036) ──── */
+
+  console.log('\n2f. Facts instead of guesses');
+
+  // PINNED, both the instant and the zone. A check that read the machine's clock could
+  // only assert against whatever it happened to say, and one that read the machine's zone
+  // would assert differently on a laptop and in CI. This is why `CurrentTime` is passed in
+  // rather than resolved inside the prompt builder.
+  const PINNED: CurrentTime = { at: new Date('2026-08-05T14:32:00.000Z'), timeZone: 'Europe/Berlin' };
+  const timed = (over: Partial<AiReplyRequest> = {}): string =>
+    systemPrompt({ ...conversationRequest(DIALLED_WITH_ORIGIN, full), now: PINNED, ...over }, 500);
+
+  const clocked = timed();
+  const unclocked = systemPrompt(conversationRequest(DIALLED_WITH_ORIGIN, full), 500);
+
+  check('the year reaches the prompt', clocked.includes('2026'));
+  check('with the weekday, the date and the time', clocked.includes('Wednesday') && clocked.includes('5 August 2026') && clocked.includes('16:32'));
+  check('and the zone the server runs in', clocked.includes('Europe/Berlin'));
+  // The negative control. Without it, an assertion for "2026" could pass on a prompt that
+  // happened to contain the year for some other reason.
+  check(
+    'and a request with no clock carries no time at all, so the check discriminates',
+    !unclocked.includes('The current date and time') && !unclocked.includes('Europe/Berlin'),
+  );
+  check(
+    'she is told to use it rather than answer from what she remembers',
+    clocked.includes('you have no clock of your own') &&
+      clocked.includes('what you remember is out of date'),
+  );
+  check(
+    'and not to announce it unprompted, like the origin',
+    clocked.includes('Do not announce the time unprompted'),
+  );
+  // The zone is rendered, not just passed through: 14:32 UTC is 16:32 in Berlin.
+  check(
+    'the time is rendered IN the configured zone, not in UTC',
+    clocked.includes('16:32') && !clocked.includes('14:32'),
+  );
+  check(
+    'a different zone renders a different local time from the same instant',
+    timed({ now: { at: PINNED.at, timeZone: 'UTC' } }).includes('14:32'),
+  );
+  check(
+    'an unusable zone still states a time rather than taking her voice away',
+    timed({ now: { at: PINNED.at, timeZone: 'Not/AZone' } }).includes('2026'),
+  );
+  check(
+    'an invalid instant emits nothing rather than "Invalid Date"',
+    !timed({ now: { at: new Date('nonsense'), timeZone: 'UTC' } }).includes('current date and time'),
+  );
+  // Same scope rule as the character, the origin and the dials (D-133).
+  check(
+    'a command rewrite is not told the time',
+    !systemPrompt(
+      { ...conversationRequest(DIALLED_WITH_ORIGIN, full), now: PINNED, mode: 'free', deterministicDraft: '3 archived.' },
+      700,
+    ).includes('The current date and time'),
+  );
+
+  check(
+    'the no-invented-facts rule names the specific things she has invented',
+    clocked.includes('the roadmap, the release dates') && clocked.includes('not even a vague one'),
+  );
+  check(
+    'and tells her to say she does not know instead of filling the gap',
+    clocked.includes('filling the gap is the one thing you must not do'),
+  );
+  check(
+    'she is told plainly that she has no conversation memory',
+    clocked.includes('You do not remember earlier messages in this conversation'),
+  );
+  check(
+    'and told to say so rather than deflect, which is the observed defect',
+    clocked.includes('Do not imply you chose not to keep track'),
+  );
+  check(
+    'the grounding rules do not reach a command rewrite either',
+    !systemPrompt(
+      { ...conversationRequest(DIALLED_WITH_ORIGIN, full), mode: 'free', deterministicDraft: '3 archived.' },
+      700,
+    ).includes('You do not remember earlier messages'),
+  );
+
+  /* ── 2g. Nothing the model invents reaches a member (CCB-S4-036) ────────── */
+
+  console.log('\n2g. Output sanitisation');
+
+  /** A transport that returns exactly what the model is pretending to have said. */
+  const replying = (text: string) => async (_url: URL | string, init?: RequestInit): Promise<Response> => {
+    JSON.parse(String(init?.body ?? '{}'));
+    return Promise.resolve(
+      new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: text }) } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  };
+  const say = async (text: string, over: Partial<AiReplyRequest> = {}): Promise<string | Error> => {
+    try {
+      return await generateOllamaReply(
+        aiConfig,
+        { ...conversationRequest(DIALLED_WITH_ORIGIN, full), ...over },
+        replying(text),
+      );
+    } catch (error) {
+      return error instanceof Error ? error : new Error(String(error));
+    }
+  };
+
+  // ── The unresolved placeholder. REJECTED, not stripped. ──────────────────
+  const leaked = await say('Hey {name}, that is not how any of this works.');
+  check(
+    'a reply carrying an unresolved {name} is rejected outright',
+    leaked instanceof Error && leaked.message.includes('unresolved placeholder'),
+    leaked instanceof Error ? leaked.message.slice(0, 60) : String(leaked),
+  );
+  check('so the token can never reach a member', !(typeof leaked === 'string'));
+  // NEGATIVE CONTROL. The same sentence without the token must come straight through, or
+  // the check above would pass on a transport that rejected everything.
+  check(
+    'the same reply without the token is delivered untouched',
+    (await say('Hey there, that is not how any of this works.')) ===
+      'Hey there, that is not how any of this works.',
+  );
+  check(
+    'any placeholder is caught, not just {name}',
+    (await say('Filed under {total} of {n}.')) instanceof Error,
+  );
+  // The grammar is borrowed from `fillPersona`, so prose in braces is NOT a placeholder
+  // and must not be rejected: over-rejecting would silently replace her voice with the
+  // deterministic draft on ordinary sentences.
+  check(
+    'braces around prose are not a placeholder and are left alone',
+    (await say('It looked like { a set of things } to me.')) === 'It looked like { a set of things } to me.',
+  );
+  check(
+    'and empty braces are not either',
+    (await say('The answer is {} and nothing else.')) === 'The answer is {} and nothing else.',
+  );
+  check(
+    'a locked lead is checked too, not only a free reply',
+    (await say('Right, {name}:', { mode: 'locked', deterministicDraft: '3 archived.' })) instanceof Error,
+  );
+
+  // ── The invented mention. STRIPPED, because it cannot be real. ───────────
+  check(
+    'an invented @handle at the head of a reply is stripped',
+    (await say('@elons-ghost: Mars is the only backup plan.')) === 'Mars is the only backup plan.',
+  );
+  check(
+    'the pure function does it too, so the rule is testable on its own',
+    stripInventedMention('@elons-ghost: hello') === 'hello',
+  );
+  // NEGATIVE CONTROLS. Three shapes that must survive, because over-stripping would eat
+  // legitimate content and nobody would see it happen.
+  check(
+    'a reply with no mention is untouched',
+    (await say('Mars is the only backup plan.')) === 'Mars is the only backup plan.',
+  );
+  check(
+    'an @ in the middle of a sentence is left alone',
+    (await say('Write to me @ the archive address, not here.')) ===
+      'Write to me @ the archive address, not here.',
+  );
+  check(
+    'an address inside the text survives',
+    (await say('It is listed as ops@example.org on the page.')) ===
+      'It is listed as ops@example.org on the page.',
+  );
+  check(
+    'a leading @ with no separator is not a mention and is kept',
+    stripInventedMention('@ the archive') === '@ the archive',
+  );
+
+  // ── The legitimate prefix still works, and it is added AFTER all of this. ─
+  const prefixed = formatOutbound('Mars is the only backup plan.', {
+    mode: 'mention',
+    prefixTemplate: '{name}:',
+    displayName: 'Alice',
+    quote: false,
+  });
+  check(
+    'the application can still prefix a real member name',
+    prefixed.text === 'Alice: Mars is the only backup plan.' && prefixed.prefixName === 'Alice',
+  );
+  // The ordering argument, made checkable: the strip runs on the model's raw output, the
+  // prefix is applied afterwards to an already-finished body, so the two cannot collide.
+  check(
+    'and the strip does not touch it, because it never sees the assembled message',
+    stripInventedMention(prefixed.text) === prefixed.text,
+  );
+
   /* ── 3. The ceiling: present at every value, and in every conversation ───── */
 
   console.log('\n3. The permissiveness ceiling is bounded by construction');
@@ -717,13 +923,6 @@ async function main(): Promise<void> {
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );
-  };
-
-  const aiConfig: LocalAiConfig = {
-    enabled: true,
-    baseUrl: 'http://127.0.0.1:11434',
-    model: 'qwen3.5:9b',
-    timeoutMs: 2000,
   };
 
   const spoken = await generateOllamaReply(
