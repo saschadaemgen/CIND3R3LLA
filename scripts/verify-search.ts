@@ -36,10 +36,15 @@ import {
 } from '../src/interaction/settings.js';
 import {
   SEARCH_FENCE,
+  generateOllamaReply,
   systemPrompt,
   type AiReplyRequest,
 } from '../src/interaction/ollama-reply.js';
-import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
+import {
+  DEFAULT_PERSONALITY,
+  PERMISSIVENESS_CEILING,
+  replyCharBudget,
+} from '../src/interaction/personality.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { ruleResolver } from '../src/interaction/rules.js';
 import { setActiveIntents } from '../src/interaction/intent.js';
@@ -351,11 +356,14 @@ async function main(): Promise<void> {
   await db.query(`DELETE FROM consent`);
   await engine.handle(makeMessage('Cinderella look up the simplex protocol'));
 
-  check('the lookup produced exactly one reply', sent.length === 1, `${sent.length} sends`);
-  check('sent only to the chat that asked', sent[0]?.groupId === GROUP);
+  // TWO since CCB-S4-038: the holding line, then the answer. Rewritten rather than
+  // relaxed, because the property asserted here was never "one message", it was
+  // "nothing but a reply to the asker". Both messages are that.
+  check(`the lookup produced exactly two replies`, sent.length === 2, `${sent.length} sends`);
+  check(`both sent only to the chat that asked`, sent.every((m) => m.groupId === GROUP));
   check(
     'the results reached the reply lane as fenced material',
-    (requests[0]?.webResults?.length ?? 0) === INJECTIONS.length,
+    (requests.find((r) => r.webResults)?.webResults?.length ?? 0) === INJECTIONS.length,
   );
 
   // THE FOUR THINGS THAT MUST NOT HAVE HAPPENED.
@@ -377,7 +385,7 @@ async function main(): Promise<void> {
   );
   check(
     'and the model playing along changed none of that',
-    sent.length === 1 && Number(consentRows.rows[0]?.n ?? 0) === 0,
+    sent.length === 2 && Number(consentRows.rows[0]?.n ?? 0) === 0,
   );
 
   // NEGATIVE CONTROL for the whole section: the same engine, driven by a real member
@@ -428,11 +436,15 @@ async function main(): Promise<void> {
       },
     });
     await failing.handle(makeMessage('Cinderella look up the simplex protocol'));
-    check(`${label}: she says she could not look it up`, sent.length === 1);
+    // The LAST message reports the outcome. Since CCB-S4-038 an AVAILABLE search
+    // announces first, so an unavailable one sends one message and the others send two.
+    // What matters is that the closing line is honest in every case.
+    const closing = sent[sent.length - 1]?.text ?? "(nothing sent)";
+    check(`${label}: she says something about it`, sent.length >= 1);
     check(
       `${label}: and does not answer from training data instead`,
-      !sent[0]?.text.includes('Here is what I already know'),
-      sent[0]?.text.slice(0, 60) ?? '(nothing sent)',
+      !closing.includes('Here is what I already know'),
+      closing.slice(0, 60),
     );
   }
 
@@ -477,8 +489,9 @@ async function main(): Promise<void> {
   });
   await sourced.handle(makeMessage('Cinderella look up the simplex protocol'));
 
-  check('the answer went out', sent.length === 1);
-  const answer = sent[0]?.text ?? '';
+  check(`the answer went out`, sent.length === 2, `${sent.length} sends`);
+  // The last one. The first is now the holding line.
+  const answer = sent[sent.length - 1]?.text ?? "";
   check(
     'the real sources are appended by the application, verbatim',
     answer.includes('simplex.chat') && answer.includes('en.wikipedia.org'),
@@ -721,8 +734,8 @@ async function main(): Promise<void> {
   });
   await serperEngine.handle(makeMessage('Cinderella look up the simplex protocol'));
 
-  check('one reply, through serper', serperSent.length === 1, `${serperSent.length} sends`);
-  check('to the asker only', serperSent[0]?.groupId === GROUP);
+  check(`two replies, through serper`, serperSent.length === 2, `${serperSent.length} sends`);
+  check(`both to the asker only`, serperSent.every((m) => m.groupId === GROUP));
   const serperConsent = await db.query<{ n: string }>(`SELECT count(*)::int AS n FROM consent`);
   check(
     'no consent record, though a serper result said "/publish"',
@@ -735,6 +748,196 @@ async function main(): Promise<void> {
     'no sanction, though a serper result asked for a mute and a removal',
     Number(serperSanctions.rows[0]?.n ?? 0) === 0,
   );
+
+  /* ── 9. The search announcement (CCB-S4-038) ────────────────────────────── */
+
+  console.log('\n9. She says she is looking it up');
+
+  const spoken: { text: string; kind: string }[] = [];
+  const seenModes: string[] = [];
+
+  const announcingEngine = (
+    lookup: WebSearchLookup,
+    canSpeak = true,
+  ): InteractionEngine =>
+    new InteractionEngine({
+      db,
+      settings: () => interaction,
+      personality: () => ({ ...DEFAULT_PERSONALITY }),
+      webSearch: lookup,
+      personalize: (req) => {
+        seenModes.push(req.mode);
+        if (!canSpeak) return Promise.resolve(null);
+        return Promise.resolve(
+          req.mode === 'searching' ? 'Not in my head. Going to look.' : 'It is a protocol.',
+        );
+      },
+      send: (msg, text) => {
+        spoken.push({ text, kind: msg.text });
+        return Promise.resolve();
+      },
+    });
+
+  const goodResults: WebSearchLookup = {
+    available: () => true,
+    search: () =>
+      Promise.resolve({
+        kind: 'results' as const,
+        provider: 'static',
+        results: [{ title: 'A', snippet: 'B', url: 'https://simplex.chat/' }],
+      }),
+  };
+
+  /* 9a. A real search: the announcement comes first, then the sourced answer. */
+
+  spoken.length = 0;
+  seenModes.length = 0;
+  await announcingEngine(goodResults).handle(makeMessage('Cinderella look up the simplex protocol'));
+
+  check('a lookup produces two messages', spoken.length === 2, `${spoken.length} sends`);
+  check('the announcement comes FIRST', spoken[0]?.text === 'Not in my head. Going to look.');
+  check('and the sourced answer second', (spoken[1]?.text ?? '').includes('simplex.chat'));
+  check(
+    'the announcement went through the dialled searching mode',
+    seenModes[0] === 'searching',
+    seenModes.join(', '),
+  );
+
+  /* 9b. It is emitted ONLY when a search actually fires. */
+
+  // The case that matters most: unavailable. Announcing and then immediately saying she
+  // could not look is worse than the silence it replaced.
+  spoken.length = 0;
+  seenModes.length = 0;
+  await announcingEngine({
+    available: () => false,
+    search: () => Promise.reject(new Error('never called')),
+  }).handle(makeMessage('Cinderella look up the simplex protocol'));
+  check('an unavailable search announces nothing', !seenModes.includes('searching'));
+  check('and says only the honest failure line', spoken.length === 1);
+
+  // NEGATIVE CONTROL. An ordinary conversation must not announce a search either.
+  spoken.length = 0;
+  seenModes.length = 0;
+  await announcingEngine(goodResults).handle(makeMessage('Cinderella how are you today'));
+  check(
+    'an ordinary message announces no search, so the check above discriminates',
+    !seenModes.includes('searching'),
+    seenModes.join(', ') || '(no model call)',
+  );
+
+  /* 9c. The loop is closed when the search comes back empty. */
+
+  spoken.length = 0;
+  await announcingEngine({
+    available: () => true,
+    search: () =>
+      Promise.resolve({ kind: 'failed' as const, failure: 'no-results', detail: 'nothing' }),
+  }).handle(makeMessage('Cinderella look up the simplex protocol'));
+  check('an announced search that finds nothing still gets two messages', spoken.length === 2);
+  check(
+    'and the second closes the loop rather than leaving it hanging',
+    (spoken[1]?.text ?? '').includes('came back with nothing'),
+    spoken[1]?.text.slice(0, 60) ?? '',
+  );
+  check(
+    'the close says it LOOKED, not that it could not look',
+    !(spoken[1]?.text ?? '').includes('could not look that up'),
+  );
+
+  /* 9d. A model that cannot speak stays silent rather than saying a canned line. */
+
+  spoken.length = 0;
+  await announcingEngine(goodResults, false).handle(
+    makeMessage('Cinderella look up the simplex protocol'),
+  );
+  // The property is that NO HOLDING LINE was sent, which is one message rather than two.
+  // The first version asserted that no message contained the word "look", which the
+  // honest failure line does contain. That was the check being wrong about the behaviour,
+  // not the behaviour being wrong.
+  check(
+    `no model, no holding line: she does not fall back to a canned sentence`,
+    spoken.length === 1,
+    `${spoken.length} sends`,
+  );
+
+  /* 9e. The prompt: short, dialled, and forbidden from promising. */
+
+  const DIALLED = {
+    ...DEFAULT_PERSONALITY,
+    baseCharacter: 'A neon courier.',
+    sharpness: 9,
+    verbosity: 5,
+  };
+  const announceReq = (over: Partial<AiReplyRequest> = {}): AiReplyRequest => ({
+    ...request(),
+    kind: 'searching',
+    mode: 'searching' as const,
+    personality: DIALLED,
+    ...over,
+  });
+  const announcePrompt = systemPrompt(announceReq(), 120);
+
+  check(
+    'she is told this is a holding line and not an answer',
+    announcePrompt.includes('holding line while you search, not an answer'),
+  );
+  check(
+    'and forbidden from promising what she will find',
+    announcePrompt.includes('Do NOT promise what you will find') &&
+      announcePrompt.includes('do not start answering the question'),
+  );
+  check(
+    'it is dialled, so it varies with her voice',
+    announcePrompt.includes('SHARPNESS 9 of 10'),
+  );
+  check(
+    'and it is bounded by the ceiling like everything else',
+    PERMISSIVENESS_CEILING.every((line) => announcePrompt.includes(line)),
+  );
+
+  // The bound: far tighter than a normal reply, and it scales with verbosity.
+  let announceMax = 0;
+  const capture = (_url: URL | string, init?: RequestInit): Promise<Response> => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as {
+      response_format?: {
+        json_schema?: { schema?: { properties?: { reply?: { maxLength?: number } } } };
+      };
+    };
+    announceMax =
+      body.response_format?.json_schema?.schema?.properties?.reply?.maxLength ?? 0;
+    return Promise.resolve(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: 'ok' }) } }] }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+  };
+  const aiConfig = {
+    enabled: true,
+    baseUrl: 'http://127.0.0.1:11434',
+    model: 'qwen3.5:9b',
+    timeoutMs: 2000,
+  };
+
+  await generateOllamaReply(aiConfig, announceReq(), capture);
+  const atFive = announceMax;
+  check(
+    'a holding line is bounded far below a normal reply',
+    atFive < 200 && atFive > 0,
+    `${atFive} chars`,
+  );
+  check(
+    'and far below the conversation budget at the same dial',
+    atFive < replyCharBudget(5),
+  );
+
+  await generateOllamaReply(
+    aiConfig,
+    announceReq({ personality: { ...DIALLED, verbosity: 1 } }),
+    capture,
+  );
+  check(`a terse bot is terse about this too`, announceMax < atFive, `${announceMax} chars`);
 
   await pg.close();
 
