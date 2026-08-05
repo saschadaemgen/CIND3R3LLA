@@ -8,7 +8,12 @@
 
 import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
-import { conversationVoice, type BotIdentity, type BotPersonality } from './personality.js';
+import {
+  conversationVoice,
+  type BotIdentity,
+  type BotPersonality,
+  type CurrentTime,
+} from './personality.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort';
 
@@ -65,6 +70,19 @@ export interface AiReplyRequest {
    * her name wherever it should through the `{wake}` placeholder in the persona copy.
    */
   identity?: BotIdentity;
+  /**
+   * The wall clock, from the engine's single injectable source (CCB-S4-036).
+   *
+   * Carried on every request and RENDERED only in the dialled modes, like the personality
+   * and the identity. A command rewrite is rephrasing a decision the application already
+   * made and has no business being told the date; free conversation is where somebody asks
+   * what year it is.
+   *
+   * Absent means no clock was supplied, and the prompt then says nothing about the time
+   * rather than inventing one. That is the honest shape and it is also what every harness
+   * written before this briefing gets by default.
+   */
+  now?: CurrentTime;
 }
 
 const DEFAULT_MAX_CHARS = 700;
@@ -84,8 +102,44 @@ function asRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+/**
+ * An addressed-to construct the model invented at the head of its own reply (CCB-S4-036).
+ *
+ * ── THE OBSERVED DEFECT ──────────────────────────────────────────────────────
+ *
+ * Asked to answer in the words of Elon Musk, she opened with `@elons-ghost:`. In a chat
+ * client that reads as a mention of a member, and there is no such member. It is the
+ * model doing what chat transcripts in its training data do, and it has nothing to do
+ * with anything this application asked for.
+ *
+ * ── WHY A LEADING `@handle` IS INVENTED BY CONSTRUCTION ──────────────────────
+ *
+ * She is never given member names. The standing guard forbids writing a person name other
+ * than her own, and the sender's name is separately rejected outright by `blockedLiterals`.
+ * So an `@handle` at the START of model output cannot be a real member she was told about:
+ * there is no path by which she could have learned one. That is what makes stripping it
+ * safe rather than a guess about who exists.
+ *
+ * ── WHY IT CANNOT DISTURB THE APPLICATION'S OWN PREFIX ───────────────────────
+ *
+ * The `{name}` mention prefix on the Replies page is applied by `formatOutbound`, in
+ * `reply.ts`, AFTER this function has run and to a body this function has already
+ * finished with. This only ever sees the model's raw output, never the assembled message,
+ * so the legitimate prefix is out of reach by ordering rather than by pattern matching.
+ * The check proves that path still works end to end.
+ *
+ * Anchored at the start and applied once. A mid-sentence `@` is left alone: an address
+ * somebody typed, an email, a handle being discussed are all legitimate content, and this
+ * is about a chat-transcript artefact in the opening position, not about the character.
+ */
+const INVENTED_MENTION = /^\s*@[\p{L}\p{N}][\p{L}\p{N}._-]{0,63}\s*[:,]\s*/u;
+
+export function stripInventedMention(value: string): string {
+  return value.replace(INVENTED_MENTION, '');
+}
+
 function cleanReply(value: string, preserveLines: boolean): string {
-  const withoutFences = value
+  const withoutFences = stripInventedMention(value)
     .replace(/```/g, '')
     .replace(/[\u2013\u2014\u2015]/g, ' - ')
     // Control characters are stripped ON PURPOSE: this is untrusted model output on its way to
@@ -182,7 +236,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
    */
   const dialled = request.mode === 'conversation' || request.mode === 'retort';
   const voice = dialled
-    ? conversationVoice(request.personality ?? null, request.identity)
+    ? conversationVoice(request.personality ?? null, request.identity, request.now)
     : [
           'You are a cool and relaxed cyber-fairytale teammate.',
           'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
@@ -261,6 +315,42 @@ function containsBlockedLiteral(text: string, request: AiReplyRequest): string |
   return blockedLiterals(request).find((literal) => lower.includes(literal.toLocaleLowerCase()));
 }
 
+/**
+ * A placeholder that should have been filled and was not (CCB-S4-036).
+ *
+ * ── THE GRAMMAR IS BORROWED, NOT INVENTED ────────────────────────────────────
+ *
+ * The pattern is exactly what `fillPersona` substitutes, `/\{(\w+)\}/`. That is
+ * deliberate: the thing being detected is "a token the template layer would have replaced,
+ * still sitting in the output", so the detector has to use the template layer's own idea
+ * of what a placeholder is. A looser pattern would fire on `{}` or on prose in braces,
+ * neither of which is a leak.
+ *
+ * ── REJECT, DO NOT STRIP, AND WHY ────────────────────────────────────────────
+ *
+ * The briefing left the choice open and named the trade. Rejecting is what this does, for
+ * three reasons.
+ *
+ * Stripping leaves a hole. `Hey {name}, good to see you` becomes `Hey , good to see you`,
+ * which is a broken sentence that reads as a different bug and would have members
+ * reporting the wrong thing. Rejecting falls back to the deterministic draft, which is
+ * always a complete sentence somebody wrote.
+ *
+ * It is the same shape as `blockedLiterals`, which already rejects rather than redacts
+ * when the sender's name appears. Two guards on the same output behaving differently is
+ * how one of them gets forgotten.
+ *
+ * And a leaked `{name}` is a REAL BUG somewhere upstream, not cosmetic damage. `reply.ts`
+ * documents the footgun in terms: two different values can fill `{name}` in this pipeline
+ * and they must never be filled in the same pass. Rejecting makes the failure loud, in the
+ * logs and in the AI telemetry, instead of quietly tidying the evidence away.
+ */
+const UNRESOLVED_PLACEHOLDER = /\{\w+\}/;
+
+export function unresolvedPlaceholder(text: string): string | undefined {
+  return UNRESOLVED_PLACEHOLDER.exec(text)?.[0];
+}
+
 export async function generateOllamaReply(
   config: LocalAiConfig,
   request: AiReplyRequest,
@@ -335,6 +425,8 @@ export async function generateOllamaReply(
       }
       const blocked = containsBlockedLiteral(lead, request);
       if (blocked) throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+      const leaked = unresolvedPlaceholder(lead);
+      if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
       const protectedText = request.deterministicDraft.trim();
       return protectedText ? `${lead}\n${protectedText}` : lead;
     }
@@ -350,6 +442,10 @@ export async function generateOllamaReply(
     }
     const blocked = containsBlockedLiteral(reply, request);
     if (blocked) throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+    const leaked = unresolvedPlaceholder(reply);
+    if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
+    // Checked LAST, on the text that is about to be returned, so nothing added after the
+    // strip can reintroduce one. See `unresolvedPlaceholder` for why this rejects.
 
     return reply;
   } catch (error) {
