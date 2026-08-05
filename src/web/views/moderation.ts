@@ -17,6 +17,7 @@
 
 import type { FastifyInstance } from 'fastify';
 import {
+  ARMING_UNLOCKED,
   DEFAULT_MODERATION_RULES,
   ENFORCEMENT_ACTIONS,
   LADDER_RUNGS,
@@ -25,14 +26,24 @@ import {
 } from '../../moderation/rules.js';
 import {
   botModerationRules,
-  listActiveSanctions,
-  listSanctions,
   listViolations,
   updateModerationRules,
-  type SanctionRow,
   type ViolationRow,
+  ARM_CONFIRMATION,
+  findSanction,
+  listActiveSanctionsDetailed,
+  listSanctionsDetailed,
+  markSanctionUndone,
+  updateModerationMode,
+  type ActiveSanctionRow,
 } from '../../moderation/store.js';
 import { invalidateModerationRules } from '../../moderation/service.js';
+// The console can act, and it acts through exactly the same port and the same restore
+// function the expiry job uses. Two reversal paths that did not share code would be two
+// chances to put a member back as the wrong thing.
+import { restoreSanction } from '../../moderation/apply.js';
+import { enforcementAvailable, liveEnforcementPort } from '../../bot/enforcement.js';
+import { writeAudit } from '../../db/audit.js';
 import {
   listBotOnboardingProfiles,
   type BotOnboardingProfile,
@@ -134,44 +145,138 @@ function derivedRungIndex(rules: ModerationRules): number {
 }
 
 /**
- * The mode control.
+ * The mode control, and the switch that turns recordings into consequences.
  *
- * `enforce` is rendered and DISABLED. Offering it as a working choice would arm an
- * untuned ladder against a real group; hiding it entirely would leave the operator
- * wondering whether the capability exists. Disabled plus a sentence is the honest
- * middle, and the save path does not read this field at all.
+ * ── WHY ARMING COSTS SIX KEYSTROKES AND DISARMING COSTS NONE ─────────────────
+ *
+ * The confirmation is a TYPED WORD, not a checkbox, for the reason
+ * `updateModerationRules` already gives about the ordering guarantee: a box is something
+ * an operator ticks once and then ticks forever. Typing cannot happen by a stray click or
+ * by a browser restoring a form.
+ *
+ * Going back to observing has no confirmation at all. Friction belongs on the direction
+ * that increases harm, and an operator who wants enforcement to stop must be able to make
+ * it stop now. Same asymmetry as the consent path, where taking it back is always cheaper
+ * than giving it.
+ *
+ * The sentence names the three things that become possible, in the plainest words
+ * available, because "enforce" is a word that hides what it does.
  */
-function modeCard(): SafeHtml {
+function modeCard(rules: ModerationRules, csrf: string, botId: number): SafeHtml {
+  const armed = rules.mode === 'enforce';
+
   return card(
-    'Mode: observing',
+    armed ? 'Mode: enforcing' : 'Mode: observing',
     html`<p class="text-sm text-slate-600">
-        Enforcement is <strong>computing and recording only</strong>. Every step that would
-        fire is written to the Log marked <em>observed</em>, and nothing happens to anybody:
-        no role is changed, nobody is blocked, nobody is removed. This is how thresholds get
-        tuned against real traffic without silencing half a group by accident.
+        ${armed
+          ? html`Enforcement is <strong>live</strong>. When a rung fires, it happens: a mute
+              changes the member's role to observer, a block hides their messages from
+              everyone, a removal takes them out of the group. Every step is written to the
+              <a class="underline" href="/moderation/log">Log</a> marked <em>enforced</em>,
+              and every mute appears on the
+              <a class="underline" href="/moderation/active">Active</a> page until it lifts.`
+          : html`Enforcement is <strong>computing and recording only</strong>. Every step that
+              would fire is written to the <a class="underline" href="/moderation/log">Log</a>
+              marked <em>observed</em>, and nothing happens to anybody: no role is changed,
+              nobody is blocked, nobody is removed. This is how thresholds get tuned against
+              real traffic without silencing half a group by accident.`}
       </p>
-      <div class="mt-4 flex flex-wrap items-end gap-3">
-        <label class="flex flex-col gap-1 text-sm">
-          <span class="font-medium text-slate-700">Enforcement mode</span>
-          <select class="${INPUT_CLS} sm:w-72" disabled>
-            <option selected>Observe: record what would happen</option>
-            <option>Enforce: actually apply the step</option>
-          </select>
-        </label>
-        ${badge('observing', 'amber')}
+      <div class="mt-4 flex flex-wrap items-center gap-3">
+        ${armed ? badge('enforcing', 'red') : badge('observing', 'amber')}
+        <span class="text-xs text-slate-500">
+          ${armed
+            ? 'Members can be muted, blocked or removed by rule.'
+            : 'Nothing can happen to a member while this says observing.'}
+        </span>
       </div>
+
+      ${!armed && !ARMING_UNLOCKED
+        ? html`<div
+            class="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900"
+          >
+            <p>
+              <strong>Enforcement is built but not yet unlocked.</strong> Everything a
+              reversible sanction needs is in place and checked: she remembers the role a
+              muted member held, a timed mute expires through the durable queue, an expiry
+              that gets lost shows here as overdue, and any mute can be lifted by hand. The
+              failure paths are checked too: a role change that fails writes no row claiming
+              it worked, and a member whose role is unknown is never muted at all.
+            </p>
+            <p class="mt-2">
+              What is missing is proof against a <strong>real group with a real second
+              member</strong>: an actual mute applied and lifted, a moderator restored as a
+              moderator rather than as a plain member, and an expiry firing. None of that can
+              be proven against a test double, and the only real group here is yours, whose
+              members are not test subjects. Arming before that would be switching on
+              consequences that have never run against anything real.
+            </p>
+            <p class="mt-2 text-xs">
+              To unlock: set <code>ARMING_UNLOCKED</code> in
+              <code>src/moderation/rules.ts</code> and do those checks. Nothing else changes.
+            </p>
+          </div>`
+        : null}
+      ${armed
+        ? html`<form method="post" action="/moderation/mode" class="mt-4">
+            <input type="hidden" name="_csrf" value="${csrf}" />
+            <input type="hidden" name="bot" value="${String(botId)}" />
+            <input type="hidden" name="mode" value="observe" />
+            <button
+              type="submit"
+              class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Stop enforcing, go back to observing
+            </button>
+            <p class="mt-2 text-xs text-slate-500">
+              Takes effect on the next message. Sanctions already applied stay applied: this
+              stops new ones, it does not lift old ones. Lift those on the
+              <a class="underline" href="/moderation/active">Active</a> page.
+            </p>
+          </form>`
+        : !ARMING_UNLOCKED
+          ? null
+          : html`<form method="post" action="/moderation/mode" class="mt-4">
+            <input type="hidden" name="_csrf" value="${csrf}" />
+            <input type="hidden" name="bot" value="${String(botId)}" />
+            <input type="hidden" name="mode" value="enforce" />
+            <div
+              class="rounded-lg border border-red-200 bg-red-50 px-3 py-3 text-sm text-red-900"
+            >
+              <p>
+                <strong>Read this before arming.</strong> While enforcement is armed, members
+                can be <strong>muted</strong>, <strong>blocked</strong> and
+                <strong>removed</strong> by rule, automatically, without anybody being asked
+                first. The ladder above decides who and when. Nobody reviews it in between.
+              </p>
+              <p class="mt-2">
+                A mute is reversible: she remembers the role the member held and puts it back
+                when the timer runs out, or when you lift it by hand. A block and a removal
+                are <strong>not</strong> reversible from here and have to be undone in your
+                own SimpleX client.
+              </p>
+              <label class="mt-3 flex flex-col gap-1">
+                <span class="font-medium">Type ${ARM_CONFIRMATION} to confirm</span>
+                <input
+                  name="confirm"
+                  autocomplete="off"
+                  placeholder="${ARM_CONFIRMATION}"
+                  class="w-full rounded-lg border border-red-300 px-2 py-1.5 sm:w-48"
+                />
+              </label>
+              <button
+                type="submit"
+                class="mt-3 rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800"
+              >
+                Arm enforcement
+              </button>
+            </div>
+          </form>`}
+
       <p class="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
-        <strong>Speech is live, action stays observed.</strong> A warning changes nothing
-        about anybody's membership, so she <em>does</em> say it, in her own voice, at
-        whatever sharpness ladder A has reached. Mute, block and remove touch a member's
-        standing, so they are recorded and nothing more. That is the whole of what
-        observation mode means: she talks, she does not act.
-      </p>
-      <p class="mt-3 text-xs text-slate-500">
-        Enforce is deliberately not selectable yet. Arming it is its own piece of work,
-        because it needs the parts that make a sanction reversible: remembering the role a
-        muted member held so restoring returns them to it, expiring a timed mute, and an
-        undo. Until then this control would be a switch that pretends to work.
+        <strong>The count decides, and nothing else does.</strong> The violation counter is a
+        database count, the thresholds are numbers you set, and the rung follows from a
+        comparison. No model output is read to choose a step, armed or not. She may say
+        something about a step in her own voice; she never picks one.
       </p>`,
   );
 }
@@ -418,59 +523,139 @@ function rulesBody(
   }
 
   return html`
-    ${modeCard()}
+    ${modeCard(rules, csrf, bot.id)}
     <div class="mt-4">${verbalCard(rules, csrf, bot.id)}</div>
     <div class="mt-4">${enforcementCard(rules, csrf, bot.id)}</div>
     <div class="mt-4">${spamLimitNote()}</div>
   `;
 }
 
-function activeBody(active: SanctionRow[]): SafeHtml {
+/**
+ * Who is actually serving something, and how to let them out.
+ *
+ * ── WHY OVERDUE IS A ROW ON THIS PAGE AND NOT A LOG LINE ─────────────────────
+ *
+ * A mute is a promise with a deadline. The expiry job is what keeps it, and the job can be
+ * lost: a crash between the row committing and the job being accepted, a dead-lettered
+ * retry, a queue that was never started. In every one of those cases the member stays an
+ * observer forever and nothing anywhere says so, because the sanction still looks exactly
+ * like a mute that has not expired yet.
+ *
+ * So overdue is computed on read (`expires_at` passed, `expired_at` still null) and shown
+ * in red at the top of the page the operator already looks at. CCB-S4-032's query excluded
+ * these rows by filtering on `expires_at > now`, which was right while nothing could
+ * expire and is exactly wrong now.
+ */
+function activeBody(active: ActiveSanctionRow[], csrf: string): SafeHtml {
+  const overdue = active.filter((row) => row.overdue).length;
+
   return card(
     'Members currently under a sanction',
     active.length === 0
       ? html`<p class="text-sm text-slate-600">
-            <strong>Nobody, and that is expected.</strong> Enforcement is observing: it works
-            out what would happen and writes it to the
-            <a class="underline" href="/moderation/log">Log</a> without doing it. This page
-            stays empty until enforcement is armed, and an empty page here is the system
-            behaving correctly rather than a page that failed to load.
+            <strong>Nobody.</strong> Either enforcement has not applied anything, or
+            everything it applied has since been lifted. A mute leaves this page when the
+            role has actually been put back, not when its clock runs out, so an empty page
+            here means nobody is being held by anything.
           </p>`
-      : html`<div class="overflow-x-auto">
-          <table class="w-full text-left text-sm">
-            <thead>
-              <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                <th class="py-2 pr-3">Since</th>
-                <th class="py-2 pr-3">Member</th>
-                <th class="py-2 pr-3">Chat</th>
-                <th class="py-2 pr-3">Step</th>
-                <th class="py-2">Until</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${active.map(
-                (row) => html`<tr class="border-b border-slate-100">
-                  <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${fmt(row.decidedAt)}</td>
-                  <td class="py-2 pr-3">${row.memberDisplayName}</td>
-                  <td class="py-2 pr-3 text-slate-500">${String(row.groupId)}</td>
-                  <td class="py-2 pr-3">${badge(row.action, 'red')}</td>
-                  <td class="whitespace-nowrap py-2 text-slate-500">
-                    ${row.expiresAt ? fmt(row.expiresAt) : 'no expiry'}
-                  </td>
-                </tr>`,
-              )}
-            </tbody>
-          </table>
-        </div>`,
+      : html`
+          ${overdue > 0
+            ? html`<p
+                class="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-900"
+              >
+                <strong
+                  >${String(overdue)} sanction(s) are past their expiry and have not
+                  lifted.</strong
+                >
+                The automatic expiry did not run for these, so the members are still held.
+                Lift them here.
+              </p>`
+            : null}
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th class="py-2 pr-3">Since</th>
+                  <th class="py-2 pr-3">Member</th>
+                  <th class="py-2 pr-3">Chat</th>
+                  <th class="py-2 pr-3">Step</th>
+                  <th class="py-2 pr-3">Was</th>
+                  <th class="py-2 pr-3">Until</th>
+                  <th class="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${active.map(
+                  (row) => html`<tr
+                    class="border-b border-slate-100 ${row.overdue ? 'bg-red-50' : ''}"
+                  >
+                    <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${fmt(row.decidedAt)}</td>
+                    <td class="py-2 pr-3">${row.memberDisplayName}</td>
+                    <td class="py-2 pr-3 text-slate-500">${String(row.groupId)}</td>
+                    <td class="py-2 pr-3">${badge(row.action, 'red')}</td>
+                    <td class="py-2 pr-3 text-slate-500">
+                      ${row.previousRole ?? 'unknown'}
+                    </td>
+                    <td class="whitespace-nowrap py-2 pr-3 text-slate-500">
+                      ${row.expiresAt
+                        ? row.overdue
+                          ? html`<span class="font-medium text-red-700"
+                              >overdue since ${fmt(row.expiresAt)}</span
+                            >`
+                          : fmt(row.expiresAt)
+                        : 'no expiry'}
+                    </td>
+                    <td class="py-2">
+                      ${row.action === 'mute'
+                        ? html`<form method="post" action="/moderation/undo">
+                            <input type="hidden" name="_csrf" value="${csrf}" />
+                            <input type="hidden" name="id" value="${row.id}" />
+                            <button
+                              type="submit"
+                              class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            >
+                              Lift now
+                            </button>
+                          </form>`
+                        : html`<span class="text-xs text-slate-400">not reversible here</span>`}
+                    </td>
+                  </tr>`,
+                )}
+              </tbody>
+            </table>
+          </div>
+          <p class="mt-4 text-xs text-slate-500">
+            <strong>Was</strong> is the role the member held before the mute, and it is what
+            they are put back to. A block or a removal has no automatic reversal and none
+            from this page: undo those in your own SimpleX client.
+          </p>`,
   );
 }
 
-function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml {
+/**
+ * The Log, where "what actually happened to whom" has to be readable at a glance.
+ *
+ * THREE OUTCOMES, NOT TWO (CCB-S4-035). Observation had only one axis worth showing,
+ * because nothing ever happened. Armed, a decided step lands in one of three states and
+ * an operator who cannot tell them apart cannot tell a working ladder from a broken one:
+ *
+ *   observed  - the mode was observing, nothing was attempted.
+ *   enforced  - it was attempted and it worked.
+ *   failed    - it was attempted and it did not, and the member is unaffected.
+ *
+ * The third is the one that must not hide. A ladder quietly failing every mute looks
+ * identical to a ladder that is working, unless the failure is on the page in red with
+ * the reason next to it. Refusals (an unknown role, an owner, a missing member id) are
+ * failures too and carry their reason in the same column, prefixed so they read as
+ * policy rather than as fault.
+ */
+function logBody(sanctions: ActiveSanctionRow[], violations: ViolationRow[]): SafeHtml {
   return html`
     <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
-      Two different questions, two badges. <strong>Applied</strong> is whether it happened
-      to the member: while the mode is observing, never. <strong>Heard</strong> is whether
-      she said it in the chat: warnings are, everything harder is not.
+      Two different questions, two columns. <strong>Outcome</strong> is what happened to the
+      member: <em>observed</em> means nothing was attempted, <em>enforced</em> means it was
+      applied, <em>failed</em> means it was attempted and did not apply, and the member is
+      unaffected. <strong>Heard</strong> is whether she said it in the chat.
     </div>
     ${card(
       'Steps decided',
@@ -488,7 +673,7 @@ function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml
                   <th class="py-2 pr-3">Role</th>
                   <th class="py-2 pr-3">Step</th>
                   <th class="py-2 pr-3">Why</th>
-                  <th class="py-2">Applied / heard</th>
+                  <th class="py-2">Outcome / heard</th>
                 </tr>
               </thead>
               <tbody>
@@ -499,13 +684,34 @@ function logBody(sanctions: SanctionRow[], violations: ViolationRow[]): SafeHtml
                     </td>
                     <td class="py-2 pr-3">${row.memberDisplayName}</td>
                     <td class="py-2 pr-3 text-slate-500">${row.memberRole ?? 'unknown'}</td>
-                    <td class="py-2 pr-3">${badge(row.action, 'amber')}</td>
-                    <td class="py-2 pr-3 text-slate-600">${row.reason}</td>
+                    <td class="py-2 pr-3">
+                      ${badge(row.action, row.mode === 'observed' ? 'amber' : 'red')}
+                    </td>
+                    <td class="py-2 pr-3 text-slate-600">
+                      ${row.reason}
+                      ${row.enforcementError
+                        ? html`<div class="mt-1 text-xs font-medium text-red-700">
+                            ${row.enforcementError}
+                          </div>`
+                        : null}
+                      ${row.expiredAt
+                        ? html`<div class="mt-1 text-xs text-slate-500">
+                            lifted automatically ${fmt(row.expiredAt)}
+                          </div>`
+                        : null}
+                      ${row.undoneAt
+                        ? html`<div class="mt-1 text-xs text-slate-500">
+                            lifted by ${row.undoneBy ?? 'an operator'} ${fmt(row.undoneAt)}
+                          </div>`
+                        : null}
+                    </td>
                     <td class="py-2">
                       <div class="flex flex-col gap-1">
                         ${row.mode === 'observed'
                           ? badge('observed, nothing done', 'slate')
-                          : badge('enforced', 'red')}
+                          : row.enforcedAt
+                            ? badge('enforced', 'red')
+                            : badge('failed, member unaffected', 'amber')}
                         ${row.spokenAt
                           ? badge('said in the chat', 'blue')
                           : badge('not said', 'slate')}
@@ -648,9 +854,12 @@ export function registerModeration(app: FastifyInstance, ctx: ViewContext): void
           : DEFAULT_MODERATION_RULES;
         body = rulesBody(profiles, rules, csrf);
       } else if (slug === 'active') {
-        body = activeBody(await listActiveSanctions(ctx.db, new Date()));
+        body = activeBody(await listActiveSanctionsDetailed(ctx.db, new Date()), csrf);
       } else {
-        body = logBody(await listSanctions(ctx.db, 100), await listViolations(ctx.db, 100));
+        body = logBody(
+          await listSanctionsDetailed(ctx.db, new Date(), 100),
+          await listViolations(ctx.db, 100),
+        );
       }
 
       return page({
@@ -683,6 +892,90 @@ export function registerModeration(app: FastifyInstance, ctx: ViewContext): void
       return reply.redirect('/moderation/rules?saved=1');
     } catch (error) {
       return reply.redirect('/moderation/rules?error=' + encodeURIComponent(errorMessage(error)));
+    }
+  });
+  /**
+   * Arm or disarm (CCB-S4-035, D-139).
+   *
+   * ITS OWN ROUTE, separate from the ladder save, so the switch that turns recordings into
+   * consequences can never ride along with a threshold tweak. The confirmation phrase, the
+   * ordering-guarantee re-check and the audit row all live in `updateModerationMode`, where
+   * a second caller would get them too.
+   */
+  app.post<{ Body: Record<string, unknown> }>('/moderation/mode', async (req, reply) => {
+    const botId = Number.parseInt(bodyString(req.body, 'bot'), 10);
+    const requested = bodyString(req.body, 'mode');
+
+    try {
+      if (!Number.isSafeInteger(botId) || botId <= 0) throw new Error('No bot profile selected.');
+      if (requested !== 'observe' && requested !== 'enforce') {
+        throw new Error('Unknown moderation mode.');
+      }
+
+      await updateModerationMode(
+        ctx.db,
+        botId,
+        requested,
+        bodyString(req.body, 'confirm'),
+        req.session?.username ?? 'unknown',
+      );
+      // The engine caches the rules, and the mode is one of them. Without this an operator
+      // would arm enforcement and watch the next three messages still be observed.
+      invalidateModerationRules();
+      return reply.redirect(
+        `/moderation/rules?saved=${requested === 'enforce' ? 'armed' : 'disarmed'}`,
+      );
+    } catch (error) {
+      return reply.redirect('/moderation/rules?error=' + encodeURIComponent(errorMessage(error)));
+    }
+  });
+
+  /**
+   * Lift a sanction by hand.
+   *
+   * Goes through the same `restoreSanction` the expiry job uses, so the role that comes
+   * back is the same role by the same path. A sanction already lifted returns an honest
+   * note rather than an error, which is the briefing's explicit requirement: undo after
+   * expiry is a no-op, not a failure.
+   */
+  app.post<{ Body: Record<string, unknown> }>('/moderation/undo', async (req, reply) => {
+    const id = bodyString(req.body, 'id');
+
+    try {
+      if (!id) throw new Error('No sanction selected.');
+      const row = await findSanction(ctx.db, id, new Date());
+      if (!row) throw new Error('That sanction no longer exists.');
+
+      const port = enforcementAvailable() ? liveEnforcementPort : null;
+      if (!port) {
+        // Refused rather than half-done. Marking it undone with no core to restore
+        // through would take the member off the Active page while leaving them muted,
+        // which is the lie this whole briefing is written against.
+        throw new Error(
+          'The bot is not running, so the role cannot be restored. The sanction is left ' +
+            'in place rather than marked lifted while the member is still held.',
+        );
+      }
+
+      const outcome = await restoreSanction(ctx.db, port, row);
+      if (outcome.status === 'already' || outcome.status === 'nothing-to-do') {
+        return reply.redirect('/moderation/active?saved=' + encodeURIComponent(outcome.note));
+      }
+
+      const marked = await markSanctionUndone(ctx.db, id, req.session?.username ?? 'unknown');
+      await writeAudit(
+        ctx.db,
+        req.session?.username ?? 'unknown',
+        'cinderella.moderation.undo',
+        `sanction:${id}`,
+        { action: row.action, restoredRole: outcome.role, marked },
+      );
+      return reply.redirect(
+        '/moderation/active?saved=' +
+          encodeURIComponent(`lifted, ${row.memberDisplayName} is ${outcome.role} again`),
+      );
+    } catch (error) {
+      return reply.redirect('/moderation/active?error=' + encodeURIComponent(errorMessage(error)));
     }
   });
 }
