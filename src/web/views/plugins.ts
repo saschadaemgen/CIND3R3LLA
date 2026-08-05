@@ -17,6 +17,7 @@ import type { ViewContext } from '../server.js';
 import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
 import {
   SEARCH_PROVIDERS,
+  SEARCH_PROVIDER_NOTES,
   describeWebSearchKey,
 } from '../../plugins/web-search/settings.js';
 import { badge, card, pageHeader } from './ui.js';
@@ -730,7 +731,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
                         </option>`,
                     )}
                   </select>`,
-                  'Brave Search is an independent index with a free tier, and its terms do not tie a query to a member identity. Get a key at brave.com/search/api.',
+                  SEARCH_PROVIDERS.map((name) => `${name}: ${SEARCH_PROVIDER_NOTES[name]}`).join(' '),
                 )}
 
                 ${field(
