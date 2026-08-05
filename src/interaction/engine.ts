@@ -1049,6 +1049,69 @@ export class InteractionEngine {
    * member can act on it. So the sources are protected text, like the warning and the
    * announcement, and she cannot claim a source she was not given.
    */
+  /**
+   * One short line saying she is going off to look (CCB-S4-038, D-142).
+   *
+   * Returns whether it was actually said, because the caller owes the member a closing
+   * line only if it was. Never throws and never blocks the search: a holding line that
+   * failed to generate is a small loss, and turning it into a reason not to search would
+   * be the tail wagging the dog.
+   *
+   * Worded by the model in her current voice rather than being a persona template, which
+   * is the one place this differs from every other fixed line she says. That is deliberate
+   * and it is the briefing's point: a canned "let me look that up" repeated every time is
+   * exactly the canned-bot register the personality layer exists to remove, and this line
+   * is one of the most frequently seen things she will say once search is on. It is
+   * dialled, so it varies with sharpness and warmth, and it is bounded far below anything
+   * else so it stays a holding line.
+   */
+  private async announceSearch(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+  ): Promise<boolean> {
+    const personalize = this.deps.personalize;
+    if (!personalize) return false;
+
+    let line: string | null = null;
+    try {
+      line =
+        (
+          await personalize({
+            kind: 'searching',
+            lang,
+            memberMessage: msg.text,
+            // No draft. There is nothing the application has decided for her to rephrase:
+            // the whole content of this line is "I am going to look", and the words are
+            // hers.
+            deterministicDraft: '',
+            mode: 'searching',
+            requiredLiterals: [],
+            blockedLiterals: [msg.senderDisplayName],
+            personality: this.deps.personality?.() ?? null,
+            identity: botIdentity(s),
+            now: { at: new Date(this.now()), timeZone: this.timeZone },
+          })
+        )?.trim() || null;
+    } catch (error) {
+      log.debug(
+        `Lookup: could not word the search announcement (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
+      );
+    }
+
+    // NO FALLBACK LINE. If the model cannot speak, she says nothing and the answer arrives
+    // when it arrives. A deterministic "let me look that up" would be the canned sentence
+    // this whole feature was written to avoid, and it would be the version members saw
+    // every time the model was busy.
+    if (!line) return false;
+
+    // `bypassLimit`, for the reason set out at the call site: the answer is what consumes
+    // a member's allowance, and the search budget is what bounds how many of these exist.
+    return this.replyWithText(msg, s, lang, line, 'lookup', { bypassLimit: true });
+  }
+
   private async answerLookup(
     msg: CapturedMessage,
     s: InteractionSettings,
@@ -1073,6 +1136,38 @@ export class InteractionEngine {
       return true;
     }
 
+    // ── THE HOLDING LINE (CCB-S4-038, D-142) ────────────────────────────────
+    //
+    // EMITTED HERE AND NOWHERE ELSE, which is what makes it honest. Everything that could
+    // stop a search from happening has already happened: the plugin is on, a provider is
+    // configured, and there is a query. The next statement is the search. So a member who
+    // sees this line is a member whose search is genuinely running, and she never says
+    // she is looking something up when she is not.
+    //
+    // It is deliberately NOT before the availability check. That branch has its own honest
+    // line and announcing first would mean saying "let me look that up" and then
+    // immediately saying she could not, which is worse than the silence it replaced.
+    //
+    // ── THE RATE LIMIT, AND HOW IT IS HANDLED ───────────────────────────────
+    //
+    // One lookup now produces two messages, and the briefing asks that this must not
+    // silently eat a member's whole allowance. It does not, because the announcement
+    // BYPASSES the reply limiter and the answer does not. So a lookup costs exactly one
+    // unit of allowance, the same as any other reply, and the thing that is exempt is the
+    // one that carries no information.
+    //
+    // That exemption cannot be used to flood, and the reason is structural rather than a
+    // promise: an announcement only exists when a search fires, and searches are governed
+    // by their own per-member and per-chat budget (5 and 20 per ten minutes by default),
+    // which is tighter than the reply limiter it is bypassing. The search budget is the
+    // real limit on how many of these a member can cause.
+    //
+    // The alternative, letting it count, was rejected on the failure it produces: the
+    // announcement goes out, consumes the last of the allowance, and the ANSWER is the
+    // message that gets dropped. A member left with "let me look that up" and nothing
+    // else is worse off than one who waited in silence.
+    await this.announceSearch(msg, s, lang);
+
     const outcome = await search.search(query, {
       groupId: msg.groupId,
       memberId: msg.senderMemberId,
@@ -1083,8 +1178,29 @@ export class InteractionEngine {
       // answering from training data. That fallback is the one this feature exists to
       // prevent: an answer that sounds current and is two years old is worse than no
       // answer, because nobody can tell.
+      //
+      // CLOSING THE LOOP (CCB-S4-038). Having said she was going off to look, she owes the
+      // member the outcome even when the outcome is nothing: an announcement left hanging
+      // is the silence this feature exists to remove, with an extra message in front of
+      // it. `searchEmpty` is the line for a search that RAN and found nothing, which is a
+      // different fact from one that could not run at all, and she says the right one.
       log.debug(`Lookup: search failed (${outcome.failure}: ${outcome.detail}).`);
-      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      // WHICH LINE, and it is decided by what actually happened rather than by whether
+      // she had already spoken. The first version keyed on `announced`, so a search that
+      // was rate-limited AFTER the announcement said "looked, and came back with nothing".
+      // She had not looked. The announcement being out is a reason to say something, never
+      // a reason to say the wrong thing, and the loop closes either way because some line
+      // follows it.
+      //
+      // `no-results` is the only failure where a search genuinely ran and found nothing.
+      // Every other one, rate-limited, timed out, provider down, is her not having looked.
+      await this.reply(
+        msg,
+        s,
+        lang,
+        outcome.failure === 'no-results' ? 'searchEmpty' : 'searchUnavailable',
+        {},
+      );
       return true;
     }
 
@@ -2270,6 +2386,12 @@ export class InteractionEngine {
     lang: string,
     text: string,
     category: ReplyCategory,
+    /**
+     * Passed through to `sendReply` (CCB-S4-038). Only the search announcement uses it,
+     * with `bypassLimit`, so a lookup costs one unit of a member's reply allowance rather
+     * than two.
+     */
+    options: ReplyOptions = {},
     /** Whether it left. Threaded out for the free-conversation diagnostics. */
   ): Promise<boolean> {
     const out = formatOutbound(text, {
@@ -2288,7 +2410,7 @@ export class InteractionEngine {
       msg,
       s,
       out,
-      {},
+      options,
       {
         category,
         lang,

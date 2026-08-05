@@ -86,6 +86,10 @@ export const PERSONA_KEYS = [
   // source that may name the wrong page, and a wrong source is worse than none.
   'searchSources',
   'searchUnavailable',
+  // CCB-S4-038. Said when she ANNOUNCED a search and it then came back with nothing. It
+  // exists so an announcement is never left hanging: having said she was looking, she owes
+  // the member the outcome even when the outcome is nothing.
+  'searchEmpty',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -150,6 +154,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   moderationAction: 'nickname',
   searchSources: 'lookup',
   searchUnavailable: 'lookup',
+  searchEmpty: 'lookup',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -371,6 +376,8 @@ const PERSONA_EN: PersonaStrings = {
   // present it as current: that is the failure the whole feature exists to avoid.
   searchUnavailable:
     '🔌 I could not look that up just now, so I am not going to guess at it. Try me again in a bit.',
+  searchEmpty:
+    '🕳️ Looked, and came back with nothing worth repeating. I am not going to invent one for you.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -491,6 +498,8 @@ const PERSONA_DE: PersonaStrings = {
   searchSources: '🔎 Aus dem Netz: {sources}',
   searchUnavailable:
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',
+  searchEmpty:
+    '🕳️ Nachgeschaut, nichts dabei, was der Rede wert waere. Ich erfinde dir jetzt nichts.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',

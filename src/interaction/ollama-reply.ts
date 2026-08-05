@@ -10,12 +10,14 @@ import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
 import {
   conversationVoice,
+  replyCharBudget,
+  retortCharBudget,
   type BotIdentity,
   type BotPersonality,
   type CurrentTime,
 } from './personality.js';
 
-export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort';
+export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
 export interface AiReplyRequest {
   /** Operational reply kind, for example status, help, or nickname. */
@@ -123,13 +125,6 @@ export const SEARCH_FENCE = '<<<UNTRUSTED-WEB-CONTENT>>>';
 
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
-/** Conversation is chat, not an essay. Shorter than a rewritten command answer. */
-const CONVERSATION_MAX_CHARS = 500;
-/**
- * A retort is a one-liner (CCB-S4-031). The shipped retorts are all one sentence, and a
- * snub that runs to a paragraph stops being a snub. Tighter than conversation on purpose.
- */
-const RETORT_MAX_CHARS = 240;
 
 function asRecord(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -217,7 +212,29 @@ function responseSchema(maxChars: number): Record<string, unknown> {
  */
 export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): string {
   const task =
-    request.mode === 'retort'
+    request.mode === 'searching'
+      ? [
+          // ── THE HOLDING LINE (CCB-S4-038, D-142) ────────────────────────────
+          //
+          // A search plus a reply from a larger model is five to ten seconds of silence in
+          // a live chat, which reads as being ignored. This is the line that fills it, and
+          // it is a fifth mode for the reason `retort` was a fourth: none of the others
+          // could express it. It is dialled like a conversation, has no draft to rewrite,
+          // and is bounded far tighter than anything else she says.
+          //
+          // The operator's intent, and it is a character note rather than a mechanical one:
+          // she admits her own limit charmingly. Her own knowledge does not carry this one,
+          // so she is going to look. At sharpness 10 that should sting a little; at warmth
+          // 10 it should be kind about it.
+          'The member asked you to look something up, and you are about to go and search the web for it.',
+          'Say, in one short line and in your own voice, that you do not have this one in your own head and you are going to look it up.',
+          'This is a holding line while you search, not an answer. It must be very short.',
+          // The rule that keeps it honest. A holding line that promises an answer is a
+          // holding line that lies about half the time: the search may come back empty.
+          'Do NOT promise what you will find, do not guess at the answer, and do not start answering the question. You are saying that you are looking, nothing else.',
+          'Do not mention searching the web as a capability, a tool or a feature. You are just going to go and look.',
+        ]
+      : request.mode === 'retort'
       ? [
           'The member called you by a name that is not yours. The draft is your refusal of it.',
           'Rewrite the draft as ONE short line in your own voice, still refusing that name.',
@@ -270,7 +287,13 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
    * The ceiling comes with it, so a retort at permissiveness 10 is bounded like anything
    * else.
    */
-  const dialled = request.mode === 'conversation' || request.mode === 'retort';
+  // `searching` joins the dialled modes (CCB-S4-038). It is pure voice with no decision
+  // behind it, exactly like a retort, and a holding line in the generic register while
+  // everything around it is dialled would be the same defect CCB-S4-031 fixed.
+  const dialled =
+    request.mode === 'conversation' ||
+    request.mode === 'retort' ||
+    request.mode === 'searching';
   const voice = dialled
     ? conversationVoice(request.personality ?? null, request.identity, request.now)
     : [
@@ -436,10 +459,33 @@ export async function generateOllamaReply(
   const maxChars =
     request.mode === 'locked'
       ? LOCKED_LEAD_MAX_CHARS
-      : request.mode === 'retort'
-        ? Math.max(40, Math.min(request.maxChars ?? RETORT_MAX_CHARS, 400))
+      : request.mode === 'searching'
+        ? // A HOLDING LINE, bounded far below anything else she says. It scales with
+          // verbosity like everything else, because a terse bot should be terse about
+          // this too, but the ceiling is low at every setting: this is one sentence.
+          Math.max(40, Math.min(request.maxChars ?? Math.round(retortCharBudget(request.personality?.verbosity ?? 5) * 0.6), 200))
+        : request.mode === 'retort'
+        ? // THE DIAL MOVES THE BOUND (CCB-S4-038). Told to be expansive under a fixed cap,
+          // she writes past it, the reply is rejected for length and the member gets the
+          // deterministic fallback, so the operator concludes the slider does nothing. The
+          // instruction and the limit come from the same number instead. An explicit
+          // `maxChars` from a caller still wins, because a caller that named a length meant
+          // it. A retort scales far less and stays a one-liner: see `retortCharBudget`.
+          Math.max(
+            40,
+            Math.min(
+              request.maxChars ?? retortCharBudget(request.personality?.verbosity ?? 5),
+              400,
+            ),
+          )
         : request.mode === 'conversation'
-          ? Math.max(80, Math.min(request.maxChars ?? CONVERSATION_MAX_CHARS, 900))
+          ? Math.max(
+              80,
+              Math.min(
+                request.maxChars ?? replyCharBudget(request.personality?.verbosity ?? 5),
+                1400,
+              ),
+            )
           : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
