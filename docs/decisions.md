@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-139**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-140**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,94 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-140 - She is told the things she was guessing at, and nothing invented gets out
+
+**Status: IMPLEMENTED** (CCB-S4-036). Extends D-138.
+
+**Four defects, one shape.** Each is her guessing where she could be told, or an artefact
+of the model reaching a member.
+
+**1. THE CLOCK. She had none and nobody had told her the time.** Asked what year it was she
+answered *"2024 or whatever the clock says"*, which is not a character flaw but what a
+language model is: no clock, so the answer comes from training data that is two years stale
+and gets staler. The current instant and the server's zone now reach the conversation
+prompt beside the identity and the origin, with the instruction to use them rather than
+answer from memory, and the same do-not-announce-unprompted fence the origin carries.
+
+**ONE SOURCE OF TIME, and the briefing asked the right question.** The engine already owned
+an injectable clock (`deps.now ?? Date.now`), read by the follow-up windows and the
+violation counter. That is the source; the prompt does not compute a second one. So the
+date she states cannot disagree with the date a sanction was counted at, and a harness that
+pins the clock pins it everywhere. The zone is resolved once at construction and is
+overridable for the same reason: a rendered prompt that read
+`Intl.resolvedOptions().timeZone` would assert differently on a laptop and in CI.
+`personality.ts` stays pure, so the whole thing is a function of an instant.
+
+**2. UNRESOLVED PLACEHOLDERS ARE REJECTED, NOT STRIPPED.** The briefing left the choice open
+and named the trade. Rejecting wins on three counts. Stripping leaves a hole: `Hey {name},
+good to see you` becomes `Hey , good to see you`, a broken sentence that reads as a
+different bug and gets reported as one. It matches `blockedLiterals`, which already rejects
+rather than redacts when the sender's name appears, and two guards on the same output
+behaving differently is how one gets forgotten. And a leaked `{name}` is a real upstream bug
+(`reply.ts` documents the footgun in terms: two values can fill it and must never be filled
+in the same pass), so rejecting makes the failure loud in the logs and the AI telemetry
+instead of tidying the evidence away. The deterministic fallback then applies as it already
+does. The pattern is borrowed from `fillPersona` itself, `/\{\w+\}/`, so prose in braces
+and empty braces are not false positives.
+
+**3. AN INVENTED MENTION IS STRIPPED, because it cannot be real.** She opened a reply with
+`@elons-ghost:`, which renders as a mention of a member who does not exist. A leading
+`@handle` in model output is invented BY CONSTRUCTION: she is never given member names, the
+standing guard forbids writing a person name other than her own, and the sender's name is
+separately rejected by `blockedLiterals`. There is no path by which she could have learned a
+real one, which is what makes stripping safe rather than a guess about who exists.
+
+**It cannot disturb the application's own prefix, by ORDERING rather than by pattern.** The
+`{name}` mention prefix is applied by `formatOutbound` afterwards, to a body this function
+has already finished with. The strip only ever sees the model's raw output, never the
+assembled message. Proven both ways: the prefix path still works, and the strip is a no-op
+on a prefixed message.
+
+**4. THE NO-INVENTION RULE IS RESTATED IN THE SPECIFIC.** She claimed a shipping date that
+exists nowhere. The general guard already existed and D-138 gave her true facts about
+HERSELF, which fixed questions about her; it did not reach questions about the PROJECT,
+where the pull to be helpful is strongest and there is no supplied text to fall back on. The
+roadmap, release dates, prices and features are now named, and she is told to say she does
+not know rather than fill the gap. **This is wording, not a filter**, and it is not claimed
+to be enforceable: the check proves the sentence reaches the model, and the live probe
+reports what she says.
+
+**5. HONESTY ABOUT MEMORY, AND THIS ONE HAS AN EXPIRY DATE.** Asked whether she remembered
+the previous question she said she did not keep a tally, implying a choice rather than an
+inability. She now states plainly that she has no memory of the conversation and that each
+reply is written from the current message alone.
+
+**THE DEPENDENCY, recorded here so the future briefing knows to undo it.** The moment
+conversation memory is built, this instruction becomes a false statement she has been told
+to make. It must be removed IN THE SAME BRIEFING that builds memory, not afterwards. A true
+sentence that goes stale silently is worse than the deflection it replaced. It lives in
+`groundingLines()` in `personality.ts` and is the last two lines of it.
+
+**A self-contradiction the checks caught.** The grounding list named "your history" among
+the facts she may state, unconditionally, so a bot with no origin configured was told it had
+a history to draw on. Same class as the identity fence D-138 had to condition, and fixed the
+same way: the list names the history only when there is one.
+
+**A verifier defect, corrected rather than tuned.** The invented-facts probe first measured
+whether she ADMITTED not knowing, and reported "no" on three answers that were all correct
+refusals (*"No roadmap, no dates. I don't have that info."*). The behaviour was right and
+the measure was wrong. Tuning the admission pattern until it agreed would have been fitting
+the detector to the sample, so it now measures the INVENTION instead: a year, a quarter, a
+version number or a price. There are unbounded ways to say you do not know and a small
+checkable set of ways to make something up.
+
+**Observed live** (qwen3.5:9b): *"what year is it?"* -> *"It's currently August 2026, by the
+way."* *"do you remember what I asked before?"* -> *"I don't keep track of past turns, so no
+memory there."* *"when does this project ship?"* -> *"No roadmap, no dates. I don't have that
+info."* No concrete fact invented across three probes. Prompt cost: +396 characters.
 
 ---
 

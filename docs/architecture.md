@@ -2079,6 +2079,33 @@ observe, which is why no pre-existing harness had to change.
 control and the write path refuses `enforce`. Proof against a real core with a real second
 member is what is owed, and the Rules page says so. See D-139.
 
+### 35b. Facts instead of guesses (CCB-S4-036, D-140)
+
+Four production defects, all of them her guessing where she could be told, or a model
+artefact reaching a member.
+
+**The clock.** The current instant and the server zone reach the conversation prompt beside
+the identity and the origin, from the engine's ONE injectable source (`deps.now`), which the
+follow-up windows and the violation counter already read. `personality.ts` stays pure: it
+formats a `CurrentTime` it is handed, so a harness can pin both the instant and the zone and
+the rendered prompt is deterministic. Dialled modes only, like everything else in
+`conversationVoice`.
+
+**Unresolved placeholders are rejected**, not stripped, using `fillPersona`'s own grammar
+(`/\{\w+\}/`). Stripping would leave a hole in the sentence; rejecting matches how
+`blockedLiterals` already behaves, falls back to the deterministic draft, and makes a real
+upstream bug loud rather than tidy.
+
+**A leading `@handle` in model output is stripped.** It is invented by construction, since
+she is never given member names. It cannot disturb the `{name}` mention prefix because that
+is applied by `formatOutbound` afterwards, to a body this has already finished with, so the
+two are separated by ordering rather than by pattern matching.
+
+**Two wording changes with a check each**: the no-invention rule now names roadmaps, release
+dates, prices and features specifically, and she states plainly that she has no conversation
+memory. The second has a dependency recorded in D-140: it must be removed by the briefing
+that builds memory.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.
