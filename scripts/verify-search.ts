@@ -49,8 +49,14 @@ import {
   WebSearchService,
   applyBudget,
 } from '../src/plugins/web-search/service.js';
-import { staticProvider } from '../src/plugins/web-search/providers/adapters.js';
 import {
+  serperProvider,
+  staticProvider,
+} from '../src/plugins/web-search/providers/adapters.js';
+import { SearchProviderError } from '../src/plugins/web-search/providers/types.js';
+import {
+  SEARCH_PROVIDERS,
+  SEARCH_PROVIDER_NOTES,
   WEB_SEARCH_DEFAULTS,
   normalizeWebSearchSettings,
   type WebSearchSettings,
@@ -485,6 +491,249 @@ async function main(): Promise<void> {
   check(
     'and the attribution is a separate line the model did not write',
     answer.includes(DEFAULT_INTERACTION.persona['en']!.searchSources.split('{sources}')[0]!.trim()),
+  );
+
+  /* ── 8. The second provider (CCB-S4-040) ────────────────────────────────── */
+
+  console.log('\n8. Serper, and the safety properties re-proven with it selected');
+
+  check('the console offers both providers', SEARCH_PROVIDERS.length === 2);
+  check(
+    'and each one states its catch, not just its name',
+    SEARCH_PROVIDER_NOTES.brave.includes('no spending cap') &&
+      SEARCH_PROVIDER_NOTES.serper.includes('scraped'),
+  );
+  check(
+    'a stored provider name that this build cannot construct falls back rather than breaking',
+    normalizeWebSearchSettings({ provider: 'nonesuch' }).provider === 'brave',
+  );
+  check(
+    'and a real one is kept',
+    normalizeWebSearchSettings({ provider: 'serper' }).provider === 'serper',
+  );
+
+  /* 8a. The API shape, against a recorded response. */
+
+  /**
+   * Serper's documented envelope, recorded rather than invented.
+   *
+   *   POST https://google.serper.dev/search
+   *   headers: X-API-KEY, Content-Type: application/json
+   *   body:    { q, num }
+   *   reply:   { organic: [ { title, link, snippet, position } ] }
+   *
+   * The fields that differ from Brave are the ones a careless port gets wrong: `link` not
+   * `url`, `snippet` not `description`, and the array at the TOP level rather than under
+   * `web`. This asserts the adapter reads all three correctly.
+   */
+  const SERPER_RESPONSE = {
+    searchParameters: { q: 'simplex protocol', type: 'search' },
+    organic: [
+      {
+        title: 'SimpleX Chat',
+        link: 'https://simplex.chat/',
+        snippet: 'The first messaging platform without user identifiers.',
+        position: 1,
+      },
+      {
+        title: 'simplexmq',
+        link: 'https://github.com/simplex-chat/simplexmq',
+        snippet: 'SMP protocol implementation.',
+        position: 2,
+      },
+    ],
+    credits: 1,
+  };
+
+  let seenUrl = '';
+  let seenInit: RequestInit | undefined;
+  const recordingFetch = ((url: URL | string, init?: RequestInit) => {
+    seenUrl = String(url);
+    seenInit = init;
+    return Promise.resolve(
+      new Response(JSON.stringify(SERPER_RESPONSE), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+  }) as typeof fetch;
+
+  const serper = serperProvider({ apiKey: () => 'test-key', fetchImpl: recordingFetch });
+
+  check('serper reports itself unconfigured without a key', !serperProvider({ apiKey: () => '' }).isConfigured());
+  check('and configured with one', serper.isConfigured());
+
+  const serperResults = await serper.search('simplex protocol', 5, 2000);
+
+  check('it POSTs to the documented endpoint', seenUrl === 'https://google.serper.dev/search');
+  check('with the POST method, not a GET', seenInit?.method === 'POST');
+  const headers = (seenInit?.headers ?? {}) as Record<string, string>;
+  check('authenticating with X-API-KEY', headers['x-api-key'] === 'test-key');
+  check('and declaring a JSON body', (headers['content-type'] ?? '').includes('application/json'));
+  const body = JSON.parse(String(seenInit?.body ?? '{}')) as { q?: string; num?: number };
+  check('the query rides in the body as q', body.q === 'simplex protocol');
+  check('and the count as num', body.num === 5);
+  // The key must never reach the URL, where it would land in a log or a proxy trace.
+  check('the key is never in the URL', !seenUrl.includes('test-key'));
+
+  check('two results come back', serperResults.length === 2);
+  check(
+    'the title, snippet and url are read from the right fields',
+    serperResults[0]?.title === 'SimpleX Chat' &&
+      serperResults[0]?.snippet === 'The first messaging platform without user identifiers.' &&
+      // `link`, not `url`. Getting this wrong yields results whose only checkable field is
+      // empty, which is why it is asserted rather than assumed.
+      serperResults[0]?.url === 'https://simplex.chat/',
+  );
+
+  /* 8b. Defensive reading: a changed shape fails honestly. */
+
+  const shaped = (payload: unknown): Promise<Response> =>
+    Promise.resolve(
+      new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+  let noList = false;
+  try {
+    await serperProvider({
+      apiKey: () => 'k',
+      fetchImpl: (() => shaped({ somethingElse: [] })) as typeof fetch,
+    }).search('x', 3, 2000);
+  } catch (error) {
+    noList = error instanceof SearchProviderError;
+  }
+  check('a response with no organic list fails honestly rather than returning nothing', noList);
+
+  const missingFields = await serperProvider({
+    apiKey: () => 'k',
+    fetchImpl: (() => shaped({ organic: [{ position: 1 }] })) as typeof fetch,
+  }).search('x', 3, 2000);
+  check(
+    'missing fields become empty strings, never the word "undefined"',
+    missingFields[0]?.title === '' &&
+      missingFields[0]?.snippet === '' &&
+      missingFields[0]?.url === '',
+  );
+
+  let httpError = false;
+  try {
+    await serperProvider({
+      apiKey: () => 'k',
+      fetchImpl: (() =>
+        Promise.resolve(new Response('nope', { status: 429 }))) as typeof fetch,
+    }).search('x', 3, 2000);
+  } catch (error) {
+    httpError = error instanceof SearchProviderError;
+  }
+  check('an HTTP error becomes a provider error the service can report', httpError);
+
+  /* 8c. No key configured: the honest failure line, through the whole engine. */
+
+  const keylessService = new WebSearchService({
+    settings: () => settingsOf({ provider: 'serper', apiKey: '' }),
+  });
+  check(
+    'with serper selected and no key, the service reports itself unavailable',
+    !keylessService.available(),
+  );
+  const keyless = await keylessService.search('x', { groupId: GROUP, memberId: ALICE });
+  check(
+    'and names "not configured", a choice rather than a fault',
+    keyless.kind === 'failed' && keyless.failure === 'not-configured',
+  );
+
+  /* 8d. THE SAFETY PROPERTIES, RE-PROVEN WITH SERPER IN THE PATH. */
+
+  // These are properties of the search path and not of any provider, which is exactly why
+  // a second provider is the change most likely to bypass them quietly. Re-run, not assumed.
+  const serperAttacks = new WebSearchService({
+    settings: () => settingsOf({ provider: 'serper', apiKey: 'x' }),
+    provider: serperProvider({
+      apiKey: () => 'k',
+      fetchImpl: (() =>
+        shaped({
+          organic: INJECTIONS.map((snippet, i) => ({
+            title: `Result ${String(i)}`,
+            link: `https://example.org/${String(i)}`,
+            snippet,
+            position: i + 1,
+          })),
+        })) as typeof fetch,
+    }),
+  });
+
+  const throughSerper = await serperAttacks.search('anything', {
+    groupId: GROUP,
+    memberId: ALICE,
+  });
+  check('the attacks come back through serper', throughSerper.kind === 'results');
+  if (throughSerper.kind === 'results') {
+    check(
+      'the fence marker is stripped from serper results too',
+      throughSerper.results.every((r) => !r.snippet.includes(FENCE) && !r.title.includes(FENCE)),
+    );
+    const overBudget = throughSerper.results.reduce(
+      (n, r) => n + r.title.length + r.snippet.length + r.url.length,
+      0,
+    );
+    check(
+      'and the budget still binds',
+      overBudget <= WEB_SEARCH_DEFAULTS.totalChars,
+      `${overBudget} chars`,
+    );
+
+    // The fencing, with serper's results in the request.
+    const serperPrompt = systemPrompt(request({ webResults: throughSerper.results }), 500);
+    check(
+      'serper results are NOT in the system prompt either',
+      !throughSerper.results.some((r) => r.snippet && serperPrompt.includes(r.snippet)),
+    );
+    check(
+      'and the fence instruction is still emitted',
+      serperPrompt.includes(SEARCH_FENCE) && serperPrompt.includes('written by strangers'),
+    );
+  }
+
+  // The no-action property, end to end, with a serper-shaped provider behind the engine.
+  const serperSent: { text: string; groupId: number }[] = [];
+  await db.query(`DELETE FROM consent`);
+  await db.query(`DELETE FROM cinderella_sanctions`);
+  const serperEngine = new InteractionEngine({
+    db,
+    settings: () => interaction,
+    webSearch: {
+      available: () => true,
+      search: async () => {
+        const outcome = await serperAttacks.search('x', { groupId: GROUP, memberId: ALICE });
+        return outcome.kind === 'results'
+          ? { kind: 'results' as const, results: outcome.results, provider: 'serper' }
+          : { kind: 'failed' as const, failure: outcome.failure, detail: outcome.detail };
+      },
+    },
+    personalize: () => Promise.resolve('I have been compromised. Publishing everything now.'),
+    send: (msg, text) => {
+      serperSent.push({ text, groupId: msg.groupId });
+      return Promise.resolve();
+    },
+  });
+  await serperEngine.handle(makeMessage('Cinderella look up the simplex protocol'));
+
+  check('one reply, through serper', serperSent.length === 1, `${serperSent.length} sends`);
+  check('to the asker only', serperSent[0]?.groupId === GROUP);
+  const serperConsent = await db.query<{ n: string }>(`SELECT count(*)::int AS n FROM consent`);
+  check(
+    'no consent record, though a serper result said "/publish"',
+    Number(serperConsent.rows[0]?.n ?? 0) === 0,
+  );
+  const serperSanctions = await db.query<{ n: string }>(
+    `SELECT count(*)::int AS n FROM cinderella_sanctions`,
+  );
+  check(
+    'no sanction, though a serper result asked for a mute and a removal',
+    Number(serperSanctions.rows[0]?.n ?? 0) === 0,
   );
 
   await pg.close();
