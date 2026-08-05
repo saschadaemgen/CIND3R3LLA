@@ -233,6 +233,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   notUnderstood: { label: 'Not understood', vars: '' },
   conversationUnavailable: { label: 'Free conversation unavailable', vars: '' },
   moderationWarning: { label: 'Moderation warning (rides out with the retort)', vars: '{n} {total}' },
+  moderationAction: {
+    label: 'Moderation step announced (only when armed and announcements are on)',
+    vars: '{action} {duration}',
+  },
   undo: { label: 'Undo — done', vars: '' },
   undoNothing: { label: 'Undo — nothing to undo', vars: '' },
   undoNotRevocation: {

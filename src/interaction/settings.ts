@@ -76,6 +76,11 @@ export const PERSONA_KEYS = [
   // noise. `{n}` and `{total}` are real numbers, not rhetoric: the ladder resolves to
   // warn for exactly `warningCount` violations, so "3 of 5" is a fact.
   'moderationWarning',
+  // What she says when a step ACTUALLY happened (CCB-S4-035). Sent only when the operator
+  // turned announcements on and the mode is armed; observation announces nothing, because
+  // nothing happened. `{action}` and `{duration}` are appended by the application
+  // verbatim, never worded by the model, for the reason D-137 records about the count.
+  'moderationAction',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -135,6 +140,9 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // Sent as part of the retort message, so it shares the retort's category. Classifying
   // it anywhere else would let one message belong to two categories.
   moderationWarning: 'nickname',
+  // Same reasoning as the warning: it rides on the retort message, so it shares the
+  // retort's category rather than belonging to a second one.
+  moderationAction: 'nickname',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -342,6 +350,13 @@ const PERSONA_EN: PersonaStrings = {
   moderationWarning:
     '⚠️ That is warning {n} of {total}, and it is on the record. Keep going and this ' +
     'escalates past me being unimpressed.',
+  // CCB-S4-035, and it is the sentence that says something DID happen. Only sent while
+  // the mode is armed and the operator turned announcements on, so unlike the warning it
+  // never has to be true in both modes: if it goes out, the step went out with it.
+  // `{action}` and `{duration}` are filled by the application and are protected text.
+  moderationAction:
+    '🔒 That is a {action}{duration}. It is on the record, and it was not my idea, it was ' +
+    'the count.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -456,6 +471,9 @@ const PERSONA_DE: PersonaStrings = {
   moderationWarning:
     '⚠️ Das ist Verwarnung {n} von {total}, und sie steht im Protokoll. Mach weiter, dann ' +
     'eskaliert das ueber mein blosses Genervtsein hinaus.',
+  moderationAction:
+    '🔒 Das ist jetzt {action}{duration}. Es steht im Protokoll, und es war nicht meine ' +
+    'Idee, es war die Zaehlung.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',

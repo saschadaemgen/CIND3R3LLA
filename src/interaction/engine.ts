@@ -84,6 +84,7 @@ import {
   type ViolationType,
 } from '../moderation/rules.js';
 import { countViolations, recordSanction, recordViolation } from '../moderation/store.js';
+import { applySanction, type EnforcementPort } from '../moderation/apply.js';
 
 export interface InteractionDeps {
   db: Queryable;
@@ -178,6 +179,34 @@ export interface InteractionDeps {
    * act through, which is the no-act guarantee in its structural form.
    */
   moderationRules?: () => ModerationRules | null;
+  /**
+   * The capability that makes a sanction real (CCB-S4-035, D-139).
+   *
+   * THE ENGINE'S SECOND OUTBOUND, and the first one that can do something to a member
+   * rather than say something to them. CCB-S4-032 could promise that a computed sanction
+   * had nothing to act through because `send` was the only way out of here; arming
+   * replaces that promise with a narrower one that is still structural.
+   *
+   * It is a GETTER returning a port, not a bag of methods, so three things stay true:
+   * absent or returning null means the engine cannot act at all, which is what every
+   * harness written before this briefing gets by default and why none of them had to
+   * change; the port is substitutable, so a spy can prove call-for-call what was and was
+   * not attempted; and the SDK names stay behind the seam in `src/bot/enforcement.ts`.
+   *
+   * Having the capability is still not permission to use it. The mode decides, the
+   * deterministic ladder decides which step, and no model output is read on either path.
+   */
+  enforcementPort?: () => EnforcementPort | null;
+  /**
+   * Book the reversal of a timed mute (CCB-S4-035).
+   *
+   * Injected rather than imported for the same reason as everything else on this
+   * interface: a harness proves the booking happened without running a queue worker, and
+   * the engine keeps its one-directional dependencies. Absent means no expiry is booked,
+   * which is only correct in a harness; the boot path always supplies it, and the Active
+   * page's overdue flag is what catches it if it ever does not.
+   */
+  scheduleUnmute?: (sanctionId: string, at: Date) => Promise<void>;
 }
 
 interface ReplyOptions {
@@ -1616,7 +1645,13 @@ export class InteractionEngine {
         personality: sharpenBy(this.deps.personality?.() ?? null, ladders.sharpnessBonus),
         identity: botIdentity(s),
       });
-      const personalized = ladders.warning ? `${voiced}\n${ladders.warning}` : voiced;
+      // Warning then announcement, both protected text, both after the voiced retort.
+      // They are mutually exclusive in practice, since a rung is either the warn rung or a
+      // harder one, but this does not rely on that: if a ladder ever produced both,
+      // sending both is the honest outcome.
+      const personalized = [voiced, ladders.warning, ladders.announcement]
+        .filter((part): part is string => part !== null && part !== '')
+        .join('\n');
       // A retort is a snub, not an address: no name prefix (that would read as
       // her talking TO the member, contradicting "never opens a conversation")
       // and no quote.
@@ -1703,11 +1738,11 @@ export class InteractionEngine {
     lang: string,
     type: ViolationType,
     now: number,
-  ): Promise<{ sharpnessBonus: number; warning: string | null }> {
+  ): Promise<{ sharpnessBonus: number; warning: string | null; announcement: string | null }> {
     const rules = this.deps.moderationRules?.() ?? null;
     // No runtime bot means no operator-chosen policy. Running a ladder nobody configured
     // against a real group is the worst available default, so nothing runs.
-    if (!rules) return { sharpnessBonus: 0, warning: null };
+    if (!rules) return { sharpnessBonus: 0, warning: null, announcement: null };
 
     const at = new Date(now);
     const scope = { groupId: msg.groupId, memberId: msg.senderMemberId, type };
@@ -1762,8 +1797,10 @@ export class InteractionEngine {
         }
       }
 
+      let announcement: string | null = null;
+
       if (enforcement.action !== 'none') {
-        await recordSanction(this.deps.db, {
+        const common = {
           groupId: msg.groupId,
           memberId: msg.senderMemberId,
           memberDisplayName: msg.senderDisplayName,
@@ -1779,24 +1816,108 @@ export class InteractionEngine {
             rules.enforcementWindowSeconds,
             enforcement.rungThreshold,
           ),
-          // The only value this briefing writes. Not derived from `rules.mode`, so a
-          // stored 'enforce' cannot become an action by accident: arming is a code
-          // change, deliberately, not a column value.
-          mode: 'observed',
           // The Log has to distinguish a warning she actually said from a rung that was
           // only recorded: one happened in the chat and the other did not.
           spoken: warning !== null,
-        });
-        log.info('Moderation observed a step', {
-          action: enforcement.action,
-          count: enforcement.count,
-          group: msg.groupId,
-          enforced: false,
-          spoken: warning !== null,
-        });
+        };
+
+        // ── THE ARMING BRANCH (CCB-S4-035, D-139) ───────────────────────────
+        //
+        // BOTH CONDITIONS, and neither is redundant. The mode is the operator's decision
+        // and the port is the runtime's capability, and a deployment can have one without
+        // the other: the admin console runs with no bot, and every harness written before
+        // this briefing passes no port at all. Requiring both means the default for
+        // anything that has not deliberately been armed AND wired is still to observe.
+        //
+        // The deterministic decision is UNCHANGED by any of this. `evaluateEnforcement`
+        // ran above and picked the rung; this only decides whether the rung happens. D-136
+        // holds exactly as written: the model never chooses a step, and arming changes
+        // what follows the decision, never who makes it.
+        const port = rules.mode === 'enforce' ? (this.deps.enforcementPort?.() ?? null) : null;
+
+        if (port) {
+          const outcome = await applySanction(
+            this.deps.db,
+            port,
+            {
+              ...common,
+              groupMemberId: msg.senderGroupMemberId ?? null,
+              durationSeconds: enforcement.durationSeconds,
+            },
+            at,
+          );
+
+          // ANNOUNCED ONLY WHEN IT ACTUALLY HAPPENED. A step that was refused or failed
+          // must not be announced: telling a group somebody was muted when they were not
+          // is the chat-facing version of the false row the schema already refuses.
+          if (
+            outcome.status === 'applied' &&
+            rules.announce &&
+            enforcement.action !== 'warn'
+          ) {
+            // Protected text, appended verbatim, for the reason D-137 records: asked to
+            // reword a sentence containing its own count, a 9B model was measured
+            // corrupting the number. A duration is the same class of fact as a count.
+            announcement = fillPersona(this.persona(s, lang, 'moderationAction'), {
+              action: enforcement.action,
+              duration:
+                enforcement.durationSeconds > 0
+                  ? ` for ${Math.round(enforcement.durationSeconds / 60)} minute(s)`
+                  : '',
+            });
+          }
+
+          // BOOKED IMMEDIATELY, and only for a mute that actually applied and carries a
+          // deadline. A mute with no expiry job is permanent, so this is the line between
+          // a timed sanction and a silent life sentence. It is deliberately not inside
+          // `applySanction`: that function's contract is act-then-record, and reaching a
+          // queue from it would give the moderation tree a second capability it does not
+          // need to have.
+          if (outcome.status === 'applied' && outcome.expiresAt !== null) {
+            try {
+              await this.deps.scheduleUnmute?.(outcome.sanctionId, new Date(outcome.expiresAt));
+            } catch (error) {
+              // Surfaced, never swallowed. The mute stands and the member is muted; what
+              // failed is the promise to lift it, and the operator has to know that.
+              log.error(
+                `Moderation: a mute was applied but its expiry could not be booked, so it ` +
+                  `will show as overdue until it is lifted by hand (${
+                    error instanceof Error ? error.message : String(error)
+                  }).`,
+              );
+              status.error(
+                `Moderation: a mute was applied but its automatic expiry could not be ` +
+                  `scheduled. Lift it from the Active page when it is due.`,
+              );
+            }
+          }
+
+          log.info('Moderation enforced a step', {
+            action: enforcement.action,
+            count: enforcement.count,
+            group: msg.groupId,
+            enforced: outcome.status === 'applied',
+            announced: announcement !== null,
+          });
+        } else {
+          await recordSanction(this.deps.db, {
+            ...common,
+            // Observation writes this literal rather than deriving it from `rules.mode`,
+            // so a stored 'enforce' with no wired capability records the truth: nothing
+            // happened, because nothing could.
+            mode: 'observed',
+          });
+          log.info('Moderation observed a step', {
+            action: enforcement.action,
+            count: enforcement.count,
+            group: msg.groupId,
+            enforced: false,
+            spoken: warning !== null,
+          });
+        }
       }
 
-      return { sharpnessBonus: verbal.sharpnessBonus, warning };
+      return { sharpnessBonus: verbal.sharpnessBonus, warning, announcement };
     } catch (error) {
       // Never let moderation stop her from answering. A retort that goes out
       // unsharpened is a small loss; silence because a count failed is a bigger one.
@@ -1805,7 +1926,7 @@ export class InteractionEngine {
           error instanceof Error ? error.message : String(error)
         }).`,
       );
-      return { sharpnessBonus: 0, warning: null };
+      return { sharpnessBonus: 0, warning: null, announcement: null };
     }
   }
 
