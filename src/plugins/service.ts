@@ -32,6 +32,13 @@ import {
 // Importing the plugin module is what registers it. Every plugin is imported
 // here, which is the single place a new one is added.
 import { CRYPTO_PRICES_ID } from './crypto-prices/plugin.js';
+import {
+  applyWebSearchForm,
+  normalizeWebSearchSettings,
+  WEB_SEARCH_DEFAULTS,
+  type WebSearchSettings,
+} from './web-search/settings.js';
+import { WEB_SEARCH_ID } from './web-search/plugin.js';
 
 const STATES_KEY = 'plugins';
 const settingsKey = (id: string): string => `plugin:${id}`;
@@ -48,6 +55,7 @@ export class PluginService {
     private readonly db: Queryable,
     private states: PluginStates,
     private cryptoPrices: CryptoPricesSettings,
+    private webSearch: WebSearchSettings,
   ) {
     this.applyIntents();
   }
@@ -56,6 +64,14 @@ export class PluginService {
     const states = normalizePluginStates((await getSetting(db, STATES_KEY)) ?? {});
     const stored = (await getSetting(db, settingsKey(CRYPTO_PRICES_ID))) ?? {};
     const crypto = normalizeCryptoPrices(stored, DEFAULT_CRYPTO_PRICES);
+
+    // Web search (CCB-S4-037). Normalised on read like everything else, so a stored
+    // document written by another version cannot hand the prompt builder a budget nobody
+    // typed. No repair pass: this plugin has never had the doubled-encryption bug the
+    // crypto keys needed one for.
+    const webSearch = normalizeWebSearchSettings(
+      (await getSetting(db, settingsKey(WEB_SEARCH_ID))) ?? WEB_SEARCH_DEFAULTS,
+    );
 
     // Self-repair for instances written by the doubled-encryption path
     // (CCB-S3-008 §2). The normalizer has already unwrapped the extra layers in
@@ -93,12 +109,17 @@ export class PluginService {
         );
       }
     }
-    return new PluginService(db, states, crypto);
+    return new PluginService(db, states, crypto, webSearch);
   }
 
   /** All-defaults instance, for harnesses and the server's fallback path. */
   static withDefaults(db: Queryable): PluginService {
-    return new PluginService(db, normalizePluginStates({}), normalizeCryptoPrices({}));
+    return new PluginService(
+      db,
+      normalizePluginStates({}),
+      normalizeCryptoPrices({}),
+      normalizeWebSearchSettings({}),
+    );
   }
 
   private applyIntents(): void {
@@ -151,6 +172,37 @@ export class PluginService {
    * so an untouched write-only API key field carries the stored key forward
    * instead of blanking it.
    */
+  /* ── Web Search settings (CCB-S4-037) ───────────────────────────────── */
+
+  getWebSearch(): WebSearchSettings {
+    return this.webSearch;
+  }
+
+  /**
+   * Saves the plugin's settings.
+   *
+   * The audit detail records `keySet` and NEVER the key, exactly as the price plugin's
+   * does. It also records the budgets, because those are the size of the untrusted-text
+   * surface rather than a cosmetic preference, and an operator who widened them should be
+   * able to see when.
+   */
+  async saveWebSearch(next: unknown, actor: string): Promise<WebSearchSettings> {
+    const normalized = applyWebSearchForm(this.webSearch, (next ?? {}) as Record<string, unknown>);
+    await setSetting(this.db, settingsKey(WEB_SEARCH_ID), normalized);
+    await writeAudit(this.db, actor, 'plugin.settings', `plugin:${WEB_SEARCH_ID}`, {
+      provider: normalized.provider,
+      keySet: normalized.apiKey !== '',
+      maxResults: normalized.maxResults,
+      perResultChars: normalized.perResultChars,
+      totalChars: normalized.totalChars,
+      timeoutMs: normalized.timeoutMs,
+      rateLimitPerMember: normalized.rateLimitPerMember,
+      rateLimitPerChat: normalized.rateLimitPerChat,
+    });
+    this.webSearch = normalized;
+    return normalized;
+  }
+
   async saveCryptoPrices(next: unknown, actor: string): Promise<CryptoPricesSettings> {
     const normalized = normalizeCryptoPrices(next, this.cryptoPrices);
     await setSetting(this.db, settingsKey(CRYPTO_PRICES_ID), normalized);
