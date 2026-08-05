@@ -2040,6 +2040,45 @@ about what arming still needs, and the save path has no mode parameter. The Acti
 empty by construction and says so. The Rules page also distinguishes the ladders from the
 nickname anti-spam limit, which suppresses her REPLY and does nothing to the member.
 
+### 35a. Arming the enforcer, and taking a sanction back (CCB-S4-035, D-139)
+
+CCB-S4-032 computed and recorded; CCB-S4-033 made the warning speak. This builds the three
+parts that make a sanction reversible, then holds the switch.
+
+**The capability lives outside the moderation tree.**
+[`apply.ts`](../src/moderation/apply.ts) declares an `EnforcementPort` in Cinderella's own
+vocabulary and acts only through what it is handed;
+[`bot/enforcement.ts`](../src/bot/enforcement.ts) implements it against
+`apiSetMembersRole` / `apiBlockMembersForAll` / `apiRemoveMembers`, and is the only tree
+allowed to import the SDK. `rules.ts` and `store.ts` still cannot act at all, so
+`verify:moderation`'s tree scan is unweakened. The port being substitutable is what makes
+every dangerous branch provable by a spy.
+
+**Refuse, act, then record.** A row is written after the port call resolves, and written
+differently depending on how. Migration 032 adds a CHECK making "enforced but neither
+applied nor failed" unrepresentable, so no row can claim a sanction nobody is serving.
+
+**Migration 032** also adds `group_member_id` (the numeric id the three APIs take; expiry
+and undo run later with no message in hand) and `expired_at` (when the role actually went
+back, as opposed to when it was due). Without the second, a lost expiry job is
+indistinguishable from one that ran, which is a silent life sentence.
+
+**Reversal has one path, two entrances.** `restoreSanction` is called by the queue job and
+by the console's Lift button, so the role that comes back is the same role by the same
+code. It is idempotent: the guard is in the `UPDATE ... WHERE`, not in a read-then-write,
+so two racing runs cannot both restore. Undo after expiry returns an honest note, never an
+error.
+
+**Two gates on the engine**: mode is `enforce` AND a port is wired. Either missing means
+observe, which is why no pre-existing harness had to change.
+
+**Owner is refused beneath the configurable exemptions**, in both `apply.ts` and
+`bot/enforcement.ts`, neither assuming the other ran.
+
+**SHIPPED LOCKED.** `ARMING_UNLOCKED` is `false`: the console does not render the arm
+control and the write path refuses `enforce`. Proof against a real core with a real second
+member is what is owed, and the Rules page says so. See D-139.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

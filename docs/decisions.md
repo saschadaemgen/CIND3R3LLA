@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-138**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-139**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,92 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-139 - Enforcement is built and reversible, and it is shipped locked
+
+**Status: IMPLEMENTED, LOCKED** (CCB-S4-035). Extends D-136 and D-137.
+
+**What was built.** Everything CCB-S4-035 asked for: previous-role memory, expiry through
+the durable queue, undo, the three actions, the armed mode with its typed confirmation,
+and the announcement as protected text. What is NOT done is the switch, and that is
+deliberate rather than unfinished. See "shipped locked" below.
+
+**REVERSIBILITY IS THE WHOLE DESIGN, and it starts before the action.** A mute is
+`setMemberRole` to observer, so restoring means knowing what they held. `previous_role` is
+captured at sanction time and is what both reversal routes put back; the check that proves
+it uses a **moderator**, because restoring a muted moderator as a plain member is a silent
+demotion nobody notices until they try to moderate something. When the role cannot be
+determined, the mute is **refused**: an unrestorable mute is permanent by construction the
+moment it succeeds, so refusing is the safer error.
+
+**REFUSE, ACT, THEN RECORD. Never record then act.** Recording first would produce a row
+claiming a sanction the core then declined to apply, and an Active page showing a member as
+muted who is talking normally. The row is written after the call resolves and is written
+differently depending on which way it resolved. A CHECK makes the lie unrepresentable: an
+enforced row is either applied (`enforced_at`) or failed (`enforcement_error`), never
+neither.
+
+**`expired_at` IS SEPARATE FROM `expires_at`, and that is what makes overdue visible.** One
+is when a mute should lift, the other is when the role was actually put back. Collapsing
+them would make "the job ran" indistinguishable from "the time passed", which is exactly
+how a lost expiry job becomes a silent life sentence. CCB-S4-032's Active query filtered on
+`expires_at > now`, which was correct while nothing could expire and would have hidden
+precisely the rows that now matter most. Overdue is a query, the Active page shows it in
+red, and a boot sweep re-queues it.
+
+**THE MODERATION TREE IS STILL INCAPABLE.** CCB-S4-032 promised something stronger than a
+flag: nothing under `src/moderation/` could act because the capability did not exist there.
+Arming keeps that. `apply.ts` declares an `EnforcementPort` interface in Cinderella's
+vocabulary and acts only through what it is handed; the implementation is in
+`src/bot/enforcement.ts`, the one tree allowed to import the SDK. So `verify:moderation`
+still scans the whole moderation tree for the enforcement API names and still finds none,
+`rules.ts` and `store.ts` still cannot act at all, and the port is **substitutable**, which
+is what let every dangerous branch be proven by a spy instead of by muting somebody.
+
+**THE MODEL STILL CANNOT REACH IT, re-proven now that it is not free.** The count is a SQL
+`count(*)`, the rung is an integer comparison, and `applySanction` has exactly one call
+site, in the deterministic branch. Proven behaviourally by handing the model a message
+asking for somebody to be sanctioned and model output naming an action, and structurally by
+counting the call sites.
+
+**TWO GATES, AND NEITHER IS REDUNDANT.** The engine acts only when the mode is `enforce`
+AND a port is wired. A deployment can have one without the other: the admin console runs
+with no bot, and every harness written before this briefing passes no port. Requiring both
+means anything not deliberately armed and wired still observes, which is why no existing
+check had to change to stay correct.
+
+**Owner is refused beneath the exemptions.** The exempt-roles list is the operator's to
+set; `owner` is refused in code regardless, in both `apply.ts` and `bot/enforcement.ts`,
+neither assuming the other ran. Same shape as the permissiveness ceiling beneath the dials
+(D-133): a default is a value somebody can change, and on the other side of that change is
+the person who owns the group being demoted by a nickname counter.
+
+**Arming costs six keystrokes; disarming costs none.** The confirmation is a typed word,
+not a checkbox, for the reason the ordering guarantee already gives: a box is ticked once
+and then ticked forever. Going back to observing has no confirmation at all, because
+friction belongs on the direction that increases harm.
+
+**A warning is not an active sanction.** Found by this briefing's own check. Once armed, a
+warning is an enforced row with an `enforced_at`, because she genuinely said it, but nobody
+is serving a warning. Listing them on the Active page would bury the one or two members
+actually held under every member ever warned, each with a Lift button with nothing to lift.
+
+**SHIPPED LOCKED, and this is the part to read.** `ARMING_UNLOCKED` in
+`src/moderation/rules.ts` is `false`, the console does not render the arm control, and
+`updateModerationMode` refuses to write `enforce` on the write path rather than only in the
+form. The briefing's first ground rule asks for proof against a real core with a real
+second member: an actual mute applied and lifted, a moderator restored as a moderator, an
+expiry firing, an exempt member surviving the hardest rung. That needs a second human with
+a SimpleX client in a real group, and the only real group this deployment has is the
+operator's live one, whose members are not test subjects. Ground rule 5 says exactly what
+to do about that, so the parts that could be proven shipped and the switch did not.
+Unlocking is one boolean plus those five live checks; nothing underneath changes.
+
+**Not reversible by this system, and the console says so rather than implying it:** a block
+and a removal. Both are undone in the operator's own client. Only a mute has an automatic
+expiry and a Lift button.
 
 ---
 

@@ -196,7 +196,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   characters against its 600, whose column DEFAULT is the operator's written history so
   that the existing bot is backfilled and every new one starts with one; clearing it
   stores NULL and stays cleared, because a default applies to an insert and never to an
-  update).
+  update) · 032 arming (the numeric `group_member_id` a restore acts through, `expired_at`
+  as distinct from `expires_at` so a lost expiry job reads as overdue rather than as
+  permanent, and the CHECK that makes an enforced row claiming neither success nor failure
+  unrepresentable).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -204,7 +207,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **032**, since 031 landed with her origin). Stated as a rule
+  (currently **033**, since 032 landed with the arming columns). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
