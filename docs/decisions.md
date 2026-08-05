@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-140**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-141**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and

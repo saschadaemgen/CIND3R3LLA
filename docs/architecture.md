@@ -2106,6 +2106,32 @@ dates, prices and features specifically, and she states plainly that she has no 
 memory. The second has a dependency recorded in D-140: it must be removed by the briefing
 that builds memory.
 
+### 35c. Web search, and untrusted text (CCB-S4-037, D-141)
+
+A plugin in the crypto-prices shape, **off by default**, contributing a `LOOKUP` intent
+that is absent from the catalog while it is off.
+
+**Fencing is structural.** Results ride in the USER message inside a named fence; the
+system prompt never carries them, and gains four sentences about the fence only when
+results are attached. The system prompt is application-authored, so a stranger's prose in
+it would carry the application's authority.
+
+**No-action.** `WebSearchLookup` can only return data, `answerLookup` is its only
+caller, and everything goes through one `replyWithText` to the asker. Proven with results
+that are nothing but attacks and a model that plays along.
+
+**Bounded.** Per-result and total character budgets (a safety control, not a quality knob),
+newlines flattened, control characters and the fence delimiter stripped.
+
+**Trigger:** explicit requests only, in `rules.ts`. No current-information heuristic, on
+purpose: a false positive is an outbound request and a bill.
+
+**Sources** are appended verbatim by the application (D-137's lesson). **Failure** says so
+and never falls back to training data.
+
+**Migration 033** adds the `lookup` publication category to `bot_publish_settings`, the
+same correction 027 made for `conversation`.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

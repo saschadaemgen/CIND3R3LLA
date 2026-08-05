@@ -199,7 +199,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   update) · 032 arming (the numeric `group_member_id` a restore acts through, `expired_at`
   as distinct from `expires_at` so a lost expiry job reads as overdue rather than as
   permanent, and the CHECK that makes an enforced row claiming neither success nor failure
-  unrepresentable).
+  unrepresentable) · 033 the web-search publication category (a view replacement, the same
+  correction 027 made, because the category defaults are a literal that must match
+  `DEFAULT_ARCHIVE`).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -207,7 +209,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **033**, since 032 landed with the arming columns). Stated as a rule
+  (currently **034**, since 033 landed with the lookup category). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -242,6 +244,11 @@ scanning for every enforcement API name, behaviourally by driving a member past 
 with a spy on the engine's only outbound, and by the schema CHECK that refuses an observed
 row claiming to be enforced. `npm run verify:moderation-live` walks the same nickname up
 the ladder against a real model and prints every rung; it needs Ollama),
+`verify:search` (web search: that untrusted results are fenced into the USER message and
+never the system prompt, that a result can cause no action at all, the budgets, the
+deterministic trigger and its negative controls, and the honest failure line.
+`npm run verify:search-live` puts five real prompt injections in the result set and prints
+what she does with each; it needs Ollama),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
 `verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
 the model transport, so no Ollama need be running.
