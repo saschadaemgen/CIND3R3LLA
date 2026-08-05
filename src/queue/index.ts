@@ -26,6 +26,11 @@ import {
   holdExpireKey,
 } from './jobs/destruction.js';
 import { CAPTURE_DRAIN_JOB, captureDrainHandler } from '../capture/events/replay.js';
+import {
+  MODERATION_EXPIRE_JOB,
+  moderationExpireHandler,
+  moderationExpireKey,
+} from './jobs/moderation-expiry.js';
 
 let worker: QueueWorker | undefined;
 
@@ -64,6 +69,14 @@ export function registerBuiltinJobs(): void {
   // member's erasure that lives outside our own database.
   if (!getJobHandler(CORE_ERASE_JOB)) {
     registerJobHandler(CORE_ERASE_JOB, coreEraseHandler);
+  }
+  // Lifting a timed mute (CCB-S4-035). MUST be registered, and for the sharpest version
+  // of the reason the destruction handlers give: the worker builds its claim list from the
+  // registered types, so an unregistered type is never claimed and its jobs sit `queued`
+  // forever with no error anywhere. For a mute that means a member silenced permanently by
+  // a ladder that promised ten minutes.
+  if (!getJobHandler(MODERATION_EXPIRE_JOB)) {
+    registerJobHandler(MODERATION_EXPIRE_JOB, moderationExpireHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }
@@ -217,6 +230,35 @@ export async function enqueueCoreErase(
   });
 }
 
+/**
+ * Book the lifting of a timed mute (CCB-S4-035).
+ *
+ * INTERACTIVE LANE, and not because it is urgent. `bulkPaused` stops the bulk lane
+ * entirely, and an operator shedding load must never thereby extend everybody's mute
+ * indefinitely: pausing bulk work is a capacity decision, not a moderation one.
+ *
+ * More attempts than the default, for the same reason `enqueueCoreErase` takes them: the
+ * core being down is an ordinary transient state, and the alternative to retrying is a
+ * member left as an observer.
+ *
+ * `runAt` is the expiry instant, evaluated against the Postgres clock in the claim
+ * predicate, so the job simply is not claimable until the mute is actually due.
+ */
+export async function enqueueModerationExpiry(
+  db: Queryable,
+  sanctionId: string,
+  expiresAt: Date,
+): Promise<void> {
+  await enqueueJob(db, MODERATION_EXPIRE_JOB, {
+    idempotencyKey: moderationExpireKey(sanctionId),
+    lane: 'interactive',
+    maxAttempts: 20,
+    runAt: expiresAt,
+    payload: { sanctionId },
+  });
+}
+
+export { MODERATION_EXPIRE_JOB } from './jobs/moderation-expiry.js';
 export { CORE_ERASE_JOB } from './jobs/core-erase.js';
 export { SCREENING_SCAN_JOB } from './jobs/screening.js';
 export { CONTENT_ANALYSIS_JOB } from './jobs/analysis.js';

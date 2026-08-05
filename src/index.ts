@@ -29,6 +29,7 @@ import { setRuntimeAdminHandle } from './bot/runtime/admin-actions.js';
 import { registerContactRequestListener } from './profiles/contact-requests.js';
 import { registerGroupInvitationListener } from './profiles/group-invitations.js';
 import { setCoreDeleteHandle } from './bot/core-delete.js';
+import { enforcementAvailable, liveEnforcementPort, setEnforcementHandle } from './bot/enforcement.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
 import { registerCapture } from './capture/handler.js';
@@ -66,7 +67,9 @@ import { CRYPTO_PRICES_ID } from './plugins/crypto-prices/plugin.js';
 import { startAdminServer } from './web/server.js';
 import { status } from './web/status.js';
 import { registerAdminViews } from './web/views/index.js';
-import { startQueue, stopQueue } from './queue/index.js';
+import { enqueueModerationExpiry, startQueue, stopQueue } from './queue/index.js';
+import { resweepOverdueMutes } from './queue/jobs/moderation-expiry.js';
+import { listOverdueSanctions } from './moderation/store.js';
 import { startDestructionSweeper } from './archive/sweeper.js';
 
 function runConfigCheck(cfg: Config, localAi: LocalAiConfig): void {
@@ -161,6 +164,10 @@ async function startCaptureWorker(
     // rather than passed down, because the queue handler that uses it runs outside
     // the capture wiring entirely.
     setCoreDeleteHandle(botHandle);
+    // The capability that arming needs (CCB-S4-035). Registered beside the delete handle
+    // and cleared beside it on shutdown, so "can the bot act" is one fact with one
+    // lifetime rather than two that can disagree.
+    setEnforcementHandle(botHandle);
     const hooks = makePersistenceHooks(cfg);
 
     /**
@@ -237,6 +244,19 @@ async function startCaptureWorker(
       // and records only. The engine has no capability to act on a computed sanction:
       // `send` is its one outbound, which is the no-act guarantee in structural form.
       moderationRules: currentModerationRules,
+      // ── ARMED (CCB-S4-035, D-139) ────────────────────────────────────────
+      //
+      // The capability, handed over only while a core is actually running. Two things
+      // still have to be true before anything happens to anybody: the operator has set
+      // the mode to enforce on the Rules page, and the resolved rung is not `none`. This
+      // supplies the means; the ladder supplies the decision; the model supplies neither.
+      //
+      // `enforcementAvailable()` is re-read on every call rather than captured, so a bot
+      // that stops leaves the engine observing instead of throwing into a member's reply.
+      enforcementPort: () => (enforcementAvailable() ? liveEnforcementPort : null),
+      // A mute without this is a mute nobody lifts. Booked on the durable queue, so it
+      // survives the restart that a timer would not.
+      scheduleUnmute: (sanctionId, at) => enqueueModerationExpiry(getPool(), sanctionId, at),
       // Handed over only while the plugin is enabled; when it is off, PRICE is
       // not in the active intent catalog either, so this is belt and braces.
       // Handed over only while the plugin is enabled; when it is off, PRICE is
@@ -503,6 +523,34 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   // a save that arrived before the first load would invalidate nothing.
   setModerationService(await ModerationService.load(getPool()));
 
+  // ── THE SAFETY NET UNDER THE MUTE TIMER (CCB-S4-035) ──────────────────────
+  //
+  // Every mute books its own expiry job the moment it applies, and that is the normal
+  // path. This covers the window a crash can land in, between the sanction row committing
+  // and the queue accepting the job: without it that member stays an observer forever, and
+  // only the Active page's overdue flag would ever say so.
+  //
+  // Safe on every boot because `enqueueModerationExpiry` dedupes on its idempotency key
+  // against live jobs, so a mute that already has one gets nothing new. Failure is logged
+  // rather than fatal: a bot refusing to start because it could not re-queue an expiry
+  // helps nobody who is currently muted.
+  try {
+    const overdue = await listOverdueSanctions(getPool(), new Date());
+    if (overdue.length > 0) {
+      await resweepOverdueMutes(
+        getPool(),
+        overdue.map((row) => row.id),
+        (sanctionId) => enqueueModerationExpiry(getPool(), sanctionId, new Date()),
+      );
+    }
+  } catch (error) {
+    log.warn(
+      `Moderation: the overdue-mute sweep did not run at boot (${
+        error instanceof Error ? error.message : String(error)
+      }).`,
+    );
+  }
+
   // One process (A2): the admin web server and the capture worker together.
   const adminCfg = loadAdminConfig();
   const adminServer = await startAdminServer({
@@ -558,6 +606,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
         // keeps answering yes against a chat client that has been shut down, and the
         // erasure path would report a capability it no longer has (CCB-S3-023).
         setCoreDeleteHandle(null);
+        setEnforcementHandle(null);
         setRuntimeAdminHandle(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
