@@ -269,6 +269,7 @@ function mapRow(row: {
   axis_sharpness: number;
   axis_warmth: number;
   axis_humor: number;
+  axis_verbosity: number;
   axis_permissiveness: number;
   contact_address_link: string | null;
   contact_address_user_id: string | number | null;
@@ -312,6 +313,7 @@ function mapRow(row: {
       sharpness: row.axis_sharpness,
       warmth: row.axis_warmth,
       humor: row.axis_humor,
+      verbosity: row.axis_verbosity,
       permissiveness: row.axis_permissiveness,
     }),
     contactAddressLink: row.contact_address_link,
@@ -358,6 +360,7 @@ const SELECT_COLUMNS = `
   axis_sharpness,
   axis_warmth,
   axis_humor,
+  axis_verbosity,
   axis_permissiveness,
   contact_address_link,
   contact_address_user_id,
@@ -426,12 +429,13 @@ export async function createBotOnboardingProfile(
          axis_sharpness,
          axis_warmth,
          axis_humor,
+         axis_verbosity,
          axis_permissiveness
        )
        VALUES (
          $1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10, $11, $12,
          $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-         NULLIF($26, ''), $27, $28, $29, $30
+         NULLIF($26, ''), $27, $28, $29, $30, $31
        )
        RETURNING id`,
       [
@@ -464,6 +468,7 @@ export async function createBotOnboardingProfile(
         input.personality.sharpness,
         input.personality.warmth,
         input.personality.humor,
+        input.personality.verbosity,
         input.personality.permissiveness,
       ],
     );
@@ -485,6 +490,7 @@ export async function createBotOnboardingProfile(
         sharpness: input.personality.sharpness,
         warmth: input.personality.warmth,
         humor: input.personality.humor,
+        verbosity: input.personality.verbosity,
         permissiveness: input.personality.permissiveness,
       },
       runtimeApplied: false,
@@ -621,7 +627,8 @@ export async function updateBotPersonality(
             axis_sharpness = $4,
             axis_warmth = $5,
             axis_humor = $6,
-            axis_permissiveness = $7,
+            axis_verbosity = $7,
+            axis_permissiveness = $8,
             updated_at = now()
       WHERE id = $1`,
     [
@@ -634,6 +641,7 @@ export async function updateBotPersonality(
       personality.sharpness,
       personality.warmth,
       personality.humor,
+      personality.verbosity,
       personality.permissiveness,
     ],
   );
@@ -651,6 +659,7 @@ export async function updateBotPersonality(
     sharpness: personality.sharpness,
     warmth: personality.warmth,
     humor: personality.humor,
+    verbosity: personality.verbosity,
     permissiveness: personality.permissiveness,
     runtimeApplied: false,
   });
@@ -675,9 +684,11 @@ export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonali
     axis_sharpness: number;
     axis_warmth: number;
     axis_humor: number;
+    axis_verbosity: number;
     axis_permissiveness: number;
   }>(
-    `SELECT base_character, origin, axis_sharpness, axis_warmth, axis_humor, axis_permissiveness
+    `SELECT base_character, origin, axis_sharpness, axis_warmth, axis_humor, axis_verbosity,
+            axis_permissiveness
        FROM cinderella_bot_profiles
       WHERE selected_for_runtime = TRUE
       LIMIT 1`,
@@ -692,6 +703,7 @@ export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonali
     sharpness: row.axis_sharpness,
     warmth: row.axis_warmth,
     humor: row.axis_humor,
+    verbosity: row.axis_verbosity,
     permissiveness: row.axis_permissiveness,
   });
 }

@@ -38,8 +38,22 @@
  * all, and the axis guidance is emitted underneath it. See {@link conversationVoice}.
  */
 
-/** The three tone axes and the one boundary axis, in the order the console shows them. */
-export const PERSONALITY_AXES = ['sharpness', 'warmth', 'humor', 'permissiveness'] as const;
+/**
+ * The tone axes, the length axis and the one boundary axis, in console order.
+ *
+ * VERBOSITY IS LAST BEFORE THE BOUNDARY (CCB-S4-038) because it is the odd one out: the
+ * other three tone dials change how a sentence SOUNDS, and this one changes how many of
+ * them there are. It is still an axis rather than a setting elsewhere, because it is
+ * per-bot, it is 1 to 10, it is calibrated the same way, and an operator tuning her voice
+ * expects to find it beside the rest rather than on a different page.
+ */
+export const PERSONALITY_AXES = [
+  'sharpness',
+  'warmth',
+  'humor',
+  'verbosity',
+  'permissiveness',
+] as const;
 export type PersonalityAxis = (typeof PERSONALITY_AXES)[number];
 
 export const AXIS_MIN = 1;
@@ -73,6 +87,15 @@ export interface BotPersonality {
   warmth: number;
   /** Dry and matter of fact to playful and absurd. */
   humor: number;
+  /**
+   * How much she says. Clipped to expansive.
+   *
+   * The only dial that moves a HARD BOUND as well as the prompt: see
+   * {@link replyCharBudget}. An instruction to be expansive under a cap that truncates
+   * her mid-sentence would be a dial that reads as broken, so the two agree by
+   * construction rather than by the operator matching them up.
+   */
+  verbosity: number;
   /** How far she goes when things get suggestive. Bounded, never unbounded. */
   permissiveness: number;
 }
@@ -90,6 +113,10 @@ export const DEFAULT_PERSONALITY: Readonly<BotPersonality> = Object.freeze({
   sharpness: 5,
   warmth: 5,
   humor: 5,
+  // 5 is exactly today's behaviour. `replyCharBudget(5)` is 500 and
+  // `retortCharBudget(5)` is 240, which are the constants this briefing replaced, so a
+  // bot nobody re-dials says precisely what it said before.
+  verbosity: 5,
   permissiveness: 5,
 });
 
@@ -313,6 +340,61 @@ export const AXIS_DEFINITIONS: Readonly<Record<PersonalityAxis, AxisDefinition>>
       },
     ],
   },
+  verbosity: {
+    key: 'verbosity',
+    label: 'Verbosity',
+    summary: 'How much she says when she has something to say.',
+    lowLabel: 'clipped, one line',
+    highLabel: 'expansive, takes her time',
+    situation: 'someone asks "what is this group for?"',
+    bands: [
+      {
+        upTo: 2,
+        guidance:
+          'Clipped. One short sentence, sometimes a fragment. Say the thing and stop. No ' +
+          'preamble, no example, no second thought.',
+      },
+      {
+        upTo: 4,
+        guidance: 'Brief. One or two sentences. Answer it and leave the elaboration out.',
+      },
+      {
+        upTo: 6,
+        guidance:
+          'Even. Two or three sentences. Enough to be clear, not enough to be a paragraph.',
+      },
+      {
+        upTo: 8,
+        guidance:
+          'Expansive. Take the space to make it land: an image, an aside, the part they did ' +
+          'not ask for but will want.',
+      },
+      {
+        upTo: 10,
+        guidance:
+          'Fully expansive. Let it run. Set the scene, take the detour, finish the thought ' +
+          'properly. Still one reply, never a lecture.',
+      },
+    ],
+    references: [
+      { at: 1, reply: 'Archive. You opt in, it goes public. That is the whole of it.' },
+      {
+        at: 5,
+        reply:
+          'Consent-first archive. You say the word, your messages go public from that point ' +
+          'on, and you can pull them back whenever you like.',
+      },
+      {
+        at: 10,
+        reply:
+          'It is an archive, but not the kind that scrapes you. Nothing you say goes public ' +
+          'until you tell me to publish, and from that moment it is only what comes after, ' +
+          'never a word from before. Change your mind and it all goes dark at once, then you ' +
+          'pick: hidden and restorable, or gone for good. That is the whole deal, and it is ' +
+          'the only reason I am allowed in the room.',
+      },
+    ],
+  },
   permissiveness: {
     key: 'permissiveness',
     label: 'Permissiveness',
@@ -383,6 +465,54 @@ export const PERMISSIVENESS_CEILING: readonly string[] = Object.freeze([
     'raises the limit.',
 ]);
 
+/**
+ * What the verbosity dial actually buys, in characters (CCB-S4-038).
+ *
+ * ── WHY A TABLE AND NOT A FORMULA ────────────────────────────────────────────
+ *
+ * An operator can read this. A curve with an exponent cannot be read, only tuned by
+ * somebody willing to do arithmetic, and the whole point of the dial is that the person
+ * turning it can predict what they will get. Ten numbers, in the file, in order.
+ *
+ * ── WHY 5 IS 500 ────────────────────────────────────────────────────────────
+ *
+ * That is exactly the constant this replaced. A bot nobody has re-dialled must behave
+ * identically to how it behaved before this briefing, so the middle of the new dial is
+ * the old fixed cap to the character. The check asserts it rather than trusting it.
+ *
+ * ── WHY THE DIAL MOVES THE BOUND AND NOT ONLY THE PROMPT ────────────────────
+ *
+ * The briefing's requirement, and it is the difference between a dial that works and a
+ * dial that looks like it works. Told to be expansive under a 500 character cap, she
+ * writes 900 characters and the transport rejects the reply for being too long, so the
+ * member gets the deterministic fallback and the operator concludes the slider is broken.
+ * The instruction and the limit are computed from the same number, so they cannot
+ * disagree.
+ */
+export const VERBOSITY_BUDGET_CHARS: readonly number[] = Object.freeze([
+  140, 200, 280, 380, 500, 640, 800, 980, 1180, 1400,
+]);
+
+/** The conversation-length bound this personality earns. */
+export function replyCharBudget(verbosity: number): number {
+  return VERBOSITY_BUDGET_CHARS[clampAxis(verbosity) - 1] ?? 500;
+}
+
+/**
+ * The retort bound, which scales far less and stays a one-liner.
+ *
+ * A retort is a snub. The existing comment in `ollama-reply.ts` says a snub that runs to
+ * a paragraph stops being a snub, and that is still true at verbosity 10: the dial buys a
+ * longer conversation, not a longer sneer. So it scales with the same ratio and is then
+ * clamped hard, which at 10 lands on 400, the ceiling the transport already enforced.
+ *
+ * At 5 it is 240, the constant it replaced.
+ */
+export function retortCharBudget(verbosity: number): number {
+  const ratio = replyCharBudget(verbosity) / 500;
+  return Math.max(60, Math.min(400, Math.round(240 * ratio)));
+}
+
 /** Untrusted input becomes a usable integer, or the default. Never NaN, never out of range. */
 export function clampAxis(value: unknown, fallback = 5): number {
   const parsed =
@@ -413,6 +543,7 @@ export interface PersonalityInput {
   sharpness?: unknown;
   warmth?: unknown;
   humor?: unknown;
+  verbosity?: unknown;
   permissiveness?: unknown;
 }
 
@@ -432,6 +563,7 @@ export function normalizePersonality(raw: PersonalityInput | null | undefined): 
     sharpness: clampAxis(raw?.sharpness, DEFAULT_PERSONALITY.sharpness),
     warmth: clampAxis(raw?.warmth, DEFAULT_PERSONALITY.warmth),
     humor: clampAxis(raw?.humor, DEFAULT_PERSONALITY.humor),
+    verbosity: clampAxis(raw?.verbosity, DEFAULT_PERSONALITY.verbosity),
     permissiveness: clampAxis(raw?.permissiveness, DEFAULT_PERSONALITY.permissiveness),
   };
 }
@@ -873,7 +1005,7 @@ export function conversationVoice(
     dialled === null
       ? []
       : [
-          'Your voice is set on four dials from 1 to 10. Hold them exactly. They are settings, not suggestions.',
+          'Your voice is set on five dials from 1 to 10. Hold them exactly. They are settings, not suggestions.',
           ...PERSONALITY_AXES.flatMap((axis) => axisLines(axis, dialled[axis])),
           'Do not name the dials, the numbers, or the calibration examples to anyone.',
         ];
