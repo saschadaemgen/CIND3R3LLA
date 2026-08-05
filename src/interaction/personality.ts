@@ -711,9 +711,140 @@ export interface BotIdentity {
   notMyNames?: readonly string[];
 }
 
+/**
+ * The wall clock, as a fact she is given rather than one she remembers (CCB-S4-036).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ *
+ * Asked what year it was, she answered *"2024 or whatever the clock says"*. That is not a
+ * bug in her character, it is what a language model is: it has no clock, so it answers
+ * from training data, which is two years stale and gets staler. The server knows the date
+ * exactly and had simply never told her.
+ *
+ * ── WHY THE INSTANT IS PASSED IN AND NOT READ HERE ───────────────────────────
+ *
+ * This file is pure, and the engine already owns a single injectable clock (`deps.now ??
+ * Date.now`). Reading a second one here would be a second source of truth for the one fact
+ * this whole feature is about, and it would make the prompt untestable: a check asserting
+ * the date reaches the model could only compare against whatever the machine happened to
+ * say at that moment. Passed in, the whole thing is a pure function of an instant, and a
+ * harness can pin it.
+ *
+ * The zone is passed in for the same reason. `Intl.resolvedOptions().timeZone` is an
+ * environment fact, so resolving it here would make the rendered prompt depend on which
+ * machine the check ran on.
+ */
+export interface CurrentTime {
+  /** The instant, from the caller's clock. */
+  at: Date;
+  /** IANA zone the server runs in, for example Europe/Berlin. */
+  timeZone: string;
+}
+
+/**
+ * The date and time, and the instruction to use it instead of guessing.
+ *
+ * Formatted with `Intl` rather than assembled by hand, so the weekday and month names are
+ * real words rather than a lookup table this file would have to carry and translate.
+ * Pinned to `en-GB` deliberately: this is prompt text the model reads, not member-facing
+ * output, so it does not follow the member's language, and a stable format is one less
+ * thing that differs between the check and production.
+ *
+ * The last line is the same shape as the origin's. Without it, a model handed the date
+ * opens with it.
+ */
+function nowLines(time: CurrentTime | undefined): string[] {
+  if (!time || Number.isNaN(time.at.getTime())) return [];
+
+  const format = (timeZone: string): string =>
+    new Intl.DateTimeFormat('en-GB', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone,
+    }).format(time.at);
+
+  let stamp: string;
+  try {
+    stamp = format(time.timeZone);
+  } catch {
+    // An unknown zone must not take her voice away, and it must not silently claim a zone
+    // she was not given. UTC is the honest fallback and the line still names the zone the
+    // caller asked for.
+    stamp = format('UTC');
+  }
+
+  return [
+    `The current date and time, right now, is ${stamp} (${time.timeZone}). That is the real ` +
+      `clock on the machine you run on.`,
+    'Use it whenever the date, the day, the time or the year comes up. Do not answer from ' +
+      'what you remember: you have no clock of your own, and what you remember is out of date.',
+    'Do not announce the time unprompted. It is a fact you have, not an opening line.',
+  ];
+}
+
+/**
+ * Two true things she was not saying (CCB-S4-036).
+ *
+ * ── THE INVENTED PROJECT FACT ────────────────────────────────────────────────
+ *
+ * She has claimed a shipping date that exists nowhere. The standing guard already said not
+ * to claim facts the application did not supply, and D-138 gave her a true history to speak
+ * from instead of inventing one, which fixed the questions about HERSELF. It did not reach
+ * questions about the PROJECT, where the pull to be helpful is strongest and where there is
+ * no supplied text to fall back on. So the rule is restated in the specific: a roadmap, a
+ * release date, a price and a feature are named, because a general instruction has already
+ * been measured failing on exactly those.
+ *
+ * This is wording, not a filter. It cannot be enforced mechanically and it is not claimed
+ * to be: the check proves the sentence reaches the model, and the live probe reports what
+ * she actually says.
+ *
+ * ── THE MEMORY CLAIM, AND ITS EXPIRY DATE ────────────────────────────────────
+ *
+ * Asked whether she remembered the previous question, she said she did not keep a tally,
+ * which implies a choice not to rather than an inability. She has no conversation memory:
+ * every reply is written from the current message alone. Saying so is honest, and implying
+ * otherwise is not.
+ *
+ * THIS INSTRUCTION HAS A DEPENDENCY, WRITTEN DOWN IN D-140. The moment conversation memory
+ * is built, this becomes a false statement she has been told to make, and it must be
+ * removed IN THE SAME BRIEFING that builds it. A true sentence that goes stale silently is
+ * worse than the deflection it replaced.
+ */
+function groundingLines(hasOrigin: boolean): string[] {
+  return [
+    // The list names her history only when she HAS one. Unconditional, it told a bot with
+    // no origin configured that it had a history to state, which is the same class of
+    // self-contradiction D-138 had to fix in the identity fence: one line claiming a fact
+    // that another line never supplied. Caught by the check that asserts an empty origin
+    // produces no talk of a history anywhere in the prompt.
+    `You may state the facts you have been given: your name, what you are, ${
+      hasOrigin ? 'your history, ' : ''
+    }the addresses above, and the current time. Everything else about this project you ` +
+      `have NOT been given.`,
+    'Never invent anything about the project, the product, the roadmap, the release dates, ' +
+      'the prices or the features. Not a date, not a version, not a plan, not a promise, ' +
+      'not even a vague one.',
+    'When you do not know something, say so plainly in your own voice. An honest answer that ' +
+      'you do not know beats a plausible one you made up, and filling the gap is the one ' +
+      'thing you must not do.',
+    'You do not remember earlier messages in this conversation. Each reply is written from ' +
+      'the message in front of you and nothing else.',
+    'If someone asks whether you remember something they said before, say plainly that you ' +
+      'do not, because you have no memory of the conversation. Do not imply you chose not to ' +
+      'keep track, and do not pretend to remember.',
+  ];
+}
+
 export function conversationVoice(
   personality: BotPersonality | null,
   identity?: BotIdentity,
+  time?: CurrentTime,
 ): string[] {
   // Normalized once. It was called three times before and the origin would have made it
   // four, on a function that trims and slices two paragraphs of prose per call.
@@ -752,6 +883,10 @@ export function conversationVoice(
     ...nicknameLines(identity?.notMyNames),
     ...character,
     ...origin,
+    // After what she IS and before how hard she hits. The clock and the grounding rules
+    // are facts about the world and about her own limits, not tone (CCB-S4-036).
+    ...nowLines(time),
+    ...groundingLines(origin.length > 0),
     ...dials,
     ...PERMISSIVENESS_CEILING,
   ];

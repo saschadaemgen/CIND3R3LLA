@@ -178,6 +178,11 @@ export interface InteractionDeps {
    * this: the engine's only outbound is `send`, so a computed sanction has nothing to
    * act through, which is the no-act guarantee in its structural form.
    */
+  /**
+   * The zone the server runs in, for the date she is told (CCB-S4-036). Defaults to the
+   * host's resolved zone; supplied by harnesses so a rendered prompt is deterministic.
+   */
+  timeZone?: string;
   moderationRules?: () => ModerationRules | null;
   /**
    * The capability that makes a sanction real (CCB-S4-035, D-139).
@@ -362,10 +367,18 @@ export class InteractionEngine {
    */
   private handledCategory: MemberCategory | null = null;
   private readonly now: () => number;
+  /** IANA zone the server runs in, told to her with the time (CCB-S4-036). */
+  private readonly timeZone: string;
   private readonly random: () => number;
 
   constructor(private readonly deps: InteractionDeps) {
     this.now = deps.now ?? ((): number => Date.now());
+    // Resolved ONCE, at construction. `resolvedOptions()` is not free and the zone a
+    // server runs in does not change between messages. Overridable so a check can pin it:
+    // a rendered prompt that depended on the machine's zone would assert differently on
+    // the operator's laptop and in CI.
+    this.timeZone =
+      deps.timeZone ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC';
     this.random = deps.random ?? Math.random;
   }
 
@@ -1957,6 +1970,12 @@ export class InteractionEngine {
         requiredLiterals,
         blockedLiterals: [msg.senderDisplayName],
         ...(dialled ? { personality: dialled.personality, identity: dialled.identity } : {}),
+        // The clock, from the engine's ONE source (CCB-S4-036). `this.now` is the same
+        // injectable the follow-up windows and the moderation counter already read, so a
+        // harness that pins the clock pins it everywhere and the date she states cannot
+        // disagree with the date a sanction was counted at. Sent on every request; the
+        // prompt builder renders it in the dialled modes only.
+        now: { at: new Date(this.now()), timeZone: this.timeZone },
       });
       return personalized?.trim() || deterministicDraft;
     } catch (error) {
@@ -2019,6 +2038,11 @@ export class InteractionEngine {
               // model was told everything about her voice and nothing about her identity,
               // and denied the name.
               identity: botIdentity(s),
+              // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
+              // the violation counter read. THIS is the path that matters for it: free
+              // conversation is where somebody asks what year it is, and where she
+              // answered from two-year-old training data because nobody had told her.
+              now: { at: new Date(this.now()), timeZone: this.timeZone },
             })
           )?.trim() || null;
       } catch (error) {
