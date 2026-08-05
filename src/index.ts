@@ -64,6 +64,8 @@ import { PluginService } from './plugins/service.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
 import { CRYPTO_PRICES_ID } from './plugins/crypto-prices/plugin.js';
+import { WEB_SEARCH_ID } from './plugins/web-search/plugin.js';
+import { WebSearchService } from './plugins/web-search/service.js';
 import { startAdminServer } from './web/server.js';
 import { status } from './web/status.js';
 import { registerAdminViews } from './web/views/index.js';
@@ -232,6 +234,10 @@ async function startCaptureWorker(
       settings: () => plugins.getCryptoPrices(),
     });
 
+    // Settings read live, like the price service above, so an operator entering a key
+    // does not have to restart before she can look anything up.
+    const webSearch = new WebSearchService({ settings: () => plugins.getWebSearch() });
+
     const engine = new InteractionEngine({
       db: getPool(),
       settings: () => interaction.get(),
@@ -259,9 +265,12 @@ async function startCaptureWorker(
       scheduleUnmute: (sanctionId, at) => enqueueModerationExpiry(getPool(), sanctionId, at),
       // Handed over only while the plugin is enabled; when it is off, PRICE is
       // not in the active intent catalog either, so this is belt and braces.
-      // Handed over only while the plugin is enabled; when it is off, PRICE is
-      // not in the active intent catalog either, so this is belt and braces.
       ...(plugins.isEnabled(CRYPTO_PRICES_ID) ? { prices } : {}),
+      // Web search (CCB-S4-037), on exactly the same terms and for exactly the same
+      // reason: off means LOOKUP is absent from the catalog, and this is the second
+      // line of defence rather than the first. The service holds no chat client, so
+      // the only thing that can come back through here is text.
+      ...(plugins.isEnabled(WEB_SEARCH_ID) ? { webSearch: webSearch } : {}),
       priceSettings: () => plugins.getCryptoPrices(),
       // Presentation is the engine's decision (CCB-S3-003); this is only the
       // transport. Both this and the slash-command path go through sendToChat,

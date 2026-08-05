@@ -40,6 +40,11 @@ export const REPLY_CATEGORIES = [
   // is its own kind of content, and an operator switching it must not also be switching
   // "I did not understand you".
   'conversation',
+  // CCB-S4-037: an answer built from web search results. Its own category for the same
+  // reason and a sharper one: this is the only reply kind whose content originated
+  // OUTSIDE the group, so an operator deciding whether it belongs in a consent-first
+  // public archive is making a different decision from the rest of these.
+  'lookup',
 ] as const;
 export type ReplyCategory = (typeof REPLY_CATEGORIES)[number];
 
@@ -175,6 +180,11 @@ export const DEFAULT_ARCHIVE: ArchiveSettings = {
     // Excluded by default, and the default matters more here than elsewhere: this is
     // the only category whose text the application did not decide.
     conversation: false,
+    // Excluded by default for a stronger version of the same reason (CCB-S4-037): the
+    // words are the model's AND the material behind them came from outside the group
+    // entirely. A consent-first archive of what members said is not the obvious home for
+    // a summary of somebody else's web page, so this is a deliberate opt-in.
+    lookup: false,
   },
 };
 
@@ -187,6 +197,10 @@ export const CATEGORY_LABELS: Record<ReplyCategory, { label: string; help: strin
   price: {
     label: 'Price answers',
     help: 'Market-data answers from the Crypto Prices plugin, including "I could not reach a provider".',
+  },
+  lookup: {
+    label: 'Web search answers',
+    help: 'Excluded by default: answers she built from web search results, plus the line she says when she could not look something up. The wording is the model own and the material came from outside the group.',
   },
   conversation: {
     label: 'Free conversation',

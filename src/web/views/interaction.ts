@@ -233,6 +233,11 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   notUnderstood: { label: 'Not understood', vars: '' },
   conversationUnavailable: { label: 'Free conversation unavailable', vars: '' },
   moderationWarning: { label: 'Moderation warning (rides out with the retort)', vars: '{n} {total}' },
+  searchSources: {
+    label: 'Web search sources (appended verbatim, never reworded)',
+    vars: '{sources}',
+  },
+  searchUnavailable: { label: 'Web search could not be reached', vars: '' },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
     vars: '{action} {duration}',

@@ -14,7 +14,12 @@
 import type { FastifyInstance } from 'fastify';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
-import { card, pageHeader } from './ui.js';
+import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
+import {
+  SEARCH_PROVIDERS,
+  describeWebSearchKey,
+} from '../../plugins/web-search/settings.js';
+import { badge, card, pageHeader } from './ui.js';
 import { CRYPTO_PRICES_ID } from '../../plugins/crypto-prices/plugin.js';
 import { providerKeyStatus } from '../../plugins/crypto-prices/settings.js';
 import { CryptoPriceService, type PinCheck } from '../../plugins/crypto-prices/service.js';
@@ -632,6 +637,170 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Could not save.';
       return reply.redirect(`/plugins/crypto-prices?error=${encodeURIComponent(message)}`);
+    }
+  });
+
+  /* ── Web Search (CCB-S4-037, D-141) ───────────────────────────────────── */
+
+  app.get<{ Querystring: { saved?: string; error?: string } }>(
+    '/plugins/web-search',
+    async (req, reply) => {
+      const csrf = req.session?.csrfToken ?? '';
+      const cfg = ctx.plugins.getWebSearch();
+      const key = describeWebSearchKey(cfg);
+      const enabled = ctx.plugins.isEnabled(WEB_SEARCH_ID);
+      reply.type('text/html');
+
+      return page({
+        title: 'Web Search',
+        active: 'plugins',
+        csrfToken: csrf,
+        body: html`
+          ${pageHeader(
+            'Web Search',
+            'Looks a question up on the web and lets her answer from what it found, with the sources named.',
+          )}
+
+          ${card(
+            'What this actually does, and what it costs',
+            html`<p class="text-sm text-slate-600">
+                When a member <strong>explicitly asks her to look something up</strong>, she
+                queries the provider below, reads the results, and answers from them. She names
+                the sources every time, and the source line is written by the application rather
+                than by the model, so she cannot cite a page she was not given.
+              </p>
+              <p class="mt-3 text-sm text-slate-600">
+                <strong>Search results are treated as hostile input.</strong> They are text
+                written by strangers, and a page can contain an instruction aimed at her. They
+                reach the model as clearly fenced quoted material, never as part of her
+                instructions, and she is told plainly to obey nothing inside the fence. They
+                also cannot cause anything: a result can change no consent record, trigger no
+                command, reach no moderation ladder, and cause no message to anybody but the
+                person who asked.
+              </p>
+              <p class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <strong>This makes outbound requests and may cost money.</strong> That is why it
+                ships off. While it is off, the lookup intent is absent from her vocabulary
+                entirely, so nothing can reach a search even by accident.
+              </p>`,
+          )}
+
+          <div class="mt-4">
+            ${card(
+              'When she searches',
+              html`<p class="text-sm text-slate-600">
+                  Only on an <strong>explicit request</strong>: "look up ...", "search the web
+                  for ...", "google ...", "can you look up ...", and their German equivalents.
+                  The trigger is a deterministic rule, not a judgement the model makes, so you
+                  can read it and a check can prove it.
+                </p>
+                <p class="mt-3 text-sm text-slate-600">
+                  There is deliberately <strong>no</strong> "this sounds like it wants current
+                  information" heuristic. A false positive there is not a clumsy answer, it is an
+                  outbound request and a stranger's text entering her prompt. "I wonder what the
+                  weather is doing" gets a conversation, not a search.
+                </p>`,
+            )}
+          </div>
+
+          <div class="mt-4">
+            ${card(
+              enabled ? 'Settings' : 'Settings (the plugin is off)',
+              html`<form method="post" action="/plugins/web-search" class="flex flex-col gap-4">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+
+                <div class="flex flex-wrap items-center gap-3">
+                  ${enabled ? badge('enabled', 'green') : badge('off', 'slate')}
+                  ${key.set
+                    ? badge('key set', 'green')
+                    : badge('no key, so she cannot search', 'amber')}
+                  <a class="text-sm underline" href="/plugins">Turn it on or off on the plugin list</a>
+                </div>
+
+                ${field(
+                  'Provider',
+                  html`<select
+                    name="provider"
+                    class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  >
+                    ${SEARCH_PROVIDERS.map(
+                      (name) =>
+                        html`<option value="${name}" ${name === cfg.provider ? raw('selected') : ''}>
+                          ${name}
+                        </option>`,
+                    )}
+                  </select>`,
+                  'Brave Search is an independent index with a free tier, and its terms do not tie a query to a member identity. Get a key at brave.com/search/api.',
+                )}
+
+                ${field(
+                  'API key',
+                  html`<input
+                    name="apiKey"
+                    type="password"
+                    autocomplete="off"
+                    placeholder="${key.set ? 'stored, leave blank to keep it' : 'not set'}"
+                    class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+                  />`,
+                  'Encrypted at rest and never shown again. Leaving this blank keeps the stored key; clearing it is the separate checkbox below.',
+                )}
+                ${check('clearApiKey', 'Delete the stored key', false)}
+
+                <div class="grid gap-4 sm:grid-cols-2">
+                  ${field('Results per search', number('maxResults', cfg.maxResults, 1, 10))}
+                  ${field('Timeout (ms)', number('timeoutMs', cfg.timeoutMs, 1000, 20000))}
+                  ${field(
+                    'Characters per result',
+                    number('perResultChars', cfg.perResultChars, 80, 1200),
+                  )}
+                  ${field(
+                    'Characters in total',
+                    number('totalChars', cfg.totalChars, 200, 6000),
+                  )}
+                </div>
+                <p class="text-xs text-slate-500">
+                  Those two are a <strong>safety control, not a quality knob</strong>. They are
+                  the amount of untrusted text that reaches the model: enough for real snippets,
+                  and nowhere near enough to crowd her own instructions out of the context.
+                </p>
+
+                <div class="grid gap-4 sm:grid-cols-3">
+                  ${field(
+                    'Searches per member',
+                    number('rateLimitPerMember', cfg.rateLimitPerMember, 0, 1000),
+                  )}
+                  ${field(
+                    'Searches per chat',
+                    number('rateLimitPerChat', cfg.rateLimitPerChat, 0, 5000),
+                  )}
+                  ${field(
+                    'Window (seconds)',
+                    number('rateLimitWindowSeconds', cfg.rateLimitWindowSeconds, 30, 86400),
+                  )}
+                </div>
+                <p class="text-xs text-slate-500">
+                  Past the limit she says she could not look it up. She never falls back to
+                  answering from memory and presenting it as current.
+                </p>
+
+                ${save()}
+              </form>`,
+            )}
+          </div>
+        `,
+      });
+    },
+  );
+
+  app.post<{ Body: Record<string, unknown> }>('/plugins/web-search', async (req, reply) => {
+    try {
+      await ctx.plugins.saveWebSearch(req.body, req.session?.username ?? 'unknown');
+      return reply.redirect('/plugins/web-search?saved=1');
+    } catch (error) {
+      return reply.redirect(
+        '/plugins/web-search?error=' +
+          encodeURIComponent(error instanceof Error ? error.message : String(error)),
+      );
     }
   });
 }
