@@ -48,6 +48,33 @@ export const MODERATION_MODES = ['observe', 'enforce'] as const;
 export type ModerationMode = (typeof MODERATION_MODES)[number];
 
 /**
+ * Whether the console may actually arm enforcement (CCB-S4-035, D-139).
+ *
+ * ── WHY THIS IS FALSE WHILE EVERYTHING BEHIND IT IS BUILT ────────────────────
+ *
+ * CCB-S4-035 built all of it: previous-role memory, expiry through the queue, undo, the
+ * three actions, the announcement, the refusals and the failure paths. Every one of them
+ * is proven offline against a substitutable port, which is why the port exists.
+ *
+ * What is NOT proven is the half no harness can reach. The briefing's first ground rule
+ * asks for a real core with a real second member: an actual mute applied and lifted, a
+ * moderator restored as a moderator, an expiry firing, an exempt member surviving the
+ * hardest rung. That needs a second human with a SimpleX client in a real group, and the
+ * only real group this deployment has is the operator's live one, whose members are not
+ * test subjects.
+ *
+ * Ground rule 5 says exactly what to do about that: ship the parts that can be proven and
+ * leave enforce unselectable. So this is the switch, it is one word, and it is false. The
+ * console says what is owed rather than offering a control that has never been run against
+ * anything real, and `updateModerationMode` refuses to write 'enforce' while it stands.
+ *
+ * WHAT UNLOCKING COSTS: flip this to true, run `npm run verify:moderation`, and do the
+ * five live checks the briefing lists. The code underneath does not change, which is the
+ * point of gating it here rather than leaving the feature half-written.
+ */
+export const ARMING_UNLOCKED = false;
+
+/**
  * What a rung may do. `none` makes a rung inert, which is how an operator keeps the
  * ladder short without losing the capability.
  *
