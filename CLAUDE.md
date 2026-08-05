@@ -130,7 +130,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `media/` (metadata detection and stripping, video matchers),
   `interaction/`
   (wake word, intent resolver, dialogue engine, persona, help, `personality.ts`: the
-  base character, her origin, the four 1-10 dials and the given identity, pure, with the
+  base character, her origin, the five 1-10 dials and the given identity, pure, with the
   calibrated references and the permissiveness ceiling that no dial value lifts (D-133,
   D-135). The base character is how she SOUNDS and the origin is what she IS and where she
   came from, carried into the prompt as background she may draw on but must never recite
@@ -201,7 +201,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   permanent, and the CHECK that makes an enforced row claiming neither success nor failure
   unrepresentable) · 033 the web-search publication category (a view replacement, the same
   correction 027 made, because the category defaults are a literal that must match
-  `DEFAULT_ARCHIVE`).
+  `DEFAULT_ARCHIVE`) · 034 the verbosity axis (a fifth dial, whose 5 reproduces the fixed
+  500 character conversation cap and 240 character retort cap it replaced, to the
+  character).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -209,7 +211,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **034**, since 033 landed with the lookup category). Stated as a rule
+  (currently **035**, since 034 landed with the verbosity axis). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.

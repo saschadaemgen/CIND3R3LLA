@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-141**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-142**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -12,6 +12,88 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
 
 ---
+
+### D-142 - A fifth dial that moves its own bound, and a holding line that never lies
+
+**Status: IMPLEMENTED** (CCB-S4-038). Extends D-133 and D-141.
+
+**PART B, THE VERBOSITY DIAL, AND THE PROBLEM IT HAD TO SOLVE.** Reply length was a fixed
+500 characters in code. A fifth axis, stored and calibrated exactly like the four before it
+(migration 034), lets an operator have a terse bot in one group and an expansive one in
+another.
+
+**The dial moves the HARD BOUND as well as the prompt, and that is the whole design.** A
+dial that only told her to be expansive would sit under a cap that truncates her: she
+writes 900 characters, the transport rejects the reply for length, the member gets the
+deterministic fallback, and the operator concludes the slider does nothing. So the
+instruction and the limit are computed from the same number. `VERBOSITY_BUDGET_CHARS` is a
+readable table of ten values rather than a curve, because the person turning the dial should
+be able to predict what they get without doing arithmetic.
+
+**5 IS NOT "THE MIDDLE", IT IS THE OLD BEHAVIOUR TO THE CHARACTER.** `replyCharBudget(5)`
+is 500 and `retortCharBudget(5)` is 240, which are exactly the two constants this replaced,
+and both are asserted rather than trusted. A migration that quietly made every deployed bot
+chattier would be a migration changing behaviour, which is not what a migration is for.
+
+**A retort scales far less and stays a one-liner.** The dial buys a longer conversation, not
+a longer sneer: at 10 the retort budget lands on 400, the ceiling the transport already
+enforced, while conversation reaches 1400. **An explicit `maxChars` from a caller still
+wins**, because a caller that named a length meant it. The old constants are deleted rather
+than kept as fallbacks: two sources for one number is how they drift.
+
+**Verbosity buys length and nothing else.** Checked at all ten values: the permissiveness
+ceiling, the no-dash rule, the untrusted-member-text guard and the person-name guard are
+byte-identical at 1 and at 10.
+
+**PART A, THE HOLDING LINE.** A search plus a reply is five to ten seconds of silence in a
+live chat, which reads as being ignored. She now says she is going to look.
+
+**It is a fifth reply MODE (`searching`), for the reason `retort` was a fourth**: none of
+the others could express it. Dialled like a conversation, no draft to rewrite, and bounded
+far below anything else she says (144 characters at verbosity 5, 40 at verbosity 1).
+
+**Worded by the model, and deliberately NOT a persona template.** This is the one fixed
+line that is not, and the exception is the point: a canned "let me look that up" repeated
+every time is exactly the canned-bot register the personality layer exists to remove, and
+this will be one of the most-seen things she says once search is on. **There is no
+deterministic fallback either**: if the model cannot speak she says nothing and the answer
+arrives when it arrives, because a fallback line would be the canned version members saw
+every time the model was busy.
+
+**Emitted at the moment the search fires and nowhere else.** Everything that could stop a
+search has already happened by then. It is deliberately not before the availability check:
+announcing and then immediately saying she could not look is worse than the silence it
+replaced.
+
+**THE RATE-LIMIT INTERACTION, which the briefing asked to be resolved rather than
+discovered.** One lookup now produces two messages. The announcement **bypasses** the reply
+limiter and the answer does not, so a lookup costs exactly one unit of a member's allowance
+and the exempt message is the one carrying no information. That exemption cannot be used to
+flood, structurally rather than by promise: an announcement only exists when a search fires,
+and searches have their own tighter per-member and per-chat budget (5 and 20 per ten
+minutes). The alternative was rejected on the failure it produces: the announcement goes
+out, consumes the last of the allowance, and the ANSWER is what gets dropped, leaving a
+member with "let me look that up" and nothing else.
+
+**A DEFECT THE CHECKS FOUND, worth recording because it is the shape this feature invites.**
+The first version of the loop-close keyed on whether she had announced: if she had, it said
+`searchEmpty` ("Looked, and came back with nothing"). But a search can be rate-limited
+AFTER the announcement, and she had not looked. The announcement being out is a reason to
+say something, never a reason to say the wrong thing. The close now keys on what actually
+happened: `no-results` is the only failure where a search genuinely ran, and every other
+one says she could not look. The loop closes either way, because some line follows.
+
+**Two residual limitations, stated rather than left to be found.** A search that is
+rate-limited after the announcement produces two messages where one would do, the second
+honestly saying she could not look it up; the announcement fires before the service's
+internal budget check, and moving that check earlier would mean a non-consuming peek the
+service does not currently offer. And at low sharpness the model sometimes phrases the
+holding line as "I'm going to find out" rather than admitting the limit; the instruction
+asks for the admission and the low-sharpness register softens it, which is the dial working
+rather than the instruction failing.
+
+---
+
 
 ### D-141 - Search results are evidence, never instructions, and they can cause nothing
 
