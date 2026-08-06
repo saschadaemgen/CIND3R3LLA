@@ -22,6 +22,7 @@ import {
   type IntentResolver,
   type IntentResult,
   type IntentSlots,
+  INTENTS,
 } from './intent.js';
 import { ruleResolver } from './rules.js';
 
@@ -51,7 +52,14 @@ export interface OllamaResolverDeps {
 
 const CONSENT_CONFIDENCE = 0.9;
 
-const INTENT_DEFINITIONS: Record<Intent, string> = {
+/**
+ * The catalog, exported so `verify:ai` can assert on it directly (CCB-S4-041).
+ *
+ * A check that drove a model to discover HELP had reclaimed the word "identity" would be
+ * slow, needs Ollama, and would be probabilistic about a defect that is a string literal.
+ * The description is the thing that was wrong, so the description is what is asserted.
+ */
+export const INTENT_DEFINITIONS: Record<Intent, string> = {
   PUBLISH:
     'A clear first-person request to opt in or make the sender own future messages public. ' +
     'Questions about whether the sender is already published are STATUS, not PUBLISH.',
@@ -61,25 +69,56 @@ const INTENT_DEFINITIONS: Record<Intent, string> = {
   STATUS:
     'A question about the current state: whether the sender is opted in, public, or published; ' +
     'what the bot stores; or message and publication counts.',
-  SEARCH: 'A request to search the archive. Put the search text in slots.query.',
-  HELP: 'A request for help, commands, capabilities, identity, or usage instructions.',
+  // CCB-S4-041. "the archive" alone was not enough: with LOOKUP in the catalog, a
+  // request naming the WEB was still landing here, helped along by a slot rule that said
+  // only SEARCH may carry a query. Both sides now say which corpus they are, because a
+  // boundary stated from one side only is a boundary the model has to infer.
+  SEARCH:
+    'A request to search THIS GROUP OWN ARCHIVE: what members have said here, what is ' +
+    'stored, what was posted before. Put the search text in slots.query. This is never the ' +
+    'web and never the internet: a request to search the web is LOOKUP, not SEARCH.',
+  // CCB-S4-041. "identity" was the defect. It predates both the origin field and free
+  // conversation: when it was written, help was the only place she said anything about
+  // herself, and it is now the wrong answer to every question about who she is. A larger
+  // model simply followed the description more faithfully than the smaller one did, and
+  // routed "who made you and why?" to a fixed help text.
+  //
+  // The test this description has to pass: read alone, would a model send "who made you?"
+  // here? It must not.
+  HELP:
+    'A request to learn HOW TO USE the bot: what commands exist, what a particular command ' +
+    'does, how to publish or unpublish, or usage instructions. This is about OPERATING the ' +
+    'bot. It is NOT about the bot itself: who or what she is, where she came from, who ' +
+    'built her, what model she runs on, what she thinks or wants are all conversation, ' +
+    'never HELP.',
   UNDO: 'A request to undo or revert the most recent eligible action.',
   RESTORE:
     'A clear first-person request to bring the sender own HIDDEN messages back into the public ' +
     'archive: restore, unhide, put them back, show them again. A request to TAKE CONTENT DOWN is ' +
     'UNPUBLISH, never RESTORE.',
+  // CCB-S4-041. "a price question" claimed far more than the plugin can answer: asked
+  // for the price of a graphics card, it treated the card as a ticker and quoted 1.9758
+  // USD from stale market data. A confidently wrong number is worse than no answer,
+  // because nobody can tell it is wrong. The boundary is stated rather than left to be
+  // inferred from the word "asset".
   PRICE:
-    'A price, value, exchange-rate, or asset-conversion question. Put the asset in slots.base, ' +
-    'the requested quote in slots.quote, and the amount in slots.amount when present.',
+    'A price question about a TRADED FINANCIAL ASSET that a market-data provider quotes: a ' +
+    'cryptocurrency, a token, a coin, or a currency pair. Put the asset in slots.base, the ' +
+    'requested quote in slots.quote, and the amount in slots.amount when present. ' +
+    'A price question about a PHYSICAL PRODUCT or anything bought in a shop, such as a ' +
+    'graphics card, a phone, a train ticket or a meal, is NOT PRICE. Nothing here can quote ' +
+    'those, so they are conversation or, if the member asked to look it up, LOOKUP.',
   // CCB-S4-037. The model may RECOGNISE the request; it never performs the search, and the
   // deterministic side decides whether to honour it. This description is deliberately
   // narrow, matching the rule patterns: an EXPLICIT request to look something up, never a
   // judgement that a question sounds like it wants current information. A resolver that
   // could widen the trigger would be a resolver that decides when to spend money.
   LOOKUP:
-    'An EXPLICIT request to look something up on the web, search online, or google it. ' +
-    'Put the thing to search for in slots.query. A question that merely happens to be ' +
-    'about current events is NOT this: only an actual request to go and look.',
+    'An EXPLICIT request to look something up ON THE WEB: search the web, search online, ' +
+    'google it, check the internet. Put the thing to search for in slots.query. This is the ' +
+    'web and never this group own archive: a request to search what members have said here ' +
+    'is SEARCH, not LOOKUP. A question that merely happens to be about current events is ' +
+    'NOT this either: only an actual request to go and look.',
   UNKNOWN:
     'Anything unclear, conversational, negated, quoted, hypothetical, descriptive, or outside ' +
     'the active catalog.',
@@ -139,6 +178,14 @@ function systemPrompt(active: readonly Intent[]): string {
     'Choose exactly one active intent:',
     ...definitions,
     '',
+    // CCB-S4-041. The sentence that would have prevented all three identity cases at
+    // once, stated as precedence rather than as another description, because the next
+    // collision will be with a description nobody has written yet.
+    'Command or conversation:',
+    '- The commands serve ACTIONS the bot can perform. Conversation serves everything else.',
+    '- When a message is ABOUT HER rather than about a task, it is conversation, not a command. Choose UNKNOWN.',
+    '- Who she is, what she is, where she came from, who built her, what she runs on, what she thinks or wants: all conversation.',
+    '',
     'Critical distinction:',
     '- A question asking what IS currently true is STATUS.',
     '- A request asking the bot to CHANGE publication state is PUBLISH or UNPUBLISH.',
@@ -151,7 +198,11 @@ function systemPrompt(active: readonly Intent[]): string {
     '- When uncertain, choose UNKNOWN.',
     '',
     'Slot rules:',
-    '- Use slots.query only for SEARCH.',
+    // CCB-S4-041. This said "only for SEARCH" while LOOKUP's own description told the
+    // model to put a query in the same slot. A model resolving that contradiction has a
+    // reason to prefer SEARCH for anything query-shaped, which is very likely why an
+    // explicit "search the web for X" was landing on the archive.
+    '- Use slots.query for SEARCH and for LOOKUP. SEARCH searches this group archive; LOOKUP searches the web.',
     '- Use slots.targetName only for PUBLISH or UNPUBLISH targeting somebody else.',
     '- Use slots.base, slots.quote, slots.amount, and slots.baseAlternates only for PRICE.',
     '- Use an empty object for all other slots.',
@@ -164,6 +215,14 @@ function systemPrompt(active: readonly Intent[]): string {
     '- "Do not publish me." means UNKNOWN.',
     '- "What happens if I say publish me?" means UNKNOWN.',
     '- "Wie ist mein Veröffentlichungsstatus?" means STATUS.',
+    // CCB-S4-041, one example per observed misrouting.
+    '- "Tell me your origin story." means UNKNOWN (it is about her, so it is conversation).',
+    '- "Who made you and why?" means UNKNOWN.',
+    '- "What model are you?" means UNKNOWN.',
+    '- "How do I publish my messages?" means HELP (it is about operating the bot).',
+    '- "Google the current price of an RTX 5090." means LOOKUP (a graphics card is not a traded asset).',
+    '- "Search the web for the latest release." means LOOKUP, never SEARCH.',
+    '- "Search the archive for what Bob said." means SEARCH, never LOOKUP.',
     '- "Veröffentliche meine Nachrichten." means PUBLISH.',
     '',
     'Return only JSON matching the supplied schema.',
@@ -412,4 +471,14 @@ export function createOllamaIntentResolver(
       }
     },
   };
+}
+
+/**
+ * The assembled classification prompt, for `verify:ai` (CCB-S4-041).
+ *
+ * The slot rules and the precedence block are as load-bearing as the descriptions, and
+ * one of them was actively contradicting a description, so they are asserted too.
+ */
+export function resolverSystemPromptForTest(active: readonly Intent[] = INTENTS): string {
+  return systemPrompt(active);
 }
