@@ -238,6 +238,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     vars: '{sources}',
   },
   searchUnavailable: { label: 'Web search could not be reached', vars: '' },
+  searchRefused: {
+    label: 'Web search refused before it ran (nothing was queried, no sources)',
+    vars: '',
+  },
   searchEmpty: { label: 'Web search ran and found nothing (closes an announcement)', vars: '' },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
@@ -450,6 +454,14 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 model cannot speak: either silence, or the canned "I could not find my words" line.
                 They still decide nothing about consent, commands, or the deterministic replies.
               </p>
+              <p class="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                <strong>She is never completely silent when she was plainly addressed.</strong> The
+                length guard below used to return nothing at all, and a long spell-check request that
+                named her got no answer, no refusal and no sign she had seen it. It now stops the
+                <em>command</em> and lets the message through to conversation. The only remaining
+                silence is the switch above, and it needs three things at once: a weak signal, no
+                command to run, and a model that could not speak.
+              </p>
               ${form(
                 'guards',
                 html`
@@ -470,8 +482,8 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${checkbox('strongSignalReply', 'A direct reply is a strong signal', s.addressing.strongSignalReply)}
                   ${checkbox('strongSignalWindow', 'Being mid-conversation is a strong signal', s.addressing.strongSignalWindow)}
                   ${labelled('Confidence threshold', numberField('confidenceThreshold', s.confidenceThreshold, 0, 1, '0.05'), 'Below this she asks instead of acting. Higher is more cautious.')}
-                  ${labelled('Maximum instruction length (characters)', numberField('maxInstructionLength', s.addressing.maxInstructionLength, 20, 4000), 'Longer than this and she only acts on a high-confidence intent.')}
-                  ${labelled('Confidence required above that length', numberField('lengthGuardConfidence', s.addressing.lengthGuardConfidence, 0, 1, '0.05'), 'Raise it to ignore more long text.')}
+                  ${labelled('Maximum instruction length (characters)', numberField('maxInstructionLength', s.addressing.maxInstructionLength, 20, 4000), 'Longer than this and she will not EXECUTE a command unless the intent is very confident. She still answers: a long message she was plainly addressed in goes to free conversation instead. It never causes silence.')}
+                  ${labelled('Confidence required above that length', numberField('lengthGuardConfidence', s.addressing.lengthGuardConfidence, 0, 1, '0.05'), 'Raise it to send more long text to conversation rather than to a command. It does not decide whether she replies, only whether a command may run.')}
                   ${labelled('Filler prefixes', textField('fillerPrefixes', s.fillerPrefixes.join(', ')), 'Short discourse words allowed before her name (so, hey, also). Comma separated.')}
                   ${labelled('Max filler words before the name', numberField('maxPrefixWords', s.maxPrefixWords, 0, 8))}
                   ${labelled('Max filler characters before the name', numberField('maxPrefixChars', s.maxPrefixChars, 0, 60))}
@@ -505,6 +517,29 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 She answers in the language of the message she is answering. Only languages that have
                 real persona copy are offered, never a machine-translated website locale.
               </p>
+              <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <p class="font-medium">How the language is decided, in order</p>
+                <ol class="mt-1 list-decimal space-y-1 pl-5">
+                  <li><strong>Fixed mode</strong> ends it: always the default below.</li>
+                  <li>An <strong>open confirmation</strong> keeps its own language, so a question and
+                    its answer never switch mid-exchange.</li>
+                  <li>A <strong>function-word contest</strong> on the member's own words. German and
+                    English words are counted against each other and the winner needs a clear lead,
+                    so one stray <em>hallo</em> cannot carry a whole English announcement.</li>
+                  <li>If the contest is inconclusive, <strong>German-only evidence</strong> decides: a
+                    German imperative (<em>erkläre, zeige, gib</em>) or a German-only character
+                    (ä, ö, ü, ß). This is what stops a short technical question like
+                    <em>"erkläre Geheimdienstselektoren"</em> being answered in English, which is
+                    exactly what used to happen: two words, no function words, nothing to count.</li>
+                  <li>Otherwise the <strong>remembered language</strong> for that member, if the
+                    switch below is on.</li>
+                  <li>Otherwise the <strong>default</strong>.</li>
+                </ol>
+                <p class="mt-2">
+                  Getting it wrong costs one reply in the wrong language and nothing else. It never
+                  touches consent, and it never changes what a command does.
+                </p>
+              </div>
               ${form(
                 'language',
                 html`

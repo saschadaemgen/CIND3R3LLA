@@ -86,6 +86,10 @@ export const PERSONA_KEYS = [
   // source that may name the wrong page, and a wrong source is worse than none.
   'searchSources',
   'searchUnavailable',
+  // CCB-S4-042. Said INSTEAD of searching, when the pre-search gate refused the request.
+  // Deterministic on purpose: the refusal is a decision the application took before any
+  // model was involved, and no search ran, so there is nothing to attribute.
+  'searchRefused',
   // CCB-S4-038. Said when she ANNOUNCED a search and it then came back with nothing. It
   // exists so an announcement is never left hanging: having said she was looking, she owes
   // the member the outcome even when the outcome is nothing.
@@ -154,6 +158,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   moderationAction: 'nickname',
   searchSources: 'lookup',
   searchUnavailable: 'lookup',
+  searchRefused: 'lookup',
   searchEmpty: 'lookup',
   help: 'help',
   price: 'price',
@@ -378,6 +383,9 @@ const PERSONA_EN: PersonaStrings = {
     '🔌 I could not look that up just now, so I am not going to guess at it. Try me again in a bit.',
   searchEmpty:
     '🕳️ Looked, and came back with nothing worth repeating. I am not going to invent one for you.',
+  // CCB-S4-042. No search ran, so this says she will not, rather than that she could not.
+  searchRefused:
+    '🚫 I am not searching the web for that. Ask me something else.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -500,6 +508,8 @@ const PERSONA_DE: PersonaStrings = {
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',
   searchEmpty:
     '🕳️ Nachgeschaut, nichts dabei, was der Rede wert waere. Ich erfinde dir jetzt nichts.',
+  searchRefused:
+    '🚫 Dafuer suche ich nicht im Netz. Frag mich was anderes.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',
