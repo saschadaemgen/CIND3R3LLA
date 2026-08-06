@@ -1008,6 +1008,21 @@ export async function setAiRuntimeEnabled(
   return activeRuntime.setEnabled(enabled, actor);
 }
 
+/**
+ * The model that actually words her replies (CCB-S4-042, D-145).
+ *
+ * A GIVEN FACT, like the clock (D-140), rather than a line in her history. Asked for her
+ * specifications she answered "Qwen3.5, the nine-billion-parameter beast", which was true
+ * when the origin text was written and is not true now. A fact that goes stale silently is
+ * the failure D-140 already recorded; the fix is the same one, which is to tell her rather
+ * than to keep editing prose.
+ *
+ * Null when no runtime is initialised, and the prompt then says nothing about a model
+ * rather than naming one she may not be running.
+ */
+export function currentReplyModel(): string | null {
+  return activeRuntime?.snapshot().routing.replyModel ?? null;
+}
 export async function personalizeAiReply(request: AiReplyRequest): Promise<string | null> {
   if (!activeRuntime) return null;
   return activeRuntime.personalize(request);

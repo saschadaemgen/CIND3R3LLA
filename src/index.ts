@@ -47,7 +47,11 @@ import { SecurityService } from './security/settings.js';
 import { ArchiveService } from './archive/settings.js';
 import { InteractionService } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
-import { AiRuntimeService, personalizeAiReply } from './interaction/ai-runtime.js';
+import {
+  AiRuntimeService,
+  currentReplyModel,
+  personalizeAiReply,
+} from './interaction/ai-runtime.js';
 import { activeResolverName } from './interaction/resolver.js';
 import { RuntimePolicyService } from './profiles/runtime-policy.js';
 import {
@@ -70,7 +74,7 @@ import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
 import { CRYPTO_PRICES_ID } from './plugins/crypto-prices/plugin.js';
 import { WEB_SEARCH_ID } from './plugins/web-search/plugin.js';
-import { WebSearchService } from './plugins/web-search/service.js';
+import { WebSearchService, setWebSearchService } from './plugins/web-search/service.js';
 import { startAdminServer } from './web/server.js';
 import { status } from './web/status.js';
 import { registerAdminViews } from './web/views/index.js';
@@ -242,6 +246,9 @@ async function startCaptureWorker(
     // Settings read live, like the price service above, so an operator entering a key
     // does not have to restart before she can look anything up.
     const webSearch = new WebSearchService({ settings: () => plugins.getWebSearch() });
+    // Registered so the Web Search page can show its counters and its last failure without
+    // anybody reading the journal (CCB-S4-042).
+    setWebSearchService(webSearch);
 
     const engine = new InteractionEngine({
       db: getPool(),
@@ -255,6 +262,9 @@ async function startCaptureWorker(
       // every mode rather than only the dialled ones: the whole system prompt is assembled
       // from the registry, not only the voice section.
       rules: currentPromptRules,
+      // The model that is actually running (CCB-S4-042). A given fact like the clock, so
+      // she stops naming the one her history was written against.
+      replyModel: currentReplyModel,
       // The two ladders (CCB-S4-032). Verbal escalation is live; enforcement computes
       // and records only. The engine has no capability to act on a computed sanction:
       // `send` is its one outbound, which is the no-act guarantee in structural form.

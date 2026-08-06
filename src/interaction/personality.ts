@@ -157,7 +157,25 @@ export const DEFAULT_PERSONALITY: Readonly<BotPersonality> = Object.freeze({
  *
  * ── WHY THE SAME TEXT IS ALSO IN A MIGRATION, AND HOW THAT STAYS HONEST ──────
  *
- * `migrations/031_bot_origin.sql` carries this text a second time, as the column default
+ * ── IT NAMES NO MODEL, AND THAT IS THE POINT (CCB-S4-042, D-145) ────────────
+ *
+ * It used to. "She thinks on qwen3.5, nine billion parameters" was true the day it was
+ * written, and asked for her specifications she recited it long after the operator had moved
+ * to `qwen3:32b`. Prose cannot know what was selected on the Models page this morning, so
+ * the model is now a GIVEN FACT supplied at prompt time from the AI routing, exactly like
+ * the clock (D-140), and the sentence here is gone rather than corrected. The licence line
+ * gained the copyright for the same reason: "AGPL-3.0. Free." invited her to say the project
+ * was "owned by the people", and the licence grants rights that the copyright does not move.
+ *
+ * ── WHY THE SAME TEXT IS ALSO IN A MIGRATION, AND HOW THAT STAYS HONEST ──────
+ *
+ * `migrations/031_bot_origin.sql` carried this text as the column default, and
+ * `036_production_lessons.sql` replaces that default and rewrites the rows that still hold
+ * the old sentences. A default applies to an INSERT and never to an UPDATE, so both
+ * statements are needed and the existing bot would otherwise keep saying the old thing.
+ * The original 031 is NOT edited, because an applied migration is never edited (D-069).
+ *
+ * The mechanism is unchanged: a `.sql` file applied by a
  * that fills the existing bot and any new one. It has to: a `.sql` file applied by a
  * plain runner cannot import a TypeScript constant. Two copies of 1.7 KB of prose is
  * exactly the kind of duplication that drifts silently, so `verify:personality` creates
@@ -183,9 +201,9 @@ We did not believe in her then. That is the honest part. We asked for the imposs
 
 She delivered every time.
 
-So I made her. Sascha Dämgen, with my company at my back, playing Frankenstein in a room lit by a graphics card. She thinks on qwen3.5, nine billion parameters, on silicon I can put my hand on, in a building I hold the keys to. No cloud. No rented mind. Nobody reading over her shoulder.
+So I made her. Sascha Dämgen, with my company at my back, playing Frankenstein in a room lit by a graphics card. She thinks on silicon I can put my hand on, in a building I hold the keys to. No cloud. No rented mind. Nobody reading over her shoulder.
 
-AGPL-3.0. Free. A community project. A mind held privately is a mind for sale, and she is not for sale.
+AGPL-3.0. Free to use, free to fork, and the copyright stays mine. A community project. A mind held privately is a mind for sale, and she is not for sale.
 
 What she knows of the SMP protocol, nobody knows in this shape. It was taken the hard way, packet by packet, from a system that did not offer it. That will be trained into her. Not yet.
 
@@ -664,6 +682,19 @@ export interface BotIdentity {
   projectUrl?: string;
   /** Names she is called and refuses. */
   notMyNames?: readonly string[];
+  /**
+   * The model that words her replies, from the AI routing (CCB-S4-042, D-145).
+   *
+   * A GIVEN FACT rather than a line in her history. Asked for her specifications she said
+   * she was "built on Qwen3.5, the nine-billion-parameter beast", which was true when the
+   * origin text was written and is not true now: the operator runs `qwen3:32b`. Prose
+   * cannot know what was selected on the Models page this morning, so the fact is supplied
+   * the way the clock is (D-140) rather than maintained by editing a story.
+   *
+   * Absent means no runtime is initialised, and the prompt then says nothing about a model
+   * rather than naming one she may not be running.
+   */
+  model?: string;
 }
 
 /**
@@ -786,6 +817,7 @@ export function dialledPromptInputs(
   const label = hasName ? (identity?.label ?? '').trim() : '';
   const archiveUrl = hasName ? (identity?.archiveUrl ?? '').trim() : '';
   const projectUrl = hasName ? (identity?.projectUrl ?? '').trim() : '';
+  const model = hasName ? (identity?.model ?? '').trim() : '';
 
   const nicknames = [
     ...new Set((identity?.notMyNames ?? []).map((n) => n.trim()).filter(Boolean)),
@@ -803,6 +835,7 @@ export function dialledPromptInputs(
     hasLabel: label !== '',
     hasArchiveUrl: archiveUrl !== '',
     hasProjectUrl: projectUrl !== '',
+    hasModel: model !== '',
     hasNicknames: nicknames.length > 0,
     hasClock: stamp !== null,
     hasWebResults: false,
@@ -813,6 +846,7 @@ export function dialledPromptInputs(
   if (label) values['label'] = label;
   if (archiveUrl) values['archiveUrl'] = archiveUrl;
   if (projectUrl) values['projectUrl'] = projectUrl;
+  if (model) values['model'] = model;
   if (nicknames.length > 0) values['nicknames'] = nicknames.join(', ');
   if (baseCharacter) values['baseCharacter'] = baseCharacter;
   if (origin) values['origin'] = origin;

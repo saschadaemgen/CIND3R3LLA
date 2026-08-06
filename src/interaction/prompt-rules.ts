@@ -77,6 +77,7 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-label',
   'has-archive-url',
   'has-project-url',
+  'has-model',
   'has-given-facts-with-origin',
   'has-given-facts-without-origin',
   'has-nicknames',
@@ -143,6 +144,7 @@ export interface PromptRuleContext {
   hasLabel: boolean;
   hasArchiveUrl: boolean;
   hasProjectUrl: boolean;
+  hasModel: boolean;
   hasNicknames: boolean;
   hasClock: boolean;
   hasWebResults: boolean;
@@ -157,6 +159,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasLabel: false,
   hasArchiveUrl: false,
   hasProjectUrl: false,
+  hasModel: false,
   hasNicknames: false,
   hasClock: false,
   hasWebResults: false,
@@ -193,6 +196,8 @@ export function conditionHolds(
       return context.hasArchiveUrl;
     case 'has-project-url':
       return context.hasProjectUrl;
+    case 'has-model':
+      return context.hasModel;
     case 'has-given-facts-with-origin':
       return givenFacts && context.hasOrigin;
     case 'has-given-facts-without-origin':
