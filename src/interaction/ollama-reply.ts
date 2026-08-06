@@ -128,6 +128,23 @@ export interface AiReplyRequest {
    * reply to the person who asked.
    */
   webResults?: readonly { title: string; snippet: string; url: string }[];
+  /**
+   * Which of `webResults` the answer actually drew on, as the model declares them
+   * (CCB-S4-042, D-145).
+   *
+   * A CALLBACK rather than a return value, and it is called only when the model both
+   * answered and declared. That is the fail-closed shape the caller needs: a model that
+   * omits the field, an older model, a malformed response, a thrown request, all leave the
+   * caller with no declaration and therefore no attribution. The failure direction is a
+   * missing source line, never a source line on a refusal, which is the defect this
+   * exists for: she refused to search for pornography and the application printed the
+   * domains underneath the refusal.
+   *
+   * Indices are passed through UNVALIDATED beyond being numbers. The caller owns the
+   * result list and validates against it; validating here would be a second place that
+   * has to agree about what is in range.
+   */
+  onSourcesUsed?: (indices: readonly number[]) => void;
 }
 
 /**
@@ -206,17 +223,38 @@ function cleanReply(value: string, preserveLines: boolean): string {
     .trim();
 }
 
-function responseSchema(maxChars: number): Record<string, unknown> {
+/**
+ * The reply envelope.
+ *
+ * `usedResults` is present ONLY when results were attached (CCB-S4-042). A field asking
+ * which sources were used, on a request that carries no sources, is an invitation to
+ * invent some, and it is the same reasoning that keeps the fence instruction out of an
+ * ordinary prompt.
+ *
+ * It is REQUIRED when present, because `strict: true` json_schema needs every property
+ * listed in `required`, and because a model that must answer the question cannot quietly
+ * skip it. An empty array is the honest answer for a refusal and is what the caller reads
+ * as "attribute nothing".
+ */
+function responseSchema(maxChars: number, withSources: boolean): Record<string, unknown> {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['reply'],
+    required: withSources ? ['reply', 'usedResults'] : ['reply'],
     properties: {
       reply: {
         type: 'string',
         minLength: 1,
         maxLength: maxChars,
       },
+      ...(withSources
+        ? {
+            usedResults: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0 },
+            },
+          }
+        : {}),
     },
   };
 }
@@ -285,7 +323,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
   return assemblePrompt(request.rules, lanesForMode(request.mode), context, values).join('\n');
 }
 
-function parseCompletion(value: unknown): string {
+function parseCompletion(value: unknown): { reply: string; usedResults: number[] } {
   const envelope = asRecord(value, 'completion envelope');
   const choices = envelope['choices'];
   if (!Array.isArray(choices) || choices.length === 0) {
@@ -311,7 +349,18 @@ function parseCompletion(value: unknown): string {
   if (typeof reply !== 'string') {
     throw new Error('Ollama returned an invalid reply field.');
   }
-  return reply;
+
+  // The declaration is OPTIONAL to parse even when the schema required it (CCB-S4-042).
+  // A missing or malformed field must not cost the member their answer: it costs the
+  // attribution, which is the direction this is allowed to fail in. Anything that is not
+  // a finite number is dropped here; range is the caller's business, since the caller is
+  // the one holding the result list.
+  const declared = result['usedResults'];
+  const usedResults = Array.isArray(declared)
+    ? declared.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    : [];
+
+  return { reply, usedResults };
 }
 
 function cleanLiterals(values: readonly string[] | undefined): string[] {
@@ -403,6 +452,7 @@ export async function generateOllamaReply(
               ),
             )
           : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
+  const hasWebResults = (request.webResults?.length ?? 0) > 0;
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -458,7 +508,7 @@ export async function generateOllamaReply(
           json_schema: {
             name: 'cinderella_reply',
             strict: true,
-            schema: responseSchema(maxChars),
+            schema: responseSchema(maxChars, hasWebResults),
           },
         },
       }),
@@ -469,7 +519,8 @@ export async function generateOllamaReply(
       throw new Error(`Ollama reply HTTP ${response.status}.`);
     }
 
-    const raw = parseCompletion(await response.json());
+    const completion = parseCompletion(await response.json());
+    const raw = completion.reply;
 
     if (request.mode === 'locked') {
       const lead = cleanReply(raw, false);
@@ -499,6 +550,11 @@ export async function generateOllamaReply(
     if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
     // Checked LAST, on the text that is about to be returned, so nothing added after the
     // strip can reintroduce one. See `unresolvedPlaceholder` for why this rejects.
+
+    // AFTER every guard has passed (CCB-S4-042). A reply that is about to be rejected for
+    // a blocked literal or a leaked placeholder must not leave a source declaration behind
+    // it, because the caller would then attribute a reply the member never sees.
+    if (hasWebResults) request.onSourcesUsed?.(completion.usedResults);
 
     return reply;
   } catch (error) {
