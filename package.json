@@ -78,7 +78,8 @@
     "verify:moderation": "tsx scripts/verify-moderation.ts",
     "verify:moderation-live": "tsx scripts/verify-moderation-live.ts",
     "verify:search": "tsx scripts/verify-search.ts",
-    "verify:search-live": "tsx scripts/verify-search-live.ts"
+    "verify:search-live": "tsx scripts/verify-search-live.ts",
+    "verify:prompt-identity": "tsx scripts/verify-prompt-identity.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
