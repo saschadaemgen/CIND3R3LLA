@@ -96,6 +96,10 @@ const IDENTITY_FULL = {
   archiveUrl: 'https://archive.example.org',
   projectUrl: 'https://project.example.org',
   notMyNames: ['Cindy', 'Ella'],
+  // The model she is ACTUALLY running (CCB-S4-042). Present on the full identity because it
+  // is present in production: a runtime that is up always has a reply model selected.
+  // `conversation.no-model` pins the other branch.
+  model: 'qwen3:32b',
 };
 
 const CHARACTER = 'A neon courier who reads the wire faster than anyone in the room.';
@@ -141,6 +145,7 @@ const CASES: Case[] = [
   { id: 'conversation.no-personality', mode: 'conversation', personality: null, identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.no-name', mode: 'conversation', personality: personality(), identity: { name: '' } as never, now: NOW },
   { id: 'conversation.name-only', mode: 'conversation', personality: personality(), identity: { name: 'CIND3R3LLA' }, now: NOW },
+  { id: 'conversation.no-model', mode: 'conversation', personality: personality(), identity: { ...IDENTITY_FULL, model: '' }, now: NOW },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },

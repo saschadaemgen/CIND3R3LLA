@@ -1134,10 +1134,42 @@ async function main(): Promise<void> {
     'this is a long announcement about many things and none of them are a command '.repeat(4);
   const longMsg = await say(longWaffle);
   check(
-    'a long message beginning with her name is ignored',
+    'a long message beginning with her name executes no command',
     !longMsg.handled && longMsg.replies.length === 0,
   );
-  check('recorded as too-long', recentNearMisses(1)[0]?.reason === 'too-long');
+  // CCB-S4-042: `recentNearMisses(1)` no longer works here, and the reason is the fix. The
+  // message is recorded as `too-long` and then CONTINUES into free conversation, which in
+  // this harness has no model wording available and records a second near miss on the way
+  // out. Two entries is the new correct shape; asserting on only the newest was asserting
+  // that nothing happened afterwards.
+  check(
+    'recorded as too-long',
+    recentNearMisses(3).some((miss) => miss.reason === 'too-long'),
+  );
+
+  // ── DEFECT 2 (CCB-S4-042, D-145) ────────────────────────────────────────
+  //
+  // The guard must stop the COMMAND and must not stop the ANSWER. Observed live: a long,
+  // correctly addressed spell-check request got nothing back at all, and raising
+  // `maxInstructionLength` made the same message work. Silence reads as a fault.
+  //
+  // The negative control is the pair above: with no model wording available she still says
+  // nothing, so this pair proves the message now REACHES conversation rather than proving
+  // that some reply exists for any reason.
+  clearNearMisses();
+  coolDown();
+  modelConversationReply = 'Three commas and a stray capital. Fixed.';
+  const longAnswered = await say(longWaffle);
+  check(
+    'the same long message is now ANSWERED rather than met with silence',
+    longAnswered.replies.length === 1 &&
+      longAnswered.replies[0]?.includes('Three commas') === true,
+  );
+  check(
+    'and it is still recorded as too-long, so the command guard did not stop firing',
+    recentNearMisses(3).some((miss) => miss.reason === 'too-long'),
+  );
+  modelConversationReply = null;
 
   coolDown();
   await clearConsent(ALICE);

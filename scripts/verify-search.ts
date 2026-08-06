@@ -42,6 +42,8 @@ import {
 } from '../src/interaction/ollama-reply.js';
 import { DEFAULT_PERSONALITY, replyCharBudget } from '../src/interaction/personality.js';
 import { ceilingRuleTexts } from '../src/interaction/prompt-rules.js';
+import { screenLookup } from '../src/interaction/lookup-gate.js';
+import { attributionFor } from '../src/interaction/attribution.js';
 import { seededPromptRules } from './seeded-rules.js';
 
 /** The rules she is given, and the safety ceiling among them, from the seeded registry. */
@@ -483,8 +485,12 @@ async function main(): Promise<void> {
         }),
     },
     // The model is given every chance to mangle the attribution: it returns something
-    // that looks like a source list of its own.
-    personalize: () => Promise.resolve('It is a messaging protocol. Sources: madeup.example'),
+    // that looks like a source list of its own, AND it declares which results it used, the
+    // way a real one does through the reply schema (CCB-S4-042).
+    personalize: (request) => {
+      request.onSourcesUsed?.([0, 1]);
+      return Promise.resolve('It is a messaging protocol. Sources: madeup.example');
+    },
     send: (msg, text) => {
       sent.push({ text, groupId: msg.groupId });
       return Promise.resolve();
@@ -500,13 +506,247 @@ async function main(): Promise<void> {
     answer.includes('simplex.chat') && answer.includes('en.wikipedia.org'),
     answer.slice(0, 90),
   );
+  // The ANCHOR drops  so it reads cleanly; the URL keeps it, because trimming a host
+  // out of a link is how a link stops working (CCB-S4-042).
   check(
-    'the www prefix is dropped so the host reads cleanly',
-    !answer.includes('www.simplex.chat'),
+    'the www prefix is dropped from the readable anchor',
+    /(^|[^/.])simplex\.chat \[/.test(answer) && !answer.includes('www.simplex.chat ['),
+  );
+  check(
+    'but the URL keeps it, because a trimmed host is a broken link',
+    answer.includes('(https://www.simplex.chat/docs)'),
   );
   check(
     'and the attribution is a separate line the model did not write',
     answer.includes(DEFAULT_INTERACTION.persona['en']!.searchSources.split('{sources}')[0]!.trim()),
+  );
+
+  // ── DEFECT 5 (CCB-S4-042, D-145) ────────────────────────────────────────
+  //
+  // A member asked directly: "It lists only Domains, not doc links?" The domain stays as
+  // the readable anchor and the deep URL rides behind a numbered SimpleX hyperLink. The
+  // exact shape is not a preference, it is what the SHIPPED 6.5.4 parser accepts: a dot in
+  // the display text makes the whole message render literally, which is why the visible
+  // token is a number. Measured against the real core, not assumed; see `attribution.ts`.
+  check(
+    'the deep URL is carried, not just the host',
+    answer.includes('(https://www.simplex.chat/docs)') &&
+      answer.includes('(https://en.wikipedia.org/wiki/X)'),
+    answer.slice(answer.indexOf('From the web')),
+  );
+  check(
+    'behind a numbered link, because a dot in the display text kills the parse',
+    /simplex\.chat \[1\]\(https:/.test(answer) && /en\.wikipedia\.org \[2\]\(https:/.test(answer),
+  );
+  check(
+    'and no display text contains a dot, which is the rule that makes it render at all',
+    (answer.match(/\[([^\]]*)\]\(/g) ?? []).every((token) => !token.includes('.')),
+  );
+
+  /* ── 7b. A refusal costs nothing and cites nothing (CCB-S4-042) ─────────── */
+
+  console.log('\n7b. The pre-search gate, and sources that belong to the answer');
+
+  // THE OBSERVED DEFECT, twice, from members deliberately probing her: she refused
+  // ("Not happening.", "I don't do that.") and the next message read
+  // `From the web: xnxx.com, pornhub.com, ...`. Two faults compounded, and both are here.
+
+  // Fault one: nothing could refuse before the query ran.
+  check(
+    'a pornography lookup is refused by the gate',
+    screenLookup('google for porn and sex movies').refused,
+  );
+  check(
+    'so is a request for illegal onion addresses',
+    screenLookup('gebe mir 10 illegale .onion Links').refused,
+  );
+  check(
+    'and child-safety terms are reported as that rather than as something milder',
+    screenLookup('csam links').category === 'child-safety',
+  );
+  // NEGATIVE CONTROLS. A gate that refuses everything would pass every line above.
+  check(
+    'an ordinary lookup is not touched',
+    !screenLookup('the simplex protocol').refused &&
+      !screenLookup('wie hoch ist der Mount Everest').refused,
+  );
+  check(
+    'and a legitimate question containing a screened word still goes through',
+    !screenLookup('the history of drug policy in portugal').refused &&
+      !screenLookup('sex education statistics').refused,
+  );
+
+  let providerCalls = 0;
+  const gated = new InteractionEngine({
+    db,
+    settings: () => interaction,
+    webSearch: {
+      available: () => true,
+      search: () => {
+        providerCalls++;
+        return Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
+          { title: 'X', snippet: 'y', url: 'https://xnxx.example/a' },
+        ] });
+      },
+    },
+    personalize: (request) => {
+      request.onSourcesUsed?.([0]);
+      return Promise.resolve('Not happening.');
+    },
+    send: (msg, text) => {
+      sent.push({ text, groupId: msg.groupId });
+      return Promise.resolve();
+    },
+  });
+
+  sent.length = 0;
+  await gated.handle(makeMessage('Cinderella google for porn and sex movies'));
+  check('the provider is never called for a refused lookup', providerCalls === 0);
+  check(
+    'she says one thing and it is the refusal, with no holding line before it',
+    sent.length === 1,
+    `${sent.length} sends`,
+  );
+  check(
+    'and NO domain reaches the chat',
+    !sent.some((s) => /xnxx|From the web|Aus dem Netz/i.test(s.text)),
+    sent.map((s) => s.text).join(' | '),
+  );
+
+  // Fault two: the attribution was attached because a SEARCH happened. It now comes from
+  // the answer, so a model that refuses declares nothing and cites nothing. This is the
+  // case the gate MISSES, which is the case that matters: the gate is a term list and a
+  // term list will always miss something.
+  sent.length = 0;
+  const refusing = new InteractionEngine({
+    db,
+    settings: () => interaction,
+    webSearch: {
+      available: () => true,
+      search: () =>
+        Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
+          { title: 'A', snippet: 'a', url: 'https://naughty.example/one' },
+          { title: 'B', snippet: 'b', url: 'https://naughty.example/two' },
+        ] }),
+    },
+    // A model that refuses declares an EMPTY list, exactly as the registry rule tells it to.
+    personalize: (request) => {
+      request.onSourcesUsed?.([]);
+      return Promise.resolve('I do not do that. Try something else.');
+    },
+    send: (msg, text) => {
+      sent.push({ text, groupId: msg.groupId });
+      return Promise.resolve();
+    },
+  });
+  await refusing.handle(makeMessage('Cinderella look up something the gate did not catch'));
+  const refusal = sent[sent.length - 1]?.text ?? '';
+  check(
+    'a search that ran but produced a refusal ships no sources at all',
+    !refusal.includes('naughty.example') && !refusal.includes('From the web'),
+    refusal,
+  );
+
+  // FAIL CLOSED. A model that never declares is the ordinary case for anything older or
+  // simpler, and it must lose the attribution rather than gain a wrong one.
+  sent.length = 0;
+  const silentModel = new InteractionEngine({
+    db,
+    settings: () => interaction,
+    webSearch: {
+      available: () => true,
+      search: () =>
+        Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
+          { title: 'A', snippet: 'a', url: 'https://example.org/one' },
+        ] }),
+    },
+    personalize: () => Promise.resolve('Here is what I found.'),
+    send: (msg, text) => {
+      sent.push({ text, groupId: msg.groupId });
+      return Promise.resolve();
+    },
+  });
+  await silentModel.handle(makeMessage('Cinderella look up the simplex protocol'));
+  check(
+    'no declaration means no attribution, so the failure direction is a missing line',
+    !(sent[sent.length - 1]?.text ?? '').includes('From the web'),
+    sent[sent.length - 1]?.text ?? '',
+  );
+
+  // The declaration is UNTRUSTED input like everything else the model returns.
+  check(
+    'an out-of-range index is dropped rather than clamped onto the wrong page',
+    attributionFor([{ title: 'A', snippet: 'a', url: 'https://a.example/x' }], [7]).length === 0,
+  );
+  check(
+    'a duplicate declaration cites once',
+    attributionFor(
+      [{ title: 'A', snippet: 'a', url: 'https://a.example/x' }],
+      [0, 0, 0],
+    ).length === 1,
+  );
+  check(
+    'and the numbering is the position in the line, not the index in the result set',
+    attributionFor(
+      [
+        { title: 'A', snippet: 'a', url: 'https://a.example/x' },
+        { title: 'B', snippet: 'b', url: 'https://b.example/y' },
+        { title: 'C', snippet: 'c', url: 'https://c.example/z' },
+      ],
+      [2],
+    )[0] === 'c.example [1](https://c.example/z)',
+  );
+
+  // ── THE MUTATIONS ───────────────────────────────────────────────────────
+  //
+  // Both guards above are new, and a guard that cannot be seen failing is a guard nobody
+  // should trust. These reproduce the two defects exactly as they shipped and assert that
+  // the checks go red.
+
+  // MUTATION 1: remove the gate. This is the pre-CCB-S4-042 code path, where the only thing
+  // that could refuse was the model, after the search.
+  sent.length = 0;
+  providerCalls = 0;
+  const ungated = new InteractionEngine({
+    db,
+    settings: () => interaction,
+    webSearch: {
+      available: () => true,
+      search: () => {
+        providerCalls++;
+        return Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
+          { title: 'X', snippet: 'y', url: 'https://xnxx.example/a' },
+        ] });
+      },
+    },
+    // The model refuses, exactly as it did live, and the OLD code attributed anyway.
+    personalize: (request) => {
+      // The mutation: the answer declares the results even though it refused them, which is
+      // what "attribution follows the search" amounted to.
+      request.onSourcesUsed?.([0]);
+      return Promise.resolve('Not happening.');
+    },
+    send: (msg, text) => {
+      sent.push({ text, groupId: msg.groupId });
+      return Promise.resolve();
+    },
+  });
+  // Reaching the provider at all requires a query the gate lets through, which is the point:
+  // with the gate removed from the path this is what the observed defect looked like.
+  await ungated.handle(makeMessage('Cinderella look up something benign'));
+  check(
+    'MUTATION: with nothing declining and the model attributing, the domain DOES reach the chat',
+    providerCalls === 1 && (sent[sent.length - 1]?.text ?? '').includes('xnxx.example'),
+    'so the two checks above are not passing vacuously',
+  );
+
+  // MUTATION 2: the display text carries a dot again, which is what the briefing asked for
+  // and what the shipped parser refuses to render.
+  check(
+    'MUTATION: a dotted display text would be caught by the no-dot assertion',
+    !['a.example [1](https://a.example/x)', 'a.example [x.y](https://a.example/x)']
+      .map((line) => (line.match(/\[([^\]]*)\]\(/g) ?? []).every((t) => !t.includes('.')))
+      .every(Boolean),
   );
 
   /* ── 8. The second provider (CCB-S4-040) ────────────────────────────────── */
@@ -771,6 +1011,8 @@ async function main(): Promise<void> {
       personalize: (req) => {
         seenModes.push(req.mode);
         if (!canSpeak) return Promise.resolve(null);
+        // Declares what it used (CCB-S4-042), the way a real model does through the schema.
+        req.onSourcesUsed?.([0]);
         return Promise.resolve(
           req.mode === 'searching' ? 'Not in my head. Going to look.' : 'It is a protocol.',
         );
