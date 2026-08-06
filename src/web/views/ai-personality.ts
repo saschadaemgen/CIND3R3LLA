@@ -39,7 +39,7 @@ import {
   type PersonalityAxis,
 } from '../../interaction/personality.js';
 import { botIdentity } from '../../interaction/settings.js';
-import { aiRuntimeSnapshot } from '../../interaction/ai-runtime.js';
+import { aiRuntimeSnapshot, currentReplyModel } from '../../interaction/ai-runtime.js';
 import {
   listBotOnboardingProfiles,
   updateBotPersonality,
@@ -280,6 +280,12 @@ function ceilingCard(rules: PromptRuleSet): SafeHtml {
 }
 
 /** What the model is actually told, for the SAVED values. The proof the dial reaches it. */
+/** The given facts, including the model the AI routing has selected right now. */
+function previewIdentity(settings: Parameters<typeof botIdentity>[0]): BotIdentity {
+  const model = currentReplyModel();
+  return { ...botIdentity(settings), ...(model ? { model } : {}) };
+}
+
 function promptCard(
   rules: PromptRuleSet,
   personality: BotPersonality,
@@ -295,6 +301,15 @@ function promptCard(
         what she is, the links and the names she refuses all come from the
         <a class="underline" href="/interaction/addressing">Interaction settings</a>, not from
         here.
+      </p>
+      <p class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+        <strong>The model she runs on is a GIVEN FACT, not prose.</strong> It is read live from
+        the <a class="underline" href="/ai/models">Models page</a> and rendered into the prompt
+        below, so changing the reply model changes what she says she is running with no restart
+        and no edit to her history. It used to be a sentence in her origin, and she went on
+        naming a nine-billion-parameter model long after the operator had moved off it. If the
+        line is absent below, no runtime is initialised and she is told nothing about a model
+        rather than being told a stale one.
       </p>
       <pre class="personality-prompt">${voice}</pre>
     `,
@@ -376,7 +391,9 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
         profiles,
         req.query.bot,
         req.session?.csrfToken ?? '',
-        botIdentity(ctx.interaction.get()),
+        // The live reply model, so the preview is the prompt (CCB-S4-042). A preview that
+        // omitted it would be a second description of the prompt rather than the prompt.
+        previewIdentity(ctx.interaction.get()),
         rules,
       ),
       html`<script src="/assets/admin-personality.js" defer></script>`,

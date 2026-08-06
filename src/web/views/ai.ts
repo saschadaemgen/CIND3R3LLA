@@ -402,6 +402,32 @@ function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuer
 
     ${notice(query)}
 
+    <!--
+      CCB-S4-042 defect 6. An honest sentence beats a missing one, and both beat a control that
+      does not do what its label says. The operator watched the same spell-check produce three
+      different answers and had no way to learn why from this console.
+    -->
+    <div class="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700">
+      <p class="font-semibold">Why the same question can get a different answer twice</p>
+      <p class="mt-1">
+        Every model call uses <strong>temperature 0.7</strong> and asks for
+        <strong>no reasoning effort</strong>, in every mode. Temperature is what makes her sound
+        alive rather than canned: a nickname retort that came back word for word identical every
+        time would be a worse product. For a <em>task</em>, though, the same setting is a defect,
+        and it shows: the identical spell-check text sent three times produced three materially
+        different replies.
+      </p>
+      <p class="mt-2">
+        <strong>There is deliberately no setting here yet, because there is nothing to attach one
+        to.</strong> She has five reply modes and none of them is "a task": a spell-check request
+        is not a command, so it arrives as UNKNOWN and is answered in the same conversation mode,
+        with the same sampling, as small talk. Adding a temperature slider today would apply it to
+        her whole voice at once, which is not what anybody wants. Telling a task apart from a
+        conversation is a resolver change, not a settings change, and it is queued rather than
+        guessed at here.
+      </p>
+    </div>
+
     <div class="model-catalog-status-grid">
       <article class="model-catalog-status">
         <span>Catalog state</span>

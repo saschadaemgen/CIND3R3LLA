@@ -15,6 +15,7 @@ import type { FastifyInstance } from 'fastify';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
+import { webSearchDiagnostics } from '../../plugins/web-search/service.js';
 import {
   SEARCH_PROVIDERS,
   SEARCH_PROVIDER_NOTES,
@@ -37,6 +38,71 @@ import {
 } from '../../db/asset-mappings.js';
 
 const INPUT = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
+
+/**
+ * The plugin's own state, so a fault does not need SSH to find (CCB-S4-042, D-145).
+ *
+ * The operator hit this on the day the briefing was written: a plugin that fails says
+ * nothing in the console and the journal was the only way to learn why.
+ *
+ * Content-free, matching the reply-wording log's rule (D-130): THAT a search failed and how,
+ * never what anybody asked or what came back. `null` means no service is running rather than
+ * "nothing has happened", and the copy says which, because zeroes that are really "unknown"
+ * are worse than an honest blank.
+ */
+function diagnosticsBody(limits: {
+  rateLimitWindowSeconds: number;
+  rateLimitPerMember: number;
+  rateLimitPerChat: number;
+}): SafeHtml {
+  const d = webSearchDiagnostics();
+  if (!d) {
+    return html`<p class="text-sm text-slate-600">
+      No search service is running in this process, so there is nothing to report. This is what
+      the page shows before the bot has started, not a fault.
+    </p>`;
+  }
+
+  return html`
+    <dl class="grid gap-3 text-sm sm:grid-cols-2">
+      <div>
+        <dt class="font-medium text-slate-700">Searches since restart</dt>
+        <dd class="text-slate-600">${String(d.searches)} reached a provider</dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-700">Inside the rate-limit window</dt>
+        <dd class="text-slate-600">
+          ${String(d.inWindow)} in the last ${String(limits.rateLimitWindowSeconds)} seconds. The
+          budget is ${String(limits.rateLimitPerMember)} per member and
+          ${String(limits.rateLimitPerChat)} per chat over that window.
+        </dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-700">Refused before searching</dt>
+        <dd class="text-slate-600">
+          ${String(d.refusedBeforeSearch)} never reached a provider${d.lastRefusal
+            ? html`, last one ${d.lastRefusal.category} at ${d.lastRefusal.at}`
+            : ''}
+        </dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-700">Last failure</dt>
+        <dd class="text-slate-600">
+          ${d.lastFailure
+            ? html`<span class="font-medium">${d.lastFailure.failure}</span> from
+                ${d.lastFailure.provider} at ${d.lastFailure.at}
+                <span class="block text-slate-500">${d.lastFailure.detail}</span>`
+            : 'none since the last restart'}
+        </dd>
+      </div>
+    </dl>
+    <p class="mt-3 text-xs text-slate-500">
+      Content-free by construction: no query text, no result text, no member. "Not configured" is
+      deliberately not counted as a failure, because choosing not to enter a key is a choice
+      rather than a fault.
+    </p>
+  `;
+}
 
 function text(name: string, value: string, placeholder = ''): SafeHtml {
   return html`<input
@@ -666,9 +732,10 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
             'What this actually does, and what it costs',
             html`<p class="text-sm text-slate-600">
                 When a member <strong>explicitly asks her to look something up</strong>, she
-                queries the provider below, reads the results, and answers from them. She names
-                the sources every time, and the source line is written by the application rather
-                than by the model, so she cannot cite a page she was not given.
+                queries the provider below, reads the results, and answers from them. The source
+                line is written by the application rather than by the model, so she cannot cite a
+                page she was not given, and it names <strong>only the results the answer actually
+                used</strong>: a refusal cites nothing at all.
               </p>
               <p class="mt-3 text-sm text-slate-600">
                 <strong>Search results are treated as hostile input.</strong> They are text
@@ -685,6 +752,69 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
                 entirely, so nothing can reach a search even by accident.
               </p>`,
           )}
+
+          <div class="mt-4">
+            ${card(
+              'What she will not search for, before the query is sent',
+              html`<p class="text-sm text-slate-600">
+                  A request she would refuse <strong>never reaches the provider</strong>. Until
+                  CCB-S4-042 the only thing that could refuse was the model, and the model does not
+                  see the request until after the search has run: she said
+                  <em>"Not happening."</em> and the next message read
+                  <em>"From the web: xnxx.com, pornhub.com, ..."</em> because the source line was
+                  attached to the search rather than to the answer. Both halves are fixed.
+                </p>
+                <p class="mt-3 text-sm text-slate-600">Four categories are refused outright:</p>
+                <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-600">
+                  <li><strong>Sexual material</strong> named as such, and the sites themselves.</li>
+                  <li><strong>Child safety</strong> terms. Refused first and hardest.</li>
+                  <li><strong>Darknet</strong> addresses: a <code>.onion</code> in a search request
+                    is asking for an address, not for a topic.</li>
+                  <li><strong>Illegal goods</strong>, as an intent word plus a subject word, so
+                    "buy cocaine online" is refused and "the history of drug policy" is not.</li>
+                </ul>
+                <p class="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <strong>It is a term list, and a term list has limits.</strong> It misses
+                  paraphrase, it covers English and German only, and it will occasionally refuse a
+                  legitimate question that happens to use a screened word. It is a floor under the
+                  model's own refusal, not a replacement for it. There is deliberately
+                  <strong>no setting</strong> here: a threshold an operator could lower is a
+                  threshold that ends with the domains back in the group, and the categories are
+                  not a matter of taste. Changing them is a code change and a review.
+                </p>`,
+            )}
+          </div>
+
+          <div class="mt-4">
+            ${card(
+              'What the source line contains',
+              html`<p class="text-sm text-slate-600">
+                  <code>🔎 From the web: example.org [1](https://example.org/the/page), ...</code>
+                </p>
+                <p class="mt-3 text-sm text-slate-600">
+                  The <strong>domain</strong> is the part you read to judge whether to trust the
+                  answer. The <strong>numbered link</strong> carries the full URL, so the page is
+                  actually reachable. A member asked for exactly this: the line used to print hosts
+                  only, which looked clickable and landed on a homepage.
+                </p>
+                <p class="mt-3 text-sm text-slate-600">
+                  The number rather than the domain is the visible link text because SimpleX
+                  requires it: measured against the shipped 6.5.4 parser, a dot inside the display
+                  text makes the <em>entire message</em> render as literal brackets. It is written
+                  by the application, never by the model, and it lists
+                  <strong>only the results the answer actually used</strong>. A refusal cites
+                  nothing, and if the model declares nothing the line is omitted rather than
+                  guessed at.
+                </p>`,
+            )}
+          </div>
+
+          <div class="mt-4">
+            ${card(
+              'Diagnostics',
+              diagnosticsBody(cfg),
+            )}
+          </div>
 
           <div class="mt-4">
             ${card(

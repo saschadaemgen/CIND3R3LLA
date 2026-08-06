@@ -124,6 +124,48 @@ class Window {
     this.hits.set(key, kept);
     return true;
   }
+
+  /** How many hits are still inside the window, across every key. For the console. */
+  live(windowSeconds: number, now: number): number {
+    const cutoff = now - windowSeconds * 1000;
+    let total = 0;
+    for (const times of this.hits.values()) total += times.filter((at) => at >= cutoff).length;
+    return total;
+  }
+}
+
+/**
+ * What the console shows about this plugin (CCB-S4-042, D-145).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ *
+ * The operator hit it on the day the briefing was written: a plugin that fails says nothing
+ * in the console, and the only way to find out why was the journal. A fault an operator can
+ * only reach over SSH is a fault they will not find.
+ *
+ * ── CONTENT-FREE, AND THAT IS NOT NEGOTIABLE ─────────────────────────────────
+ *
+ * The same rule the reply-wording log follows (D-130): THAT something happened, and how it
+ * failed, never WHAT anybody said. No query text, no result text, no member id. `detail` is
+ * the provider's own error string, which is about the transport rather than about a member;
+ * everything member-shaped is deliberately absent.
+ */
+export interface WebSearchDiagnostics {
+  /** Searches that actually reached a provider since the last restart. */
+  searches: number;
+  /** Searches still inside the rate-limit window, across every member and chat. */
+  inWindow: number;
+  /** How the last failure failed, and when. Null when nothing has failed. */
+  lastFailure: {
+    provider: string;
+    failure: SearchFailure;
+    detail: string;
+    at: string;
+  } | null;
+  /** Requests the pre-search gate refused, so no provider was ever called. */
+  refusedBeforeSearch: number;
+  /** The last refusal category, for the operator. Never the query. */
+  lastRefusal: { category: string; at: string } | null;
 }
 
 export interface WebSearchDeps {
@@ -137,9 +179,40 @@ export interface WebSearchDeps {
 export class WebSearchService {
   private readonly window = new Window();
   private readonly now: () => number;
+  private searches = 0;
+  private refusedBeforeSearch = 0;
+  private lastFailure: WebSearchDiagnostics['lastFailure'] = null;
+  private lastRefusal: WebSearchDiagnostics['lastRefusal'] = null;
 
   constructor(private readonly deps: WebSearchDeps) {
     this.now = deps.now ?? ((): number => Date.now());
+  }
+
+  /**
+   * Counted by the ENGINE, because the gate runs there, before this service is touched.
+   *
+   * The count lives here anyway so the console has one place to read the plugin's state
+   * from. Only the category is kept; the query is never passed in, so it cannot be stored
+   * by accident later.
+   */
+  noteRefusedBeforeSearch(category: string): void {
+    this.refusedBeforeSearch++;
+    this.lastRefusal = { category, at: new Date(this.now()).toISOString() };
+  }
+
+  /** Everything the console shows. Content-free by construction. */
+  diagnostics(): WebSearchDiagnostics {
+    return {
+      searches: this.searches,
+      inWindow: this.window.live(this.deps.settings().rateLimitWindowSeconds, this.now()),
+      lastFailure: this.lastFailure,
+      refusedBeforeSearch: this.refusedBeforeSearch,
+      lastRefusal: this.lastRefusal,
+    };
+  }
+
+  private noteFailure(provider: string, failure: SearchFailure, detail: string): void {
+    this.lastFailure = { provider, failure, detail, at: new Date(this.now()).toISOString() };
   }
 
   /** The live provider, or the injected one. Rebuilt per call so a key change applies. */
@@ -178,6 +251,9 @@ export class WebSearchService {
       // NOT CONFIGURED IS A CHOICE, NOT A FAULT (the standing rule). It is reported as
       // its own outcome and it does not call `status.error`, because an operator who has
       // not entered a key has not broken anything.
+      // Deliberately NOT recorded as a failure: not configured is a choice, not a fault,
+      // and putting it in the console's failure line would be alarming an operator about
+      // a key they decided not to enter (the standing rule).
       return { kind: 'failed', failure: 'not-configured', detail: 'no search provider is configured' };
     }
 
@@ -191,6 +267,7 @@ export class WebSearchService {
       this.window.allow(`m:${scope.memberId}`, cfg.rateLimitPerMember, cfg.rateLimitWindowSeconds, now) &&
       this.window.allow(`g:${String(scope.groupId)}`, cfg.rateLimitPerChat, cfg.rateLimitWindowSeconds, now);
     if (!allowed) {
+      this.noteFailure(provider.name, 'rate-limited', 'the search budget for this window is spent');
       return { kind: 'failed', failure: 'rate-limited', detail: 'the search budget for this window is spent' };
     }
 
@@ -205,10 +282,12 @@ export class WebSearchService {
       log.warn(
         `Web search: ${provider.name} could not answer (${detail}).`,
       );
+      const named = error instanceof SearchProviderError ? error.message : detail;
+      this.noteFailure(provider.name, timedOut ? 'timeout' : 'provider-error', named);
       return {
         kind: 'failed',
         failure: timedOut ? 'timeout' : 'provider-error',
-        detail: error instanceof SearchProviderError ? error.message : detail,
+        detail: named,
       };
     }
 
@@ -218,9 +297,31 @@ export class WebSearchService {
     );
 
     if (results.length === 0) {
+      this.searches++;
+      this.noteFailure(provider.name, 'no-results', 'the search returned nothing usable');
       return { kind: 'failed', failure: 'no-results', detail: 'the search returned nothing usable' };
     }
 
+    this.searches++;
     return { kind: 'results', results, provider: provider.name };
   }
+}
+
+/**
+ * The process-wide instance, registered by the boot path (CCB-S4-042).
+ *
+ * Registered rather than passed, for the same reason the personality and rule services are:
+ * the admin console is built before the bot starts, so its views exist at a moment when
+ * there is nothing to hand them. Null in every harness that does not host a bot, and the
+ * page then says the plugin is not running rather than showing zeroes that look like facts.
+ */
+let activeWebSearch: WebSearchService | null = null;
+
+export function setWebSearchService(service: WebSearchService | null): void {
+  activeWebSearch = service;
+}
+
+/** What the Web Search page shows. Null when no service is running. */
+export function webSearchDiagnostics(): WebSearchDiagnostics | null {
+  return activeWebSearch?.diagnostics() ?? null;
 }

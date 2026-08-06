@@ -23,6 +23,8 @@ import {
 } from '../src/profiles/bot-onboarding.js';
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { SettingsService } from '../src/settings/service.js';
+import { WebSearchService, setWebSearchService } from '../src/plugins/web-search/service.js';
+import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
@@ -184,6 +186,16 @@ async function main(): Promise<void> {
   };
   const settings = await SettingsService.load(db, cfg.logLevel);
   const security = await SecurityService.load(db);
+
+  // A search service with some history on it, so the Web Search page's diagnostics card can
+  // be looked at in its POPULATED state rather than only in its "nothing is running" state
+  // (CCB-S4-042). Nothing here reaches a network: the service is never asked to search.
+  const previewSearch = new WebSearchService({
+    settings: () => WEB_SEARCH_DEFAULTS,
+  });
+  previewSearch.noteRefusedBeforeSearch('sexual-explicit');
+  previewSearch.noteRefusedBeforeSearch('darknet');
+  setWebSearchService(previewSearch);
 
   registerNav();
   const app = buildServer({
