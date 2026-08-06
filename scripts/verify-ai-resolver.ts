@@ -6,8 +6,14 @@
  */
 
 import type { LocalAiConfig } from '../src/config.js';
-import { createOllamaIntentResolver, type FetchLike } from '../src/interaction/ollama-resolver.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import {
+  INTENT_DEFINITIONS,
+  createOllamaIntentResolver,
+  resolverSystemPromptForTest,
+  type FetchLike,
+} from '../src/interaction/ollama-resolver.js';
+import { CORE_INTENTS, setActiveIntents } from '../src/interaction/intent.js';
+import { ruleResolver } from '../src/interaction/rules.js';
 import {
   resetIntentResolver,
   resolveIntent,
@@ -217,6 +223,137 @@ async function main(): Promise<void> {
   console.log(`Failures: ${failures}`);
   console.log('NetworkUsed: false');
   console.log('ConsentExecuted: false');
+
+  /* ── The catalog boundary (CCB-S4-041, D-143) ─────────────────────────── */
+
+  console.log('\nThe catalog: command or conversation');
+
+  // ── THE ASSERTION THE BRIEFING ASKS FOR BY NAME ────────────────────────────
+  //
+  // HELP claimed "identity" for as long as help was the only place she said anything
+  // about herself. It predates the origin field and free conversation, and once a larger
+  // model started following the description faithfully, "who made you and why?" got a
+  // fixed help text. This check fails if that word, or any of its neighbours, comes back.
+  const help = INTENT_DEFINITIONS.HELP;
+  check(
+    'HELP no longer claims identity',
+    !/\bidentity\b/i.test(help),
+    help.slice(0, 60),
+  );
+  check(
+    'and says plainly that questions about her are not HELP',
+    /who or what she is|where she came from|who built her/i.test(help) &&
+      /never HELP|not about the bot itself|NOT about the bot/i.test(help),
+  );
+  // NEGATIVE CONTROL. The description must still claim what it does serve, or this would
+  // pass on an empty string.
+  check(
+    'while still claiming what it does serve',
+    /command/i.test(help) && /how to use|usage|OPERATING/i.test(help),
+  );
+
+  // ── PRICE stops claiming anything with a price in it ───────────────────────
+  const price = INTENT_DEFINITIONS.PRICE;
+  check(
+    'PRICE names the boundary rather than hoping the model infers it',
+    /traded financial asset|cryptocurrency|currency pair/i.test(price),
+  );
+  check(
+    'and says a physical product is not PRICE',
+    /physical product/i.test(price) && /graphics card|phone|ticket/i.test(price),
+  );
+
+  // ── SEARCH and LOOKUP state the boundary from BOTH sides ───────────────────
+  const searchDef = INTENT_DEFINITIONS.SEARCH;
+  const lookupDef = INTENT_DEFINITIONS.LOOKUP;
+  check(
+    'SEARCH says it is the archive and never the web',
+    /archive/i.test(searchDef) && /never the web|is LOOKUP, not SEARCH/i.test(searchDef),
+  );
+  check(
+    'LOOKUP says it is the web and never the archive',
+    /web/i.test(lookupDef) && /never this group own archive|is SEARCH, not LOOKUP/i.test(lookupDef),
+  );
+
+  // ── The slot rule contradicted LOOKUP's own description ────────────────────
+  const prompt = resolverSystemPromptForTest();
+  check(
+    'the slot rule no longer says only SEARCH may carry a query',
+    !/Use slots\.query only for SEARCH/.test(prompt),
+  );
+  check(
+    'and names both corpora, so a query-shaped request has no reason to prefer SEARCH',
+    /slots\.query for SEARCH and for LOOKUP/.test(prompt),
+  );
+
+  // ── The precedence rule, which is what generalises the fix ─────────────────
+  check(
+    'the catalog states that a message about her is conversation',
+    /ABOUT HER rather than about a task, it is conversation, not a command/.test(prompt),
+  );
+  check(
+    'and names the specific things that means',
+    /where she came from, who built her, what she runs on/.test(prompt),
+  );
+
+  /* ── The rule engine decides the RTX case before the model ever sees it ─── */
+
+  console.log('\nThe rule engine: an explicit web verb wins');
+
+  const routes = async (text: string): Promise<string> =>
+    (await ruleResolver.resolve(text, { threshold: 0.6, defaultLanguage: 'en' })).intent;
+
+  setActiveIntents([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
+
+  // THE OBSERVED DEFECT, and it never reached the model: "price of" is a two token phrase
+  // and "google" is one, so PRICE scored 0.94 and the crypto plugin quoted 1.9758 USD for
+  // a graphics card. Tuning the catalog alone would have left this exactly as it was.
+  check(
+    'an explicit web verb beats a price keyword in the same sentence',
+    (await routes('google the current price of an RTX 5090')) === 'LOOKUP',
+    await routes('google the current price of an RTX 5090'),
+  );
+  check(
+    'and beats an archive search keyword',
+    (await routes('search the web for the latest release')) === 'LOOKUP',
+    await routes('search the web for the latest release'),
+  );
+
+  // NEGATIVE CONTROLS. The precedence must not swallow the two intents it outranks.
+  check(
+    'a real price question is still PRICE',
+    (await routes('what is the price of bitcoin')) === 'PRICE',
+    await routes('what is the price of bitcoin'),
+  );
+  check(
+    'a real archive search is still SEARCH',
+    (await routes('search the archive for what bob said')) === 'SEARCH',
+    await routes('search the archive for what bob said'),
+  );
+
+  // WITH THE PLUGIN OFF, an explicit web request must not become an archive search. The
+  // member asked for the web and would otherwise get a count of what the group said,
+  // presented as an answer, without ever being told the web was not consulted. UNKNOWN
+  // sends it to conversation, where she can say she cannot look things up.
+  setActiveIntents([...CORE_INTENTS, 'PRICE']);
+  check(
+    'with web search off, a web request falls to conversation rather than the archive',
+    (await routes('search the web for the latest release')) === 'UNKNOWN',
+    await routes('search the web for the latest release'),
+  );
+  check(
+    'and the RTX case does not silently become a crypto quote either',
+    (await routes('google the current price of an RTX 5090')) === 'UNKNOWN',
+    await routes('google the current price of an RTX 5090'),
+  );
+  // The control for that pair: the commands the plugin does not touch are unaffected.
+  check(
+    'while an ordinary archive search still works with the plugin off',
+    (await routes('search the archive for what bob said')) === 'SEARCH',
+  );
+  setActiveIntents([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
+
+
 
   if (failures > 0) process.exit(1);
 }
