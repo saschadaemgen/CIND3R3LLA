@@ -485,6 +485,32 @@ export function registerNav(): void {
       ],
     },
     {
+      key: 'book',
+      href: '/book',
+      label: 'Book of Elii',
+      icon: icon('shield'),
+      children: [
+        {
+          key: 'book:rules',
+          href: '/book',
+          label: 'The Book',
+          icon: icon('shield'),
+        },
+        {
+          key: 'book:assembled',
+          href: '/book/assembled',
+          label: 'The Assembled Word',
+          icon: icon('shield'),
+        },
+        {
+          key: 'book:history',
+          href: '/book/history',
+          label: 'History',
+          icon: icon('shield'),
+        },
+      ],
+    },
+    {
       key: 'ai',
       href: '/ai/overview',
       label: 'AI Control',
