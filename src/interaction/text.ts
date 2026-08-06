@@ -364,9 +364,110 @@ export function detectLanguageFromTokens(tokens: string[], fallback: string): La
   return { lang: fallback, confident: false };
 }
 
+/**
+ * German orthography, as a TIEBREAK when the function-word contest found nothing.
+ *
+ * ── THE DEFECT (CCB-S4-042, D-145) ───────────────────────────────────────────
+ *
+ * "Cinderella erkläre Geheimdienstselektoren." was answered in English, and a member said
+ * so: *"Wrong language, based on the question."* Other German questions were answered in
+ * German, which made it look intermittent. It is not: the contest above needs
+ * {@link MIN_HITS} function words, and a short imperative with a technical compound noun
+ * has none at all. `erkläre` is not in the hint set, `Geheimdienstselektoren` is in nobody's
+ * hint set, so the score was 0 to 0, the guess was not confident, and the fallback is the
+ * configured default, which is English. Reproduced exactly before this was written.
+ *
+ * The instruction half was never at fault. The prompt says "Use the requested language" and
+ * the request carries whatever this function returned, so the model was faithfully answering
+ * in the language it was told. This is a DETECTION fix.
+ *
+ * ── WHY ORTHOGRAPHY, AND WHY ONLY AS A TIEBREAK ──────────────────────────────
+ *
+ * `ä ö ü ß` are German by construction, and they survive nothing else here: {@link fold}
+ * strips them to build the tokens the contest runs on, so by the time the hint sets are
+ * consulted the evidence is already gone. This reads the RAW string instead.
+ *
+ * It runs only when the contest was inconclusive, so it can never overturn a decision the
+ * function words already made. An English sentence quoting a German word therefore still
+ * scores as English on its own function words; the tiebreak only speaks when nothing else
+ * has anything to say. The cost of being wrong is one reply in the wrong language, and it
+ * never touches consent.
+ */
+const GERMAN_ORTHOGRAPHY = /[äöüÄÖÜß]/;
+
+/**
+ * German imperatives and question openers a command-shaped message starts with.
+ *
+ * The failing cases were all IMPERATIVE: "erkläre …", "gebe mir …", "zeige mir …". The
+ * existing set is function words, which is what ordinary prose is full of and what a
+ * two-word instruction has none of. These are verbs, they carry no English reading, and
+ * they are exactly the shape of a message somebody sends a bot.
+ */
+const GERMAN_IMPERATIVES = new Set(
+  [
+    'erklaere',
+    'erklaer',
+    'zeige',
+    'zeig',
+    'sage',
+    'sag',
+    'gebe',
+    'gib',
+    'nenne',
+    'nenn',
+    'schreibe',
+    'schreib',
+    'beschreibe',
+    'suche',
+    'such',
+    'finde',
+    'mache',
+    'mach',
+    'uebersetze',
+    'korrigiere',
+    'fasse',
+    'pruefe',
+    'rechne',
+    'liste',
+    'antworte',
+    'hilf',
+    'brauche',
+    'moechte',
+    'wuerde',
+    'koennte',
+    'sollte',
+    'weisst',
+    'kennst',
+    'denkst',
+    'meinst',
+    'machst',
+    'gibt',
+    'heisst',
+    'warum',
+    'weshalb',
+    'wieso',
+    'wohin',
+    'woher',
+    'welche',
+    'welcher',
+    'welches',
+  ].map((w) => fold(w)),
+);
+
 /** Reply-language hint for a raw string. */
 export function detectLanguage(text: string, fallback: string): LanguageGuess {
-  return detectLanguageFromTokens(normTokens(text), fallback);
+  const tokens = normTokens(text);
+  const contest = detectLanguageFromTokens(tokens, fallback);
+  if (contest.confident) return contest;
+
+  // Only reached when the function words said nothing either way. One German imperative or
+  // one German-only character is then the best evidence available, and it beats falling
+  // back to a default that has nothing to do with the message.
+  if (tokens.some((t) => GERMAN_IMPERATIVES.has(t)) || GERMAN_ORTHOGRAPHY.test(text)) {
+    return { lang: 'de', confident: true };
+  }
+
+  return contest;
 }
 
 /**
