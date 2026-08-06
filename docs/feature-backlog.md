@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-039**._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -1208,6 +1208,68 @@ wrong or already handled and are recorded here with the correction rather than t
 
 **Operator-owned, still open since Season 1:** register a second passkey on the YubiKey; rotate the
 break-glass password; disable break-glass once the second passkey exists.
+
+## Carried out of the rule registry (CCB-S4-039, D-144)
+
+The move landed inert and byte identical. These four are what it surfaced and deliberately
+did not act on, recorded here so none of them is lost.
+
+- [ ] **The Book of Elii console.** Viewing, editing, the tier warnings, the type-to-confirm
+      on constitutional rules, version history and rollback, and the prompt preview before
+      saving. **This is the next briefing**, named as out of scope by CCB-S4-039 itself; the
+      registry and its guards exist so it is built on top of something already proven.
+      `invalidatePromptRules()` in `src/interaction/prompt-rule-service.ts` is the hook it
+      calls on every save.
+- [ ] **Two non-identical copies of the generic voice paragraph.** `voice.command.restraint`
+      says *"theatrical, **submissive**, corporate, preachy, or excessively cute"*;
+      `character.generic.restraint` omits "submissive". They diverged in the code
+      (`ollama-reply.ts` vs `personality.ts`) and were carried across unchanged, because
+      CCB-S4-039 could not change a character of what the model is told. **Now two rows an
+      operator can read side by side and settle deliberately** — which is the first thing the
+      registry bought that the literals could not.
+- [ ] **The identity facts are gated on her having a name.** `identityLines` returned nothing
+      at all without one, so a bot with no configured wake word gets no label, no archive
+      address, no project address, and no do-not-invent fence closing that list. Preserved
+      exactly (as scope, in `dialledPromptInputs`), but nothing about it looks deliberate,
+      and it is worth deciding rather than inheriting.
+- [ ] **The intent-classifier prompt is still hardcoded.** `systemPrompt` in
+      `src/interaction/ollama-resolver.ts` reaches a model and was deliberately left out of
+      the registry: it is a different prompt on a different path, its content is a
+      specification of the intent catalog rather than rules about her, and it has no lane in
+      the lane vocabulary CCB-S4-039 settled. Moving it would mean inventing lanes nobody
+      decided. Worth a decision once the console exists, because the same ownership argument
+      applies: the operator cannot see or change it today either.
+
+- [ ] **`verify:personality-live`'s no-memory assertion is a narrow regex, not a behaviour
+      check.** It requires one of `no memory`, `do not remember`, `don't remember`,
+      `cannot remember`, `can't remember`, `nothing before`, `no record of`. Measured under
+      CCB-S4-039 across six runs, **three at the base commit and three after the registry
+      move**: it fails 2 of 3 either way, on answers that are plainly correct
+      (*"No, I don't have a memory of our chat history or past messages"*, *"My memory is a
+      short read of just this message"*). **Pre-existing and not a regression** - the prompt
+      is byte identical - and deliberately left alone by that briefing, because quietly
+      loosening an assertion during a briefing whose whole claim is "nothing changed" is
+      exactly what makes the claim unverifiable. Fix the verifier, not the behaviour (D-111).
+
+## `scripts/` is not typechecked (found under CCB-S4-039)
+
+`npm run typecheck` is `tsc --noEmit`, and `tsconfig.json` includes `src/**/*.ts` only. The
+forty-odd harnesses in `scripts/` are therefore compiled by `tsx` at run time and never
+type-checked, so a type error in a harness surfaces as a runtime failure, or does not surface
+at all in a branch the run does not reach.
+
+Found the honest way: CCB-S4-039 added a required field to `AiReplyRequest`, `npm run lint`
+and `npm run typecheck` both passed clean, and five harnesses were still missing it. They
+failed at run time and were fixed, but the compiler should have said so first.
+
+**Measured before recording**: a probe tsconfig covering `scripts/**` reports **64 pre-existing
+errors** across roughly a dozen files (missing `Config` fields in fixtures, `string` where a
+union is wanted, index-signature access under `noPropertyAccessFromIndexSignature`). None was
+introduced by that briefing. So this is real work rather than a one-line config change, which
+is why it is a backlog item and not a drive-by fix.
+
+- [ ] Add a `tsconfig.scripts.json` (or widen `include`) and clear the 64 errors, then wire
+      it into `npm run typecheck` so the harnesses are covered by the same gate as `src/`.
 
 ## Verification note
 

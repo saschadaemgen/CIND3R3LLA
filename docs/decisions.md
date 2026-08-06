@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-143**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-144**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,102 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+
+### D-144 - The rules she is given are data, in one registry, with one authored copy
+
+**Status: IMPLEMENTED** (CCB-S4-039). The move only; the console that edits these rules is
+the next briefing, and nothing in this one is editable by anybody, which is exactly why it
+was safe to land first.
+
+**THE PROBLEM WAS OWNERSHIP, NOT ARCHITECTURE.** Every sentence the local model was told
+was a string literal in `src/interaction/personality.ts` or `src/interaction/ollama-reply.ts`.
+The operator could not see them, could not change them, and had to ask what had been
+written into them. Adding a rule meant editing code, building and deploying, so the
+rulebook could not grow without an engineer. Eighty rules now live in
+`cinderella_prompt_rules` (migration `035_prompt_rules.sql`), and the assembler in
+`src/interaction/prompt-rules.ts` reads them.
+
+**THE MIGRATION IS THE ONLY AUTHORED COPY, AND THE CODE HAS NO FALLBACK.** Not a constant,
+not a default, not a "if the registry is empty use these". A fallback is a second source and
+a second source drifts, which is the failure the whole move exists to end. The migration
+runner applies `.sql` only, so a migration cannot import a TypeScript constant; putting the
+text there and nowhere else is what makes one-source-of-truth true rather than aspirational.
+Even the checks read the seeded rules through PGlite (`scripts/seeded-rules.ts`) rather than
+from an array written for the checks, which would have been the worst second source of all:
+one only the checks read, so the checks keep passing while production drifts.
+
+**WHAT AN UNREADABLE REGISTRY DOES: she stops wording replies, she does not word them with
+no rules.** `assemblePrompt` throws on an empty set. The throw lands in the reply path's
+existing catch, is logged, is counted as an AI fallback in the admin telemetry, and the
+member gets the deterministic reply somebody wrote. A shorter prompt would be one with the
+safety ceiling missing and nothing to say so.
+
+**THE MODEL: id, tier, lane, condition, order, text, enabled, critical, scope, source.**
+
+- **Three tiers.** `constitutional` for the safety, privacy and honesty boundaries (34 of
+  the 80), `standard` for ordinary wording, `bot` for a rule that applies to one bot. **No
+  row uses `bot` today**: the per-bot text she carries is her base character and her origin,
+  and those are columns on `cinderella_bot_profiles` (028, 031), not rules. The value is in
+  the vocabulary so the first per-bot rule needs no migration.
+- **Lanes, including two groups.** `all`, `dialled` (conversation, retort, searching),
+  `command` (free, locked), the five single modes, and `dial-axis`. The groups are what the
+  code actually branched on, and naming the group is more honest than repeating one rule in
+  three single-mode lanes and hoping the three stay equal. `dial-axis` is not in the stream
+  at all: three template rows rendered once per axis.
+- **`ord` is GLOBAL, not per lane.** The briefing says order is a rule's position within its
+  lane, and a global order gives that for free. It also gives what a per-lane order could
+  not: the dialled voice is emitted BETWEEN two everywhere-rules, so the lanes interleave,
+  and two independent counters cannot say which of a 1 and a 1 comes first.
+- **Conditions are a FIXED VOCABULARY, not an expression language**, and that is a product
+  decision. Two rules already existed in two variants (the do-not-invent fence differs on
+  whether she has an origin, D-138; the person-name guard differs on whether she has a name,
+  D-134), so conditions were needed on day one. A free condition language would be a new
+  source of error the operator could type into a form, in the one place where a mistake
+  silently changes what the model is told. Seventeen values, each a branch the code already
+  had; adding one is a code change and a migration, together.
+- **`scope` is carried and unused.** Reserved for later targeting (a group, a role) so a
+  future target needs no migration.
+
+**THE BOUNDARY BETWEEN A RULE AND PERSONALITY DATA, which is the line that decides what
+moved: A RULE IS A SENTENCE WHOSE TEXT DOES NOT DEPEND ON A SETTING.** The band descriptions
+and the three calibrated references per axis are generated FROM a slider value, so storing
+them would mean the operator editing text a slider then overrides; they stay in
+`AXIS_DEFINITIONS`. The permissiveness ceiling that sits above them depends on no dial, so it
+moved, marked constitutional and critical as the briefing required. Her origin text stays in
+its per-bot column (031) and the registry carries a `{{origin}}` placeholder for it: the
+rules ABOUT the origin moved, the origin did not, because two sources for one string is the
+exact failure being ended.
+
+**`critical` AND `constitutional` ARE SEPARATE FIELDS ANSWERING DIFFERENT QUESTIONS.** One
+gates editing (the console will put a typed confirmation behind it), the other gates absence
+(`verify:prompt-identity` asserts every critical rule reaches a prompt in a lane and
+condition that selects it). Every constitutional rule is also critical today, because a
+boundary that can vanish quietly is not a boundary; `prompt.concise-no-dashes` is already an
+example of the second without the first.
+
+**THE PROOF, and it is the only reason to believe any of this.** The baseline in
+`scripts/fixtures/prompt-baseline.json` was captured from the pre-registry code one commit
+BEFORE the move (`ea3c3b5`), across sixteen configurations covering every lane and every
+condition branch. All sixteen are byte identical after it, first run, unchanged. The check
+is mutation-proven five ways: change one word of one rule, swap two rules' order with no
+text changed, disable a constitutional rule, and render with an empty registry, and each is
+caught. "We moved the rules and nothing changed" is otherwise unfalsifiable.
+
+**TWO THINGS THE INVENTORY FOUND AND DID NOT FIX**, recorded because the registry is what
+makes them visible to an operator for the first time. The generic voice paragraph exists in
+two non-identical copies (`voice.command.restraint` says "theatrical, **submissive**,
+corporate, preachy"; `character.generic.restraint` omits "submissive"), and the identity
+facts are gated on her having a name, because `identityLines` returned nothing at all
+without one. Both are preserved exactly. This briefing may not change a character of what
+the model is told, so they are two rows an operator can now read and settle deliberately.
+
+**LEFT BEHIND DELIBERATELY: the intent-classifier prompt** (`ollama-resolver.ts`
+`systemPrompt`). It reaches a model, but it is a different prompt on a different path,
+its content is a specification of the intent catalog rather than rules about her, and it
+has no lane in the vocabulary this briefing settled. Moving it would have meant inventing
+lanes nobody decided. Candidate for a follow-up, not a silent omission.
 
 ---
 

@@ -131,10 +131,18 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `interaction/`
   (wake word, intent resolver, dialogue engine, persona, help, `personality.ts`: the
   base character, her origin, the five 1-10 dials and the given identity, pure, with the
-  calibrated references and the permissiveness ceiling that no dial value lifts (D-133,
-  D-135). The base character is how she SOUNDS and the origin is what she IS and where she
-  came from, carried into the prompt as background she may draw on but must never recite
-  or raise unprompted (D-138),
+  calibrated references (D-133, D-135). The base character is how she SOUNDS and the origin
+  is what she IS and where she came from, carried into the prompt as background she may draw
+  on but must never recite or raise unprompted (D-138).
+  **The RULES she is given are not in the code at all** (D-144): every sentence the model
+  reads is a row in `cinderella_prompt_rules`, seeded by migration 035, assembled by
+  `prompt-rules.ts` (pure: lanes, the seventeen fixed conditions, placeholder rendering),
+  loaded by `db/prompt-rules.ts` and cached by `prompt-rule-service.ts`. **The migration is
+  the only authored copy and there is deliberately no fallback in code**, because a fallback
+  is a second source; an unreadable registry makes her fall back to the deterministic reply
+  rather than word one with no rules. The boundary that decides what is a rule: a rule is a
+  sentence whose text does not depend on a setting, so the dial bands and calibrated
+  references stay personality data and the permissiveness ceiling moved,
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
@@ -203,7 +211,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   correction 027 made, because the category defaults are a literal that must match
   `DEFAULT_ARCHIVE`) · 034 the verbosity axis (a fifth dial, whose 5 reproduces the fixed
   500 character conversation cap and 240 character retort cap it replaced, to the
-  character).
+  character) · 035 the rule registry (every sentence the model is told, as data: id, tier,
+  lane, condition, global order, text, enabled, critical, scope and its origin in the code,
+  with CHECK constraints on the three vocabularies. **This file is the only authored copy of
+  that text**, so changing a rule means changing it here or, from the next briefing, in the
+  console; the code holds no fallback copy).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -211,7 +223,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **035**, since 034 landed with the verbosity axis). Stated as a rule
+  (currently **036**, since 035 landed with the rule registry). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -228,7 +240,18 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
-`verify:personality` (the four dials, her identity and the nickname retort lane: that each
+`verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: sixteen
+configurations covering every lane and every condition branch, compared against
+`scripts/fixtures/prompt-baseline.json`, which was captured from the code one commit BEFORE
+the rule registry moved the sentences into the database. It is not specific to that
+briefing: any change to any prompt line, from any briefing or any future rule edit, fails it
+and prints which lane and which line moved. A DELIBERATE change is re-baselined on purpose
+with `npm run verify:prompt-identity -- --update`, and the diff to the fixture is then the
+reviewable record of what she is now told. It also asserts every rule marked `critical`
+reaches a prompt in a lane and condition that selects it, and proves both guards can go red
+by mutating a rule's text, swapping two rules' order, disabling a constitutional rule, and
+rendering with an empty registry),
+`verify:personality` (the five dials, her identity and the nickname retort lane: that each
 dial changes the prompt that is actually sent, that the permissiveness ceiling is in every
 conversation prompt at every value and also with no personality configured, that her name
 and the other given facts reach it, that her origin reaches it and is fenced by the

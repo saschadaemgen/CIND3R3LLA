@@ -1057,6 +1057,12 @@ neither can reach the archive.
 | **Intent** (`ollama-resolver.ts`) | The static system prompt, and **the member's addressed message, nothing else** |
 | **Reply** (`ollama-reply.ts`) | Reply kind (≤80 chars), language (≤16), **the member's addressed message capped at 2000 chars**, the bot's own deterministic draft capped at 5000, and the literals that must survive a rewrite |
 
+**The reply system prompt is assembled from the rule registry** since CCB-S4-039 (D-144,
+architecture §36) rather than from string literals. That changes where the sentences are
+STORED and nothing about what leaves the process: every one of them is application-authored,
+written by the operator, and none of it is member-derived. The registry is read from the
+local Postgres by the same process; no rule is fetched from anywhere off the host.
+
 **No member text beyond the addressed instruction is ever transmitted.** No message history,
 no other member's text, no archive rows, no captured media, no consent records. The
 deterministic draft is the bot's own prepared reply; it can contain member-derived values such

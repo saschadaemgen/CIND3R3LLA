@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-003**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-039**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -1784,7 +1784,9 @@ conversation system prompt.
 fixed voice paragraph for every mode. In `conversation` mode it now calls
 `conversationVoice(request.personality)` from
 [`personality.ts`](../src/interaction/personality.ts) instead, and the personality
-arrives on the `AiReplyRequest` the engine builds in `freeConversation`. Everything
+arrives on the `AiReplyRequest` the engine builds in `freeConversation`. **Since CCB-S4-039
+(§36) that function assembles the `dialled` lane of the rule registry rather than holding
+the sentences itself, and it takes the rule set as its first argument.** Everything
 between, `personalizeAiReply` and `AiRuntimeService.personalize`, passes the request
 through untouched.
 
@@ -1807,7 +1809,7 @@ verbatim from the briefing. The prompt sends the band guidance plus the nearest 
 three. **Ties go to the lower reference** (a 3 anchors on 1), because understating a dial
 is the safer error, most of all on permissiveness.
 
-**The ceiling is bounded by construction.** `PERMISSIVENESS_CEILING` is four sentences
+**The ceiling is bounded by construction.** The four `ceiling.*` rules (a `PERMISSIVENESS_CEILING` constant until CCB-S4-039 moved them into the registry, §36) are four sentences
 emitted on **every** conversation prompt: at every dial value, and also when no
 personality is configured at all. No explicit content at any value; no suggestive
 register toward anyone who may be a minor, whatever the dial says; and the dial scales
@@ -2131,6 +2133,139 @@ and never falls back to training data.
 
 **Migration 033** adds the `lookup` publication category to `bot_publish_settings`, the
 same correction 027 made for `conversation`.
+
+## 36. The rule registry (CCB-S4-039, D-144)
+
+Every sentence the local model is told is a **row in `cinderella_prompt_rules`**, seeded by
+`migrations/035_prompt_rules.sql`. Before this they were string literals in
+`src/interaction/personality.ts` and `src/interaction/ollama-reply.ts`, which meant the
+operator could not see them, could not change them, and adding a rule required an engineer.
+
+**The console that edits them is not built here.** This is the move only, deliberately:
+nothing in it is editable by anybody, which is what made it safe to land first.
+
+### 36.1 Where the text lives, and why in exactly one place
+
+`migrations/035_prompt_rules.sql` is **the only authored copy**. There is no TypeScript
+constant holding the same sentences and **no fallback in the code for an empty registry**,
+because a fallback is a second source and a second source drifts. The migration runner
+applies `.sql` only, so a migration cannot import a TypeScript constant; putting the text
+there and nowhere else is what makes one-source-of-truth true rather than aspirational.
+
+The checks obey the same rule. `scripts/seeded-rules.ts` applies the whole migration set to
+PGlite and reads the rules back through `src/db/prompt-rules.ts`, so a check exercises what
+the deployment exercises, CHECK constraints included. An array of rules written for the
+checks would have been the worst second source available: one only the checks read, so they
+keep passing while production drifts away from them.
+
+### 36.2 The record
+
+| field | meaning |
+| --- | --- |
+| `id` | stable, outlives reordering and rewording; history and checks refer to this |
+| `tier` | `constitutional` / `standard` / `bot` |
+| `lane` | where it applies (below) |
+| `applies_when` | one of seventeen fixed conditions |
+| `ord` | **global** position in the assembled prompt |
+| `rule_text` | the rule as sent, with `{{placeholder}}` values |
+| `enabled`, `critical` | on/off, and whether absence should be loud |
+| `scope` | reserved for later targeting; nothing reads it |
+| `source` | where the text came from in the code, so the move stays auditable |
+
+`order`, `condition` and `text` are the briefing's field names; the columns are `ord`,
+`applies_when` and `rule_text`, because ORDER is reserved in SQL and the other two are
+keyword-adjacent enough to be worth not thinking about.
+
+**`ord` is global rather than per lane.** Restricted to one lane it is the order within that
+lane, so nothing is lost; and it expresses the thing a per-lane order could not. The dialled
+voice is emitted BETWEEN two everywhere-rules, so `all` and `dialled` interleave, and two
+independent counters cannot say which of a 1 and a 1 comes first. Ties break on `id`, so the
+prompt is never a function of the order the database happened to return rows in.
+
+### 36.3 Lanes
+
+| lane | selected for |
+| --- | --- |
+| `all` | every prompt |
+| `dialled` | `conversation`, `retort`, `searching` (the modes carrying her voice) |
+| `command` | `free`, `locked` (the modes rephrasing a decision already made) |
+| `conversation` `retort` `searching` `free` `locked` | exactly one mode |
+| `dial-axis` | **not in the stream**: three template rows rendered once per axis |
+
+`dialled` and `command` are lane GROUPS, and they are what the code already branched on
+(D-133). Naming the group is more honest than repeating one rule in three single-mode lanes
+and hoping the three stay equal.
+
+The `dial-axis` rows fill the `{{dialAxes}}` placeholder on `dials.axes`, which is what puts
+the block in the right position without the position being decided in code. Storing fifteen
+rows instead of three would have put the same sentence in the registry five times over, and
+a console letting an operator edit one of the five would produce a self-contradicting prompt.
+
+### 36.4 Conditions are a fixed vocabulary
+
+Seventeen values, each a branch the code already had, enforced by a CHECK constraint and by
+a TypeScript union. **Not an expression language**, and that is a product decision: this is
+the one place where a mistake silently changes what the model is told, and a free condition
+language would let an operator introduce one from a text field. Adding a value is a change
+to `src/interaction/prompt-rules.ts` and a migration, together.
+
+Two derivations are load-bearing and live in `dialledPromptInputs`, because each reproduces a
+branch that existed before the registry:
+
+- **The command lanes have nothing personal in scope.** No personality, no name, no clock, so
+  the person-name guard takes its generic variant there exactly as it did when the code said
+  `dialled && name`.
+- **Identity facts are gated on the name.** `identityLines` returned nothing at all without
+  one, so no name meant no label and no addresses. Expressed as scope rather than as five
+  compound conditions.
+
+### 36.5 What is a rule, and what is personality data
+
+**A rule is a sentence whose text does not depend on a setting.** That boundary decides what
+moved.
+
+The axis band descriptions and the three calibrated references per axis are generated FROM a
+slider value, so storing them would mean the operator editing text a slider then overrides.
+They stay in `AXIS_DEFINITIONS` in `personality.ts` (§33). The permissiveness ceiling above
+them depends on no dial, so it moved, marked `constitutional` and `critical`.
+
+Her origin text stays in its per-bot column (migration 031); the registry carries an
+`origin.text` row whose whole content is `{{origin}}`. The rules ABOUT the origin moved, the
+origin did not, because two sources for one string is the failure the move exists to end.
+
+`SEARCH_FENCE` stays in code as well: it is a delimiter the search service and the prompt
+builder must agree on character for character, and `verify:search` asserts they do.
+
+### 36.6 Failure
+
+`assemblePrompt` throws on an empty registry, and `renderPromptRule` throws on a placeholder
+it was not given a value for. Both land in the reply path's existing catch: logged, counted
+as an AI fallback in the admin telemetry, and the member gets the deterministic reply
+somebody wrote. **She stops wording replies rather than wording them with no rules.** A
+shorter prompt would be one with the safety ceiling missing and nothing to say so.
+
+`PromptRuleService` (`src/interaction/prompt-rule-service.ts`) caches the table at boot,
+invalidates rather than expires, keeps the last known good set on a failed re-read, and
+pushes the fault to the admin dashboard via `status.error` once per transition rather than
+once per reply. It is the same shape as `BotPersonalityService` and for the same reasons
+(§33).
+
+### 36.7 The proof
+
+`scripts/fixtures/prompt-baseline.json` was captured from the **pre-registry** code, one
+commit before the move, across sixteen configurations covering every lane and every condition
+branch: with and without an origin, a base character, a name and a clock; with no personality
+at all; both ends of the dials; every mode; and one case with web results attached. All
+sixteen are byte identical after the move.
+
+`npm run verify:prompt-identity` compares against it and prints which lane and which line
+moved. A deliberate prompt change is expected to fail and is re-baselined with
+`-- --update`; the diff to the fixture is then the reviewable record of what she is now told,
+which is a better artefact for that one question than the code diff.
+
+The same check asserts every `critical` rule reaches a prompt in a lane and condition that
+selects it, and proves both guards can go red: one word of one rule changed, two rules
+order-swapped with no text changed, a constitutional rule disabled, and an empty registry.
 
 ## Appendix: divergences (code wins)
 
