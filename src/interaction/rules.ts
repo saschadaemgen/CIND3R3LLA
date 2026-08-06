@@ -315,7 +315,11 @@ const LEXICON: LexEntry[] = [
       'search the web',
       'search online for',
       'search online',
-      'search for',
+      // CCB-S4-041. 'search for' was here from CCB-S4-037 and does not name the web at
+      // all. The archive SEARCH legitimately owns it, and once an explicit web verb took
+      // precedence over SEARCH, "search for pizza" stopped reaching the archive. Every
+      // phrase in this list must SAY web, online, internet or google; a bare search verb
+      // is not a statement about where to look. Caught by verify:interaction.
       'google',
       'web search',
       'find out about',
@@ -1273,6 +1277,27 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
 
   const quoted = quotedRanges(text);
 
+  /**
+   * Did the member explicitly say to look on the WEB (CCB-S4-041)?
+   *
+   * Computed separately from the scoring contest and REGARDLESS of whether LOOKUP is
+   * active, because the two situations it produces need opposite answers and the ordinary
+   * loop can express neither.
+   *
+   * The observed defect: "google the current price of an RTX 5090" scored PRICE at 0.94,
+   * because "price of" is a two token phrase and "google" is one, and the crypto plugin
+   * then quoted 1.9758 USD for a graphics card. No amount of tuning the catalog would have
+   * fixed that one, because it never reached the model: the rule engine had already
+   * decided.
+   *
+   * The precedence: an explicit web verb is a statement about WHERE to look, and it beats
+   * a topic keyword sitting in the same sentence. "Google the price of X" is a request to
+   * go and look, not a price question that happens to mention Google.
+   */
+  const webVerb = PATTERNS.some(
+    (pattern) => pattern.intent === 'LOOKUP' && findWindow(instr, pattern.tokens) !== null,
+  );
+
   let best: { pattern: Pattern; match: Match; score: number } | null = null;
   // Best score achieved per language (CCB-S3-005 Addendum A). The reply language a
   // match implies is authoritative only when its language strictly beats every
@@ -1305,6 +1330,38 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
       (score === best.score && pattern.tokens.length > best.pattern.tokens.length)
     ) {
       best = { pattern, match, score };
+    }
+  }
+
+  // ── THE WEB VERB WINS, OR SAYS SO (CCB-S4-041) ──────────────────────────────
+  //
+  // Two cases, and they are deliberately not the same.
+  //
+  // LOOKUP ACTIVE: an explicit web verb outranks PRICE and SEARCH, whatever the scores
+  // said. Those two are the only intents whose keywords can plausibly co-occur with one
+  // ("google the price of", "search the web for"), and in both the member has said where
+  // they want it looked for.
+  //
+  // LOOKUP INACTIVE: the member asked for the WEB and the web is not available. Falling
+  // through to the archive search is the observed behaviour and it is misleading: they get
+  // a count of what the group said about something, presented as an answer, without ever
+  // being told the web was not consulted. UNKNOWN sends it to free conversation, where she
+  // can say plainly that she cannot look things up. Honest and quiet beats confident and
+  // wrong.
+  if (webVerb) {
+    if (isActiveIntent('LOOKUP')) {
+      if (!best || best.pattern.intent === 'PRICE' || best.pattern.intent === 'SEARCH') {
+        const lookup = PATTERNS.filter((pattern) => pattern.intent === 'LOOKUP')
+          .map((pattern) => {
+            const match = findWindow(instr, pattern.tokens);
+            return match ? { pattern, match, score: scoreOf(pattern, match) } : null;
+          })
+          .filter((entry): entry is { pattern: Pattern; match: Match; score: number } => entry !== null)
+          .sort((a, b) => b.score - a.score)[0];
+        if (lookup) best = lookup;
+      }
+    } else if (best?.pattern.intent === 'SEARCH' || best?.pattern.intent === 'PRICE') {
+      return unknownResult(best.pattern.lang);
     }
   }
 
