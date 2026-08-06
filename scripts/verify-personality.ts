@@ -33,7 +33,6 @@ import {
   DEFAULT_ORIGIN,
   DEFAULT_PERSONALITY,
   ORIGIN_MAX_CHARS,
-  PERMISSIVENESS_CEILING,
   PERSONALITY_AXES,
   replyCharBudget,
   retortCharBudget,
@@ -54,6 +53,8 @@ import {
   type AiReplyRequest,
 } from '../src/interaction/ollama-reply.js';
 import { formatOutbound } from '../src/interaction/reply.js';
+import { ceilingRuleTexts } from '../src/interaction/prompt-rules.js';
+import { seededPromptRules } from './seeded-rules.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import {
   DEFAULT_INTERACTION,
@@ -147,6 +148,18 @@ const ORIGIN_FIXTURE =
 
 const DIALLED_WITH_ORIGIN: BotPersonality = { ...DIALLED, origin: ORIGIN_FIXTURE };
 
+/**
+ * The rules she is given, read from the seeded registry (CCB-S4-039).
+ *
+ * Every prompt in this file is assembled from these, which is the point: the checks read
+ * what the deployment reads, through the same migration, rather than from a copy written
+ * for the checks.
+ */
+const RULES = await seededPromptRules();
+
+/** The safety ceiling, selected from the registry by id rather than restated here. */
+const PERMISSIVENESS_CEILING = ceilingRuleTexts(RULES);
+
 function conversationRequest(
   personality: BotPersonality | null,
   identity: BotIdentity | undefined = { name: 'CIND3R3LLA' },
@@ -157,6 +170,7 @@ function conversationRequest(
     memberMessage: 'are you real or just a bot?',
     deterministicDraft: '',
     mode: 'conversation',
+    rules: RULES,
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality,
@@ -1013,7 +1027,7 @@ async function main(): Promise<void> {
   let noDashes = true;
   for (let value = 1; value <= 10; value++) {
     for (const axis of PERSONALITY_AXES) {
-      const lines = conversationVoice({ ...DEFAULT_PERSONALITY, [axis]: value } as BotPersonality);
+      const lines = conversationVoice(RULES, { ...DEFAULT_PERSONALITY, [axis]: value } as BotPersonality);
       if (/[–—―]/.test(lines.join('\n'))) noDashes = false;
     }
   }

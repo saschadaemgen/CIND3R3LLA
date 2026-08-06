@@ -27,6 +27,10 @@ import { loadLocalAiConfig } from '../src/config.js';
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { setLogLevel } from '../src/log.js';
+import { seededPromptRules } from './seeded-rules.js';
+
+/** The rules she is given, from the seeded registry (CCB-S4-039). */
+const RULES = await seededPromptRules();
 
 let failures = 0;
 
@@ -54,6 +58,7 @@ function request(
     memberMessage,
     deterministicDraft: '',
     mode: 'conversation',
+    rules: RULES,
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality: PERSONALITY,

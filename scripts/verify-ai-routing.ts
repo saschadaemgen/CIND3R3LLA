@@ -14,6 +14,10 @@ import {
 } from '../src/interaction/ai-runtime.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
 import { setActiveIntents } from '../src/interaction/intent.js';
+import { seededPromptRules } from './seeded-rules.js';
+
+/** The rules she is given, from the seeded registry (CCB-S4-039). */
+const RULES = await seededPromptRules();
 import { activeResolverName, resolveIntent } from '../src/interaction/resolver.js';
 
 let failures = 0;
@@ -173,6 +177,7 @@ async function main(): Promise<void> {
     memberMessage: 'What is in my archive?',
     deterministicDraft: 'Your archive contains 12 messages.',
     mode: 'free',
+    rules: RULES,
     requiredLiterals: ['12'],
   });
 

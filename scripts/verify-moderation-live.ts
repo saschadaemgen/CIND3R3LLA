@@ -28,6 +28,10 @@ import { DEFAULT_INTERACTION, fillPersona } from '../src/interaction/settings.js
 import { DEFAULT_PERSONALITY, sharpenBy, type BotPersonality } from '../src/interaction/personality.js';
 import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { setLogLevel } from '../src/log.js';
+import { seededPromptRules } from './seeded-rules.js';
+
+/** The rules she is given, from the seeded registry (CCB-S4-039). */
+const RULES = await seededPromptRules();
 
 let failures = 0;
 
@@ -81,6 +85,7 @@ function retortRequest(personality: BotPersonality, warning?: string): AiReplyRe
     memberMessage: 'hey Cindy',
     deterministicDraft: warning ? `${DRAFT}\n${warning}` : DRAFT,
     mode: 'retort',
+    rules: RULES,
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality,

@@ -40,11 +40,13 @@ import {
   systemPrompt,
   type AiReplyRequest,
 } from '../src/interaction/ollama-reply.js';
-import {
-  DEFAULT_PERSONALITY,
-  PERMISSIVENESS_CEILING,
-  replyCharBudget,
-} from '../src/interaction/personality.js';
+import { DEFAULT_PERSONALITY, replyCharBudget } from '../src/interaction/personality.js';
+import { ceilingRuleTexts } from '../src/interaction/prompt-rules.js';
+import { seededPromptRules } from './seeded-rules.js';
+
+/** The rules she is given, and the safety ceiling among them, from the seeded registry. */
+const RULES = await seededPromptRules();
+const PERMISSIVENESS_CEILING = ceilingRuleTexts(RULES);
 import type { CapturedMessage } from '../src/capture/message.js';
 import { ruleResolver } from '../src/interaction/rules.js';
 import { setActiveIntents } from '../src/interaction/intent.js';
@@ -199,6 +201,7 @@ async function main(): Promise<void> {
     memberMessage: 'look up the simplex protocol',
     deterministicDraft: '',
     mode: 'conversation',
+    rules: RULES,
     requiredLiterals: [],
     blockedLiterals: ['Alice'],
     personality: { ...DEFAULT_PERSONALITY, baseCharacter: 'A neon courier.' },

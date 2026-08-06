@@ -13,6 +13,7 @@ import {
   resetAiRuntimeForTests,
 } from '../src/interaction/ai-runtime.js';
 import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
+import { seededPromptRules } from './seeded-rules.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
 import { log } from '../src/log.js';
 
@@ -100,6 +101,8 @@ const fakeFetch: FetchLike = async (input) => {
   return new Response('not found', { status: 404 });
 };
 
+const rules = await seededPromptRules();
+
 const statusRequest: AiReplyRequest = {
   kind: 'status',
   lang: 'en',
@@ -107,6 +110,7 @@ const statusRequest: AiReplyRequest = {
   deterministicDraft:
     'I keep 216 of your messages. 108 of them are public and the rest stay private.',
   mode: 'free',
+  rules,
   requiredLiterals: ['216', '108'],
   blockedLiterals: ['Sascha'],
 };
@@ -152,6 +156,7 @@ async function main(): Promise<void> {
       memberMessage: 'Cinderella, price of HEX?',
       deterministicDraft: protectedText,
       mode: 'locked',
+      rules,
       blockedLiterals: ['Alice'],
     },
     fakeFetch,
