@@ -75,6 +75,9 @@ import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from '.
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
 import type { PromptRuleSet } from './prompt-rules.js';
+import { screenLookup } from './lookup-gate.js';
+import { attributionFor } from './attribution.js';
+import type { SearchResult as WebSearchResult } from '../plugins/web-search/providers/types.js';
 import { recordConversation } from './conversation-log.js';
 import {
   describeRule,
@@ -183,6 +186,14 @@ export interface InteractionDeps {
    */
   rules?: () => PromptRuleSet;
   /**
+   * The model that words her replies (CCB-S4-042, D-145), read live so a change on the
+   * Models page reaches the next reply rather than the next restart.
+   *
+   * Absent, or returning null, means no runtime is initialised and the prompt says nothing
+   * about a model, which is the honest answer rather than naming one she may not be running.
+   */
+  replyModel?: () => string | null;
+  /**
    * The moderation ladders (CCB-S4-032, D-136), read live so a threshold the operator
    * just tuned applies to the next message.
    *
@@ -264,6 +275,17 @@ export interface WebSearchLookup {
     | { kind: 'results'; results: { title: string; snippet: string; url: string }[]; provider: string }
     | { kind: 'failed'; failure: string; detail: string }
   >;
+  /**
+   * Tell the plugin a request was refused before it ever reached a provider (CCB-S4-042).
+   *
+   * OPTIONAL, because the gate is the engine's decision and must run whether or not anybody
+   * is counting. A harness that does not care about the console leaves it out; production
+   * hands over the service so the Web Search page can show what the gate is saving.
+   *
+   * The CATEGORY only. The query is never passed, so it cannot be stored here by accident
+   * in some later change.
+   */
+  noteRefusedBeforeSearch?(category: string): void;
 }
 
 interface ReplyOptions {
@@ -726,13 +748,27 @@ export class InteractionEngine {
     // The LENGTH GUARD (§3). A command is short. Long-form text that merely opens
     // with her name — an announcement, a pasted article — is only acted on when
     // the resolver is very sure, and is otherwise ignored rather than answered.
+    //
+    // IT NO LONGER SILENCES HER (CCB-S4-042, D-145). It used to return false, and a member
+    // who plainly addressed her with a long spell-check request got NOTHING back: no
+    // answer, no refusal, no sign she had seen it. The operator raised
+    // `maxInstructionLength` and the same message was answered fine, which is how it was
+    // found.
+    //
+    // The reasoning holds for COMMANDS and does not hold for answering at all. A long
+    // forwarded article that merely opens with her name still must not trigger PUBLISH, so
+    // the intent drops to UNKNOWN, which is what stops the command; the message then carries
+    // on into free conversation like anything else said to her. Silence reads as a fault,
+    // and a member who addressed her deserves an answer or a refusal, never nothing.
+    let tooLong = false;
     if (
       !carried &&
       instruction.length > s.addressing.maxInstructionLength &&
       result.confidence < s.addressing.lengthGuardConfidence
     ) {
       this.noteNearMiss(msg, s, now, 'too-long', instruction, result);
-      return false;
+      tooLong = true;
+      result = { intent: 'UNKNOWN', confidence: 0, slots: {}, lang };
     }
 
     // A real new instruction supersedes an unanswered offer. Anything she did
@@ -747,7 +783,14 @@ export class InteractionEngine {
     // "help prices" otherwise resolve to PRICE — "help" reads as an asset and the
     // two-word shape scores above HELP. Only when she was explicitly addressed,
     // so a follow-up fragment is never hijacked.
-    if (explicit && result.intent !== 'HELP' && /^(?:help|hilfe)\b/i.test(instruction.trim())) {
+    // `!tooLong`, because the length guard has just decided this message may not execute a
+    // command, and this is the one place downstream that could still promote one.
+    if (
+      !tooLong &&
+      explicit &&
+      result.intent !== 'HELP' &&
+      /^(?:help|hilfe)\b/i.test(instruction.trim())
+    ) {
       result = { intent: 'HELP', confidence: 1, slots: {}, lang };
     }
 
@@ -956,6 +999,18 @@ export class InteractionEngine {
     return fallback;
   }
 
+  /**
+   * The given facts about her, including the model that is actually running (CCB-S4-042).
+   *
+   * ONE builder, because there are four prompt sites and a fact attached at three of them
+   * is a fact she states inconsistently.  reads the operator-configured
+   * settings; the model comes from the AI routing, which is not a setting on that page.
+   */
+  private facts(s: InteractionSettings): BotIdentity {
+    const model = this.deps.replyModel?.() ?? null;
+    return { ...botIdentity(s), ...(model ? { model } : {}) };
+  }
+
   /** Records an ignored candidate so the guards are visible, not invisible (§5). */
   private noteNearMiss(
     msg: CapturedMessage,
@@ -1103,7 +1158,7 @@ export class InteractionEngine {
             requiredLiterals: [],
             blockedLiterals: [msg.senderDisplayName],
             personality: this.deps.personality?.() ?? null,
-            identity: botIdentity(s),
+            identity: this.facts(s),
             now: { at: new Date(this.now()), timeZone: this.timeZone },
           })
         )?.trim() || null;
@@ -1147,6 +1202,34 @@ export class InteractionEngine {
     const query = (slots.query ?? instruction).trim();
     if (!query) {
       await this.reply(msg, s, lang, 'notUnderstood', {});
+      return true;
+    }
+
+    // ── THE PRE-SEARCH GATE (CCB-S4-042, D-145) ─────────────────────────────
+    //
+    // BEFORE the announcement and before the provider, which is the whole point. Until
+    // this existed the only thing in the system able to refuse was the model, and the
+    // model does not see the request until after the search has run. So a request she
+    // would refuse still cost an outbound call, still spent the member's search budget,
+    // still pulled a stranger's result set into her prompt, and still shipped the domains
+    // in an attribution line. She said "Not happening." and the next message read
+    // `From the web: xnxx.com, pornhub.com, ...`.
+    //
+    // Nothing here reaches the provider. No announcement either: announcing a search she
+    // is not going to run would be the one thing `announceSearch` is documented never to
+    // do.
+    //
+    // The gate is deterministic and its limits are real; `lookup-gate.ts` states them.
+    // It is a floor under the model's own refusal, not a replacement for it.
+    const screen = screenLookup(query);
+    if (screen.refused) {
+      // The category and the matched term go to the operator's log and nowhere near the
+      // member: naming the term back to them is a hint about what got through.
+      log.info(
+        `Lookup: refused before searching (${screen.category}) for member ${msg.senderMemberId}.`,
+      );
+      search.noteRefusedBeforeSearch?.(screen.category ?? 'unknown');
+      await this.reply(msg, s, lang, 'searchRefused', {});
       return true;
     }
 
@@ -1224,6 +1307,75 @@ export class InteractionEngine {
       return true;
     }
 
+    // THE RESULTS GO NO FURTHER THAN THIS CALL (CCB-S4-042, D-145). `wordLookupAnswer`
+    // owns them; what comes back is the answer and the attribution FOR THAT ANSWER. The
+    // composition below therefore has nothing to attribute from, which is the structural
+    // half of the fix: the old code held `outcome.results` in scope right through to the
+    // send and built the source line out of the fact that a search had happened, so a
+    // refusal shipped the domains.
+    const answer = await this.wordLookupAnswer(msg, s, lang, personalize, outcome.results);
+
+    if (!answer) {
+      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      return true;
+    }
+
+    const attribution = answer.sources.length
+      ? fillPersona(this.persona(s, lang, 'searchSources'), {
+          sources: answer.sources.join(', '),
+        })
+      : '';
+
+    await this.replyWithText(
+      msg,
+      s,
+      lang,
+      attribution ? `${answer.text}\n${attribution}` : answer.text,
+      'lookup',
+    );
+    return true;
+  }
+
+  /**
+   * Words an answer from search results, and mints the attribution for the ones it used.
+   *
+   * ── WHY THE SOURCES COME BACK FROM HERE AND ARE NOT COMPUTED AT THE SEND ────
+   *
+   * Because the old code computed them at the send, from `outcome.results`, and that is
+   * the defect. The source line was attached because a SEARCH had happened, not because
+   * the ANSWER had used anything, so a refusal ("I don't do that.") was followed by a
+   * tidy list of the domains she had just refused to look at. Observed twice, live.
+   *
+   * The results are a parameter here and a local everywhere else, so the caller cannot
+   * build an attribution even by mistake. That is what makes it structural rather than a
+   * condition somebody has to remember.
+   *
+   * ── HOW "USED" IS DECIDED, AND WHY IT FAILS CLOSED ──────────────────────────
+   *
+   * The model declares it, as indices, through the reply schema. It is the only party
+   * that knows whether its own sentence drew on a result, and asking it for indices
+   * rather than a yes/no also makes the line ACCURATE instead of merely present: four
+   * results fetched and one used now cites one.
+   *
+   * The declaration cannot be trusted to arrive, so nothing depends on it arriving.
+   * `used` starts empty and stays empty unless the model both answers and declares; a
+   * model that omits the field, an older model, a parse failure, an exception, all end
+   * with no attribution. The failure direction is a missing source line, never a source
+   * line on a refusal.
+   *
+   * The APPLICATION still writes the URLs (D-137). The model supplies indices into a list
+   * it was given; it never supplies a character of the line a member reads, so it cannot
+   * cite a page that was not in the results and cannot mistype one that was.
+   */
+  private async wordLookupAnswer(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+    personalize: NonNullable<InteractionDeps['personalize']>,
+    results: readonly WebSearchResult[],
+  ): Promise<{ text: string; sources: string[] } | null> {
+    let used: readonly number[] = [];
+
     let spoken: string | null = null;
     try {
       spoken =
@@ -1238,11 +1390,14 @@ export class InteractionEngine {
             requiredLiterals: [],
             blockedLiterals: [msg.senderDisplayName],
             personality: this.deps.personality?.() ?? null,
-            identity: botIdentity(s),
+            identity: this.facts(s),
             now: { at: new Date(this.now()), timeZone: this.timeZone },
             // The untrusted material. Fenced and labelled by `systemPrompt`; see the
             // field's own documentation for why it rides in the user message.
-            webResults: outcome.results,
+            webResults: results,
+            onSourcesUsed: (indices) => {
+              used = indices;
+            },
           })
         )?.trim() || null;
     } catch (error) {
@@ -1253,39 +1408,9 @@ export class InteractionEngine {
       );
     }
 
-    if (!spoken) {
-      await this.reply(msg, s, lang, 'searchUnavailable', {});
-      return true;
-    }
+    if (!spoken) return null;
 
-    // PROTECTED TEXT, appended verbatim. The hosts only: a full URL list turns a two line
-    // answer into a wall, and the host is what tells a member whether to trust it.
-    const sources = [
-      ...new Set(
-        outcome.results.map((result) => {
-          try {
-            return new URL(result.url).host.replace(/^www\./, '');
-          } catch {
-            return '';
-          }
-        }),
-      ),
-    ]
-      .filter(Boolean)
-      .slice(0, 4);
-
-    const attribution = sources.length
-      ? fillPersona(this.persona(s, lang, 'searchSources'), { sources: sources.join(', ') })
-      : '';
-
-    await this.replyWithText(
-      msg,
-      s,
-      lang,
-      attribution ? `${spoken}\n${attribution}` : spoken,
-      'lookup',
-    );
-    return true;
+    return { text: spoken, sources: attributionFor(results, used) };
   }
 
   private async answerPrice(
@@ -1961,7 +2086,7 @@ export class InteractionEngine {
       // the enforcement ladder only watches.
       const voiced = await this.personalizedBody(msg, lang, 'nickname', named, 'retort', [], {
         personality: sharpenBy(this.deps.personality?.() ?? null, ladders.sharpnessBonus),
-        identity: botIdentity(s),
+        identity: this.facts(s),
       });
       // Warning then announcement, both protected text, both after the voiced retort.
       // They are mutually exclusive in practice, since a rung is either the warn rung or a
@@ -2344,7 +2469,7 @@ export class InteractionEngine {
               // already what the persona copy substitutes for `{wake}`. Without it the
               // model was told everything about her voice and nothing about her identity,
               // and denied the name.
-              identity: botIdentity(s),
+              identity: this.facts(s),
               // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
               // the violation counter read. THIS is the path that matters for it: free
               // conversation is where somebody asks what year it is, and where she
