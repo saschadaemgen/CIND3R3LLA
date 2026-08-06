@@ -140,7 +140,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   loaded by `db/prompt-rules.ts` and cached by `prompt-rule-service.ts`. **The migration is
   the only authored copy and there is deliberately no fallback in code**, because a fallback
   is a second source; an unreadable registry makes her fall back to the deterministic reply
-  rather than word one with no rules. The boundary that decides what is a rule: a rule is a
+  rather than word one with no rules. The rules are EDITABLE from the console since
+  CCB-S4-043 (the Book of Elii, D-146): `prompt-book.ts` is the pure reading model,
+  `web/views/book-of-elii.ts` the three pages, migration 037 the history. Text, enabled and
+  order only, never tier, lane or condition, because those are contracts the assembler
+  implements in code. The boundary that decides what is a rule: a rule is a
   sentence whose text does not depend on a setting, so the dial bands and calibrated
   references stay personality data and the permissiveness ceiling moved,
   and `conversation-log.ts`: the content-free record of what the conversational path
@@ -218,7 +222,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   console; the code holds no fallback copy) · 036 the production lessons (a new condition
   value `has-model`, the two rules CCB-S4-042 adds, and the origin default losing its model
   claim plus an UPDATE for the rows that still hold it, because a default applies to an insert
-  and never to an update).
+  and never to an update) · 037 the rule history (one row per change to a rule, both sides
+  of all three editable fields plus who and when; the OLDEST row per rule is what that rule
+  shipped as, which is why there is no `shipped_text` column and why D-144 stays true).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -226,7 +232,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **037**, since 036 landed with the production lessons). Stated as a rule
+  (currently **038**, since 037 landed with the rule history). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -253,7 +259,15 @@ with `npm run verify:prompt-identity -- --update`, and the diff to the fixture i
 reviewable record of what she is now told. It also asserts every rule marked `critical`
 reaches a prompt in a lane and condition that selects it, and proves both guards can go red
 by mutating a rule's text, swapping two rules' order, disabling a constitutional rule, and
-rendering with an empty registry),
+rendering with an empty registry.
+**It pins WHAT SHIPS, not what a deployment holds**: it reads the seeded registry, so an
+operator editing a rule in the Book does not and cannot move it. That is correct, and it
+means the drift to watch for is production diverging from the shipped set, which the Book
+counts and badges. An ENGINEER changing a rule in a migration re-baselines with `-- --update`),
+`verify:book` (the Book of Elii: reading and search, an edit recording both sides of itself, a
+constitutional rule refusing to change without its own id typed out, a switched-off critical
+rule going loud on the page, a rollback restoring the exact previous text, and a probe of one
+rule per lane so a preview can never again show "nothing moved" for a change that is real),
 `verify:personality` (the five dials, her identity and the nickname retort lane: that each
 dial changes the prompt that is actually sent, that the permissiveness ceiling is in every
 conversation prompt at every value and also with no personality configured, that her name

@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-042**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-043**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -2365,6 +2365,92 @@ category and timestamp, and the last failure with its provider, kind and timesta
 Content-free, matching D-130's rule: THAT something failed and how, never what anybody asked or
 what came back. "Not configured" is deliberately not a failure, because choosing not to enter
 a key is a choice.
+
+## 38. The Book of Elii (CCB-S4-043, D-146)
+
+The console over the rule registry (§36). Three pages under a nav root beside Moderation, and
+a history table.
+
+### 38.1 What is editable
+
+`rule_text`, `enabled`, `ord`. **Not `tier`, `lane` or `applies_when`**: those are contracts the
+assembler implements in code, and an editable condition would be the free-expression language
+D-144 ruled out. `cinderella_prompt_rule_history` has no column for them either, so the
+restriction is structural rather than a form that happens not to render them.
+
+### 38.2 The three pages
+
+| Page | Question it answers |
+| --- | --- |
+| The Book (`/book`) | What rules exist, what they say, and which one do I want |
+| The Assembled Word (`/book/assembled`) | What is each mode actually told, in order |
+| History (`/book/history`) | What changed, when, by whom, and how do I undo it |
+
+The Book groups **by lane** by default, so every rule appears exactly once and is editable in one
+place. A mode tab regroups it as **what that mode draws, in emission order**, which is the view
+that answers "what is she told, and when". The mode view uses a context in which every condition
+holds, so a rule is listed with its condition as a label rather than being invisible because this
+deployment has no nicknames configured; both halves of a two-variant rule (D-134, D-138) are
+therefore listed, and neither can be edited while its twin is forgotten.
+
+Search covers id, text, lane, tier, condition and `source`. `source` is surfaced rather than
+hidden: it exists so a reviewer can trace a rule to the line it came from.
+
+The Assembled Word renders through **`systemPrompt`**, the reply path's own function. A second
+assembly that agreed today is a second assembly that disagrees later.
+
+### 38.3 Editing by tier
+
+- **Standard**: edit, enable, disable, reorder. No ceremony.
+- **Constitutional**: a warning stating what the tier means, and a **type-to-confirm of that
+  rule's own id**. Not a checkbox (ticked once, then forever) and not a fixed phrase (muscle
+  memory). Enforced server-side.
+- **Bot**: the tier exists and no rule uses it. Nothing is per-bot yet.
+- **Critical**: switching one off is permitted and is never quiet. See §38.5.
+
+Preview and save are the **same route and the same parsed body**, so the prompt the preview
+rendered is the prompt a save writes. The preview renders the mode the edited rule's lane
+reaches; previewing only the dialled voice was the first version's defect and reported "nothing
+moved" for every `all`-lane rule.
+
+Every successful write calls `invalidatePromptRules()`, or the operator would save a rule and
+watch the next three replies follow the old one.
+
+### 38.4 History
+
+One row per change, carrying **both sides of all three editable fields** plus actor, timestamp
+and an action (`edit` / `enable` / `disable` / `reorder` / `rollback`). Full snapshots rather
+than diffs, so a rollback is an assignment rather than a replay. The rule and its history row
+are written in one transaction: a rule that moved with no history row is a change nobody can
+find later.
+
+A no-op save writes nothing. A rollback is recorded as a change in its own right and does not
+delete the change it undoes.
+
+**The oldest row per rule is what that rule shipped as.** There is deliberately no
+`shipped_text` column: D-144 settled that the migration is the only authored copy, and a second
+column holding the same sentence would have made that untrue. A rule with no history has never
+been edited.
+
+### 38.5 A disabled critical rule
+
+Allowed, loud, recorded, reversible. The book renders an alarm at the top naming the rule and
+quoting what it said, states that `verify:prompt-identity` is red, and the history holds the
+change. Nothing prevents it. The operator may weaken her; nobody may do it unnoticed.
+
+### 38.6 Drift, and what the baseline actually pins
+
+`verify:prompt-identity` reads the **seeded** registry: the migration files applied to a fresh
+PGlite. It pins **what ships**, not what a deployment holds, so an operator's edit does not and
+cannot move it. Shipping the whole editor left all seventeen cases byte identical.
+
+The risk is therefore the inverse of a moving baseline: a production registry drifting from the
+shipped one with nothing saying so. The Book counts drifted rules in its header and badges each
+one, both derived from the history. The two paths:
+
+- **An operator** edits in the Book: effective next reply, recorded, reversible, badged.
+- **An engineer** changing a rule in a migration re-baselines with
+  `npm run verify:prompt-identity -- --update`, and the fixture diff is the review artefact.
 
 ## Appendix: divergences (code wins)
 

@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-145**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-146**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -13,6 +13,87 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 
 ---
 ---
+---
+
+### D-146 - The Book of Elii: the laws are editable, and nothing about that is quiet
+
+**Status: IMPLEMENTED** (CCB-S4-043). D-144 moved eighty-two rules out of the source and into a
+table, and then nothing could read them but the assembler and nothing could change them but a
+migration. This is the console. Its name is the operator's.
+
+**WHAT IS EDITABLE, AND THE BOUNDARY THAT DECIDES IT.** Text, enabled and order. **Not tier,
+lane or condition**, and that is a boundary rather than an omission: the lane selection and the
+seventeen fixed conditions are contracts the assembler implements in code, and a console that
+could retype `applies_when` would be exactly the free-expression condition language D-144 ruled
+out, in the one place where a mistake silently changes what the model is told. Those three
+columns have no editor and the history table has no column for them.
+
+**EDITING IS TIERED, AND THE FRICTION IS WHERE THE CONSEQUENCE IS.** A standard rule edits like
+any other setting. A **constitutional** rule requires the operator to type **that rule's own
+id**, not a fixed phrase and not a checkbox: a checkbox is one you tick once and then forever,
+a fixed phrase becomes muscle memory, and a per-rule id cannot be typed by habit. Checked on
+the server, because a check the browser performs is a check the operator's next tab does not.
+
+**A CRITICAL RULE MAY BE SWITCHED OFF. IT MAY NOT BE SWITCHED OFF QUIETLY.** The briefing is
+explicit and it is the right call: it is his system, and the ceiling is a rule like any other.
+So nothing prevents it, and three things happen at once. The book shouts at the top of the page,
+naming the rule and quoting what it said. It states in the same breath that
+`verify:prompt-identity` is now red. And the change is in the history with both sides of it.
+**The one thing that must never be possible is doing it without knowing.**
+
+**EVERY CHANGE IS A FULL BEFORE-AND-AFTER, NOT A DIFF.** Both sides of all three editable
+fields, even the two that did not move, plus who and when. A diff would be smaller and would
+make rollback a reconstruction: replay every row since, in order, and hope none is missing. A
+snapshot makes rollback an assignment. A **rollback is recorded as a change in its own right**,
+so undoing something is exactly as visible as doing it, and the change being undone stays in the
+record: a history an operator can prune is not an audit trail.
+
+**AND THE OLDEST ROW IS WHERE "WHAT DID THIS SHIP AS" COMES FROM.** No `shipped_text` column
+exists, deliberately. D-144 settled that the migration is the ONLY authored copy of a rule, and
+a second column holding the same sentence would have made that quietly untrue. A rule with no
+history has never been edited; a rule with history shipped as its oldest row's `old_text`. That
+one fact drives the "changed from shipped" badge, the drift count and the way back.
+
+**THE RE-BASELINING STORY IS NOT THE ONE THE BRIEFING ASSUMED, and the difference matters.**
+The briefing expected an operator's edit to move the prompt baseline. It cannot, and it should
+not: `verify:prompt-identity` reads the **seeded** registry, the migration files applied to a
+fresh PGlite, so it pins **what ships** rather than what any one deployment happens to hold.
+Verified rather than assumed, and confirmed after the fact: shipping this whole editor left all
+seventeen baseline cases byte identical.
+
+So the real risk is the inverse of the one named: not a baseline that moves unnoticed, but a
+**production registry drifting from the shipped one with nothing saying so**. That is what the
+drift count and the per-rule badge are for. The two paths are different and the page says which
+is which:
+
+- An **operator** edits in the Book. The change takes effect on the next reply, is recorded, is
+  reversible, and is marked as differing from what shipped. No script, no deploy.
+- An **engineer** changing a rule in a migration re-baselines with
+  `npm run verify:prompt-identity -- --update`, and the fixture diff is the reviewable record.
+
+**THE TONE IS PART OF THE SPECIFICATION AND SO IS ITS LIMIT.** The operator asked for weight,
+and a book of laws carried through the wasteland is what this holds. The chrome carries it; the
+rules do not. Rule text stays plain, searchable and boringly legible, because a page whose drama
+gets in the way of finding a rule would have failed at the only thing it is for.
+
+**THREE PAGES, EACH ANSWERING A DIFFERENT QUESTION**, rather than three for symmetry. *The Book*
+lists rules, by lane or by the mode that draws them, searchable across id, text, lane, tier,
+condition and source. *The Assembled Word* lists **prompts**: what each of the five modes is
+actually told, in order, rendered through `systemPrompt` itself rather than a second assembly
+that agrees today. *History* is the record and the way back.
+
+**A DEFECT THE PAGE FOUND BY BEING USED.** The first preview rendered `conversationVoice`, which
+is the dialled lane only, so editing any `all`-lane guard showed two identical panes and the
+words "nothing moved". A preview that confidently reports no change where there is one is worse
+than no preview, because it is the one screen an operator trusts before committing. It now
+renders through `systemPrompt` for the mode the edited rule's lane reaches, and a check probes
+one rule per lane so the whole class cannot come back.
+
+**A COUNT IN THE BRIEFING WAS WRONG AND IS CORRECTED HERE**: the registry holds **82** rules, 35
+constitutional and 47 standard. There is **no bot-tier rule**. The tier exists in the vocabulary
+(D-144) and nothing uses it yet, because the per-bot text she carries is her base character and
+her origin, which are columns on `cinderella_bot_profiles`, not rules.
+
 
 ### D-145 - Sources belong to the answer, and she is never silent when addressed
 
