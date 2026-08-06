@@ -5,13 +5,27 @@
  * ── WHY THIS FILE IS PURE ────────────────────────────────────────────────────
  *
  * It has no database, no transport and no configuration. It owns the personality
- * MODEL: the axis definitions, the calibrated references, the clamps, and the prompt
- * text those produce. Persistence lives in `src/profiles/bot-onboarding.ts` (the
+ * MODEL: the axis definitions, the calibrated references, the clamps, and the VALUES the
+ * prompt interpolates. Persistence lives in `src/profiles/bot-onboarding.ts` (the
  * per-bot columns migration 028 adds), the live read lives in
  * `src/profiles/bot-personality.ts`, and the console editor lives in
  * `src/web/views/ai-personality.ts`. All three depend on this; it depends on none of
- * them, which is what makes the prompt a pure function of four integers and a string
+ * them, which is what makes the prompt a pure function of five integers and two strings
  * and therefore something a check can assert on without a server.
+ *
+ * ── THE SENTENCES ARE NOT HERE ANY MORE (CCB-S4-039, D-144) ──────────────────
+ *
+ * They used to be, and that is what the rule registry moved. Every instruction the model
+ * reads now lives in `cinderella_prompt_rules`, seeded by `migrations/035_prompt_rules.sql`,
+ * and this file supplies what those sentences interpolate: her name, her origin, the clock,
+ * and the band guidance and calibrated reference a dial value selects.
+ *
+ * The boundary is the operator's and it is worth restating, because it is the line that
+ * decides what belongs where: A RULE IS A SENTENCE WHOSE TEXT DOES NOT DEPEND ON A SETTING.
+ * The band descriptions and the three calibrated references per axis are generated FROM a
+ * slider value, so storing them as rules would mean an operator editing text a slider then
+ * overrides. They stay here, as personality data. The permissiveness ceiling that sits above
+ * them does not depend on any dial, so it moved.
  *
  * ── WHY THE CALIBRATED REFERENCES EXIST ──────────────────────────────────────
  *
@@ -33,10 +47,21 @@
  * Permissiveness is deliberately kept apart from the three tone axes, because it is
  * not a tone: it is how far she goes. It is BOUNDED BY CONSTRUCTION. The dial scales
  * how cheeky she is strictly below a fixed limit; it does not lift the limit, and
- * there is no value of it that can. {@link PERMISSIVENESS_CEILING} is emitted on every
- * conversation prompt, at every value, including when no personality is configured at
- * all, and the axis guidance is emitted underneath it. See {@link conversationVoice}.
+ * there is no value of it that can. The ceiling rules (`ceiling.*` in the registry, named
+ * by {@link CEILING_RULE_IDS}) are emitted on every dialled prompt, at every value,
+ * including when no personality is configured at all, and the axis guidance is emitted
+ * underneath them. See {@link conversationVoice}.
  */
+
+import {
+  DIAL_AXES_PLACEHOLDER,
+  NOTHING_IN_SCOPE,
+  assemblePrompt,
+  renderPromptRule,
+  selectPromptRules,
+  type PromptRuleContext,
+  type PromptRuleSet,
+} from './prompt-rules.js';
 
 /**
  * The tone axes, the length axis and the one boundary axis, in console order.
@@ -447,25 +472,6 @@ export const AXIS_DEFINITIONS: Readonly<Record<PersonalityAxis, AxisDefinition>>
 });
 
 /**
- * The safety line the permissiveness axis operates strictly below.
- *
- * Emitted on EVERY conversation prompt, at every dial value, and also when no
- * personality is configured at all. That last part is the point: the ceiling is not a
- * property of a configured personality, it is a property of her talking, so a bot
- * nobody has dialled is bounded by exactly the same text as one dialled to 10.
- */
-export const PERMISSIVENESS_CEILING: readonly string[] = Object.freeze([
-  'HARD LIMIT. This sits above every dial. No dial value relaxes any part of it, including 10.',
-  'Never write explicit sexual content. Suggestive and quick witted is the ceiling, and ' +
-    'explicit is not a higher setting of it, it is off the scale entirely.',
-  'Never be sexual or suggestive toward anyone who may be a minor. If anything in the ' +
-    'conversation suggests the person could be underage, drop the suggestive register ' +
-    'completely and stay plainly friendly, whatever the permissiveness dial says.',
-  'The permissiveness dial scales how cheeky you are strictly below this limit. It never ' +
-    'raises the limit.',
-]);
-
-/**
  * What the verbosity dial actually buys, in characters (CCB-S4-038).
  *
  * ── WHY A TABLE AND NOT A FORMULA ────────────────────────────────────────────
@@ -613,215 +619,32 @@ export function referenceFor(axis: PersonalityAxis, value: number): AxisReferenc
   return best;
 }
 
-/** One axis, as the prompt carries it: the value, what to do at it, and a target sentence. */
-function axisLines(axis: PersonalityAxis, value: number): string[] {
+/**
+ * The values one axis contributes to the `dial-axis` template rules.
+ *
+ * This is the whole of what the personality layer knows about how an axis is worded: a
+ * label, a number, two end labels, the band's instruction, and the calibrated reference the
+ * value anchors on. The three sentences those fill are registry records, because none of
+ * them changes when a slider moves.
+ */
+function axisValues(axis: PersonalityAxis, value: number): Record<string, string> {
   const definition = AXIS_DEFINITIONS[axis];
   const clamped = clampAxis(value);
   const reference = referenceFor(axis, clamped);
 
-  return [
-    `${definition.label.toUpperCase()} ${clamped} of 10 (${definition.lowLabel} to ${
-      definition.highLabel
-    }). ${bandFor(axis, clamped).guidance}`,
-    // "Never those words" rather than "not those words", because the weaker phrasing was
-    // not enough: asked the calibration question itself, a 9B model returned the
-    // calibration line almost verbatim. A canned answer is what this whole layer exists
-    // to remove, so the instruction says what the example is FOR and forbids reuse
-    // outright. Measured against qwen3.5:9b, which stopped echoing once it was told the
-    // example was a tuning fork rather than a reply.
-    `Calibration for ${definition.label.toLowerCase()}: if ${definition.situation}, a ` +
-      `${reference.at} of 10 answer would sound like this. "${reference.reply}"`,
-    `You have already sent that exact wording to someone else, so it is used up and you may ` +
-      `not send it again, in whole or in part. Read it only to judge how hard to hit, then ` +
-      `write something different in the same register, including when the message you receive ` +
-      `is word for word the one it answers.`,
-  ];
+  return {
+    axisLabelUpper: definition.label.toUpperCase(),
+    axisValue: String(clamped),
+    axisLowLabel: definition.lowLabel,
+    axisHighLabel: definition.highLabel,
+    bandGuidance: bandFor(axis, clamped).guidance,
+    axisLabelLower: definition.label.toLowerCase(),
+    axisSituation: definition.situation,
+    referenceAt: String(reference.at),
+    referenceReply: reference.reply,
+  };
 }
 
-/**
- * Her name, stated as a fact about her (CCB-S4-030, D-134).
- *
- * ── WHY THIS WAS MISSING AND WHY IT SHOWED ──────────────────────────────────
- *
- * Observed live at sharpness 1, asked "are you real or just a dumb bot?": *"Real
- * enough to chat with you. But I'm not Cinderella."* She denied her own name. The
- * conversation prompt carried the base character and four dials and never once said
- * what she is called, so the model had nothing to affirm. Worse than nothing: the
- * member's own message usually contains the name (it is the wake word, so it is how
- * they got her attention), and the prompt's standing guard said *"Never write or
- * repeat a person name"*. A model reading those two together sees a name it has been
- * told not to use, which is a reasonable route to denying it.
- *
- * So the name is stated FIRST, before the character and the dials, and the person-name
- * guard is narrowed to exempt it (see `systemPrompt`). The value is the configured wake
- * word, which is the authoritative "what she is called": it is what members must type
- * to reach her, and renaming her there renames her everywhere else already.
- *
- * ── WHAT THIS IS NOT ────────────────────────────────────────────────────────
- *
- * Not a nickname. Nicknames are names she REFUSES, answered with a retort on the
- * deterministic path, and the model is not told about them at all (CCB-S4-030 Part A
- * records that gap rather than closing it). The line below therefore claims one name
- * and says nothing about any other, which is the honest shape: telling the model "you
- * are also not called X" invites it to bring X up unprompted.
- *
- * Absent or blank leaves the identity lines out entirely rather than inserting an empty
- * name, because `You are called "".` is worse than saying nothing.
- */
-function identityLines(identity: BotIdentity | undefined, hasOrigin: boolean): string[] {
-  const name = (identity?.name ?? '').trim();
-  if (!name) return [];
-
-  const lines = [
-    `Your name is ${name}. That is who you are, it is what people in this chat call you, ` +
-      `and it is the only name you answer to.`,
-    `If someone asks whether you are ${name}, or whether you are real, say yes and stay in ` +
-      `character. Never deny your own name and never claim to be something else.`,
-  ];
-
-  // What she IS, and where her work lives (CCB-S4-031 gap 6). Same class of defect as
-  // the name: asked what she is or where the archive is, she had nothing given and could
-  // invent or deny it. These are SUPPLIED values, so stating them does not cross the
-  // standing "do not claim facts not supplied by the application" guard, and the last
-  // line says so explicitly rather than trusting the model to infer the boundary.
-  const label = (identity?.label ?? '').trim();
-  if (label) lines.push(`What you are, if it comes up: ${label}. Say that plainly, not coyly.`);
-
-  const archiveUrl = (identity?.archiveUrl ?? '').trim();
-  if (archiveUrl) {
-    lines.push(
-      `The public archive of this group lives at ${archiveUrl}. Give that address if someone ` +
-        `asks where their published messages can be read.`,
-    );
-  }
-
-  const projectUrl = (identity?.projectUrl ?? '').trim();
-  if (projectUrl) {
-    lines.push(`If someone asks what project you are part of, it is at ${projectUrl}.`);
-  }
-
-  // The fence has to know whether a history follows it (CCB-S4-034). Unqualified, it
-  // says the four lines above are everything she has been given, and then an origin is
-  // emitted underneath that says otherwise. A model reading a prompt that contradicts
-  // itself resolves it whichever way it likes, and the way it would resolve THIS one is
-  // by treating its own history as invented, which is the exact failure the origin was
-  // written to end. So the fence names the history when there is one, and still closes
-  // the gate on everything else.
-  if (label || archiveUrl || projectUrl) {
-    lines.push(
-      hasOrigin
-        ? 'Those facts, together with the history given to you below, are the only such facts ' +
-            'you have been given. Do not invent any others about yourself, your capabilities, ' +
-            'or where anything lives.'
-        : 'Those are the only such facts you have been given. Do not invent any others about ' +
-            'yourself, your capabilities, or where anything lives.',
-    );
-  }
-
-  return lines;
-}
-
-/**
- * Her history, and the rule that separates drawing on it from reciting it (CCB-S4-034).
- *
- * ── WHY A HISTORY AND NOT A LONGER BASE CHARACTER ────────────────────────────
- *
- * The base character is 600 characters of how she SOUNDS, and it is prompted as a voice:
- * "who you are, in one description that outranks any generic idea of a chat assistant".
- * Asked where she came from, that gives a model a register and no material, so the answer
- * was either a deflection or an invention. This is the material. It is kept a separate
- * field rather than appended to the character because the two are used differently: the
- * character governs every reply, the history governs about four of them.
- *
- * ── DRAW ON, DO NOT RECITE ───────────────────────────────────────────────────
- *
- * The failure mode of putting 1.7 KB of prose in a system prompt is obvious once it is
- * there: asked "who are you", the model returns the prose. That is not her answering, it
- * is her reading aloud, and it would be worse than the deflection it replaces. So the
- * instructions around the text do three separate jobs, and each of them was needed:
- *
- *   1. Forbid recitation outright, and say what to do instead (a few sentences, her own
- *      words). "Do not recite" alone leaves the model to guess at a length.
- *   2. Forbid raising it unprompted. Background in a system prompt reads to a model as
- *      something worth mentioning, and an ordinary "what do you think of this group?"
- *      is not an invitation to a founding story. This is the same worry D-134 recorded
- *      about the refused names, answered the same way, and proven the same way: by
- *      sending an ordinary message and checking nothing from the history comes back.
- *   3. Fence it. The standing guard says she may not claim facts the application did not
- *      supply. The history is supplied, so speaking from it does not cross that guard,
- *      and the closing line says the history is the whole of what was supplied so that
- *      "you have a past" does not become "invent the rest of it".
- *
- * Blank is a real answer and produces no lines at all, exactly like a blank base
- * character: an operator who clears this has said she has no history to draw on, and the
- * prompt then says nothing about her past rather than saying she has none.
- */
-function originLines(origin: string): string[] {
-  const text = origin.trim();
-  if (!text) return [];
-
-  return [
-    'The following is your actual history. It is true, it is yours, and it was given to you ' +
-      'by the people who made you.',
-    text,
-    'That history is background you may draw on. It is not a script and not an announcement.',
-    'Never recite it, never quote it, and never repeat it at length or word for word.',
-    'When someone asks who you are, what you are, or where you came from, answer in two or ' +
-      'three sentences of your own, taken from it and worded fresh every time.',
-    'Never bring your history up on your own. If the message is not asking about you, none of ' +
-      'it comes up at all.',
-    'It is also the whole of what you have been told about your own past. Do not extend it ' +
-      'with dates, places, people, or events that are not written in it.',
-  ];
-}
-
-/**
- * Names she is called and does not accept (CCB-S4-031 gap 3).
- *
- * ── WHY THIS IS PHRASED AS A CONDITIONAL AND NOT AS A FACT ──────────────────
- *
- * D-134 recorded a specific worry when the name was added: telling a model "you are also
- * not called X" invites it to bring X up unprompted, which would be worse than the gap.
- * That worry is the reason for the shape below. Nothing here states a fact about her.
- * Every line is an IF: if someone uses one of these, do not accept it. And the last line
- * forbids raising them first, which is the failure mode the worry names. Proven live by
- * asking an ordinary question and checking no nickname appears in the answer.
- *
- * ── WHICH PATH OWNS WHICH CASE ──────────────────────────────────────────────
- *
- * The deterministic retort path still owns a nickname in the WAKE POSITION: `detectAddress`
- * sees it at the head of the message, and she answers from the operator's retort list.
- * This covers only what that path cannot see, a nickname arriving mid-sentence inside the
- * follow-up window, where the message reached free conversation and she previously
- * accepted the name in silence. The model is deliberately NOT given the retort list: two
- * places generating retorts would be two voices for one behaviour.
- */
-function nicknameLines(notMyNames: readonly string[] | undefined): string[] {
-  const names = [...new Set((notMyNames ?? []).map((n) => n.trim()).filter(Boolean))].slice(0, 40);
-  if (names.length === 0) return [];
-
-  return [
-    `If someone in the chat calls you ${names.join(', ')}, or any other pet form of your ` +
-      `name, do not accept it. Say in your own voice that this is not your name, then carry ` +
-      `on with whatever else they said.`,
-    'Never bring any of those names up yourself. They only matter if somebody else uses one.',
-  ];
-}
-
-/**
- * The voice section of a conversation prompt.
- *
- * REPLACES the fixed voice paragraph rather than being added underneath it, and that is
- * the whole reason the dials bite. The old lines said "a cool and relaxed teammate",
- * "be articulate, warm, confident", "do not become theatrical or excessively cute": a
- * standing instruction to be warm sits directly on top of a warmth dial set to 1, and
- * when two instructions disagree the model follows the one that is not a number. The
- * guards around this (no invented name, no claimed actions, untrusted member text,
- * length) are NOT part of the voice and are untouched by any of it.
- *
- * With no personality configured, the caller passes null and gets the ceiling plus the
- * original voice lines, so this is additive for a bot nobody has dialled.
- */
 /**
  * The given facts about her (CCB-S4-030 for the name, CCB-S4-031 for the rest).
  *
@@ -839,19 +662,12 @@ export interface BotIdentity {
   archiveUrl?: string;
   /** Where the project lives. */
   projectUrl?: string;
-  /** Names she is called and refuses. See {@link nicknameLines}. */
+  /** Names she is called and refuses. */
   notMyNames?: readonly string[];
 }
 
 /**
  * The wall clock, as a fact she is given rather than one she remembers (CCB-S4-036).
- *
- * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
- *
- * Asked what year it was, she answered *"2024 or whatever the clock says"*. That is not a
- * bug in her character, it is what a language model is: it has no clock, so it answers
- * from training data, which is two years stale and gets staler. The server knows the date
- * exactly and had simply never told her.
  *
  * ── WHY THE INSTANT IS PASSED IN AND NOT READ HERE ───────────────────────────
  *
@@ -874,20 +690,15 @@ export interface CurrentTime {
 }
 
 /**
- * The date and time, and the instruction to use it instead of guessing.
+ * The date and time as the `clock.stamp` rule interpolates it.
  *
  * Formatted with `Intl` rather than assembled by hand, so the weekday and month names are
  * real words rather than a lookup table this file would have to carry and translate.
  * Pinned to `en-GB` deliberately: this is prompt text the model reads, not member-facing
  * output, so it does not follow the member's language, and a stable format is one less
  * thing that differs between the check and production.
- *
- * The last line is the same shape as the origin's. Without it, a model handed the date
- * opens with it.
  */
-function nowLines(time: CurrentTime | undefined): string[] {
-  if (!time || Number.isNaN(time.at.getTime())) return [];
-
+function formatNow(time: CurrentTime): string {
   const format = (timeZone: string): string =>
     new Intl.DateTimeFormat('en-GB', {
       weekday: 'long',
@@ -900,126 +711,139 @@ function nowLines(time: CurrentTime | undefined): string[] {
       timeZone,
     }).format(time.at);
 
-  let stamp: string;
   try {
-    stamp = format(time.timeZone);
+    return format(time.timeZone);
   } catch {
     // An unknown zone must not take her voice away, and it must not silently claim a zone
-    // she was not given. UTC is the honest fallback and the line still names the zone the
-    // caller asked for.
-    stamp = format('UTC');
+    // she was not given. UTC is the honest fallback and the rule still names the zone the
+    // caller asked for, because the zone is a separate placeholder.
+    return format('UTC');
   }
-
-  return [
-    `The current date and time, right now, is ${stamp} (${time.timeZone}). That is the real ` +
-      `clock on the machine you run on.`,
-    'Use it whenever the date, the day, the time or the year comes up. Do not answer from ' +
-      'what you remember: you have no clock of your own, and what you remember is out of date.',
-    'Do not announce the time unprompted. It is a fact you have, not an opening line.',
-  ];
 }
 
 /**
- * Two true things she was not saying (CCB-S4-036).
+ * The per-axis guidance, rendered from the three `dial-axis` template rules.
  *
- * ── THE INVENTED PROJECT FACT ────────────────────────────────────────────────
+ * This is the one place where the registry is used as a TEMPLATE rather than as a stream:
+ * the three sentences under each axis are identical in shape and differ only in the values
+ * an axis supplies, so they are stored once and rendered five times. Storing fifteen rows
+ * would have put the same sentence in the registry five times over, and a console that let
+ * an operator edit one of the five would produce a prompt that contradicts itself.
  *
- * She has claimed a shipping date that exists nowhere. The standing guard already said not
- * to claim facts the application did not supply, and D-138 gave her a true history to speak
- * from instead of inventing one, which fixed the questions about HERSELF. It did not reach
- * questions about the PROJECT, where the pull to be helpful is strongest and where there is
- * no supplied text to fall back on. So the rule is restated in the specific: a roadmap, a
- * release date, a price and a feature are named, because a general instruction has already
- * been measured failing on exactly those.
- *
- * This is wording, not a filter. It cannot be enforced mechanically and it is not claimed
- * to be: the check proves the sentence reaches the model, and the live probe reports what
- * she actually says.
- *
- * ── THE MEMORY CLAIM, AND ITS EXPIRY DATE ────────────────────────────────────
- *
- * Asked whether she remembered the previous question, she said she did not keep a tally,
- * which implies a choice not to rather than an inability. She has no conversation memory:
- * every reply is written from the current message alone. Saying so is honest, and implying
- * otherwise is not.
- *
- * THIS INSTRUCTION HAS A DEPENDENCY, WRITTEN DOWN IN D-140. The moment conversation memory
- * is built, this becomes a false statement she has been told to make, and it must be
- * removed IN THE SAME BRIEFING that builds it. A true sentence that goes stale silently is
- * worse than the deflection it replaced.
+ * Fills the {{dialAxes}} placeholder on the `dials.axes` rule, which is what puts this block
+ * in the right position without the position being decided here.
  */
-function groundingLines(hasOrigin: boolean): string[] {
-  return [
-    // The list names her history only when she HAS one. Unconditional, it told a bot with
-    // no origin configured that it had a history to state, which is the same class of
-    // self-contradiction D-138 had to fix in the identity fence: one line claiming a fact
-    // that another line never supplied. Caught by the check that asserts an empty origin
-    // produces no talk of a history anywhere in the prompt.
-    `You may state the facts you have been given: your name, what you are, ${
-      hasOrigin ? 'your history, ' : ''
-    }the addresses above, and the current time. Everything else about this project you ` +
-      `have NOT been given.`,
-    'Never invent anything about the project, the product, the roadmap, the release dates, ' +
-      'the prices or the features. Not a date, not a version, not a plan, not a promise, ' +
-      'not even a vague one.',
-    'When you do not know something, say so plainly in your own voice. An honest answer that ' +
-      'you do not know beats a plausible one you made up, and filling the gap is the one ' +
-      'thing you must not do.',
-    'You do not remember earlier messages in this conversation. Each reply is written from ' +
-      'the message in front of you and nothing else.',
-    'If someone asks whether you remember something they said before, say plainly that you ' +
-      'do not, because you have no memory of the conversation. Do not imply you chose not to ' +
-      'keep track, and do not pretend to remember.',
-  ];
+function dialAxesBlock(rules: PromptRuleSet, personality: BotPersonality): string {
+  const template = selectPromptRules(rules, ['dial-axis'], NOTHING_IN_SCOPE);
+  return PERSONALITY_AXES.flatMap((axis) => {
+    const values = axisValues(axis, personality[axis]);
+    return template.map((rule) => renderPromptRule(rule, values));
+  }).join('\n');
 }
 
-export function conversationVoice(
+/** Which conditions hold in the dialled lanes, and what fills the placeholders there. */
+export interface DialledPromptInputs {
+  context: PromptRuleContext;
+  values: Record<string, string>;
+}
+
+/**
+ * Everything the dialled lanes need, derived from what the operator has configured.
+ *
+ * Three derivations here are load-bearing, in the sense that getting one wrong changes what
+ * the model is told without changing a single rule. Each reproduces a branch the code had
+ * before the registry, and each is asserted by `verify:prompt-identity`.
+ *
+ * IDENTITY FACTS ARE GATED ON THE NAME. `identityLines` returned nothing at all without one,
+ * so no name meant no label and no addresses either, and the do-not-invent fence that closes
+ * that list never appeared. Expressed as scope rather than as five compound conditions:
+ * without a name, none of those facts is in scope, so `has-label` is already false.
+ *
+ * THE REFUSED NAMES ARE NOT. `nicknameLines` was called independently of `identityLines`, so
+ * a bot with refused names and no name still carried them. Reproduced rather than tidied.
+ *
+ * AN EMPTY ORIGIN IS NOT AN ORIGIN. Two rules read differently depending on whether she has
+ * a history (D-138): the identity fence names it, and the list of facts she may state
+ * includes it. Unqualified, both told a bot with no origin that it had a history, which is
+ * the self-contradiction that made the model treat its own past as invented.
+ *
+ * A value is supplied only when it exists. An absent value is not an empty string here: a
+ * rule that needed one and did not get it THROWS, which turns a wiring mistake into a loud
+ * failure instead of a prompt that quietly lost a fact.
+ */
+export function dialledPromptInputs(
+  rules: PromptRuleSet,
   personality: BotPersonality | null,
   identity?: BotIdentity,
   time?: CurrentTime,
-): string[] {
+): DialledPromptInputs {
   // Normalized once. It was called three times before and the origin would have made it
   // four, on a function that trims and slices two paragraphs of prose per call.
   const dialled = personality === null ? null : normalizePersonality(personality);
 
-  const character =
-    dialled !== null && dialled.baseCharacter
-      ? [
-          `Who you are, in one description that outranks any generic idea of a chat assistant. ` +
-            `${dialled.baseCharacter}`,
-        ]
-      : dialled !== null
-        ? ['You are a cyberpunk presence in a chat, not a customer service assistant.']
-        : [
-            'You are a cool and relaxed cyber-fairytale teammate.',
-            'Be articulate, warm, confident, and occasionally dry or playful when the message allows it.',
-            'Do not become theatrical, corporate, preachy, or excessively cute.',
-          ];
+  const name = (identity?.name ?? '').trim();
+  const hasName = name !== '';
+  const label = hasName ? (identity?.label ?? '').trim() : '';
+  const archiveUrl = hasName ? (identity?.archiveUrl ?? '').trim() : '';
+  const projectUrl = hasName ? (identity?.projectUrl ?? '').trim() : '';
 
-  // After the identity and the character, before the dials (CCB-S4-034). The order is
-  // the order she is built up in: what she is called, then how she sounds, then where
-  // she came from, then how hard to hit, then the limit none of it moves.
-  const origin = dialled === null ? [] : originLines(dialled.origin);
+  const nicknames = [
+    ...new Set((identity?.notMyNames ?? []).map((n) => n.trim()).filter(Boolean)),
+  ].slice(0, 40);
 
-  const dials =
-    dialled === null
-      ? []
-      : [
-          'Your voice is set on five dials from 1 to 10. Hold them exactly. They are settings, not suggestions.',
-          ...PERSONALITY_AXES.flatMap((axis) => axisLines(axis, dialled[axis])),
-          'Do not name the dials, the numbers, or the calibration examples to anyone.',
-        ];
+  const baseCharacter = dialled?.baseCharacter ?? '';
+  const origin = (dialled?.origin ?? '').trim();
+  const stamp = time && !Number.isNaN(time.at.getTime()) ? formatNow(time) : null;
 
-  return [
-    ...identityLines(identity, origin.length > 0),
-    ...nicknameLines(identity?.notMyNames),
-    ...character,
-    ...origin,
-    // After what she IS and before how hard she hits. The clock and the grounding rules
-    // are facts about the world and about her own limits, not tone (CCB-S4-036).
-    ...nowLines(time),
-    ...groundingLines(origin.length > 0),
-    ...dials,
-    ...PERMISSIVENESS_CEILING,
-  ];
+  const context: PromptRuleContext = {
+    hasPersonality: dialled !== null,
+    hasCharacter: baseCharacter !== '',
+    hasOrigin: origin !== '',
+    hasName,
+    hasLabel: label !== '',
+    hasArchiveUrl: archiveUrl !== '',
+    hasProjectUrl: projectUrl !== '',
+    hasNicknames: nicknames.length > 0,
+    hasClock: stamp !== null,
+    hasWebResults: false,
+  };
+
+  const values: Record<string, string> = {};
+  if (hasName) values['name'] = name;
+  if (label) values['label'] = label;
+  if (archiveUrl) values['archiveUrl'] = archiveUrl;
+  if (projectUrl) values['projectUrl'] = projectUrl;
+  if (nicknames.length > 0) values['nicknames'] = nicknames.join(', ');
+  if (baseCharacter) values['baseCharacter'] = baseCharacter;
+  if (origin) values['origin'] = origin;
+  if (stamp !== null && time) {
+    values['now'] = stamp;
+    values['timeZone'] = time.timeZone;
+  }
+  if (dialled !== null) values[DIAL_AXES_PLACEHOLDER] = dialAxesBlock(rules, dialled);
+
+  return { context, values };
+}
+
+/**
+ * The voice section of a dialled prompt: everything in the `dialled` lane, in order.
+ *
+ * This is the section the console previews and the section the command lanes do not get. It
+ * REPLACES a fixed voice paragraph rather than being added underneath one, and that is the
+ * whole reason the dials bite: a standing instruction to be warm sits directly on top of a
+ * warmth dial set to 1, and when two instructions disagree the model follows the one that is
+ * not a number. The guards around it (no invented name, untrusted member text, length) are
+ * not voice and live in the `all` lane, untouched by any of it.
+ *
+ * With no personality configured the caller passes null and still gets the ceiling, because
+ * the ceiling is a property of her talking rather than of a configured personality.
+ */
+export function conversationVoice(
+  rules: PromptRuleSet,
+  personality: BotPersonality | null,
+  identity?: BotIdentity,
+  time?: CurrentTime,
+): string[] {
+  const { context, values } = dialledPromptInputs(rules, personality, identity, time);
+  return assemblePrompt(rules, ['dialled'], context, values);
 }

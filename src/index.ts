@@ -56,6 +56,11 @@ import {
   setBotPersonalityService,
 } from './profiles/bot-personality.js';
 import {
+  PromptRuleService,
+  currentPromptRules,
+  setPromptRuleService,
+} from './interaction/prompt-rule-service.js';
+import {
   ModerationService,
   currentModerationRules,
   setModerationService,
@@ -246,6 +251,10 @@ async function startCaptureWorker(
       // above and for the same reason: an operator moving a slider expects the next
       // reply to sound different, not the next restart.
       personality: currentBotPersonality,
+      // The rules she is given (CCB-S4-039). Read live like the dials above, and needed in
+      // every mode rather than only the dialled ones: the whole system prompt is assembled
+      // from the registry, not only the voice section.
+      rules: currentPromptRules,
       // The two ladders (CCB-S4-032). Verbal escalation is live; enforcement computes
       // and records only. The engine has no capability to act on a computed sanction:
       // `send` is its one outbound, which is the no-act guarantee in structural form.
@@ -527,6 +536,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   // console's Personality page invalidates this cache on every save and a save that
   // arrived before the first load would invalidate nothing.
   setBotPersonalityService(await BotPersonalityService.load(getPool()));
+  // The rule registry (CCB-S4-039). Loaded before the console starts, because the console's
+  // Personality page previews the assembled prompt and would otherwise render before there
+  // was anything to assemble it from.
+  setPromptRuleService(await PromptRuleService.load(getPool()));
   // The moderation ladders (CCB-S4-032). Loaded before the console starts, for the same
   // reason as the personality: the Rules page invalidates this cache on every save, and
   // a save that arrived before the first load would invalidate nothing.

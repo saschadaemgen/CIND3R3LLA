@@ -74,6 +74,7 @@ import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
+import type { PromptRuleSet } from './prompt-rules.js';
 import { recordConversation } from './conversation-log.js';
 import {
   describeRule,
@@ -169,6 +170,18 @@ export interface InteractionDeps {
    * prompt builder reads that as "not configured" and still emits the safety ceiling.
    */
   personality?: () => BotPersonality | null;
+  /**
+   * The rules she is given (CCB-S4-039, D-144), read live for the same reason as the
+   * dials: an operator who changes a rule expects the next reply to follow it.
+   *
+   * Unlike the personality this is needed in EVERY mode, including the command rewrites,
+   * because the whole system prompt is assembled from it and not only the voice section.
+   *
+   * Absent, or returning an empty set, is not "no rules apply": the prompt builder refuses
+   * to send anything, the failure is logged and counted as an AI fallback, and the member
+   * gets the deterministic reply somebody wrote.
+   */
+  rules?: () => PromptRuleSet;
   /**
    * The moderation ladders (CCB-S4-032, D-136), read live so a threshold the operator
    * just tuned applies to the next message.
@@ -1086,6 +1099,7 @@ export class InteractionEngine {
             // hers.
             deterministicDraft: '',
             mode: 'searching',
+            rules: this.deps.rules?.() ?? [],
             requiredLiterals: [],
             blockedLiterals: [msg.senderDisplayName],
             personality: this.deps.personality?.() ?? null,
@@ -1220,6 +1234,7 @@ export class InteractionEngine {
             memberMessage: msg.text,
             deterministicDraft: '',
             mode: 'conversation',
+            rules: this.deps.rules?.() ?? [],
             requiredLiterals: [],
             blockedLiterals: [msg.senderDisplayName],
             personality: this.deps.personality?.() ?? null,
@@ -2257,6 +2272,7 @@ export class InteractionEngine {
         memberMessage: msg.text,
         deterministicDraft,
         mode,
+        rules: this.deps.rules?.() ?? [],
         requiredLiterals,
         blockedLiterals: [msg.senderDisplayName],
         ...(dialled ? { personality: dialled.personality, identity: dialled.identity } : {}),
@@ -2314,6 +2330,7 @@ export class InteractionEngine {
               // No draft, deliberately. See the note above.
               deterministicDraft: '',
               mode: 'conversation',
+              rules: this.deps.rules?.() ?? [],
               requiredLiterals: [],
               // The same guard as every other reply: her words never carry the
               // sender's display name, because the prefix is what names them.
