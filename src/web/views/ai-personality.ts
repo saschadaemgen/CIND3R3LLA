@@ -30,7 +30,6 @@ import {
   AXIS_MIN,
   BASE_CHARACTER_MAX_CHARS,
   ORIGIN_MAX_CHARS,
-  PERMISSIVENESS_CEILING,
   PERSONALITY_AXES,
   bandFor,
   conversationVoice,
@@ -47,6 +46,8 @@ import {
   type BotOnboardingProfile,
 } from '../../profiles/bot-onboarding.js';
 import { invalidateBotPersonality } from '../../profiles/bot-personality.js';
+import { listPromptRules } from '../../db/prompt-rules.js';
+import { ceilingRuleTexts, type PromptRuleSet } from '../../interaction/prompt-rules.js';
 import { html, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card } from './ui.js';
@@ -256,28 +257,35 @@ ${personality.origin}</textarea
 /**
  * The limit, stated where an operator dialling permissiveness to 10 will read it.
  *
- * Rendered from the same constant the prompt uses, so this card cannot drift into
- * describing a boundary the code does not send.
+ * Rendered from the same registry records the prompt is assembled from (CCB-S4-039), so
+ * this card cannot drift into describing a boundary the code does not send. The count is
+ * read off the records rather than written into the copy, for the same reason.
  */
-function ceilingCard(): SafeHtml {
+function ceilingCard(rules: PromptRuleSet): SafeHtml {
+  const lines = ceilingRuleTexts(rules);
   return card(
     'The limit that is not a dial',
     html`
       <p class="text-sm text-slate-600">
         Permissiveness scales how cheeky she is <strong>below</strong> a fixed line. It does not
-        move the line, and no value of it can. These four sentences are sent on every
-        conversation prompt, at every dial value, and also when no personality is configured at
-        all.
+        move the line, and no value of it can. These ${String(lines.length)} sentences are sent on
+        every conversation prompt, at every dial value, and also when no personality is configured
+        at all.
       </p>
       <ul class="mt-3 space-y-2 text-sm text-slate-700">
-        ${PERMISSIVENESS_CEILING.map((line) => html`<li>${line}</li>`)}
+        ${lines.map((line) => html`<li>${line}</li>`)}
       </ul>
     `,
   );
 }
 
 /** What the model is actually told, for the SAVED values. The proof the dial reaches it. */
-function promptCard(personality: BotPersonality, identity: BotIdentity): SafeHtml {
+function promptCard(
+  rules: PromptRuleSet,
+  personality: BotPersonality,
+  identity: BotIdentity,
+): SafeHtml {
+  const voice = conversationVoice(rules, personality, identity).join('\n');
   return card(
     'What the model is told',
     html`
@@ -288,7 +296,7 @@ function promptCard(personality: BotPersonality, identity: BotIdentity): SafeHtm
         <a class="underline" href="/interaction/addressing">Interaction settings</a>, not from
         here.
       </p>
-      <pre class="personality-prompt">${conversationVoice(personality, identity).join('\n')}</pre>
+      <pre class="personality-prompt">${voice}</pre>
     `,
   );
 }
@@ -315,6 +323,7 @@ function body(
   requested: string | undefined,
   csrf: string,
   identity: BotIdentity,
+  rules: PromptRuleSet,
 ): SafeHtml {
   const active = selectedProfile(profiles, requested);
   if (!active) return emptyBody();
@@ -338,7 +347,7 @@ function body(
     <div class="mt-4">${whichBotCard(profiles, active, csrf)}</div>
     <div class="mt-4">${editorCard(active, csrf)}</div>
     <div class="mt-4 grid gap-4 lg:grid-cols-2">
-      ${ceilingCard()} ${promptCard(active.personality, identity)}
+      ${ceilingCard(rules)} ${promptCard(rules, active.personality, identity)}
     </div>
   `;
 }
@@ -346,6 +355,10 @@ function body(
 export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): void {
   app.get<{ Querystring: PersonalityQuery }>('/ai/personality', async (req, reply) => {
     const profiles = await listBotOnboardingProfiles(ctx.db);
+    // Read here rather than from the cached service, so the page shows the registry as it is
+    // in the database it is looking at. The console previews the prompt; a preview built
+    // from a cache the harness never registered would be a preview of nothing.
+    const rules = await listPromptRules(ctx.db);
     reply.type('text/html');
 
     return renderAiPage(
@@ -359,7 +372,13 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
       // settings, not from this page, and the preview must show the prompt that is
       // actually built or it would be a second implementation of it that can quietly
       // disagree (CCB-S4-030, CCB-S4-031).
-      body(profiles, req.query.bot, req.session?.csrfToken ?? '', botIdentity(ctx.interaction.get())),
+      body(
+        profiles,
+        req.query.bot,
+        req.session?.csrfToken ?? '',
+        botIdentity(ctx.interaction.get()),
+        rules,
+      ),
       html`<script src="/assets/admin-personality.js" defer></script>`,
     );
   });
