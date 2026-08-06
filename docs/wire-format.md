@@ -98,8 +98,38 @@ literally.
 | code / snippet | `` ` `` | `` `code` `` | monospace |
 | secret / spoiler | `#` | `#hidden#` | hidden until tapped |
 | coloured | `!<digit> … !` | `!1 red!` | coloured text |
-| link | none | `https://example.org` | auto-detected |
+| link (bare) | none | `https://example.org` | auto-detected, format `uri` |
+| link (with text) | `[…](…)` | `[docs](https://example.org/a/b)` | format `hyperLink` — **see the caveat below** |
 | mention | `@` | `@alice` | member mention |
+
+**`hyperLink` exists, and this table did not know it until CCB-S4-042.** The row above said
+links were auto-detection only. The shipped 6.5.4 parser has a `hyperLink` format carrying
+`showText` and `linkUri`, produced by CommonMark-style `[text](url)` — the one CommonMark
+construct that survives here, while `**bold**` and `__ital__` do not.
+
+**AND IT BREAKS ON A DOT IN THE DISPLAY TEXT.** Measured against the shipped core, sending real
+chat items into a throwaway group and reading `chatItem.formattedText` back:
+
+| Sent | Parsed |
+|---|---|
+| `[text](https://example.org/x)` | `hyperLink{showText:"text", linkUri:"https://example.org/x"}` |
+| `a [example org](https://example.org/x)` | `plain, hyperLink` |
+| `a [example.org](https://example.org/x)` | **nothing at all** — the whole message is literal |
+| `example.org [1](https://example.org/x)` | `uri, plain, hyperLink` |
+
+The failure is not scoped to the run: one dot inside the brackets and the ENTIRE message comes
+back unformatted, brackets and parentheses included. That is the same shape as the asterisks
+incident this document already records, and it is why the source line she sends is
+`domain [1](url)` rather than `[domain](url)`: the number is the shortest display text that is
+guaranteed to contain no dot. See `src/interaction/attribution.ts`.
+
+**How this was established.** `chat_parse_markdown` is exported by `libsimplex.dll` but is NOT
+exposed by the Node binding (`simplex.node` exports eight functions and that is not one of
+them), so the oracle was the documented one: boot the core against a throwaway database, create
+a group, send each candidate, read `chatItem.formattedText`. The full constructor list was also
+read out of the DLL's JSON tag table: `unknown, phone, email, memberName, mention, commandStr,
+command, nameInfo, simplexName, smpHosts, simplexUri, linkType, simplexLink, linkUri, showText,
+hyperLink, uri, color, colored, small, secret, snippet, strikeThrough, italic, bold`.
 
 **Colour, verified against the running parser (CCB-S3-006 §6).** `!<n> text!` where `n` is
 a DIGIT, or the colour name spelled out. Only six indices exist:

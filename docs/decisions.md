@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-144**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-145**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -12,6 +12,101 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
 
 ---
+---
+
+### D-145 - Sources belong to the answer, and she is never silent when addressed
+
+**Status: IMPLEMENTED** (CCB-S4-042). Six defects, all observed in the operator's live group by
+members deliberately probing her. Two of them are rules rather than fixes, and they are the
+reason this entry exists.
+
+**RULE ONE: A SOURCE LINE BELONGS TO THE ANSWER, NEVER TO THE SEARCH.** Observed twice. She
+refused ("Not happening.", "I don't do that.") and the application printed
+`From the web: xnxx.com, pornhub.com, ...` underneath the refusal. The attribution was correct
+in every respect D-137 cares about, application-written and verbatim, and completely wrong
+about what it was attributing: it was appended because a SEARCH had happened, not because the
+ANSWER had used anything.
+
+Two compounding causes, both fixed:
+
+- **Nothing could refuse before the query ran.** The only party capable of refusing was the
+  model, and the model does not see the request until after the provider has been paid, the
+  member's search budget spent, and a stranger's result set pulled into her prompt.
+  `src/interaction/lookup-gate.ts` is a deterministic pre-search gate over four categories
+  (sexual material, child safety, darknet addresses, and illegal goods as intent-plus-subject).
+  **A model gate is not a gate**: it is another inference on untrusted input, it can be argued
+  out of its answer, and it cannot be mutation-tested. **A term list is not a solution
+  either**, and the console says so in those words: it misses paraphrase, it covers two
+  languages, and it will occasionally refuse a legitimate question. It is a floor under the
+  model's own refusal, not a replacement for it.
+- **The attribution outlived the results.** `outcome.results` stayed in scope right through to
+  the send. Now `wordLookupAnswer` owns them and returns `{ text, sources }`, so the
+  composition step has nothing to attribute from. Which results were used is DECLARED by the
+  model as indices through the reply schema (`usedResults`), and the application still writes
+  every character of the line, so D-137 holds: she supplies indices into a list she was given,
+  never a URL. **It fails closed.** No declaration, an older model, a malformed response, a
+  thrown request: all end with no attribution. The failure direction is a missing source line,
+  never a source line on a refusal.
+
+**RULE TWO: WHEN SHE IS PLAINLY ADDRESSED SHE IS NEVER COMPLETELY SILENT.** A long, correctly
+addressed spell-check request got nothing back at all, and raising `maxInstructionLength` made
+the same message work. The length guard returned false. Its reasoning holds for COMMANDS, a
+long forwarded article opening with her name must not trigger PUBLISH, and does not hold for
+answering at all. It now drops the intent to UNKNOWN, which is what stops the command, and the
+message carries on into free conversation.
+
+Every remaining silence path was walked. `!explicit` inside the follow-up window is not an
+address. A forwarded message and strict-mode-without-a-greeting are not addresses either.
+`silenceOnUnknown` survives untouched and needs three things at once: a weak signal, no command
+to run, and a model that could not speak. **Silence reads as a fault**, and a member who used
+her name deserves an answer or a refusal.
+
+**THE OTHER FOUR, briefly.**
+
+- **The language was a DETECTION defect, not an instruction defect.** The prompt says "use the
+  requested language" and was faithfully obeyed; the wrong language was passed in.
+  `detectLanguage` needs two function-word hits, and *"erkläre Geheimdienstselektoren"* has
+  none: two words, neither in any hint set, score 0-0, fall back to the default. Reproduced
+  before anything was changed. A German-orthography and imperative tiebreak now runs **only
+  when the contest is inconclusive**, so it can never overturn a decision the function words
+  already made; an English sentence quoting *Grüße* still scores English.
+- **The model she runs on is a GIVEN FACT, like the clock (D-140).** She said she was "built on
+  Qwen3.5, the nine-billion-parameter beast" while running `qwen3:32b`, because her origin said
+  so in prose written when that was true. Prose cannot know what was selected on the Models
+  page this morning. The claim is gone from the shipped origin and the fact is supplied from
+  the AI routing at prompt time. Migration 036 moves the column default AND rewrites existing
+  rows, because a default applies to an INSERT and never to an UPDATE. The licence line gained
+  the copyright in the same pass: "AGPL-3.0. Free." invited her to say the project was "owned
+  by the people".
+- **The source format was decided by the parser, not by preference.** The briefing asked for
+  the domain as the display text with the URL behind it. Measured against the SHIPPED 6.5.4
+  core: `[text](url)` renders as a `hyperLink`, and `[example.org](url)` renders as **nothing
+  at all**, brackets and parentheses literal, for the whole message. A dot in the display text
+  kills the parse. So the line is `domain [1](url)`: the domain stays readable and clickable to
+  the host, and the number is the shortest display text guaranteed to contain no dot. This
+  corrects `docs/wire-format.md` §3b, which recorded links as auto-detection only and did not
+  know `hyperLink` existed.
+- **Sampling was NOT fixed, deliberately.** Temperature 0.7 and `reasoning_effort: 'none'`
+  govern every call. Variance is a feature for a retort and a defect for a task, but **there is
+  no task lane to attach a setting to**: a spell-check is not a command, so it arrives as
+  UNKNOWN and is answered in the same conversation mode, with the same sampling, as small talk.
+  Telling a task from a conversation is a resolver change, not a settings change. The AI Models
+  page says this in plain words rather than leaving the operator to discover the variance in a
+  group.
+
+**EVERY FIX ARRIVED IN THE CONSOLE**, which is the operator's standing rule and the reason the
+rule registry exists at all. The Web Search page states what the gate refuses and that it
+deliberately has no tunable threshold, what the source line contains, and carries a
+content-free diagnostics card with the refused-before-search count, the last failure with its
+provider and timestamp, and live usage against the configured budget. The operator hit that gap
+the same day: a failing plugin said nothing in the console and the journal was the only way to
+learn why. The Guards page copy became untruthful the moment the length guard changed and now
+describes the corrected behaviour. The Language page lists the six-step decision in order.
+
+**THE BASELINE MOVED, DELIBERATELY, BY FOUR LINES**, re-baselined with the diff reviewed: two
+origin sentences replaced, one `identity.model` rule added, one `web.fence.declare-sources` rule
+added, plus one new pinned case. Nothing else in seventeen configurations changed.
+
 
 ### D-144 - The rules she is given are data, in one registry, with one authored copy
 

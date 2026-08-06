@@ -215,7 +215,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   lane, condition, global order, text, enabled, critical, scope and its origin in the code,
   with CHECK constraints on the three vocabularies. **This file is the only authored copy of
   that text**, so changing a rule means changing it here or, from the next briefing, in the
-  console; the code holds no fallback copy).
+  console; the code holds no fallback copy) · 036 the production lessons (a new condition
+  value `has-model`, the two rules CCB-S4-042 adds, and the origin default losing its model
+  claim plus an UPDATE for the rows that still hold it, because a default applies to an insert
+  and never to an update).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -223,7 +226,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **036**, since 035 landed with the rule registry). Stated as a rule
+  (currently **037**, since 036 landed with the production lessons). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -271,7 +274,13 @@ row claiming to be enforced. `npm run verify:moderation-live` walks the same nic
 the ladder against a real model and prints every rung; it needs Ollama),
 `verify:search` (web search: that untrusted results are fenced into the USER message and
 never the system prompt, that a result can cause no action at all, the budgets, the
-deterministic trigger and its negative controls, and the honest failure line.
+deterministic trigger and its negative controls, the honest failure line, and since
+CCB-S4-042 the **pre-search gate** with its negative controls and the rule that **a source
+line belongs to the answer**: a refusal reaches no provider and cites nothing, an
+undeclared answer cites nothing either, and the two are mutation-proven by removing the
+gate and by re-attributing a refusal.
+`npm run verify:lessons-live` is the companion that drives all six production defects
+through a REAL model and prints every reply; it needs Ollama and is not in the offline set.
 `npm run verify:search-live` puts five real prompt injections in the result set and prints
 what she does with each; it needs Ollama),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and

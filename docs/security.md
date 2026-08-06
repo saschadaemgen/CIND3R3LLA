@@ -1057,6 +1057,17 @@ neither can reach the archive.
 | **Intent** (`ollama-resolver.ts`) | The static system prompt, and **the member's addressed message, nothing else** |
 | **Reply** (`ollama-reply.ts`) | Reply kind (≤80 chars), language (≤16), **the member's addressed message capped at 2000 chars**, the bot's own deterministic draft capped at 5000, and the literals that must survive a rewrite |
 
+**A lookup she would refuse never reaches a provider** since CCB-S4-042 (D-145, architecture
+§37.1). The pre-search gate runs before the query, so a refusable request makes no outbound
+request at all: nothing leaves the process, and no stranger's text enters the prompt. It is a
+deterministic term list over four categories and its limits are stated on the Web Search page
+and in `src/interaction/lookup-gate.ts`; it is a floor under the model's own refusal, not a
+replacement for it.
+
+**The source line names only what the answer used**, and a refusal cites nothing. The
+application still writes every character of that line; the model supplies indices into the
+result list it was given, never a URL, so the D-137 property is unchanged.
+
 **The reply system prompt is assembled from the rule registry** since CCB-S4-039 (D-144,
 architecture §36) rather than from string literals. That changes where the sentences are
 STORED and nothing about what leaves the process: every one of them is application-authored,

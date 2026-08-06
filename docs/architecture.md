@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-039**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-042**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -2266,6 +2266,105 @@ which is a better artefact for that one question than the code diff.
 The same check asserts every `critical` rule reaches a prompt in a lane and condition that
 selects it, and proves both guards can go red: one word of one rule changed, two rules
 order-swapped with no text changed, a constitutional rule disabled, and an empty registry.
+
+## 37. What production taught us (CCB-S4-042, D-145)
+
+Six defects observed in the live group. Two of them changed a rule rather than a line.
+
+### 37.1 A lookup she would refuse never reaches a provider
+
+`src/interaction/lookup-gate.ts` runs in `answerLookup` **before the announcement and before
+the provider**. Until it existed the only party able to refuse was the model, and the model
+does not see the request until after the search has run, so a refusable request still cost an
+outbound call, still spent the member's search budget, and still put a stranger's result set
+in her prompt.
+
+Four categories, deterministic: sexual material named as such, child safety terms (checked
+first, so a query matching both is reported as the one that matters), darknet addresses, and
+illegal goods expressed as an intent word plus a subject word. The pair rule is what keeps
+"the history of drug policy" answerable while "buy cocaine online" is not.
+
+**It is a term list and the console says so.** It misses paraphrase, covers English and German
+only, and will occasionally refuse a legitimate question. It is a floor under the model's own
+refusal. A model gate was rejected outright: another inference on untrusted input is not a
+gate, it can be argued out of its answer, and it cannot be mutation-tested.
+
+There is deliberately **no setting**. A threshold an operator can lower is a threshold that
+ends with the domains back in the group.
+
+### 37.2 The source line belongs to the answer
+
+`wordLookupAnswer` owns `outcome.results` and returns `{ text, sources }`. The composition
+step never sees the results again, so it cannot attribute from them even by mistake. That is
+the structural half.
+
+The decision half is a **declaration**: the reply schema gains `usedResults` whenever results
+are attached, and the model returns the indices it drew on. The application still writes every
+character of the line (D-137 unchanged) — she supplies indices into a list she was given, never
+a URL, so she cannot cite a page that was not fetched or mistype one that was.
+
+**Fail-closed.** `used` starts empty. A model that omits the field, an older model, a malformed
+response, a rejected reply, a thrown request: all end with no attribution. The failure
+direction is a missing source line, never a line under a refusal.
+
+### 37.3 The line format is what the parser accepts
+
+`🔎 From the web: example.org [1](https://example.org/the/page), other.net [2](…)`
+
+The domain is the part a member reads to judge trust; the numbered link carries the deep URL.
+The arrangement is not a preference: `[example.org](url)` renders as **literal text for the
+whole message** on the shipped 6.5.4 core, because a dot in the display text kills the parse.
+See wire-format §3b, which CCB-S4-042 corrected. `attribution.ts` bounds the line at 400
+characters and four entries, dropping whole entries rather than truncating a URL.
+
+### 37.4 Addressed is never silent
+
+The length guard (`maxInstructionLength` + `lengthGuardConfidence`) drops the intent to
+UNKNOWN instead of returning false, so a long message stops being a COMMAND and still reaches
+free conversation. The help-prefix force is suppressed in the same case, because it is the one
+place downstream that could still promote a command.
+
+Every silence path, after the change:
+
+| Path | Behaviour |
+|---|---|
+| Length guard | Records the near miss, blocks the command, **answers** |
+| `!explicit` in the follow-up window | Silent — not an address |
+| Forwarded message | Silent — not her message |
+| Strict mode, no greeting | Silent — not an address in that mode |
+| `silenceOnUnknown` + weak signal | Silent **only** when conversation already failed |
+
+### 37.5 The reply language
+
+Decided in `replyLanguage`: fixed mode, then an open confirmation, then a function-word
+contest, then German-only evidence, then the remembered language, then the default. The
+tiebreak added here runs **only when the contest is inconclusive**, so it cannot overturn what
+the function words decided. It reads the RAW string, because `fold` strips the umlauts before
+the contest ever sees them.
+
+### 37.6 The model is a given fact
+
+Supplied from the AI routing through `BotIdentity.model` and rendered by the `identity.model`
+rule (`has-model`). Removed from the shipped origin, because prose cannot know what was
+selected on the Models page this morning. Migration 036 moves the column default and rewrites
+existing rows; a default applies to an INSERT and never to an UPDATE.
+
+### 37.7 Sampling is unchanged, and the console says why
+
+Temperature 0.7 and `reasoning_effort: 'none'` on every call. **There is no task lane.** A
+spell-check is not a command, so it arrives as UNKNOWN and is answered in `conversation` mode
+with the same sampling as small talk. Distinguishing a task from a conversation is a resolver
+change, not a settings change, so nothing was invented here and the AI Models page states the
+tradeoff plainly.
+
+### 37.8 Plugin diagnostics
+
+`WebSearchService.diagnostics()` and the Web Search page: searches since restart, usage inside
+the rate-limit window against the configured budget, refused-before-search count with the last
+category and timestamp, and the last failure with its provider, kind and timestamp.
+Content-free, matching D-130's rule: THAT something failed and how, never what anybody asked or
+what came back. "Not configured" is deliberately not a failure, because choosing not to enter
+a key is a choice.
 
 ## Appendix: divergences (code wins)
 
