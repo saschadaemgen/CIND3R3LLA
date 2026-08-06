@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-142**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-143**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -12,6 +12,82 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
 
 ---
+
+### D-143 - The catalog serves actions; anything about her is conversation
+
+**Status: IMPLEMENTED** (CCB-S4-041). Pulled ahead of the rule registry because it was
+blocking the operator in production: she could not answer a question about herself.
+
+**THE DEFECT WAS ONE WORD.** `HELP` was described as *"a request for help, commands,
+capabilities, identity, or usage instructions"*. **"identity"** predates both the origin
+field (CCB-S4-034) and free conversation (CCB-S4-027): when it was written, help genuinely
+was the only place she said anything about herself. Once the operator moved to
+`qwen3:32b`, the larger model followed the description more faithfully than the smaller
+one had, and *"who made you and why?"* correctly classified as HELP and got a fixed help
+text. **The model was right and the catalog was wrong**, which is the shape worth
+recording: a description that over-claims is a latent defect that only surfaces when a
+model gets better at reading.
+
+**THE TEST A DESCRIPTION MUST PASS**, from the briefing and worth keeping: read alone,
+would a model route *"who made you?"* to it? If yes, it is still too wide.
+
+**TWO OF THE THREE COLLISIONS NEVER REACHED THE MODEL.** The rule engine runs first, and
+*"google the current price of an RTX 5090"* scored PRICE at 0.94, because `price of` is a
+two-token phrase and `google` is one. No amount of catalog tuning would have fixed it. So
+the fix is in both places: the descriptions for what the model decides, and a **precedence
+rule in `rules.ts`** for what it never sees. An explicit web verb is a statement about
+WHERE to look and outranks a topic keyword in the same sentence; PRICE and SEARCH are the
+only two intents whose keywords can plausibly co-occur with one.
+
+**WHAT HAPPENS WITH THE PLUGIN OFF, decided rather than inherited.** LOOKUP is absent from
+the catalog when web search is disabled, and the observed behaviour was that *"search the
+web for X"* fell through to the archive search: the member asked for the web and got a
+count of what the group had said, presented as an answer, with nothing telling them the web
+was never consulted. It now resolves to UNKNOWN and reaches free conversation, where she
+can say plainly that she cannot look things up. **Honest and quiet beats confident and
+wrong**, which is the same rule the price fallback follows.
+
+**PRICE NARROWED TO WHAT THE PLUGIN CAN ANSWER.** It claimed "a price, value, exchange-rate
+or asset-conversion question"; a graphics card has a price and is not an asset, and the
+plugin quoted 1.9758 USD for one from stale market data. It now names traded financial
+assets and states explicitly that a physical product is not PRICE. **What happens instead:
+conversation.** She answers from her own voice, or looks it up if asked to. A confidently
+wrong number is worse than no number, because nobody can tell it is wrong.
+
+**A SLOT RULE WAS CONTRADICTING A DESCRIPTION.** The instruction block said *"Use
+slots.query only for SEARCH"* while LOOKUP's own description told the model to put a query
+in the same slot. A model resolving that contradiction has a standing reason to prefer
+SEARCH for anything query-shaped, which is very likely why an explicit *"search the web
+for X"* was landing on the archive. Both intents now name their corpus from their own side,
+and the slot rule names both.
+
+**THE PRECEDENCE RULE, because this will recur.** Added to the catalog's own instructions:
+*the commands serve actions; when a message is about HER rather than about a task, it is
+conversation, not a command.* One sentence that would have prevented all three identity
+cases, stated as precedence rather than as another description, because the next collision
+will be with a description nobody has written yet.
+
+**A REGRESSION I INTRODUCED, caught by an existing check.** `search for` was a LOOKUP
+phrase from CCB-S4-037. It does not name the web at all, the archive SEARCH legitimately
+owns it, and once the web verb took precedence over SEARCH, *"search for pizza"* stopped
+reaching the archive. `verify:interaction` failed on four checks. **Every phrase in the
+LOOKUP list must SAY web, online, internet or google**: a bare search verb is not a
+statement about where to look.
+
+**Verified against `qwen3:32b`, the model actually in production**, and against
+`qwen3.5:9b`: 15 of 15 routings correct on both, including every consent command
+unregressed. She now answers the identity questions from her origin, for example *"Sascha
+Dämgen made me, with a team's push and purpose in mind. Born from the wire, to help where
+words and code meet."*
+
+**One observation, not a defect.** Asked *"where do you come from?"* she sometimes answers
+*"Europe/Berlin, where the clock runs"*: the clock fact from D-140 and the origin from
+D-138 both plausibly answer "where", and the clock is the more literal reading. The routing
+is correct and both facts are true, so this is a phrasing overlap to watch rather than
+something to fix by weakening either.
+
+---
+
 
 ### D-142 - A fifth dial that moves its own bound, and a holding line that never lies
 
