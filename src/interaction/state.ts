@@ -78,6 +78,8 @@ interface MemberEntry {
   priceCalls: number[];
   /** Epoch ms of recent recitals (CCB-S4-047), scarcer still. */
   recitals: number[];
+  /** When she last gave this member a rules OVERVIEW (CCB-S4-049). */
+  lastOverviewAt: number | undefined;
 }
 
 interface ChatEntry {
@@ -87,6 +89,26 @@ interface ChatEntry {
   priceCalls: number[];
   recitals: number[];
 }
+
+/**
+ * How long after an overview a bare question is still an answer to it (CCB-S4-049).
+ *
+ * ── WHY THREE MINUTES, AND WHY A WINDOW AT ALL ───────────────────────────────
+ *
+ * The overview ends by naming the chapters and asking what part interests you. A member who
+ * answers that question in her own words was not going to say "rules", and until this existed
+ * they got a nice paragraph instead of the law.
+ *
+ * The window is deliberately SHORT. Over-detection is the worse failure here and it is worse
+ * because it is constant rather than occasional: ordinary conversation answered with quoted
+ * statutes would be wrong every time, where a missed follow-up is wrong once and costs a
+ * clarifying question. Three minutes is long enough to read six chapter names and decide
+ * which one you want, and short enough that a conversation which has moved on has moved on.
+ *
+ * It is per MEMBER and per CHAT, because the invitation was to one person. Somebody else
+ * asking an unrelated question in the same group ninety seconds later is not answering it.
+ */
+const OVERVIEW_WINDOW_MS = 3 * 60 * 1000;
 
 /**
  * How often the Book may be read out (CCB-S4-047).
@@ -137,6 +159,7 @@ export class ConversationState {
         replies: [],
         priceCalls: [],
         recitals: [],
+        lastOverviewAt: undefined,
       };
       this.members.set(key, entry);
     }
@@ -321,6 +344,24 @@ export class ConversationState {
    * because the allowance ran out is exactly the silence the never-silent rule forbids, and
    * it would arrive as a bug an operator could only diagnose by counting messages.
    */
+  /** Records that this member has just been given the overview. */
+  noteOverview(groupId: number, memberId: string, now: number): void {
+    this.member(groupId, memberId).lastOverviewAt = now;
+  }
+
+  /**
+   * Is this member still inside the window the overview opened?
+   *
+   * Read-only: it does not extend the window. A member who keeps asking gets each answer, and
+   * the window still closes three minutes after the OVERVIEW rather than three minutes after
+   * the last thing they said, so a long conversation cannot drift into the Book one question
+   * at a time.
+   */
+  inOverviewWindow(groupId: number, memberId: string, now: number): boolean {
+    const at = this.member(groupId, memberId).lastOverviewAt;
+    return at !== undefined && now - at <= OVERVIEW_WINDOW_MS;
+  }
+
   allowRecital(groupId: number, memberId: string, now: number): boolean {
     const m = this.member(groupId, memberId);
     const c = this.chat(groupId);

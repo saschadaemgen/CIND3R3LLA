@@ -93,6 +93,7 @@ import {
   withheldCount,
 } from './disclosure.js';
 import {
+  asksChapterQuestion,
   capFollowUp,
   overviewLiterals,
   renderAreas,
@@ -886,7 +887,7 @@ export class InteractionEngine {
     if (
       result.intent !== 'UNKNOWN' &&
       !NEVER_OVERRIDDEN.has(result.intent) &&
-      (asksAboutRules(msg.text) || asksForRecital(msg.text))
+      (this.aboutHerRules(msg, now, true) || asksForRecital(msg.text))
     ) {
       log.debug(
         `Interaction: ${result.intent} claimed a question about her own rules; answering it ` +
@@ -1235,6 +1236,43 @@ export class InteractionEngine {
    * The trigger is deterministic. A model deciding for itself whether to recite its own
    * instructions is a model that can be talked into it.
    */
+  /**
+   * Is this message about her rules, in ANY of the ways she can be asked (CCB-S4-049)?
+   *
+   * ONE predicate, because the precedence rule and the disclosure builder must agree. They
+   * did not, and that is the whole of this briefing: `asksAboutRules` recognised only messages
+   * containing a rule word, so a member answering the overview's own question was neither
+   * protected from the catalog nor given any rules. "What do you keep back?" reached the
+   * ARCHIVE STATUS reply, and "what do you never do?" reached free conversation with nothing
+   * quoted. Two symptoms, one cause.
+   *
+   * Three ways in, narrowest first:
+   *
+   *   1. It says so: `asksAboutRules`, unchanged since CCB-S4-045.
+   *   2. It repeats one of her own chapter names back at her.
+   *   3. It arrives inside the short window an overview opens, where she has just asked which
+   *      part interests them and any question is plausibly the answer.
+   *
+   * ── AND WHY THE WINDOW IS NOT ENOUGH TO OUTRANK THE CATALOG ────────────────
+   *
+   * `explicit` decides whether the window counts. The first two are statements about the
+   * MESSAGE and they outrank a catalog intent, which is D-150. The window is a statement about
+   * the CONVERSATION, and it is much weaker: it says only that a question arrived soon after
+   * she invited one.
+   *
+   * Letting that outrank the catalog was measured going wrong immediately. Inside the window,
+   * *"what do you keep of mine?"* stopped reaching the archive and got the Book instead, which
+   * is the STATUS collision this briefing opened with, running in the other direction and
+   * caused by the fix for it. So the window promotes only what nothing else has claimed: an
+   * explicit archive, consent, price or lookup question inside the window still goes where it
+   * belongs, and only an otherwise-unclaimed question becomes a follow-up.
+   */
+  private aboutHerRules(msg: CapturedMessage, now: number, explicit: boolean): boolean {
+    if (asksAboutRules(msg.text) || asksChapterQuestion(msg.text)) return true;
+    if (explicit) return false;
+    return this.state.inOverviewWindow(msg.groupId, msg.senderMemberId, now);
+  }
+
   private async disclosure(
     msg: CapturedMessage,
     lang: string,
@@ -1245,7 +1283,7 @@ export class InteractionEngine {
     moreInArea?: number;
   }> {
     const rules = this.deps.rules?.() ?? [];
-    if (rules.length === 0 || !asksAboutRules(msg.text)) {
+    if (rules.length === 0 || !this.aboutHerRules(msg, this.now(), false)) {
       return { nameableRules: [], hasWithheldRules: false };
     }
     const hasWithheldRules = withheldCount(rules) > 0;
@@ -1259,6 +1297,9 @@ export class InteractionEngine {
     // nobody reads, so it now gets counts, areas and an invitation, and quotes nothing.
     if (asksGenerally(msg.text) && wantsOverview(this.deps.settings().recital)) {
       const overview = ruleOverview(rules, chapters, lang);
+      // The window opens HERE and nowhere else, so it can only ever follow an answer that
+      // actually invited one.
+      this.state.noteOverview(msg.groupId, msg.senderMemberId, this.now());
       return {
         nameableRules: [],
         hasWithheldRules,

@@ -193,3 +193,67 @@ export function rulesForFollowUp(
     );
   return inArea.length > 0 ? inArea : [...matched];
 }
+
+/* ── Recognising her own chapter names (CCB-S4-049) ───────────────────────── */
+
+/**
+ * A member answering the overview's question, in the overview's own words.
+ *
+ * ── THE DEFECT THIS CLOSES ───────────────────────────────────────────────────
+ *
+ * CCB-S4-048's overview ends by naming the six chapters and asking *"what part of it
+ * interests you?"*, and then she could not hear the answer. Every natural reply missed:
+ * "what do you never do?", "what do you owe me?" and "how do you treat what people tell you?"
+ * all fell through to free conversation with no rule quoted, because a follow-up was only
+ * recognised when the message contained the word "rules". Only *"which of your RULES cover
+ * what you never do?"* worked, which nobody says.
+ *
+ * She proposed the words. A member repeating them back is unambiguously asking about that
+ * chapter, and the mapping already exists: these are the operator's chapter titles from
+ * CCB-S4-047, so nothing here is a second vocabulary to keep in step.
+ *
+ * ── SPECIFIC PHRASINGS, NOT TOPICS ───────────────────────────────────────────
+ *
+ * "What do you keep back?" is the chapter. "What do you keep of mine?" is the archive, and it
+ * must go on reaching the archive. Matching loosely on "keep" would collapse the two, which
+ * is the collision this briefing opened with, running in the other direction. Every pattern
+ * here names a verb and its object; none of them is a bare topic word.
+ *
+ * ── AND WHY "WHO I AM" IS NOT IN HERE ────────────────────────────────────────
+ *
+ * "Who are you?" is the classic identity question, it resolves to HELP at 0.96 today, and
+ * D-143 settled that it is answered as conversation from her origin and identity. That answer
+ * is good, and replacing it with two quoted statutes would be the over-detection this briefing
+ * warns is the worse failure. It stays conversation unless an overview has just invited it,
+ * which is what the window is for.
+ */
+const CHAPTER_PHRASINGS: readonly RegExp[] = [
+  // What I will never do. `never DO`, not `never <anything>`: "what do you never eat" is a
+  // question about dinner.
+  /\bwhat\b[^?]{0,20}\b(do|will|would|can)\s+you\s+never\s+do\b/i,
+  /\bwhat\s+you\s+never\s+do\b/i,
+  /\bwhat\b[^?]{0,16}\b(won'?t|will\s+not|refuse\s+to)\s+you\s+do\b/i,
+  /\bwas\b[^?]{0,20}\b(tust|machst)\s+du\s+nie\b/i,
+  /\bwas\s+du\s+nie\s+tust\b/i,
+  // What I do with what I am told.
+  /\bwhat\b[^?]{0,24}\bdo\s+with\s+what\b/i,
+  /\bhow\s+do\s+you\s+treat\b[^?]{0,30}\b(told|tell|say|said|give|given)\b/i,
+  /\bwas\s+machst\s+du\s+mit\b[^?]{0,24}\b(gesagt|sagt|erz[aä]hl)/i,
+  // What I owe you. `owe ME`, or owe with nobody else named: "what do you owe the landlord"
+  // is not this chapter.
+  /\bwhat\b[^?]{0,16}\byou\s+owe\s+(me|us|them|people|anyone|everyone)\b/i,
+  /\bwhat\b[^?]{0,16}\byou\s+owe\s*[?.!]/i,
+  /\bwas\s+schuldest\s+du\b/i,
+  // How I speak of you.
+  /\bhow\s+do\s+you\s+(speak|talk)\s+(of|about)\s+(me|us|people|members|them)\b/i,
+  /\bwie\s+(sprichst|redest)\s+du\s+[uü]ber\b/i,
+  // What I keep back. Also the phrasing that collided with the archive STATUS intent.
+  /\bwhat\b[^?]{0,16}\byou\s+(keep|hold)\s+back\b/i,
+  /\bwhat\b[^?]{0,16}\byou\s+keep\s+to\s+yourself\b/i,
+  /\bwas\b[^?]{0,16}\b(beh[aä]ltst|h[aä]ltst)\s+du\s+(zur[uü]ck|f[uü]r\s+dich)\b/i,
+];
+
+/** Does this repeat one of her chapter names back at her? */
+export function asksChapterQuestion(text: string): boolean {
+  return CHAPTER_PHRASINGS.some((pattern) => pattern.test(text));
+}
