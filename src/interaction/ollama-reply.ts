@@ -186,6 +186,21 @@ export interface AiReplyRequest {
   nameableRules?: readonly PromptRule[];
   /** Whether anything is withheld. Decides whether she is told to say so. */
   hasWithheldRules?: boolean;
+  /**
+   * The ORIENTATION she gives to a general question (CCB-S4-048, D-150).
+   *
+   * Present means: quote nothing, state these counts exactly, name these areas, invite a
+   * question. The counts also travel as required literals, because D-137 settled that a
+   * number a model is asked to preserve inside its own prose is a number it will smooth.
+   */
+  ruleOverview?: { total: number; constitutional: number; areas: string };
+  /**
+   * How many more rules the area they asked about holds, beyond the ones quoted.
+   *
+   * Zero or absent means the quoted set IS the area. Non-zero makes her say there is more
+   * and invite another question, rather than reading two of nine and stopping.
+   */
+  moreInArea?: number;
 }
 
 /**
@@ -368,6 +383,8 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     hasHistory: (request.history?.length ?? 0) > 0,
     hasNameableRules: (request.nameableRules?.length ?? 0) > 0,
     hasWithheldRules: request.hasWithheldRules === true,
+    hasRuleOverview: request.ruleOverview !== undefined,
+    hasMoreInArea: (request.moreInArea ?? 0) > 0,
   };
 
   // Everything except the quoted block, so the quoted block can be rendered WITH it.
@@ -389,6 +406,12 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     // when she was handed four is the same class of false statement D-140 removed.
     historyCount: String(request.history?.length ?? 0),
     historyMinutes: String(request.historyWindowMinutes ?? 0),
+    // Application facts, never counted by the model (D-137). Empty strings when there is no
+    // overview: the rules that use them are not selected, so nothing renders them.
+    ruleTotal: String(request.ruleOverview?.total ?? 0),
+    ruleConstitutional: String(request.ruleOverview?.constitutional ?? 0),
+    ruleAreas: request.ruleOverview?.areas ?? '',
+    moreInArea: String(request.moreInArea ?? 0),
   };
 
   const values: Record<string, string> = {

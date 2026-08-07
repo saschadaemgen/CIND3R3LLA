@@ -157,7 +157,7 @@ function oppositeKey(condition: string): string {
  * is the same stem AND conditions that are opposites of each other, which four rules in the
  * registry satisfy today and nothing else does.
  */
-function oneOfEachVariant(rules: readonly PromptRule[]): PromptRule[] {
+export function oneOfEachVariant(rules: readonly PromptRule[]): PromptRule[] {
   const groups = new Map<string, PromptRule[]>();
   for (const rule of rules) {
     const stem = rule.id.split('.').slice(0, -1).join('.');
@@ -371,12 +371,25 @@ export function recitedRuleIds(plan: RecitalPlan): string[] {
 /**
  * How a rules question is answered.
  *
- * `brief` is CCB-S4-045's behaviour and is the default, because it is the right answer to a
- * question asked in passing and it already works. `asked` gives the recital only to somebody
- * who asked for the Book by name or asked for it to be read; `always` gives it to any rules
- * question, which an operator may want in a quiet group and will regret in a busy one.
+ * ── THE DEFAULT MOVED IN CCB-S4-048, AND `brief` CHANGED MEANING ─────────────
+ *
+ * Production testing settled it: both of the shapes that existed are wrong for a live group.
+ * `brief` quotes three or four rules back to back, which is a block nobody reads, and a
+ * recital sends several messages into a room where other people are talking.
+ *
+ *   overview  (DEFAULT) She says how many laws she has, what they broadly cover, that some
+ *             are withheld and why, and asks what you want to know. The quoting happens on
+ *             the follow-up, capped at two, where it answers something somebody asked.
+ *   brief     CCB-S4-045's behaviour, kept for an operator who prefers it: a general question
+ *             is answered by quoting a handful of rules directly.
+ *   asked     The overview for a general question, and the full recital when somebody asks
+ *             for the Book by name.
+ *   always    The recital for any question about her rules.
+ *
+ * The recital is not deleted and not deprecated. It is built, it is tested, and it is the
+ * right thing for a set piece; it is simply no longer what an ordinary question gets.
  */
-export const RECITAL_MODES = ['brief', 'asked', 'always'] as const;
+export const RECITAL_MODES = ['overview', 'brief', 'asked', 'always'] as const;
 export type RecitalMode = (typeof RECITAL_MODES)[number];
 
 export interface RecitalSettings {
@@ -388,9 +401,9 @@ export interface RecitalSettings {
 }
 
 export const DEFAULT_RECITAL_SETTINGS: Readonly<RecitalSettings> = Object.freeze({
-  // `asked` rather than `brief`: the name detection is the point of the briefing, and a
-  // default that never performs would ship the machinery switched off.
-  mode: 'asked',
+  // `overview` since CCB-S4-048. The conversational shape is what production asked for, and
+  // it is the one answer that suits both a busy group and somebody genuinely curious.
+  mode: 'overview',
   maxMessages: RECITAL_DEFAULT_MESSAGES,
   pacingMs: RECITAL_DEFAULT_PACING_MS,
 });
@@ -446,9 +459,22 @@ export function wantsRecital(
   opts: { asksAboutRules: boolean; asksForRecital: boolean },
 ): boolean {
   if (!opts.asksAboutRules) return false;
-  if (settings.mode === 'brief') return false;
+  // Neither conversational shape performs. `overview` is the new default and `brief` is the
+  // CCB-S4-045 behaviour kept for an operator who wants it; both answer in one message.
+  if (settings.mode === 'overview' || settings.mode === 'brief') return false;
   if (settings.mode === 'always') return true;
   return opts.asksForRecital;
+}
+
+/**
+ * Whether a general question gets the ORIENTATION rather than quoted rules (CCB-S4-048).
+ *
+ * `brief` is the one mode that does not, because that is exactly what it preserves. Every
+ * other mode gives the overview to a general question; they differ only in what an explicit
+ * request for the Book gets on top.
+ */
+export function wantsOverview(settings: RecitalSettings): boolean {
+  return settings.mode !== 'brief';
 }
 
 

@@ -37,6 +37,7 @@ import {
   resolveAssetPath,
   storeChapterImage,
 } from '../../media/assets.js';
+import { FOLLOW_UP_MAX_RULES } from '../../interaction/rule-overview.js';
 import {
   RECITAL_MAX_MESSAGES,
   RECITAL_MAX_PACING_MS,
@@ -226,22 +227,34 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
                 <label class="flex flex-col gap-1 text-sm">
                   <span class="font-medium text-slate-700">Mode</span>
                   <select name="mode" class="${INPUT_CLS}">
+                    <option value="overview" ${s.mode === 'overview' ? raw('selected') : ''}>
+                      Overview, then answer the follow-up (recommended)
+                    </option>
                     <option value="brief" ${s.mode === 'brief' ? raw('selected') : ''}>
-                      Brief only, never perform
+                      Quote a few rules straight away
                     </option>
                     <option value="asked" ${s.mode === 'asked' ? raw('selected') : ''}>
-                      Recite when asked for the Book by name
+                      Overview, and the full recital when asked for the Book by name
                     </option>
                     <option value="always" ${s.mode === 'always' ? raw('selected') : ''}>
                       Recite for any question about her rules
                     </option>
                   </select>
                   <span class="text-xs text-slate-500">
-                    "Asked" is the default and the distinction is deliberate. "What are your
-                    rules?" in passing is a question and the short answer is the right one;
-                    "show me the Book of Elii" is a request for the thing itself. "Always"
-                    performs for both, which is pleasant in a quiet group and a lot of messages
-                    in a busy one.
+                    <strong>Overview</strong> is the default, and it changed in CCB-S4-048
+                    after production testing. She says how many laws she has, what they broadly
+                    cover, that some are withheld and why, and asks what you want to know. The
+                    quoting happens on your follow-up, at most
+                    ${String(FOLLOW_UP_MAX_RULES)} rules at a time, where it answers something
+                    you actually asked.
+                  </span>
+                  <span class="text-xs text-slate-500">
+                    <strong>Quote a few rules straight away</strong> is what "brief" used to
+                    mean and is kept for an operator who prefers it. In a live group it reads
+                    as a block of text nobody finishes.
+                    <strong>Asked</strong> adds the full recital on top, for somebody who names
+                    the Book. <strong>Always</strong> performs for every rules question, which
+                    is pleasant in a quiet group and a lot of messages in a busy one.
                   </span>
                 </label>
                 <div class="grid gap-3 sm:grid-cols-2">

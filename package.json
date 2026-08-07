@@ -87,7 +87,9 @@
     "verify:disclosure": "tsx scripts/verify-disclosure.ts",
     "verify:disclosure-live": "tsx scripts/verify-disclosure-live.ts",
     "verify:recital": "tsx scripts/verify-recital.ts",
-    "verify:recital-live": "tsx scripts/verify-recital-live.ts"
+    "verify:recital-live": "tsx scripts/verify-recital-live.ts",
+    "verify:rule-conversation": "tsx scripts/verify-rule-conversation.ts",
+    "verify:rule-conversation-live": "tsx scripts/verify-rule-conversation-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
