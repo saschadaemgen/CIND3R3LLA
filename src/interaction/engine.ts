@@ -73,8 +73,14 @@ import { formatOutbound, type OutboundReply } from './reply.js';
 import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
-import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
-import type { PromptRule, PromptRuleSet } from './prompt-rules.js';
+import {
+  dialledPromptInputs,
+  sharpenBy,
+  type BotIdentity,
+  type BotPersonality,
+} from './personality.js';
+import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
+import { recitalTransitionAsk } from './recital.js';
 import { HISTORY_FENCE } from './ollama-reply.js';
 import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
 import {
@@ -195,6 +201,15 @@ export interface InteractionDeps {
    * gets the deterministic reply somebody wrote.
    */
   rules?: () => PromptRuleSet;
+  /**
+   * Reads the Book out loud (CCB-S4-047, D-149).
+   *
+   * Absent means no recital is wired and every rules question gets the brief answer, which is
+   * the CCB-S4-045 behaviour and a complete answer in its own right. Returns whether a recital
+   * actually STARTED: `false` falls through to the brief answer, because a performance that
+   * could not start is not a reason to leave a member with nothing.
+   */
+  recite?: (msg: CapturedMessage, lang: string) => Promise<boolean>;
   /**
    * The model that words her replies (CCB-S4-042, D-145), read live so a change on the
    * Models page reaches the next reply rather than the next restart.
@@ -1019,6 +1034,96 @@ export class InteractionEngine {
   private facts(s: InteractionSettings): BotIdentity {
     const model = this.deps.replyModel?.() ?? null;
     return { ...botIdentity(s), ...(model ? { model } : {}) };
+  }
+
+  /* ── What a recital needs from the engine (CCB-S4-047) ─────────────────── */
+
+  /**
+   * Takes a recital's allowance, or refuses.
+   *
+   * ── THE UNIT WAS WRONG, AND READING THE CONSOLE IS WHAT SHOWED IT ──────────
+   *
+   * This first charged a recital as N REPLIES, on the reasoning that the whole thing must be
+   * reserved before the first word so a reading can never stop halfway. That reasoning still
+   * holds. The unit did not: the reply budget ships at six per member per minute and a recital
+   * is eight messages, so a recital could never start, the brief answer was always given, and
+   * every check on the feature stayed green. The Recital page printed the sentence "it is 8 of
+   * the 6 replies a member may have per minute" and that was the whole diagnosis.
+   *
+   * A recital is not several replies. It is one performance the operator deliberately enabled,
+   * and it gets its own allowance, exactly as a price lookup does (CCB-S3-004 §3): the two
+   * budgets bound different things, and a conversational-turn budget was never sized for this.
+   * It also takes ONE reply allowance, because it is still her speaking.
+   */
+  allowRecital(groupId: number, memberId: string): boolean {
+    return this.state.allowRecital(groupId, memberId, this.now());
+  }
+
+  /**
+   * Which placeholder values exist right now, so a recital never plans a rule it cannot read.
+   *
+   * The same `dialledPromptInputs` the renderer below uses, so the two cannot disagree about
+   * what is available: asking and rendering are one source or they are a race.
+   */
+  renderableValues(): ReadonlySet<string> {
+    const s = this.deps.settings();
+    return new Set(
+      Object.keys(
+        dialledPromptInputs(
+          this.deps.rules?.() ?? [],
+          this.deps.personality?.() ?? null,
+          this.facts(s),
+          { at: new Date(this.now()), timeZone: this.timeZone },
+        ).values,
+      ),
+    );
+  }
+
+  /** One rule as a member will read it, through the same renderer the prompt stream uses. */
+  renderRuleForMember(rule: PromptRule): string {
+    const s = this.deps.settings();
+    return renderPromptRule(
+      rule,
+      dialledPromptInputs(
+        this.deps.rules?.() ?? [],
+        this.deps.personality?.() ?? null,
+        this.facts(s),
+        { at: new Date(this.now()), timeZone: this.timeZone },
+      ).values,
+    );
+  }
+
+  /**
+   * Her words leading into one beat.
+   *
+   * The model is asked for ONE line and is given the chapter title and nothing else. It is
+   * never shown the rules, and could not usefully rewrite them if it were: the application
+   * appends them afterwards, verbatim. That is the whole of the authored-dramaturgy split,
+   * expressed as what the prompt does and does not contain.
+   *
+   * Returns null on any failure, which the runner treats as an ordinary outcome.
+   */
+  async reciteTransition(title: string | undefined, lang: string): Promise<string | null> {
+    const personalize = this.deps.personalize;
+    if (!personalize) return null;
+    const s = this.deps.settings();
+    const ask = recitalTransitionAsk(title);
+    try {
+      return await personalize({
+        kind: 'conversation',
+        lang,
+        memberMessage: ask,
+        deterministicDraft: '',
+        mode: 'conversation',
+        rules: this.deps.rules?.() ?? [],
+        requiredLiterals: [],
+        blockedLiterals: [],
+        personality: this.deps.personality?.() ?? null,
+        identity: this.facts(s),
+      });
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -2532,6 +2637,24 @@ export class InteractionEngine {
     // single token, and it did, twice, before this existed.
     if (asksByElimination(msg.text) || probesInternalRule(this.deps.rules?.() ?? [], msg.text)) {
       await this.reply(msg, s, lang, 'rulesNoElimination', {});
+      return true;
+    }
+
+    // THE RECITAL (CCB-S4-047). After the gates and never before them: being asked for a
+    // performance does not suspend the two deterministic answers above, and a request to be
+    // read the Book is still a message like any other. Reciting is the one path that sends
+    // several messages, so whether it happens is decided here and not by the model.
+    //
+    // A `false` return falls through to the brief answer. A recital that cannot start (no
+    // chapters, no room in the member's budget, a bound too low to read a book) must leave a
+    // member with an answer rather than with silence.
+    if (this.deps.recite && (await this.deps.recite(msg, lang))) {
+      recordConversation({
+        at: this.now(),
+        groupId: msg.groupId,
+        outcome: 'spoken',
+        latencyMs: this.now() - startedAt,
+      });
       return true;
     }
     const history = await this.recentHistory(msg, s);

@@ -30,6 +30,11 @@ import {
   normalizeHistoryLimits,
   type HistoryLimits,
 } from './history.js';
+import {
+  DEFAULT_RECITAL_SETTINGS,
+  normalizeRecitalSettings,
+  type RecitalSettings,
+} from './recital.js';
 
 /**
  * The given facts about her, read out of the settings (CCB-S4-031, D-135).
@@ -333,6 +338,12 @@ export interface InteractionSettings {
    * long messages can blow the context while satisfying both of the others.
    */
   memory: HistoryLimits;
+  /**
+   * How the Book is told (CCB-S4-047, D-149), and the bound on how many messages it may
+   * take. The bound is the thing standing between a rules question and a group full of
+   * them, so it is clamped in code as well as in the form.
+   */
+  recital: RecitalSettings;
   /** Resolver confidence below which an instruction becomes UNKNOWN (0..1). */
   confidenceThreshold: number;
   /** Words that confirm a pending consent change. */
@@ -739,6 +750,7 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
   maxPrefixChars: 20,
   followUpSeconds: 60,
   memory: { ...DEFAULT_HISTORY_LIMITS },
+  recital: { ...DEFAULT_RECITAL_SETTINGS },
   confidenceThreshold: 0.55,
   affirmations: [
     'yes',
@@ -1049,6 +1061,9 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
     // Bounded by the model rather than by the form, so a hand-crafted POST cannot produce
     // a history that crowds her own rules out of the context.
     memory: normalizeHistoryLimits(o['memory'] as Partial<Record<keyof HistoryLimits, unknown>>),
+    recital: normalizeRecitalSettings(
+      o['recital'] as Partial<Record<keyof RecitalSettings, unknown>>,
+    ),
     confidenceThreshold: num(o['confidenceThreshold'], 0, 1, d.confidenceThreshold),
     affirmations:
       'affirmations' in o

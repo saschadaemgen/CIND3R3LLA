@@ -88,3 +88,54 @@ export async function sendViaRuntime(
 ): Promise<T.AChatItem[]> {
   return await send(msg.groupId, text, opts.quote ? msg.itemId : undefined);
 }
+
+/**
+ * Sends one image with its caption into the chat `msg` came from (CCB-S4-047).
+ *
+ * ── CONFIRMED AGAINST THE SHIPPED CORE, BECAUSE IT DECIDES THE PACING ────────
+ *
+ * The briefing asked whether caption and image arrive together or as two messages. They
+ * arrive TOGETHER, as one: `apiSendMessages` takes `ComposedMessage[]`, and one composed
+ * message carries both a `fileSource` (the bytes, which travel over XFTP) and an
+ * `MsgContent.Image` whose `text` IS the caption and whose `image` is the inline preview a
+ * client shows before the transfer finishes.
+ *
+ * So a chapter with an image is ONE beat, not two, and the recital's pacing counts it once.
+ * Had it been two the message bound would have meant half as many chapters.
+ *
+ * Falls back to sending the caption as plain text when the file cannot be composed, because a
+ * chapter that ships without its illustration is the documented degradation and a chapter
+ * that fails to ship is not.
+ */
+export async function sendImageToChat(
+  chat: api.ChatApi,
+  msg: CapturedMessage,
+  filePath: string,
+  caption: string,
+  preview: string | null,
+): Promise<T.AChatItem[]> {
+  const raw = msg.raw as T.AChatItem;
+  const chatInfo = raw.chatInfo;
+  if (!chatInfo) {
+    log.warn(`Outbound image for item ${msg.itemId} has no chat reference; sending the text alone.`);
+    return await sendToChat(chat, msg, caption, { quote: false });
+  }
+  try {
+    return await chat.apiSendMessages(chatInfo, [
+      {
+        fileSource: { filePath },
+        msgContent: { type: 'image', text: caption, image: preview ?? '' },
+        mentions: {},
+      },
+    ]);
+  } catch (err) {
+    // Surfaced, not swallowed: an image that will not send is a fault the operator should
+    // see, and the chapter still ships.
+    log.error(
+      `Chapter image ${filePath} could not be sent (${
+        err instanceof Error ? err.message : String(err)
+      }); sending the chapter as text.`,
+    );
+    return await sendToChat(chat, msg, caption, { quote: false });
+  }
+}

@@ -7,6 +7,7 @@
 import type { Queryable } from '../db/pool.js';
 import { QueueWorker } from './worker.js';
 import { getJobHandler, registerJobHandler } from './registry.js';
+import { RECITAL_JOB, handleRecitalBeat } from './jobs/recital.js';
 import { enqueueJob } from './store.js';
 import { DEFAULT_QUEUE_CONFIG, type EnqueueOptions, type JobLane, type QueueConfig } from './types.js';
 import {
@@ -77,6 +78,12 @@ export function registerBuiltinJobs(): void {
   // a ladder that promised ten minutes.
   if (!getJobHandler(MODERATION_EXPIRE_JOB)) {
     registerJobHandler(MODERATION_EXPIRE_JOB, moderationExpireHandler);
+  }
+  // The next beat of a recital (CCB-S4-047). MUST be registered, same reason as the mute:
+  // an unregistered type is never claimed, so its jobs sit `queued` with no error anywhere,
+  // and for a recital that means a reading that opened and never went on.
+  if (!getJobHandler(RECITAL_JOB)) {
+    registerJobHandler(RECITAL_JOB, handleRecitalBeat);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }

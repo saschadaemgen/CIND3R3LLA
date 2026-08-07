@@ -76,6 +76,8 @@ interface MemberEntry {
   replies: number[];
   /** Epoch ms of recent price questions (a separate, scarcer budget). */
   priceCalls: number[];
+  /** Epoch ms of recent recitals (CCB-S4-047), scarcer still. */
+  recitals: number[];
 }
 
 interface ChatEntry {
@@ -83,7 +85,19 @@ interface ChatEntry {
   lastRetort: number;
   replies: number[];
   priceCalls: number[];
+  recitals: number[];
 }
+
+/**
+ * How often the Book may be read out (CCB-S4-047).
+ *
+ * In code rather than on the console, like the history clamp and for the same reason: this is
+ * the number standing between a question and a group full of messages, and the operator
+ * already has the knob that decides how LONG a reading is. Worst case at the maximum message
+ * bound is two readings of twelve, and only when two different members ask inside one minute.
+ */
+const RECITALS_PER_MEMBER = 1;
+const RECITALS_PER_CHAT = 2;
 
 /** A nickname streak this old is forgiven — she is petty, not unforgiving. */
 const NICKNAME_STREAK_RESET_MS = 10 * 60 * 1000;
@@ -122,6 +136,7 @@ export class ConversationState {
         lastNicknameAt: 0,
         replies: [],
         priceCalls: [],
+        recitals: [],
       };
       this.members.set(key, entry);
     }
@@ -131,7 +146,7 @@ export class ConversationState {
   private chat(groupId: number): ChatEntry {
     let entry = this.chats.get(groupId);
     if (!entry) {
-      entry = { lastRetort: -1, replies: [], priceCalls: [] };
+      entry = { lastRetort: -1, replies: [], priceCalls: [], recitals: [] };
       this.chats.set(groupId, entry);
     }
     return entry;
@@ -293,6 +308,34 @@ export class ConversationState {
     m.replies = trim(m.replies, now);
     c.replies = trim(c.replies, now);
     if (m.replies.length >= perMember || c.replies.length >= perChat) return false;
+    m.replies.push(now);
+    c.replies.push(now);
+    return true;
+  }
+
+  /**
+   * Takes `count` reply allowances at once, or takes NONE (CCB-S4-047).
+   *
+   * All-or-nothing, and that is the whole point. A recital is several messages and it must
+   * not be able to start unless every one of them fits: a reading that stops in the middle
+   * because the allowance ran out is exactly the silence the never-silent rule forbids, and
+   * it would arrive as a bug an operator could only diagnose by counting messages.
+   */
+  allowRecital(groupId: number, memberId: string, now: number): boolean {
+    const m = this.member(groupId, memberId);
+    const c = this.chat(groupId);
+    m.recitals = trim(m.recitals, now);
+    c.recitals = trim(c.recitals, now);
+    if (m.recitals.length >= RECITALS_PER_MEMBER || c.recitals.length >= RECITALS_PER_CHAT) {
+      return false;
+    }
+    m.recitals.push(now);
+    c.recitals.push(now);
+    // One reply allowance as well, because a recital IS her speaking and a single counter of
+    // "she said something" that a performance does not appear in would be a lie to the next
+    // thing that reads it.
+    m.replies = trim(m.replies, now);
+    c.replies = trim(c.replies, now);
     m.replies.push(now);
     c.replies.push(now);
     return true;

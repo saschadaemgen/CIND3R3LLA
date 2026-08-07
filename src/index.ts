@@ -32,6 +32,11 @@ import { setCoreDeleteHandle } from './bot/core-delete.js';
 import { enforcementAvailable, liveEnforcementPort, setEnforcementHandle } from './bot/enforcement.js';
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
+import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
+import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
+import { startRecital, type RecitalDeps } from './interaction/recital-service.js';
+import { recitalSendPort } from './bot/recital-port.js';
+import { enqueueJob } from './queue/store.js';
 import { registerCapture } from './capture/handler.js';
 import { makePersistenceHooks } from './capture/persist.js';
 import { withBotCapture, type BotReplyMeta } from './capture/bot-message.js';
@@ -215,6 +220,10 @@ async function startCaptureWorker(
         ? sendViaRuntime(runtimeBot.sendGroupText, msg, text, opts)
         : sendToChat(botHandle.chat, msg, text, opts);
 
+    // The recital's own transport (CCB-S4-047). Group-id based, because beats two onward are
+    // sent by a queue job long after the triggering message object has gone.
+    setRecitalSendPort(sdkRecitalPort(botHandle.chat));
+
     const sendAndArchive = (
       msg: Parameters<typeof sendToChat>[1],
       text: string,
@@ -250,10 +259,44 @@ async function startCaptureWorker(
     // anybody reading the journal (CCB-S4-042).
     setWebSearchService(webSearch);
 
+    /**
+     * Reading the Book out loud (CCB-S4-047).
+     *
+     * Everything a recital needs that is not the database, gathered once. `send` is read
+     * through the port rather than captured, so a recital started before the core is ready
+     * declines instead of throwing, and `reserve` is the engine's own limiter so a reading
+     * and an ordinary reply draw on one budget rather than two.
+     */
+    const recitalDeps = (): Omit<RecitalDeps, 'db'> => ({
+      rules: currentPromptRules,
+      recital: () => interaction.get().recital,
+      assetRoot: cfg.assetRoot,
+      // Both go through the ENGINE rather than being rebuilt here. It already owns the one
+      // identity builder, the one clock and the one rate limiter, and a second copy of any
+      // of them is a fact she would state inconsistently or a budget she would overspend.
+      renderRule: (rule) => engine.renderRuleForMember(rule),
+      renderableValues: () => engine.renderableValues(),
+      transition: (beat, _index, lang) => engine.reciteTransition(beat.title, lang),
+      send: recitalSendPort,
+      reserve: (groupId, memberId) => engine.allowRecital(groupId, memberId),
+      schedule: async (groupId, lang, beatIndex, delayMs) => {
+        await enqueueJob(getPool(), RECITAL_JOB, {
+          idempotencyKey: `recital:${String(groupId)}:${lang}:${String(beatIndex)}`,
+          lane: 'interactive',
+          runAt: new Date(Date.now() + delayMs),
+          payload: { groupId, lang, beatIndex },
+        });
+      },
+    });
+    setRecitalJobDeps(recitalDeps);
+
     const engine = new InteractionEngine({
       db: getPool(),
       settings: () => interaction.get(),
       personalize: personalizeAiReply,
+      // Reading the Book out loud (CCB-S4-047). Returns false when a recital cannot start,
+      // and the engine then gives the brief answer rather than going quiet.
+      recite: (msg, lang) => startRecital({ ...recitalDeps(), db: getPool() }, msg, lang),
       // Her character and the four dials (CCB-S4-029), read live like the settings
       // above and for the same reason: an operator moving a slider expects the next
       // reply to sound different, not the next restart.

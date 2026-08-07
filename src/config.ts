@@ -55,6 +55,15 @@ export interface Config {
    */
   quarantineRoot: string;
   /**
+   * Operator-supplied assets: the recital's chapter images (CCB-S4-047).
+   *
+   * A separate tree from MEDIA_ROOT on purpose. That one holds MEMBER media, governed by
+   * consent, encrypted at rest, swept by the destruction jobs and addressed only by
+   * message id. A chapter illustration is none of those things, and mixing the two would
+   * put operator files in front of code whose whole job is to erase member files.
+   */
+  assetRoot: string;
+  /**
    * Path to the bot's avatar image (jpg/png/webp). Re-applied to the SimpleX
    * profile on every startup (bot.run blanks it otherwise). Optional — if the
    * file is absent the profile image is left as-is.
@@ -256,6 +265,7 @@ export function loadConfig(): Config {
       optional('BACKUP_PROGRESS_PATH', '/var/lib/cinderella/backup-progress.json'),
     ),
     quarantineRoot: resolveQuarantineRoot(),
+    assetRoot: resolveAssetRoot(),
     avatarPath: resolveAvatarPath(),
     runtimeHosting: optionalBoolean('BOT_RUNTIME_HOSTING', true),
     databaseUrl: required('DATABASE_URL'),
@@ -301,6 +311,26 @@ export function resolveQuarantineRoot(): string {
     throw new Error(
       `QUARANTINE_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Quarantined media is ` +
         'moved out of the served tree on purpose; nesting it there would leave it readable by path.',
+    );
+  }
+  return root;
+}
+
+/**
+ * Where operator-supplied assets live (CCB-S4-047).
+ *
+ * Refuses to sit inside MEDIA_ROOT for the same reason QUARANTINE_ROOT does, and the failure
+ * it prevents is the mirror image: not member bytes escaping into a served tree, but operator
+ * bytes landing in the tree the destruction sweeps walk.
+ */
+export function resolveAssetRoot(): string {
+  const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
+  const configured = process.env['ASSET_ROOT'];
+  const root = configured ? resolve(configured) : resolve(dirname(media), 'assets');
+  if (root === media || root.startsWith(media + sep)) {
+    throw new Error(
+      `ASSET_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Member media is consent-` +
+        'governed and swept by the destruction jobs; operator assets have no business in that tree.',
     );
   }
   return root;

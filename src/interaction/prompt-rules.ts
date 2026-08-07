@@ -308,6 +308,18 @@ export type PromptRuleValues = Readonly<Record<string, string>>;
  * be given, the other hands her a token she may well echo into the chat. Neither is a
  * failure anybody would notice from the outside, which is exactly why it is loud here.
  */
+/**
+ * The placeholders a rule needs before it can be rendered.
+ *
+ * Exists because {@link renderPromptRule} THROWS on a missing one, which is right for the
+ * prompt stream (a rule is only ever selected when its condition holds, and the condition is
+ * what guarantees the value) and wrong for anything that selects rules some other way. The
+ * recital selects by chapter, so it has to be able to ASK rather than to try and catch.
+ */
+export function promptRulePlaceholders(rule: PromptRule): string[] {
+  return [...new Set([...rule.text.matchAll(PLACEHOLDER)].map((m) => m[1] as string))];
+}
+
 export function renderPromptRule(rule: PromptRule, values: PromptRuleValues): string {
   return rule.text.replace(PLACEHOLDER, (_match, key: string) => {
     const value = values[key];

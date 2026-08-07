@@ -85,7 +85,9 @@
     "verify:memory": "tsx scripts/verify-memory.ts",
     "verify:memory-live": "tsx scripts/verify-memory-live.ts",
     "verify:disclosure": "tsx scripts/verify-disclosure.ts",
-    "verify:disclosure-live": "tsx scripts/verify-disclosure-live.ts"
+    "verify:disclosure-live": "tsx scripts/verify-disclosure-live.ts",
+    "verify:recital": "tsx scripts/verify-recital.ts",
+    "verify:recital-live": "tsx scripts/verify-recital-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
