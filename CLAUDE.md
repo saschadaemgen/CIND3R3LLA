@@ -146,7 +146,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   order only, never tier, lane or condition, because those are contracts the assembler
   implements in code. The boundary that decides what is a rule: a rule is a
   sentence whose text does not depend on a setting, so the dial bands and calibrated
-  references stay personality data and the permissiveness ceiling moved,
+  references stay personality data and the permissiveness ceiling moved.
+  **She may QUOTE some of them since CCB-S4-045/046** (D-148): `disclosure.ts` is the pure
+  model, migration 039 the `nameable` flag. The flag says what the application offers her,
+  never what she can see, so the boundary is two deterministic gates in `disclosure.ts` that
+  answer before the model is asked. Rules are handed over as ROWS and rendered through
+  `renderPromptRule`, or a member is quoted the literal `{{name}}`,
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
@@ -226,7 +231,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   of all three editable fields plus who and when; the OLDEST row per rule is what that rule
   shipped as, which is why there is no `shipped_text` column and why D-144 stays true) ·
   038 conversation memory (two conditions, the four rules that fence remembered chat, and the
-  DELETION of the two no-memory rules D-140 booked in advance for the day memory was built).
+  DELETION of the two no-memory rules D-140 booked in advance for the day memory was built) ·
+  039 rule visibility (`nameable`, defaulting FALSE so a rule a later migration adds is private
+  until somebody decides, seeded 53 nameable / 40 withheld of 93; two conditions, seven
+  `disclosure.*` rules, and the visibility columns on the history. **The flag hides nothing
+  from the model**: every rule is in the prompt, because that is what a rule is, so it controls
+  what the application OFFERS her to quote and the boundary is held by a gate in code).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -234,7 +244,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **039**, since 038 landed with conversation memory). Stated as a rule
+  (currently **040**, since 039 landed with rule visibility). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -305,6 +315,16 @@ absent from the instruction section, and a planted instruction driven through th
 to show it reaches no capability.
 `npm run verify:memory-live` plants five real instructions in the HISTORY, asks something
 ordinary, and prints what she does with each; it needs Ollama and is not in the offline set),
+`verify:disclosure` (what she may quote of her own rules, CCB-S4-045/046: the nameable split,
+the selection and its budgets, that every quotable rule RENDERS, and above all that no question
+can select a withheld rule, mutation-proven both ways. It also pins the two DETERMINISTIC GATES,
+which exist because marking a rule internal does not hide it from the model and a prompt sentence
+could not hold the line: an elimination probe and a question aimed at the machinery are answered
+by the application, before the model is asked anything.
+`npm run verify:disclosure-live` asks a real model to recite, to explain the withholding, and to
+be talked out of both by authority and by elimination; it needs Ollama and is not in the offline
+set. Read its output rather than its exit code: two defects in this work passed every check and
+were only visible in the answer),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
 `verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
 the model transport, so no Ollama need be running.
