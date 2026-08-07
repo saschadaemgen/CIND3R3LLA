@@ -126,6 +126,14 @@ import { applySanction, type EnforcementPort } from '../moderation/apply.js';
 
 export interface InteractionDeps {
   db: Queryable;
+  /**
+   * Which bot this engine speaks for (CCB-S5-001).
+   *
+   * Every enabled bot is hosted now and each has its own engine, so the engine has to be
+   * able to say whose character, whose laws, whose ladders and whose counters these are.
+   * Null only where no bot configuration exists at all, which is the harnesses.
+   */
+  botProfileId?: number | null;
   /** Live settings — read per message, never cached across edits. */
   settings: () => InteractionSettings;
   /**
@@ -1224,7 +1232,7 @@ export class InteractionEngine {
    * methods rather than one with a flag.
    */
   async storyVoice(brief: string, lang: string): Promise<string | null> {
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     if (!personalize) return null;
     const s = this.deps.settings();
     try {
@@ -1246,7 +1254,7 @@ export class InteractionEngine {
   }
 
   async reciteTransition(title: string | undefined, lang: string): Promise<string | null> {
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     if (!personalize) return null;
     const s = this.deps.settings();
     const ask = recitalTransitionAsk(title);
@@ -1551,7 +1559,7 @@ export class InteractionEngine {
     s: InteractionSettings,
     lang: string,
   ): Promise<boolean> {
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     if (!personalize) return false;
 
     let line: string | null = null;
@@ -1724,7 +1732,7 @@ export class InteractionEngine {
       return true;
     }
 
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     if (!personalize) {
       await this.reply(msg, s, lang, 'searchUnavailable', {});
       return true;
@@ -2610,6 +2618,22 @@ export class InteractionEngine {
    * Failure here is contained: moderation must never stop her from replying, so a
    * database problem is logged and the retort goes out unsharpened.
    */
+  /**
+   * `personalize`, with this bot's id stamped on every request (CCB-S5-001).
+   *
+   * Wrapped once here rather than added at the six call sites that build a request: a
+   * seventh call site added later would silently report its model calls as belonging to
+   * no bot, and the queue page would quietly under-count whichever bot the new path
+   * served. The id is telemetry only - it reaches the meter and never the prompt.
+   */
+  private personalizeForThisBot():
+    | ((request: AiReplyRequest) => Promise<string | null>)
+    | undefined {
+    const inner = this.deps.personalize;
+    if (!inner) return undefined;
+    return (request) => inner({ botProfileId: this.deps.botProfileId ?? null, ...request });
+  }
+
   private async moderate(
     msg: CapturedMessage,
     s: InteractionSettings,
@@ -2623,11 +2647,20 @@ export class InteractionEngine {
     if (!rules) return { sharpnessBonus: 0, warning: null, announcement: null };
 
     const at = new Date(now);
-    const scope = { groupId: msg.groupId, memberId: msg.senderMemberId, type };
+    // The counting scope is PER BOT as well as per member and per chat: the ladders are
+    // per bot, so counting across bots would let one bot's threshold fire on messages
+    // another bot handled.
+    const scope = {
+      botProfileId: this.deps.botProfileId ?? null,
+      groupId: msg.groupId,
+      memberId: msg.senderMemberId,
+      type,
+    };
     const role = msg.senderRole ?? null;
 
     try {
       await recordViolation(this.deps.db, {
+        botProfileId: this.deps.botProfileId ?? null,
         groupId: msg.groupId,
         memberId: msg.senderMemberId,
         memberDisplayName: msg.senderDisplayName,
@@ -2679,6 +2712,7 @@ export class InteractionEngine {
 
       if (enforcement.action !== 'none') {
         const common = {
+          botProfileId: this.deps.botProfileId ?? null,
           groupId: msg.groupId,
           memberId: msg.senderMemberId,
           memberDisplayName: msg.senderDisplayName,
@@ -2822,7 +2856,7 @@ export class InteractionEngine {
      */
     dialled?: { personality: BotPersonality | null; identity: BotIdentity },
   ): Promise<string> {
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     if (!personalize) return deterministicDraft;
 
     try {
@@ -2873,7 +2907,7 @@ export class InteractionEngine {
     s: InteractionSettings,
     lang: string,
   ): Promise<boolean> {
-    const personalize = this.deps.personalize;
+    const personalize = this.personalizeForThisBot();
     let spoken: string | null = null;
     // Wall clock around the model call, for Diagnostics (CCB-S4-031 gap 5). Measured
     // whatever the outcome: a slow failure is the fact an operator most wants to see.

@@ -31,12 +31,25 @@
 
 import type { Queryable } from '../db/pool.js';
 import { listPromptRules } from '../db/prompt-rules.js';
+import { listOverridesForBot } from '../db/prompt-rule-overrides.js';
 import { log } from '../log.js';
 import { status } from '../web/status.js';
 import type { PromptRule, PromptRuleSet } from './prompt-rules.js';
+import { applyOverrides, type RuleOverride } from './rule-scope.js';
 
 export class PromptRuleService {
   private value: PromptRule[] = [];
+  /**
+   * Each bot's rulebook: the shared laws with that bot's deviations applied
+   * (CCB-S5-001).
+   *
+   * Cached beside the shared set rather than composed per reply, for the reason the whole
+   * class exists: the prompt builder is synchronous and sits inside the reply path. The
+   * merge itself is cheap; the READ of the deviations is not, and it is the read this
+   * avoids repeating.
+   */
+  private readonly perBot = new Map<number, PromptRule[]>();
+  private readonly inFlight = new Map<number, Promise<void>>();
   private loaded = false;
   private refreshing: Promise<void> | null = null;
   /** So a persistent fault reports once per transition rather than once per reply. */
@@ -57,20 +70,31 @@ export class PromptRuleService {
    * Synchronous by design: this is called from the reply path. An empty set is not treated
    * as "no rules apply" anywhere; the assembler refuses it.
    */
-  get(): PromptRuleSet {
+  get(botProfileId?: number): PromptRuleSet {
     if (!this.loaded) void this.kickRefresh();
+    if (botProfileId === undefined) return this.value;
+    const cached = this.perBot.get(botProfileId);
+    if (cached !== undefined) return cached;
+    void this.kickRefreshFor(botProfileId);
+    // The SHARED laws, not an empty set, while the deviations are still loading. This is
+    // the one place where falling back to the shared value is right rather than a
+    // masking: the shared set IS the law, a deviation is a departure from it, and a bot
+    // briefly reading the law it inherits is a smaller wrong than a bot reading no rules
+    // at all - which the assembler would refuse, dropping her to the deterministic reply.
     return this.value;
   }
 
   /** Drop the cached rules and read them again. */
   invalidate(): void {
     this.loaded = false;
+    this.perBot.clear();
     void this.kickRefresh();
   }
 
   async refresh(): Promise<void> {
     try {
       this.value = await listPromptRules(this.db);
+      this.perBot.clear();
       this.loaded = true;
       this.reportedFailure = false;
     } catch (error) {
@@ -90,6 +114,39 @@ export class PromptRuleService {
         );
       }
     }
+  }
+
+  /**
+   * Load one bot's rulebook.
+   *
+   * A failed read leaves the bot on the SHARED laws and says so. It does NOT invent a
+   * deviation and does not silently drop the bot to no rules: the first is a rule nobody
+   * wrote, the second stops her wording replies at all.
+   */
+  async refreshFor(botProfileId: number): Promise<void> {
+    try {
+      const overrides: RuleOverride[] = await listOverridesForBot(this.db, botProfileId);
+      this.perBot.set(botProfileId, applyOverrides(this.value, overrides));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn(
+        `Prompt rules: reading bot ${botProfileId}'s per-bot laws failed; it is answering ` +
+          `from the shared laws (${message}).`,
+      );
+      status.error(
+        `The per-bot laws of bot ${botProfileId} could not be read (${message}). It is ` +
+          `answering from the shared laws, so any law set for it alone is not in effect.`,
+      );
+    }
+  }
+
+  private kickRefreshFor(botProfileId: number): Promise<void> {
+    let p = this.inFlight.get(botProfileId);
+    if (p === undefined) {
+      p = this.refreshFor(botProfileId).finally(() => this.inFlight.delete(botProfileId));
+      this.inFlight.set(botProfileId, p);
+    }
+    return p;
   }
 
   /** One refresh in flight at a time, so a burst of replies cannot stack reads. */
@@ -119,7 +176,18 @@ export function invalidatePromptRules(): void {
   active?.invalidate();
 }
 
-/** The getter the interaction engine and the console preview are wired with. */
-export function currentPromptRules(): PromptRuleSet {
-  return active?.get() ?? [];
+/**
+ * The getter the interaction engine and the console preview are wired with.
+ *
+ * Each engine belongs to one bot and passes its own id (CCB-S5-001), so it reads the
+ * shared laws with that bot's deviations applied. The no-argument form is the SHARED
+ * registry and is what the Book's list page and `verify:prompt-identity` read.
+ */
+export function currentPromptRules(botProfileId?: number): PromptRuleSet {
+  return active?.get(botProfileId) ?? [];
+}
+
+/** Warm one bot's rulebook, so its first reply does not race the read. */
+export async function warmPromptRules(botProfileId: number): Promise<void> {
+  await active?.refreshFor(botProfileId);
 }
