@@ -133,6 +133,7 @@ interface Case {
   hasWithheldRules?: boolean;
   ruleOverview?: { total: number; constitutional: number; areas: string };
   moreInArea?: number;
+  ruleInvocations?: string;
 }
 
 /**
@@ -212,6 +213,8 @@ const CASES: Case[] = [
   // nothing and states counts the model must not touch, and a follow-up whose cap bound.
   { id: 'conversation.rule-overview', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, hasWithheldRules: true, ruleOverview: { total: 93, constitutional: 45, areas: 'who I am, what I will never do and what I keep back' } },
   { id: 'conversation.follow-up-capped', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true, moreInArea: 7 },
+  // CCB-S4-050. What the record says about the rules she is quoting.
+  { id: 'conversation.with-invocations', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true, ruleInvocations: '"ceiling.never-explicit" applied 3 times, last on 2026-08-05' },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -256,6 +259,7 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.hasWithheldRules !== undefined ? { hasWithheldRules: testCase.hasWithheldRules } : {}),
     ...(testCase.ruleOverview ? { ruleOverview: testCase.ruleOverview } : {}),
     ...(testCase.moreInArea !== undefined ? { moreInArea: testCase.moreInArea } : {}),
+    ...(testCase.ruleInvocations ? { ruleInvocations: testCase.ruleInvocations } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),
@@ -294,6 +298,7 @@ function selectionFor(
     hasWithheldRules: testCase.hasWithheldRules === true,
     hasRuleOverview: testCase.ruleOverview !== undefined,
     hasMoreInArea: (testCase.moreInArea ?? 0) > 0,
+    hasInvocationRecord: (testCase.ruleInvocations ?? '').length > 0,
   };
   const values: Record<string, string> = {
     ...base.values,
@@ -306,6 +311,7 @@ function selectionFor(
     ruleConstitutional: String(testCase.ruleOverview?.constitutional ?? 0),
     ruleAreas: testCase.ruleOverview?.areas ?? '',
     moreInArea: String(testCase.moreInArea ?? 0),
+    ruleInvocations: testCase.ruleInvocations ?? '',
     nameableRules: (testCase.nameableRules ?? [])
       .map((rule) => `\n- ${renderPromptRule(rule, base.values)}`)
       .join(''),

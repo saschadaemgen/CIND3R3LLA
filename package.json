@@ -89,7 +89,9 @@
     "verify:recital": "tsx scripts/verify-recital.ts",
     "verify:recital-live": "tsx scripts/verify-recital-live.ts",
     "verify:rule-conversation": "tsx scripts/verify-rule-conversation.ts",
-    "verify:rule-conversation-live": "tsx scripts/verify-rule-conversation-live.ts"
+    "verify:rule-conversation-live": "tsx scripts/verify-rule-conversation-live.ts",
+    "verify:book-artefact": "tsx scripts/verify-book-artefact.ts",
+    "verify:book-artefact-live": "tsx scripts/verify-book-artefact-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
