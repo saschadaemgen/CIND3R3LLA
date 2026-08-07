@@ -497,7 +497,6 @@ async function main(): Promise<void> {
     avatarPath: '',
     databaseUrl: 'postgres://placeholder@127.0.0.1:5432/x',
     logLevel: 'error',
-    runtimeHosting: false,
   } as unknown as Config;
 
   registerNav();
