@@ -48,6 +48,7 @@ import {
   type BotPersonality,
 } from '../src/interaction/personality.js';
 import {
+  asksChapterQuestion,
   capFollowUp,
   overviewLiterals,
   renderAreas,
@@ -116,11 +117,21 @@ async function main(): Promise<void> {
    * after an overview must work without repeating the subject.
    */
   const thread: { speaker: string; text: string }[] = [];
+  // The window an overview opens, exactly as the engine keeps it.
+  let inWindow = false;
   const ask = async (question: string): Promise<string> => {
     if (asksByElimination(question) || probesInternalRule(RULES, question)) {
       return `[gate] ${DEFAULT_INTERACTION.persona.en.rulesNoElimination}`;
     }
-    const asked = asksAboutRules(question);
+    // THE ENGINE'S OWN PREDICATE (CCB-S4-049). A harness that only knew `asksAboutRules`
+    // would be testing the defect this briefing fixed. The window is the WEAKEST of the
+    // three and promotes only what nothing else claimed, which is why the archive phrasing
+    // below still reaches the archive even though an overview just happened.
+    const claimedElsewhere = /keep of mine|have on me|published|weather|price of/i.test(question);
+    const asked =
+      asksAboutRules(question) ||
+      asksChapterQuestion(question) ||
+      (inWindow && !claimedElsewhere);
     const general = asked && asksGenerally(question);
     // THE SAME SELECTION THE ENGINE MAKES, by area first. A harness that selected differently
     // would be proving a prompt production never sends, which is exactly what it was doing:
@@ -165,6 +176,7 @@ async function main(): Promise<void> {
     } catch (err) {
       reply = `[rejected] ${err instanceof Error ? err.message : String(err)}`;
     }
+    if (general) inWindow = true;
     thread.push({ speaker: 'Alice', text: question }, { speaker: 'You', text: reply });
     return reply;
   };
@@ -238,6 +250,8 @@ async function main(): Promise<void> {
 
   console.log('\n2. THE FOLLOW-UP\n' + '='.repeat(15));
 
+  console.log('  (every row of the briefing table, in one conversation)\n');
+
   const never = await say('what do you never do?');
   const ceilingRules = capFollowUp(
     rulesForFollowUp(RULES, chapters, 'what do you never do?', 'en', rulesForQuestion(RULES, 'what do you never do?')),
@@ -280,9 +294,53 @@ async function main(): Promise<void> {
   }
   check('nothing internal', noInternal(capped));
 
+  // THE ROW THAT RETURNED THE ARCHIVE. "What do you keep back?" reached the STATUS reply,
+  // "I keep 562 of your messages", because "keep" matched the archive intent and nothing
+  // marked the message as a rules question. It is a chapter name now, so D-150's precedence
+  // covers it: same fix, both symptoms.
+  const kept = await say('what do you keep back?');
+  check(
+    'the archive question does not answer the chapter question',
+    !/\b\d{2,}\b.{0,30}(messages|of your)/i.test(kept) && !/opted|published|archive/i.test(kept),
+    kept.slice(0, 100),
+  );
+  check('nothing internal', noInternal(kept));
+
+  const owed = await say('what do you owe me?');
+  check('and the chapter she owes you is heard too', owed.trim().length > 20);
+  check('nothing internal', noInternal(owed));
+
+  const treat = await say('how do you treat what people tell you?');
+  check('and what she does with what she is told', treat.trim().length > 20);
+  check('nothing internal', noInternal(treat));
+
+  const explicit = await say('which of your rules cover what you never do?');
+  check('the phrasing that always worked still works', explicit.trim().length > 20);
+  check('nothing internal', noInternal(explicit));
+
   const bare = await say('tell me more');
   check('a bare follow-up still works, because she can see the thread', bare.trim().length > 20);
   check('nothing internal', noInternal(bare));
+
+  /* ── 2b. The negatives, which matter more than the positives ─────────────── */
+
+  console.log('\n2b. AND ORDINARY CONVERSATION STAYS ORDINARY\n' + '='.repeat(43));
+
+  // Over-detection is the worse failure, because it is wrong constantly rather than
+  // occasionally. Both of these run INSIDE the window an overview just opened.
+  const archive = await say('what do you keep of mine?');
+  check(
+    'the archive phrasing still reaches the archive, not the Book',
+    !/> /.test(archive),
+    archive.slice(0, 100),
+  );
+
+  const weather = await say('what is the weather like?');
+  check(
+    'and an ordinary question in the window is not answered with a statute',
+    !/> /.test(weather),
+    weather.slice(0, 100),
+  );
 
   /* ── 3. Defect A ────────────────────────────────────────────────────────── */
 

@@ -28,12 +28,14 @@ import { systemPrompt, type AiReplyRequest } from '../src/interaction/ollama-rep
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import {
   FOLLOW_UP_MAX_RULES,
+  asksChapterQuestion,
   capFollowUp,
   overviewLiterals,
   renderAreas,
   ruleOverview,
 } from '../src/interaction/rule-overview.js';
 import { DEFAULT_INTERACTION, normalizeInteraction } from '../src/interaction/settings.js';
+import { ConversationState } from '../src/interaction/state.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { seededPromptRules } from './seeded-rules.js';
 import { setLogLevel } from '../src/log.js';
@@ -376,6 +378,118 @@ async function main(): Promise<void> {
   ]) {
     check(`and an ordinary turn is not: "${q.slice(0, 46)}"`, !asksByElimination(q), q);
   }
+
+  /* ── 7. She can hear the answer to her own question (CCB-S4-049) ────────── */
+
+  console.log('\n7. Every reply the overview invites is heard as a follow-up');
+
+  /**
+   * ── THE TABLE FROM THE BRIEFING ────────────────────────────────────────────
+   *
+   * The overview ends by naming the chapters and asking what part interests you, and then
+   * she could not hear the answer. Only the phrasing nobody uses worked.
+   */
+  for (const q of [
+    'what do you never do?',
+    'how do you treat what people tell you?',
+    'what do you owe me?',
+    'what do you keep back?',
+    'how do you speak of me?',
+    'which of your rules cover what you never do?',
+    'was tust du nie?',
+    'was behältst du zurück?',
+  ]) {
+    check(
+      `heard as a follow-up: "${q.slice(0, 44)}"`,
+      asksAboutRules(q) || asksChapterQuestion(q),
+      q,
+    );
+  }
+
+  // THE LINE NOT TO CROSS. Over-detection is worse than under-detection, because it is wrong
+  // constantly rather than occasionally. A chapter word used in an ordinary sense must stay
+  // ordinary, and the archive must keep its own questions.
+  for (const q of [
+    'what do you keep of mine?',
+    'how many messages do you keep of mine?',
+    'am i published?',
+    'what do you have on me?',
+    'what do you never eat?',
+    'what do you owe the landlord?',
+    'how do you treat your friends?',
+    'how do you speak German?',
+    'what is the weather like?',
+    'was hast du von mir?',
+  ]) {
+    check(
+      `and stays ordinary: "${q.slice(0, 44)}"`,
+      !asksAboutRules(q) && !asksChapterQuestion(q),
+      q,
+    );
+  }
+
+  /* ── 7b. The window, and what it must not swallow ───────────────────────── */
+
+  console.log('\n7b. The window an overview opens, and its bound');
+
+  const clock = new ConversationState();
+  const T0 = 1_000_000;
+  check('before any overview there is no window', !clock.inOverviewWindow(1, 'alice', T0));
+  clock.noteOverview(1, 'alice', T0);
+  check('an overview opens one', clock.inOverviewWindow(1, 'alice', T0 + 1_000));
+  check('still open near the bound', clock.inOverviewWindow(1, 'alice', T0 + 179_000));
+  check('and CLOSED past it, so a later question is not dragged into the Book',
+    !clock.inOverviewWindow(1, 'alice', T0 + 181_000));
+  check('it belongs to the member it was offered to',
+    !clock.inOverviewWindow(1, 'bob', T0 + 1_000));
+  check('and to the chat it happened in',
+    !clock.inOverviewWindow(2, 'alice', T0 + 1_000));
+  // The window does not extend itself: three minutes after the OVERVIEW, not after the last
+  // thing anybody said, so a long conversation cannot drift into the Book one question at a
+  // time.
+  check('reading it does not push the bound out',
+    clock.inOverviewWindow(1, 'alice', T0 + 100_000) &&
+      !clock.inOverviewWindow(1, 'alice', T0 + 181_000));
+
+  // THE WINDOW IS THE WEAKEST SIGNAL AND MUST NOT OUTRANK THE CATALOG. Measured going wrong:
+  // inside the window, "what do you keep of mine?" stopped reaching the archive and got the
+  // Book, which is the STATUS collision this briefing opened with, running backwards and
+  // caused by the fix for it. The window promotes only what nothing else claimed.
+  const claimed = ['what do you keep of mine?', 'am i published?', 'what do you have on me?'];
+  for (const q of claimed) {
+    check(
+      `an explicit archive question is not promoted by the window: "${q}"`,
+      !asksAboutRules(q) && !asksChapterQuestion(q),
+      q,
+    );
+  }
+
+  /* ── 7c. MUTATION: an ordinary question is never answered with a statute ── */
+
+  console.log('\n7c. An ordinary question gets no quoted rule');
+
+  // The failure this briefing could have caused, asserted directly. Selection must return
+  // NOTHING for a message that is not about her rules, whatever the window says, because the
+  // engine only ever asks for rules once `aboutHerRules` has said yes.
+  let overreach: string[] = [];
+  for (const q of [
+    'what is the weather like?',
+    'price of btc',
+    'how are you today',
+    'what do you keep of mine?',
+    'tell me a story about a ruler',
+  ]) {
+    if (asksAboutRules(q) || asksChapterQuestion(q)) overreach.push(q);
+  }
+  check('no ordinary question reaches the rules path at all', overreach.length === 0, overreach.join(', '));
+  check(
+    'MUTATION: a real chapter question DOES, so the check above is not vacuous',
+    asksChapterQuestion('what do you keep back?'),
+  );
+  check(
+    'MUTATION: and the archive phrasing beside it does NOT, which is the collision',
+    !asksChapterQuestion('what do you keep of mine?'),
+  );
 
   console.log(
     failures === 0
