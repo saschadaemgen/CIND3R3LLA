@@ -217,3 +217,98 @@ export async function setDeletedById(
   );
   return (rowCount ?? 0) > 0;
 }
+
+/**
+ * The recent group thread, for her conversational memory (CCB-S4-044, D-147).
+ *
+ * ── WHAT IS EXCLUDED, AND WHY EACH ONE ───────────────────────────────────────
+ *
+ * DESTROYED messages need no clause at all, and that is worth stating rather than leaving
+ * to be noticed: destruction is a physical `DELETE FROM messages` (`src/archive/destroy.ts`),
+ * so a destroyed message cannot be selected because the row is gone. The clause that IS
+ * needed is `pending_destructions`: when an evidence hold defers a destruction the row is
+ * still here with its text, and the member has already asked to be erased. The hold defers
+ * the erasure, never the intent.
+ *
+ * DELETED, both kinds. `group_deleted` means the member removed it from the room and every
+ * other client dropped it; putting it back in her context is a deletion that did not happen.
+ * `deleted` is the operator's mark and is honoured for the same reason.
+ *
+ * REJECTED by moderation. Not published, and not fed to the model either.
+ *
+ * REVOKED members, which is the one that was a judgement call rather than an obvious
+ * exclusion. See the console copy: a revocation is the strongest signal a member can send
+ * about their own words, and honouring it in one place and not another is how a "no" stops
+ * meaning anything. The cost is real and is stated: she can still see that member's CURRENT
+ * message, because that is not history, so she can answer them; she cannot recall their
+ * earlier lines.
+ *
+ * HER OWN replies are INCLUDED (`is_bot`), because following her own thread is half of what
+ * this is for.
+ *
+ * ── WHY THE TEXT COMES FROM TWO COLUMNS ──────────────────────────────────────
+ *
+ * Her rows carry their text in `search_body` and members' rows in `text_body`, a split
+ * migration 013 introduced so a bot row indexes only what it is allowed to. A single
+ * `text_body` read would have returned her side of every conversation as blank.
+ *
+ * Oldest first, because that is a transcript. The LIMIT applies to the newest, which is why
+ * the ordering is reversed in the subquery and restored outside it.
+ */
+export interface GroupHistoryRow {
+  memberId: string;
+  displayName: string;
+  fromBot: boolean;
+  sentAt: string;
+  text: string;
+}
+
+export async function listGroupHistory(
+  db: Queryable,
+  groupId: number,
+  opts: { limit: number; sinceIso: string; beforeMessageId?: number },
+): Promise<GroupHistoryRow[]> {
+  if (opts.limit <= 0) return [];
+
+  const { rows } = await db.query<{
+    sender_member_id: string;
+    sender_display_name: string;
+    is_bot: boolean;
+    sent_at: string;
+    body: string | null;
+  }>(
+    `SELECT * FROM (
+       SELECT m.sender_member_id, m.sender_display_name, m.is_bot, m.sent_at,
+              CASE WHEN m.is_bot THEN m.search_body ELSE m.text_body END AS body
+         FROM messages m
+        WHERE m.group_id = $1
+          AND m.sent_at >= $2
+          AND ($3::BIGINT IS NULL OR m.id < $3::BIGINT)
+          AND m.deleted = FALSE
+          AND m.group_deleted = FALSE
+          AND m.moderation_state <> 'rejected'
+          AND NOT EXISTS (
+                SELECT 1 FROM pending_destructions pd WHERE pd.message_id = m.id
+              )
+          AND NOT EXISTS (
+                SELECT 1 FROM consent c
+                 WHERE c.member_id = m.sender_member_id
+                   AND c.revoked_at IS NOT NULL
+              )
+        ORDER BY m.sent_at DESC, m.id DESC
+        LIMIT $4
+     ) recent
+     ORDER BY recent.sent_at ASC`,
+    [groupId, opts.sinceIso, opts.beforeMessageId ?? null, opts.limit],
+  );
+
+  return rows
+    .filter((row) => (row.body ?? '').trim() !== '')
+    .map((row) => ({
+      memberId: row.sender_member_id,
+      displayName: row.sender_display_name,
+      fromBot: row.is_bot,
+      sentAt: new Date(row.sent_at).toISOString(),
+      text: (row.body ?? '').trim(),
+    }));
+}
