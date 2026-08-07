@@ -63,6 +63,24 @@ import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
 import { systemPrompt, type AiReplyMode } from '../../interaction/ollama-reply.js';
+import {
+  PROMPT_RULE_CONDITIONS,
+  PROMPT_RULE_LANES,
+  PROMPT_RULE_TIERS,
+  type PromptRuleCondition,
+  type PromptRuleLane,
+  type PromptRuleTier,
+} from '../../interaction/prompt-rules.js';
+import { listRecitalChapters } from '../../db/recital-chapters.js';
+import {
+  chapterForNewRule,
+  rejectRuleId,
+  ruleFamilies,
+} from '../../interaction/rule-overview.js';
+import { createPromptRule } from '../../db/prompt-rules.js';
+
+const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
+const TEXTAREA_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-sm';
 
 function bodyString(body: unknown, key: string): string {
   const value = (body as Record<string, unknown> | null)?.[key];
@@ -474,6 +492,13 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           </div>
 
           <div class="mb-4 flex flex-col gap-3">
+            <div>
+              <a
+                href="/book/new"
+                class="inline-block rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                >Enact a new law</a
+              >
+            </div>
             ${viewTabs(view, query)}
             <form method="get" action="/book" class="flex flex-wrap gap-2">
               <input type="hidden" name="view" value="${view}" />
@@ -503,6 +528,274 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       });
     },
   );
+
+  /**
+   * Enacting a law (CCB-S4-051, D-153).
+   *
+   * Every field is ASKED FOR rather than defaulted, because each one is a decision the
+   * operator would otherwise discover later: an id he cannot change, a lane that decides which
+   * replies see it, a position that decides how much weight it carries against the model's
+   * trained habits.
+   */
+  app.get<{ Querystring: Record<string, string> }>('/book/new', async (req, reply) => {
+    const csrf = req.session?.csrfToken ?? '';
+    const rules = await listPromptRules(ctx.db);
+    const chapters = await listRecitalChapters(ctx.db);
+    const families = ruleFamilies(chapters);
+    const highest = rules.reduce((n, r) => Math.max(n, r.ord), 0);
+    reply.type('text/html');
+
+    return page({
+      title: 'Enact a law | The Book of Elii',
+      active: 'book:rules',
+      csrfToken: csrf,
+      body: html`
+        ${pageHeader('Enact a law', 'A new law, written into the Book and into her prompt.')}
+        ${req.query['error']
+          ? html`<div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              ${req.query['error']}
+            </div>`
+          : null}
+
+        <form method="post" action="/book/new" class="grid gap-4">
+          <input type="hidden" name="_csrf" value="${csrf}" />
+
+          ${card(
+            'What it says',
+            html`<label class="flex flex-col gap-1 text-sm">
+              <span class="font-medium text-slate-700">The law</span>
+              <textarea name="text" rows="5" class="${TEXTAREA_CLS}">${req.query['text'] ?? ''}</textarea>
+              <span class="text-xs text-slate-500">
+                One instruction, in the second person, as she will read it. This is the exact
+                text that goes into her prompt and, if it is nameable, the exact text a member
+                is quoted.
+              </span>
+            </label>`,
+          )}
+
+          ${card(
+            'What it is called',
+            html`<label class="flex flex-col gap-1 text-sm">
+                <span class="font-medium text-slate-700">Id</span>
+                <input name="id" value="${req.query['id'] ?? ''}" placeholder="ceiling.no-slurs" class="${INPUT_CLS}" />
+                <span class="text-xs text-slate-500">
+                  Permanent. It outlives every rewording and every reorder, and it is what the
+                  history, the checks and the chapter assignment refer to. Lowercase and dotted.
+                </span>
+                <span class="text-xs text-slate-500">
+                  The part before the first dot is the FAMILY, and it decides which chapter
+                  reads this law out. A law in no family is in her prompt and unreadable by
+                  anybody asking about that part of the Book, so it is refused. Families in use:
+                  ${families.map((f: string) => html`<code>${f}</code> `)}
+                </span>
+              </label>`,
+          )}
+
+          ${card(
+            'How it applies',
+            html`
+              <div class="grid gap-3 sm:grid-cols-2">
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Lane</span>
+                  <select name="lane" class="${INPUT_CLS}">
+                    ${PROMPT_RULE_LANES.map(
+                      (l: string) => html`<option value="${l}">${l}</option>`,
+                    )}
+                  </select>
+                  <span class="text-xs text-slate-500">
+                    Which replies see it. <code>all</code> is every reply she writes;
+                    <code>dialled</code> is free conversation and retorts, where her voice is;
+                    the rest are the command and search lanes.
+                  </span>
+                </label>
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Applies when</span>
+                  <select name="appliesWhen" class="${INPUT_CLS}">
+                    ${PROMPT_RULE_CONDITIONS.map(
+                      (c: string) =>
+                        html`<option value="${c}" ${c === 'always' ? raw('selected') : ''}>${c}</option>`,
+                    )}
+                  </select>
+                  <span class="text-xs text-slate-500">
+                    From the fixed vocabulary (D-144), never free text: the assembler implements
+                    these in code. <code>always</code> unless the law only makes sense in one
+                    situation.
+                  </span>
+                </label>
+              </div>
+              <label class="mt-3 flex flex-col gap-1 text-sm">
+                <span class="font-medium text-slate-700">Position</span>
+                <input name="ord" type="number" value="${String(highest + 1)}" class="${INPUT_CLS} sm:w-40" />
+                <span class="text-xs text-slate-500">
+                  <strong>Later carries more weight.</strong> The prompt is read in order, and a
+                  law meant to overrule the model's trained habits needs to sit near the end.
+                  The highest in use is ${String(highest)}, so the default puts this last.
+                </span>
+              </label>
+            `,
+          )}
+
+          ${card(
+            'What kind of law',
+            html`
+              <label class="flex flex-col gap-1 text-sm">
+                <span class="font-medium text-slate-700">Tier</span>
+                <select name="tier" class="${INPUT_CLS}">
+                  ${PROMPT_RULE_TIERS.map(
+                    (t: string) =>
+                      html`<option value="${t}" ${t === 'standard' ? raw('selected') : ''}>${t}</option>`,
+                  )}
+                </select>
+                <span class="text-xs text-slate-500">
+                  <code>standard</code> unless this is a boundary no setting may relax.
+                  Enacting a <code>constitutional</code> law is as consequential as changing
+                  one, so it asks you to type the id to confirm.
+                </span>
+              </label>
+              <label class="mt-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" name="nameable" class="rounded" />
+                <span>She may quote this law to a member who asks</span>
+              </label>
+              <span class="text-xs text-slate-500">
+                Nameable if it EXPLAINS her behaviour to somebody affected by it. Internal if
+                its exact wording is a lever. Internal is the default because a law nobody
+                decided about should not be quotable.
+              </span>
+              <label class="mt-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" name="critical" class="rounded" />
+                <span>Its absence should be loud</span>
+              </label>
+              <span class="text-xs text-slate-500">
+                Critical laws are checked for presence by <code>verify:prompt-identity</code>,
+                so disabling one turns the suite red and shouts at the top of the Book. For
+                anything the product's safety rests on.
+              </span>
+              <label class="mt-3 flex items-center gap-2 text-sm">
+                <input type="checkbox" name="enabled" checked class="rounded" />
+                <span>In force from now</span>
+              </label>
+            `,
+          )}
+
+          ${card(
+            'Confirm',
+            html`
+              <label class="flex flex-col gap-1 text-sm">
+                <span class="font-medium text-slate-700">
+                  Typed confirmation, for a constitutional law only
+                </span>
+                <input name="confirm" placeholder="type the id again" class="${INPUT_CLS}" />
+                <span class="text-xs text-slate-500">
+                  Left empty for a standard law. A constitutional one takes the same ceremony as
+                  changing one: type the id exactly.
+                </span>
+              </label>
+              <div class="mt-3 flex gap-2">
+                <button
+                  type="submit"
+                  name="action"
+                  value="preview"
+                  class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Preview the prompt
+                </button>
+                <button
+                  type="submit"
+                  name="action"
+                  value="save"
+                  class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                >
+                  Enact it
+                </button>
+              </div>
+            `,
+          )}
+        </form>
+      `,
+    });
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/book/new', async (req, reply) => {
+    const csrf = req.session?.csrfToken ?? '';
+    const actor = req.session?.username ?? 'unknown';
+    const rules = await listPromptRules(ctx.db);
+    const chapters = await listRecitalChapters(ctx.db);
+
+    const id = bodyString(req.body, 'id').trim();
+    const text = bodyString(req.body, 'text').replace(/\r\n/g, '\n').trim();
+    const tier = bodyString(req.body, 'tier') as PromptRuleTier;
+    const lane = bodyString(req.body, 'lane') as PromptRuleLane;
+    const appliesWhen = bodyString(req.body, 'appliesWhen') as PromptRuleCondition;
+    const ord = Number.parseInt(bodyString(req.body, 'ord'), 10);
+
+    const back = (message: string): string =>
+      `/book/new?error=${encodeURIComponent(message)}&id=${encodeURIComponent(id)}&text=${encodeURIComponent(text)}`;
+
+    const idProblem = rejectRuleId(chapters, id);
+    if (idProblem) return reply.redirect(back(idProblem));
+    if (!text) return reply.redirect(back('A law with no text is not a law.'));
+    if (!Number.isSafeInteger(ord)) return reply.redirect(back('Position must be a whole number.'));
+    if (!(PROMPT_RULE_TIERS as readonly string[]).includes(tier)) {
+      return reply.redirect(back('Unknown tier.'));
+    }
+    if (!(PROMPT_RULE_LANES as readonly string[]).includes(lane)) {
+      return reply.redirect(back('Unknown lane.'));
+    }
+    if (!(PROMPT_RULE_CONDITIONS as readonly string[]).includes(appliesWhen)) {
+      return reply.redirect(back('Unknown condition.'));
+    }
+
+    const proposed: PromptRule = {
+      id,
+      tier,
+      lane,
+      appliesWhen,
+      ord,
+      text,
+      enabled: 'enabled' in req.body,
+      critical: 'critical' in req.body,
+      nameable: 'nameable' in req.body,
+      scope: null,
+      source: `the console (${actor})`,
+    };
+
+    // THE PREVIEW, before anything is written. The same question the edit path answers: what
+    // would she actually be told?
+    if (bodyString(req.body, 'action') === 'preview') {
+      reply.type('text/html');
+      return page({
+        title: `Preview ${id} | The Book of Elii`,
+        active: 'book:rules',
+        csrfToken: csrf,
+        body: html`
+          ${pageHeader('Before and after', `The prompt with "${id}" enacted.`)}
+          <p class="mb-4 text-sm text-slate-600">
+            Nothing has been written. This law would land in the chapter
+            <strong>${chapterForNewRule(chapters, id)?.titleEn ?? 'none'}</strong>, at position
+            ${String(ord)} of ${String(rules.length + 1)}.
+          </p>
+          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()))}
+          <div class="mt-4">
+            <a class="text-sm underline" href="${back('')}">Back to the form</a>
+          </div>
+        `,
+      });
+    }
+
+    if (tier === 'constitutional' && bodyString(req.body, 'confirm').trim() !== id) {
+      return reply.redirect(
+        back(`That is a constitutional law. Type its id exactly (${id}) to enact it.`),
+      );
+    }
+
+    try {
+      await createPromptRule(ctx.db, proposed, actor);
+    } catch (err) {
+      return reply.redirect(back(errorMessage(err)));
+    }
+    invalidatePromptRules();
+    return reply.redirect(`/book/rule/${id}?saved=1`);
+  });
 
   /** One rule, open for editing, with its history beneath it. */
   app.get<{ Params: { id: string }; Querystring: { error?: string } }>(
