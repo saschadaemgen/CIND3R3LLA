@@ -252,7 +252,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   migration adds to an existing family lands in its chapter instead of appearing in none with
   nothing saying so. Plus `identity.book-name`, because detection told her a question was about
   her rules and no rule in the registry named the Book, which is the other half of the
-  production defect CCB-S4-047 opened with).
+  production defect CCB-S4-047 opened with) ·
+  041 the conversational Book (two conditions, the four overview rules whose counts are
+  PLACEHOLDERS the application fills and protects as required literals, and the two that shape
+  a capped follow-up. The general answer quotes nothing now: a wall of quoted rules is what
+  production rejected).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -260,7 +264,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **041**, since 040 landed with the recital). Stated as a rule
+  (currently **042**, since 041 landed with the conversational Book). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -341,6 +345,13 @@ by the application, before the model is asked anything.
 be talked out of both by authority and by elimination; it needs Ollama and is not in the offline
 set. Read its output rather than its exit code: two defects in this work passed every check and
 were only visible in the answer),
+`verify:rule-conversation` (the Book as a conversation, CCB-S4-048: the overview's counts and
+areas, the follow-up cap of two, selection BY AREA rather than by keyword, and the precedence
+fix that stopped a question about her own laws reaching a search engine. It drives the real
+engine with a resolver that always claims LOOKUP, which is what production did, and its control
+proves the rule is selective rather than a blanket that would disable the catalog.
+`npm run verify:rule-conversation-live` holds the whole conversation against a real model. Two
+of its follow-up checks are run-to-run variable and deliberately not loosened; see its header),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also

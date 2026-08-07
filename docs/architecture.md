@@ -2709,6 +2709,47 @@ or *secret* rules. That was the whole vocabulary available when all a member kne
 rules existed. **A recital invents more**: the ones you SKIPPED, the OTHER 40, and the closing
 hands over the count. Both phrasings reached the model live and both leaked. The gate now
 covers the complement of a reading. See security §12.7.
+## 42. The Book as a conversation (CCB-S4-048, D-150)
+
+The default answer to a question about her rules. An orientation, then the quoting on the
+follow-up.
+
+### 42.1 The two shapes
+
+| | General question | Specific follow-up |
+| --- | --- | --- |
+| Detector | `asksGenerally` | everything else `asksAboutRules` matches |
+| Quotes | **nothing** | at most **2** rules, verbatim |
+| Carries | counts, areas, the withholding, an invitation | the rules, and how many more the area holds |
+| Selection | n/a | by chapter area first, then keyword |
+
+The counts are computed in `rule-overview.ts`, rendered through `{{ruleTotal}}` and
+`{{ruleConstitutional}}`, and passed as REQUIRED LITERALS so a reply that loses one is
+rejected. The withheld count is deliberately absent: unprotected numbers get smoothed.
+
+### 42.2 Modes
+
+| Mode | General question | The Book by name |
+| --- | --- | --- |
+| `overview` (default) | orientation | orientation |
+| `brief` | quotes a few rules (CCB-S4-045) | same |
+| `asked` | orientation | full recital |
+| `always` | full recital | full recital |
+
+### 42.3 Precedence: a question about her outranks the catalog
+
+Enforced in the engine, after BOTH resolvers and before dispatch, because that is the only
+point every path passes through. D-143 put a precedence rule in `rules.ts` and it is still
+right; it guards the rule engine, and the model resolver is where this broke. Consent intents
+(PUBLISH, UNPUBLISH, RESTORE) are never overridden.
+
+### 42.4 What a third shape taught the guards
+
+Each shape that makes her say more about her rules gives members new words for the set she
+keeps back. The recital taught *the ones you skipped* and *the other 40*; the conversation
+teaches *the ones you keep back*. The elimination gate now covers all three, and the pattern
+is the thing to carry: this is a standing consequence of the feature, not a one-off. See
+security §12.7.
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

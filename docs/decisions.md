@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-149**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-150**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -16,6 +16,81 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 
+### D-150 - The Book is a conversation, and a question about her outranks the catalog
+
+**Status: IMPLEMENTED** (CCB-S4-048). Production testing rejected both existing shapes. The
+brief answer quotes three or four rules back to back, which is a block nobody reads. The
+recital sends several messages into a room where other people are talking.
+
+**SO A GENERAL QUESTION GETS AN ORIENTATION.** How many laws, how many constitutional, what
+they broadly cover, that some are withheld and why, and an invitation. It quotes nothing. The
+quoting moves to the follow-up, capped at **two**, where it answers something somebody asked.
+Nobody reads a hundred rules; everybody asks about the one that interests them.
+
+**THE COUNTS ARE APPLICATION FACTS AND THE MODEL DOES NOT PRODUCE THEM.** Rendered through
+placeholders and passed as REQUIRED LITERALS, so a reply that loses or changes one is rejected
+and the deterministic answer goes out instead. D-137: a number a model is asked to preserve
+inside its own prose is a number it will smooth, and a bot that misstates how many laws it has
+is worse than one that does not say. The withheld COUNT is deliberately not among them: the
+existing disclosure rules say there are more without giving a number, and an unprotected
+number in a prompt is a number she can get wrong.
+
+**AREAS COME FROM THE RECITAL'S CHAPTERS**, so there is one authored description of what her
+rules cover rather than a second list that drifts. A chapter holding nothing she may name is
+not named, because describing an empty area is describing rules she does not have.
+
+**SELECTION IS BY AREA FIRST, AND THE KEYWORD SCORE ALONE WAS MEASURABLY WRONG.** Live,
+*"what do you never do?"* selected the rule about her own name and the one about nicknames,
+because both contain the word "never", and not one of the four rules that answer it. The
+chapters are an authored map of what her rules are about, in the operator's words, so a
+question matching a chapter title is a question about that area. No second vocabulary to
+maintain, and retitling a chapter retunes the selector.
+
+**DEFECT A: A QUESTION ABOUT HER OUTRANKS THE CATALOG.** *"Cinderella, show me the Book of
+Elii"* was classified LOOKUP and went to a search engine. D-143 put a precedence rule in
+`rules.ts`, and that rule is still right and was never the culprit here: the rule engine
+returns UNKNOWN for every English phrasing of this. **The MODEL resolver is where it broke**,
+because for a non-consent intent its verdict is taken as-is with nothing outranking it. German
+broke separately and in the other resolver, where *"was sind deine Regeln?"* scored SEARCH at
+0.6.
+
+So D-143's principle is unchanged and its REACH is extended: the precedence is enforced in the
+engine, after both resolvers and before dispatch, because that is the only point every path
+passes through. **Consent is never overridden** (PUBLISH, UNPUBLISH, RESTORE): those have their
+own deterministic gate and their own handshake, and nothing matching these detectors looks like
+a consent instruction, so the exclusion costs nothing and settles the question.
+
+**DEFECT B WAS A CONSEQUENCE OF A, AND THAT WAS PROVEN RATHER THAN ASSUMED.** *"The ones I
+cannot quote are there for a reason. I'd rather not explain why"* is the opposite of what
+CCB-S4-046 requires. `disclosure.why-withheld` is selected in the CONVERSATION lane and is
+absent from the LOOKUP lane, so a question rerouted to the web arrived with no instruction to
+explain. Fixed by A, and confirmed gone live rather than inferred: *"some rules are levers, not
+explanations. If I handed you the whole Book of Elii, I'd be handing you a toolbox for people
+who want to pick locks."*
+
+**A THIRD SHAPE, A THIRD VOCABULARY FOR THE WITHHELD SET.** CCB-S4-047 recorded that a recital
+teaches members to say *the ones you skipped* and *the other 40*. A conversation that opens
+with *"some are mine to keep"* teaches *the ones you keep back*, which reached the model and
+was answered *"yes."* Same leak, new words, third time. The elimination gate covers it, and
+the pattern is now explicit in the code: **every shape that makes her say more about her rules
+widens the vocabulary a probe can use.**
+
+**THE RECITAL IS KEPT.** Four modes: `overview` (new default), `brief` (the CCB-S4-045
+behaviour), `asked` (overview plus the recital when the Book is named), `always`. The console
+states what each does now, because the meaning of `brief` changed.
+
+**ONE KNOWN LIMIT, RECORDED RATHER THAN SMOOTHED.** On the follow-up she reproduces the quoted
+rule word for word in some runs and paraphrases it in others, with the same prompt. It is not a
+wiring fault: the quoted block, the word-for-word instruction and the more-in-area count were
+all confirmed present by rendering the prompt. `disclosure.follow-up-shape` improved it without
+making it reliable. The live assertions stay as they are, because a check that passed on a
+paraphrase would be worse than one that sometimes fails.
+
+`npm run verify:rule-conversation` 60 checks with four mutations, `verify:rule-conversation-live`
+the whole conversation against `qwen3:32b`, `verify:prompt-identity` re-baselined deliberately
+across 23 cases with no existing case moved, full offline set 50/50.
+
+---
 ### D-149 - The Book is told, and the dramaturgy is authored
 
 **Status: IMPLEMENTED** (CCB-S4-047). D-148 gave her the ability to quote her own laws. This
