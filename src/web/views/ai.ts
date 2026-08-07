@@ -22,6 +22,8 @@ import {
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader, stat } from './ui.js';
+import { meanMs, modelQueue, type BotModelStats } from '../../interaction/model-queue.js';
+import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 
 /**
  * Exported with {@link renderAiPage} so the Personality page (CCB-S4-029) can be its
@@ -1703,10 +1705,117 @@ function hardwareBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQu
   </section>`;
 }
 
-function telemetryBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
+/**
+ * What several bots cost each other at one model (CCB-S5-001).
+ *
+ * ── WHY THIS IS ON THE TELEMETRY PAGE AND NOT THE BOT PAGE ──────────────────
+ *
+ * It is a fact about the MODEL, not about any one bot. The model is shared and loaded
+ * once, so bots cost no VRAM; what they cost is queue time, and the number that matters is
+ * how often one waited behind another. Putting it beside the other model telemetry is what
+ * makes it read as a property of the shared resource.
+ *
+ * The wait/generate split is INFERRED and is labelled as such here, not only in the source.
+ * Ollama reports neither figure and exposes no endpoint for its parallelism, so the split
+ * rests on the assumption printed beside it. An operator who raises the parallelism and is
+ * not told the numbers assume otherwise would read them as measurements.
+ */
+function modelQueueCard(botNames: Map<number, string>): SafeHtml {
+  const q = modelQueue.snapshot();
+  const pct = (part: number, whole: number): string =>
+    whole === 0 ? '0%' : `${String(Math.round((part / whole) * 100))}%`;
+
+  const row = (label: string, s: BotModelStats): SafeHtml => html`<tr class="border-t border-slate-200">
+    <td class="py-1 pr-3 font-medium text-slate-800">${label}</td>
+    <td class="py-1 pr-3 text-right">${String(s.calls)}</td>
+    <td class="py-1 pr-3 text-right">${String(s.queued)}</td>
+    <td class="py-1 pr-3 text-right">${meanMs(s.waitedMs, s.calls)} ms</td>
+    <td class="py-1 pr-3 text-right">${meanMs(s.totalMs - s.waitedMs, s.calls)} ms</td>
+    <td class="py-1 pr-3 text-right">${String(s.worstWaitMs)} ms</td>
+    <td class="py-1 text-right">${pct(s.waitedMs, s.totalMs)}</td>
+  </tr>`;
+
+  return card(
+    'Model queue, per bot',
+    html`
+      <p class="text-sm text-slate-600">
+        Bots do not cost VRAM: the model is loaded once and shared. What a second bot costs
+        is <strong>queue time</strong>. These are the last ${String(q.windowMinutes)} minutes.
+      </p>
+      <table class="mt-3 w-full text-sm">
+        <thead>
+          <tr class="text-xs uppercase tracking-wide text-slate-500">
+            <th class="py-1 pr-3 text-left">Bot</th>
+            <th class="py-1 pr-3 text-right">Calls</th>
+            <th class="py-1 pr-3 text-right">Queued</th>
+            <th class="py-1 pr-3 text-right">Avg wait</th>
+            <th class="py-1 pr-3 text-right">Avg generate</th>
+            <th class="py-1 pr-3 text-right">Worst wait</th>
+            <th class="py-1 text-right">Waiting</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${q.perBot.map((s) =>
+            row(
+              s.botProfileId === null
+                ? 'unattributed'
+                : (botNames.get(s.botProfileId) ?? `bot ${String(s.botProfileId)}`),
+              s,
+            ),
+          )}
+          ${q.perBot.length > 1 ? row('All bots', q.overall) : null}
+          ${q.perBot.length === 0
+            ? html`<tr class="border-t border-slate-200">
+                <td colspan="7" class="py-2 text-slate-500">
+                  No model calls in the window. This fills in as she answers; it is empty
+                  after a restart and on a deployment where nothing has spoken yet.
+                </td>
+              </tr>`
+            : null}
+        </tbody>
+      </table>
+      <dl class="mt-3 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
+        <div><dt class="text-xs text-slate-500">Replies per minute</dt>
+          <dd class="font-medium">${q.repliesPerMinute.toFixed(2)}</dd></div>
+        <div><dt class="text-xs text-slate-500">In flight now</dt>
+          <dd class="font-medium">${String(q.inFlight)}</dd></div>
+        <div><dt class="text-xs text-slate-500">Failed calls</dt>
+          <dd class="font-medium">${String(q.overall.failed)}</dd></div>
+        <div><dt class="text-xs text-slate-500">Parallelism</dt>
+          <dd class="font-medium">${String(q.assumedParallelism)}</dd></div>
+      </dl>
+      <div class="mt-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+        <p>
+          <strong>Parallelism is the lever, and it trades VRAM for concurrency.</strong>
+          At ${String(q.assumedParallelism)}, the model server runs
+          ${q.assumedParallelism === 1 ? 'one request at a time' : `${String(q.assumedParallelism)} requests at once`},
+          so a bot answering while another is mid-reply
+          ${q.assumedParallelism === 1 ? 'waits for it to finish' : 'may still wait once every slot is busy'}.
+          Raising it lets more replies overlap and costs GPU memory per extra slot; if that
+          memory is not there, the model falls back to the CPU and everything gets slower.
+        </p>
+        <p class="mt-2">
+          <strong>Wait and generate are inferred, not reported.</strong> The model server
+          reports neither, and exposes no endpoint for its own parallelism. The split is
+          computed from how our requests overlapped, assuming
+          ${String(q.assumedParallelism)} slot(s). Calls and latency are measured exactly;
+          if the server's real parallelism differs from that number, the split is wrong and
+          the totals are not.
+        </p>
+      </div>
+    `,
+  );
+}
+
+function telemetryBody(
+  snapshot: AiRuntimeSnapshot,
+  csrf: string,
+  botNames: Map<number, string>,
+): SafeHtml {
   const operations = snapshot.operations;
 
   return html`
+    <div class="mb-4">${modelQueueCard(botNames)}</div>
     <div class="grid gap-4 lg:grid-cols-2">
       ${card(
         'Intent lane telemetry',
@@ -1943,7 +2052,7 @@ function auditBody(): SafeHtml {
   `;
 }
 
-export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
+export function registerAi(app: FastifyInstance, ctx: ViewContext): void {
   app.get('/ai', async (_req, reply) => reply.redirect('/ai/overview'));
 
   app.get<{ Querystring: AiPageQuery }>('/ai/overview', async (req, reply) => {
@@ -2016,6 +2125,10 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
   app.get<{ Querystring: AiPageQuery }>('/ai/telemetry', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();
     const csrf = req.session?.csrfToken ?? '';
+    // Named rather than numbered: "bot 2 waited 900 ms" is a fact nobody can act on.
+    const botNames = new Map(
+      (await listBotOnboardingProfiles(ctx.db)).map((p) => [p.id, p.displayName]),
+    );
     reply.type('text/html');
     return renderAiPage(
       'AI Telemetry',
@@ -2024,7 +2137,7 @@ export function registerAi(app: FastifyInstance, _ctx: ViewContext): void {
       csrf,
       req.query,
       snapshot,
-      telemetryBody(snapshot, csrf),
+      telemetryBody(snapshot, csrf, botNames),
     );
   });
 

@@ -25,10 +25,20 @@ import {
   type PromptRuleContext,
   type PromptRuleSet,
 } from './prompt-rules.js';
+import { modelQueue } from './model-queue.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
 export interface AiReplyRequest {
+  /**
+   * Which bot is speaking (CCB-S5-001).
+   *
+   * Carried for the queue meter, so the console can say what each bot costs at a model
+   * they all share. Nothing about the PROMPT depends on it - the per-bot laws and dials
+   * are resolved before this and arrive already applied in `rules` and `personality` -
+   * which is why it is optional and why `verify:prompt-identity` is unaffected by it.
+   */
+  botProfileId?: number | null;
   /** Operational reply kind, for example status, help, or nickname. */
   kind: string;
   /** Language code selected by the deterministic interaction layer. */
@@ -577,6 +587,11 @@ export async function generateOllamaReply(
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+  // Opened before the request and closed in `finally`, so a throw, a timeout and an abort
+  // all record a completed call. A meter that only counted successes would report a
+  // healthy queue on a deployment where every second reply was failing (CCB-S3-023).
+  const call = modelQueue.start(request.botProfileId ?? null);
+  let callOk = false;
 
   try {
     const response = await fetchImpl(endpoint, {
@@ -688,6 +703,7 @@ export async function generateOllamaReply(
     // it, because the caller would then attribute a reply the member never sees.
     if (hasWebResults) request.onSourcesUsed?.(completion.usedResults);
 
+    callOk = true;
     return reply;
   } catch (error) {
     if (controller.signal.aborted) {
@@ -696,5 +712,6 @@ export async function generateOllamaReply(
     throw error;
   } finally {
     clearTimeout(timeout);
+    modelQueue.finish(call, callOk);
   }
 }
