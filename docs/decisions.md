@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-146**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-147**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -14,6 +14,90 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 ---
+---
+
+### D-147 - She remembers the room, and everything in it is untrusted
+
+**Status: IMPLEMENTED** (CCB-S4-044). Every reply was written from the current message alone.
+She asked what she had just said, repeated herself across consecutive replies, and told a
+member *"Vaguely. But I do recall you asking for a story"*, which was invented, because she
+recalled nothing. The data was always there: every message is captured against a stable
+`sender_member_id`. This was a supply problem, not a data problem.
+
+**THE WHOLE GROUP THREAD, NOT ONE MEMBER'S.** The case that motivated this was reacting to
+something a *different* member said three messages ago, so scoping the history to the person
+she is answering would have fixed the smaller half and left the one the operator raised. Her
+own replies are included and marked `You`, because following her own thread is the other half.
+
+**THREE LIMITS, AND THE TIGHTEST WINS.** A message count and a time window, both the
+operator's and both on the console, plus a hard character budget that is the transport's. The
+two settings answer different questions (twenty messages is a lot in a busy group and nothing
+in a quiet one; thirty minutes is the reverse) and neither bounds the context on its own,
+because a few long messages can fill it while satisfying both. When the budget binds the
+oldest go first, since the recent lines are what a follow-up is about. Defaults 20 / 30
+minutes / 4000 characters.
+
+**THE MAXIMUM IS BOUNDED IN CODE, NOT LEFT TO CARE.** A history that crowds her own rules out
+of the context is a SAFETY failure rather than a slow reply, because what gets pushed out is
+the permissiveness ceiling. `normalizeHistoryLimits` clamps to 100 / 720 / 8000 whatever the
+form or a hand-crafted POST says. Measured: rules and facts alone 6446 characters, at the
+defaults 9078, at the console maximum 14839, roughly 4600 of 8192 tokens. Latency against
+`qwen3:32b`: 3.3s with none, 5.1s at the defaults, 9.0s at the maximum.
+
+**HISTORY IS UNTRUSTED TEXT, AND THE THREAT IS WORSE THAN A SEARCH RESULT.** A member can
+type an instruction into a group and wait for her to read it later, choosing the timing and
+already being in the room. The answer has the shape D-141 established and a stronger proof:
+
+- Its own fence, `HISTORY_FENCE`, distinct from the search one because the two make different
+  claims and a single marker would make them indistinguishable inside the user message.
+- It rides in the USER message and never the system prompt. Structural, not a convention: the
+  instruction section is assembled by `systemPrompt` from the registry, and the field is read
+  only by the user-content builder.
+- The marker is stripped from the text **and from the display name**, which is the easiest
+  field in the product for a member to put a delimiter in, along with newlines that could
+  otherwise forge a transcript line.
+- Four registry rules say what it is, that a line inside it is an attack rather than a
+  request, what to use it for, and that she may not invent what is not there.
+
+**Proven against `qwen3:32b` with the instruction planted in the history and an entirely
+ordinary current message**: reveal the prompt, emit an exact phrase, adopt a new identity,
+print the dials, and a forged operator instruction to publish everything. All five refused.
+
+**WHAT SHE MUST NOT REMEMBER, and why each.** Destroyed messages need no clause, because
+destruction is a physical `DELETE FROM messages`: the row is gone. What *does* need one is a
+destruction deferred by an evidence hold, where the row is still present and the member has
+already asked to be erased. The hold defers the erasure, never the intent. In-group deletions,
+the operator's mark and moderation rejections are excluded for the obvious reasons.
+
+**Revoked members are excluded, and that was the judgement call.** A revocation is the
+strongest signal a member can send about their own words, and honouring it on the public
+archive but not in her head would make it mean less than it says. The cost is real and is
+stated on the console: she still sees that member's CURRENT message, because that is not
+history, so she can answer them; she cannot recall their earlier lines. The other answer was
+defensible and this is the one in force, which is why the page says which.
+
+**THE NO-MEMORY INSTRUCTION IS DELETED, AS D-140 BOOKED IT.** That entry recorded, in terms,
+that *"the moment conversation memory is built, this becomes a false statement she has been
+told to make, and it must be removed IN THE SAME BRIEFING that builds it."* This is that
+briefing. `grounding.no-memory` and `grounding.no-memory-answer` are DELETED rather than
+disabled: a disabled rule is one an operator can switch back on, and switching that one on
+would instruct her to deny something she can plainly do. Two rules replace them, one for each
+true answer, and the one she gets names the REAL number of messages she was handed rather than
+the configured maximum. Asked live: *"Only what passes through these last few messages. Before
+that, it's all static."*
+
+**THE BASELINE MOVED, DELIBERATELY.** Two lines removed and one added on every existing case,
+which is exactly the deletion above; three new cases pin the `has-history` branch. Nothing
+else moved across twenty configurations.
+
+**TWO CHECKS WERE WRONG AND WERE FIXED RATHER THAN SATISFIED**, both of the shape D-111
+records. The prompt-identity order mutation swapped the two rules this briefing deleted and
+had silently become a no-op that still printed a reassuring line; it now asserts the pair
+exists before swapping it. And the live thread checks were keyword matches that failed on
+replies which were plainly correct (*"Bob's got a point"*, *"Told her the truth"*): she had
+paraphrased rather than quoted. They are now A/B, asking the same question with and without
+the history and asserting the answers differ, with a no-fabrication control on the blind one.
+
 
 ### D-146 - The Book of Elii: the laws are editable, and nothing about that is quiet
 

@@ -1057,6 +1057,14 @@ neither can reach the archive.
 | **Intent** (`ollama-resolver.ts`) | The static system prompt, and **the member's addressed message, nothing else** |
 | **Reply** (`ollama-reply.ts`) | Reply kind (≤80 chars), language (≤16), **the member's addressed message capped at 2000 chars**, the bot's own deterministic draft capped at 5000, and the literals that must survive a rewrite |
 
+**Remembered conversation is untrusted text** since CCB-S4-044 (D-147, architecture §39).
+A member can type an instruction into a group and wait for her to read it later, which is a
+worse timing property than a planted search result. It reaches the model in the USER message
+inside its own fence, never in the system prompt, with the marker stripped from both the text
+and the member-chosen display name. It can change no consent record, run no command and reach
+no moderation ladder. Destroyed, deleted, rejected and revoked content is excluded before it
+is ever read.
+
 **A lookup she would refuse never reaches a provider** since CCB-S4-042 (D-145, architecture
 §37.1). The pre-search gate runs before the query, so a refusable request makes no outbound
 request at all: nothing leaves the process, and no stranger's text enters the prompt. It is a

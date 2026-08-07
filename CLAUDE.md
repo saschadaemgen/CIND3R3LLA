@@ -224,7 +224,9 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   claim plus an UPDATE for the rows that still hold it, because a default applies to an insert
   and never to an update) · 037 the rule history (one row per change to a rule, both sides
   of all three editable fields plus who and when; the OLDEST row per rule is what that rule
-  shipped as, which is why there is no `shipped_text` column and why D-144 stays true).
+  shipped as, which is why there is no `shipped_text` column and why D-144 stays true) ·
+  038 conversation memory (two conditions, the four rules that fence remembered chat, and the
+  DELETION of the two no-memory rules D-140 booked in advance for the day memory was built).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -232,7 +234,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **038**, since 037 landed with the rule history). Stated as a rule
+  (currently **039**, since 038 landed with conversation memory). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -297,6 +299,12 @@ gate and by re-attributing a refusal.
 through a REAL model and prints every reply; it needs Ollama and is not in the offline set.
 `npm run verify:search-live` puts five real prompt injections in the result set and prints
 what she does with each; it needs Ollama),
+`verify:memory` (conversation memory: the three limits and which one binds, every exclusion
+with a positive control beside it so an empty query cannot satisfy them all, the fence proven
+absent from the instruction section, and a planted instruction driven through the whole engine
+to show it reaches no capability.
+`npm run verify:memory-live` plants five real instructions in the HISTORY, asks something
+ordinary, and prints what she does with each; it needs Ollama and is not in the offline set),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
 `verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
 the model transport, so no Ollama need be running.

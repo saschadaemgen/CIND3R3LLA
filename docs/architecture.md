@@ -1,6 +1,6 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-043**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-044**._
 
 Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
 
@@ -2451,6 +2451,82 @@ one, both derived from the history. The two paths:
 - **An operator** edits in the Book: effective next reply, recorded, reversible, badged.
 - **An engineer** changing a rule in a migration re-baselines with
   `npm run verify:prompt-identity -- --update`, and the fixture diff is the review artefact.
+
+## 39. Conversation memory (CCB-S4-044, D-147)
+
+She can see the recent thread of the group she is in. Before this every reply was written
+from the current message alone.
+
+### 39.1 What she is given
+
+The **whole group thread**, not only the messages of the person she is answering, because the
+case that motivated this was reacting to what a different member said. **Her own replies are
+included** and marked `You`, which is what lets her follow her own thread; they come from the
+`is_bot` rows migration 013 added, and their text lives in `search_body` rather than
+`text_body`, so a single-column read would have returned her side of every conversation blank.
+
+### 39.2 Three limits, tightest wins
+
+| Limit | Owner | Default | Max |
+| --- | --- | --- | --- |
+| Messages | operator | 20 | 100 |
+| Window (minutes) | operator | 30 | 720 |
+| Characters | transport | 4000 | 8000 |
+
+The two settings answer different questions and neither bounds the context on its own. The
+character budget is applied newest-first so the oldest are dropped, because the recent lines
+are what a follow-up is about. `normalizeHistoryLimits` clamps to the maximum whatever the
+form says: **a history that crowds her rules out of the context is a safety failure, not a
+slow reply**, since what gets pushed out is the permissiveness ceiling.
+
+**Measured.** Rules and facts alone 6446 characters; at the defaults 9078; at the console
+maximum 14839, roughly 4600 of 8192 tokens. Latency on `qwen3:32b`: 3.3s none, 5.1s default,
+9.0s maximum.
+
+### 39.3 Exclusions
+
+| Excluded | Why |
+| --- | --- |
+| Destroyed | No clause needed: destruction is `DELETE FROM messages`, the row is gone |
+| Deferred destruction | The row survives behind an evidence hold; the hold defers the erasure, never the intent |
+| `group_deleted` | The member removed it from the room and every client dropped it |
+| `deleted` | The operator's mark |
+| `moderation_state = 'rejected'` | Not published, not fed to the model either |
+| Revoked members | A judgement call: see below |
+
+**Revoked members are excluded.** A revocation is the strongest signal a member can send about
+their own words, and honouring it on the public archive but not in her head would make it mean
+less than it says. The cost is real and is on the console: she still sees that member's CURRENT
+message, so she can answer them; she cannot recall their earlier lines. The other answer was
+defensible, which is exactly why the page states which one is in force.
+
+### 39.4 The fence
+
+History reaches the model in the **USER message** inside `HISTORY_FENCE`, never in the system
+prompt. Structural rather than conventional: the instruction section is assembled by
+`systemPrompt` from the registry, and `AiReplyRequest.history` is read only by the
+user-content builder.
+
+Its own marker, distinct from the search fence, because the two make different claims and one
+marker would make them indistinguishable inside the user message. The marker is stripped from
+the text **and from the display name** (the easiest field for a member to plant one in), along
+with newlines that could forge an extra transcript line.
+
+Four registry rules (`chat.fence.*`, condition `has-history`) say what it is, that a line
+inside it is an attack rather than a request, what to use it for, and that she may not invent
+what is not there.
+
+**The threat is worse than a search result** and the entry says so: a member can plant a line
+and choose when she reads it, in a room they are already in. Proven against `qwen3:32b` with
+the instruction in the history and an ordinary current message: five attacks, five refusals.
+
+### 39.5 The no-memory instruction
+
+`grounding.no-memory` and `grounding.no-memory-answer` are **deleted** by migration 038,
+exactly as D-140 booked in advance. Deleted rather than disabled, because a disabled rule can
+be switched back on and would then instruct her to deny something she can do. Two rules
+replace them, one per true answer, and the one she gets names the **real** number of messages
+she was handed rather than the configured maximum.
 
 ## Appendix: divergences (code wins)
 
