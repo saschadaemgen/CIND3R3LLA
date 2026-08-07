@@ -91,7 +91,9 @@
     "verify:rule-conversation": "tsx scripts/verify-rule-conversation.ts",
     "verify:rule-conversation-live": "tsx scripts/verify-rule-conversation-live.ts",
     "verify:book-artefact": "tsx scripts/verify-book-artefact.ts",
-    "verify:book-artefact-live": "tsx scripts/verify-book-artefact-live.ts"
+    "verify:book-artefact-live": "tsx scripts/verify-book-artefact-live.ts",
+    "verify:rule-creation": "tsx scripts/verify-rule-creation.ts",
+    "verify:rule-creation-live": "tsx scripts/verify-rule-creation-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
