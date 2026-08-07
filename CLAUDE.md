@@ -351,7 +351,11 @@ fix that stopped a question about her own laws reaching a search engine. It driv
 engine with a resolver that always claims LOOKUP, which is what production did, and its control
 proves the rule is selective rather than a blanket that would disable the catalog.
 `npm run verify:rule-conversation-live` holds the whole conversation against a real model. Two
-of its follow-up checks are run-to-run variable and deliberately not loosened; see its header),
+of its follow-up checks are run-to-run variable and deliberately not loosened; see its header.
+Extended by CCB-S4-049 with the follow-up detection: her own chapter names in both languages,
+the three-minute post-overview window, and the rule that the window is the WEAKEST of the three
+signals and promotes only what nothing else claimed, because letting it outrank the catalog
+cost the archive its own questions),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also

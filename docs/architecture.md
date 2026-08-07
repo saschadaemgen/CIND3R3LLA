@@ -2743,6 +2743,24 @@ point every path passes through. D-143 put a precedence rule in `rules.ts` and i
 right; it guards the rule engine, and the model resolver is where this broke. Consent intents
 (PUBLISH, UNPUBLISH, RESTORE) are never overridden.
 
+### 42.5 Hearing the answer (CCB-S4-049, D-151)
+
+`aboutHerRules` is the one predicate the precedence rule and the disclosure builder share.
+Three ways in, narrowest first:
+
+| # | Signal | Outranks the catalog? |
+| --- | --- | --- |
+| 1 | `asksAboutRules`: it says so | yes |
+| 2 | `asksChapterQuestion`: it repeats one of her chapter names back | yes |
+| 3 | Inside the 3-minute window an overview opens | **no** |
+
+The first two are statements about the MESSAGE. The third is a statement about the
+CONVERSATION, and it promotes only what nothing else claimed, so an explicit archive, consent,
+price or lookup question inside the window still goes where it belongs. Measured: without that
+restriction, "what do you keep of mine?" stopped reaching the archive.
+
+The window is per member and per chat, and does not extend itself.
+
 ### 42.4 What a third shape taught the guards
 
 Each shape that makes her say more about her rules gives members new words for the set she

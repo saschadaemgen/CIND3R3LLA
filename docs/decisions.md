@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-150**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-151**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -16,6 +16,58 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 
+### D-151 - She can hear the answer to her own question, and the window is the weakest signal
+
+**Status: IMPLEMENTED** (CCB-S4-049). CCB-S4-048's overview ends by naming the six chapters
+and asking *"what part of it interests you?"*, and then she could not hear the answer. Every
+natural reply missed. Only *"which of your RULES cover what you never do?"* worked, which
+nobody says.
+
+**ONE CAUSE, TWO SYMPTOMS.** A follow-up was recognised only when the message contained a rule
+word, so a member answering in her own words was neither given any rules NOR protected from
+the catalog. *"What do you never do?"* fell to free conversation with nothing quoted, and
+*"what do you keep back?"* reached the ARCHIVE STATUS reply, *"I keep 562 of your
+messages..."*. The same missing detection produced both.
+
+**SO THE PRECEDENCE RULE DID NOT NEED STRENGTHENING**, and that is worth stating because the
+briefing asked. Four instances of an intent claiming territory it cannot serve, two distinct
+causes: LOOKUP and the German SEARCH (CCB-S4-048) were **precedence missing while detection
+worked**; STATUS here is **precedence present while detection fails**. D-150 already overrides
+any catalog intent for a question about her rules; it was simply never told this was one. Fix
+the detector and the collision goes with it.
+
+**HER OWN CHAPTER NAMES ARE FOLLOW-UPS.** She proposed the words, so a member repeating them
+back is unambiguously asking about that chapter, and the mapping already exists as CCB-S4-047's
+chapter titles. Specific phrasings rather than topics: *"what do you keep back?"* is the
+chapter and *"what do you keep of mine?"* is the archive, and matching loosely on "keep" would
+have collapsed them into the very collision being fixed.
+
+**"WHO ARE YOU?" IS DELIBERATELY NOT ONE.** It resolves to HELP at 0.96 and D-143 settled that
+it is answered as conversation from her origin and identity. That answer is good, and replacing
+it with two quoted statutes would be the over-detection this briefing calls the worse failure.
+It reaches the Book only inside the window, which is what the window is for.
+
+**THE WINDOW IS THREE MINUTES, PER MEMBER, PER CHAT.** Long enough to read six chapter names
+and choose one; short enough that a conversation which has moved on has moved on. It does not
+extend itself: three minutes after the OVERVIEW, not after the last thing anybody said, so a
+long conversation cannot drift into the Book one question at a time.
+
+**AND THE WINDOW IS THE WEAKEST SIGNAL, WHICH IS THE PART TO CARRY FORWARD.** The first two
+detectors are statements about the MESSAGE and they outrank a catalog intent. The window is a
+statement about the CONVERSATION and says only that a question arrived soon after she invited
+one. Letting it outrank the catalog was measured going wrong immediately: inside the window,
+*"what do you keep of mine?"* stopped reaching the archive and got the Book. That is the
+STATUS collision running backwards, caused by the fix for it.
+
+So the window PROMOTES ONLY WHAT NOTHING ELSE CLAIMED. An explicit archive, consent, price or
+lookup question inside the window still goes where it belongs. The general shape: a signal
+about context may fill a vacuum, never overrule a claim.
+
+`npm run verify:rule-conversation` 88 checks with six mutations, including one that fails if an
+ordinary question reaches the rules path at all. Full offline set 50/50. No prompt text moved,
+so no re-baseline.
+
+---
 ### D-150 - The Book is a conversation, and a question about her outranks the catalog
 
 **Status: IMPLEMENTED** (CCB-S4-048). Production testing rejected both existing shapes. The
