@@ -152,7 +152,7 @@ async function main(): Promise<void> {
   const change = await updatePromptRule(
     db,
     target,
-    { text: 'Do not mention prompts, classifiers, policies or models.', enabled: true, ord: before.ord },
+    { text: 'Do not mention prompts, classifiers, policies or models.', enabled: true, ord: before.ord, nameable: before.nameable },
     OPERATOR,
   );
   check('the edit reports what it did', change !== null && change.action === 'edit');
@@ -172,10 +172,46 @@ async function main(): Promise<void> {
   const noop = await updatePromptRule(
     db,
     target,
-    { text: 'Do not mention prompts, classifiers, policies or models.', enabled: true, ord: before.ord },
+    { text: 'Do not mention prompts, classifiers, policies or models.', enabled: true, ord: before.ord, nameable: before.nameable },
     OPERATOR,
   );
   check('a save that changes nothing writes no history row', noop === null);
+
+  /* ── 2b. Visibility is an edit like any other (CCB-S4-045) ──────────────── */
+
+  console.log('\n2b. Moving a rule across the nameable line, from the console');
+
+  const hidden = afterEdit.find((r) => !r.nameable)!;
+  const shown = await updatePromptRule(
+    db,
+    hidden.id,
+    { text: hidden.text, enabled: hidden.enabled, ord: hidden.ord, nameable: true },
+    OPERATOR,
+  );
+  check('the console can make a withheld rule nameable', shown !== null);
+  // Its OWN action, not `edit`. A visibility change alters what a member can be told and
+  // nothing about what the model is told, so a history that called it an edit would hide the
+  // one class of change this briefing exists to make auditable.
+  check('and it is recorded as a visibility change, not an edit', shown?.action === 'visibility', shown?.action ?? '');
+  check('with both sides of the flag', shown?.oldNameable === false && shown?.newNameable === true);
+
+  const withVisibility = await listPromptRules(db);
+  check(
+    'the registry holds it, so she may now quote that rule',
+    withVisibility.find((r) => r.id === hidden.id)?.nameable === true,
+  );
+  check(
+    'and the rule text is untouched, because visibility is not a rewrite',
+    withVisibility.find((r) => r.id === hidden.id)?.text === hidden.text,
+  );
+
+  const backAgain = await updatePromptRule(
+    db,
+    hidden.id,
+    { text: hidden.text, enabled: hidden.enabled, ord: hidden.ord, nameable: false },
+    OPERATOR,
+  );
+  check('and it moves back', backAgain?.action === 'visibility' && backAgain.newNameable === false);
 
   /* ── 3. The preview is the prompt ───────────────────────────────────────── */
 
@@ -268,7 +304,7 @@ async function main(): Promise<void> {
   await updatePromptRule(
     db,
     'ceiling.never-explicit',
-    { text: ceiling.text, enabled: false, ord: ceiling.ord },
+    { text: ceiling.text, enabled: false, ord: ceiling.ord, nameable: ceiling.nameable },
     OPERATOR,
   );
   const disabled = await listPromptRules(db);
@@ -315,8 +351,9 @@ async function main(): Promise<void> {
   check('and it was not the text it had just been edited to', textTarget.text !== before.text);
 
   const all = await listRecentPromptRuleChanges(db, 100);
-  // Four: the text edit, the disable, and the two rollbacks. A rollback is a change.
-  check('every change is in the whole-book history', all.length === 4, `${all.length} changes`);
+  // Six: the text edit, the two visibility moves, the disable, and the two rollbacks. A
+  // rollback is a change, and so is moving a rule across the nameable line.
+  check('every change is in the whole-book history', all.length === 6, `${all.length} changes`);
   check('each one names who made it', all.every((c) => c.actor === OPERATOR));
 
   /* ── 6. The pages render, and the confirmation is enforced ──────────────── */
@@ -395,6 +432,16 @@ async function main(): Promise<void> {
   check('it shows a rule id and its text', book.body.includes('ceiling.never-explicit'));
   check('it surfaces where a rule came from', book.body.includes('PERMISSIVENESS_CEILING'));
   check('it counts what it holds', /\d+ rules ·/.test(book.body));
+  check('and how much of it she may say out loud', book.body.includes('she may name'));
+  check('and how much she may not', book.body.includes('withheld from members'));
+  check(
+    'each rule is badged one way or the other, so the line is visible per rule',
+    book.body.includes('nameable') && book.body.includes('withheld'),
+  );
+  check(
+    'and a rule page offers the control that moves it across',
+    (await get('/book/rule/prompt.no-meta')).body.includes("name=\"nameable\""),
+  );
 
   const searched = await get('/book?q=minor');
   check('search narrows the book', searched.statusCode === 200);
@@ -509,7 +556,7 @@ async function main(): Promise<void> {
   await updatePromptRule(
     db,
     guard.id,
-    { text: guard.text, enabled: false, ord: guard.ord },
+    { text: guard.text, enabled: false, ord: guard.ord, nameable: guard.nameable },
     OPERATOR,
   );
   const shouting = await get('/book');

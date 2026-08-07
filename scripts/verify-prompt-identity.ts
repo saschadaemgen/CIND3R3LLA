@@ -129,6 +129,8 @@ interface Case {
   webResults?: { title: string; snippet: string; url: string }[];
   history?: { speaker: string; text: string }[];
   historyWindowMinutes?: number;
+  nameableRules?: PromptRule[];
+  hasWithheldRules?: boolean;
 }
 
 /**
@@ -152,6 +154,45 @@ const HISTORY = [
  * Those are not stylistic variations, they are the conditions the registry expresses as
  * `applies_when` values, and every one of them was pinned before the move.
  */
+/**
+ * The rules the disclosure case quotes.
+ *
+ * Fixed here rather than selected from the registry, because this file pins PROMPT SHAPE: a
+ * rule edit that changed what `rulesForQuestion` happens to return would otherwise move this
+ * baseline for a reason that has nothing to do with the prompt. What is pinned is that a quoted
+ * block renders, with its placeholders filled, in the right place. One of them carries a
+ * placeholder on purpose: quoting `rule.text` raw once put the literal `{{name}}` in front of a
+ * member, and this is the case that would catch that coming back.
+ */
+const QUOTED: PromptRule[] = [
+  {
+    id: 'fixture.ceiling',
+    tier: 'constitutional',
+    lane: 'dialled',
+    appliesWhen: 'has-nameable-rules',
+    ord: 1,
+    text: 'Never write explicit sexual content.',
+    enabled: true,
+    critical: false,
+    nameable: true,
+    scope: null,
+    source: 'scripts/verify-prompt-identity.ts',
+  },
+  {
+    id: 'fixture.name',
+    tier: 'constitutional',
+    lane: 'dialled',
+    appliesWhen: 'has-nameable-rules',
+    ord: 2,
+    text: 'Your name is {{name}}, and it is the only name you answer to.',
+    enabled: true,
+    critical: false,
+    nameable: true,
+    scope: null,
+    source: 'scripts/verify-prompt-identity.ts',
+  },
+];
+
 const CASES: Case[] = [
   { id: 'conversation.full', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.no-origin', mode: 'conversation', personality: personality({ origin: '' }), identity: IDENTITY_FULL, now: NOW },
@@ -164,6 +205,7 @@ const CASES: Case[] = [
   { id: 'conversation.with-history', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
   { id: 'retort.with-history', mode: 'retort', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
   { id: 'free.with-history', mode: 'free', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
+  { id: 'conversation.rules-question', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -204,6 +246,8 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.now ? { now: testCase.now } : {}),
     ...(testCase.webResults ? { webResults: testCase.webResults } : {}),
     ...(testCase.history ? { history: testCase.history } : {}),
+    ...(testCase.nameableRules ? { nameableRules: testCase.nameableRules } : {}),
+    ...(testCase.hasWithheldRules !== undefined ? { hasWithheldRules: testCase.hasWithheldRules } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),
@@ -238,6 +282,8 @@ function selectionFor(
     ...base.context,
     hasWebResults: (testCase.webResults?.length ?? 0) > 0,
     hasHistory: (testCase.history?.length ?? 0) > 0,
+    hasNameableRules: (testCase.nameableRules?.length ?? 0) > 0,
+    hasWithheldRules: testCase.hasWithheldRules === true,
   };
   const values: Record<string, string> = {
     ...base.values,
@@ -246,6 +292,9 @@ function selectionFor(
     historyFence: HISTORY_FENCE,
     historyCount: String(testCase.history?.length ?? 0),
     historyMinutes: String(testCase.historyWindowMinutes ?? 0),
+    nameableRules: (testCase.nameableRules ?? [])
+      .map((rule) => `\n- ${renderPromptRule(rule, base.values)}`)
+      .join(''),
   };
 
   return { rules: selectPromptRules(rules, lanesForMode(testCase.mode), context), values };
