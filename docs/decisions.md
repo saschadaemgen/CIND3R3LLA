@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-153**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-154**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -16,6 +16,68 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 
+### D-154 - Thinking is already off, and it stays off
+
+**Status: IMPLEMENTED** (CCB-S4-052). The briefing asked whether her answers could be made
+better by controlling how hard the model thinks. The research says no, on three separate
+grounds, so the display shipped and the control did not.
+
+**THE PREMISE WAS WRONG, AND THAT IS THE FIRST FINDING.** The briefing states that nothing in
+the codebase sets thinking either way and that Ollama therefore runs a reasoning pass on every
+reply. `ollama-reply.ts` has sent `reasoning_effort: 'none'` all along, on the
+OpenAI-compatible endpoint, and Ollama 0.32.6 honours it: measured at 0 characters of
+reasoning against 889 to 1463 with any other setting. **Thinking has been off the whole time**,
+deliberately, and every latency figure the operator has been living with is a no-reasoning
+figure.
+
+**THE LEVELS ARE NOT A GRADIENT.** `low`, `medium` and `high` produced 1051, 966 and 1390
+characters of reasoning, and 15.0s, 22.6s and 17.7s. Reasoning length is non-monotonic and
+latency is noise. There was never a depth dial to offer, only an on/off.
+
+**AND ON WOULD BREAK HER.** This is the finding that settles it. A reply is bounded by
+`max_tokens: 320`, and the reasoning pass spends the same budget. Measured in the real request
+shape (the assembled system prompt, the JSON schema, the real bound), over five substantive
+questions:
+
+| Setting | Truncated | Unusable |
+| --- | --- | --- |
+| `none` | 0 of 5 | **0 of 5** |
+| `low` | 3 of 5 | **3 of 5** |
+| `high` | 3 of 5 | **3 of 5** |
+
+An unusable reply is an empty completion that fails the schema, which in production throws and
+falls back to the deterministic line. Enabling thinking would silently replace three
+conversational answers in five with a canned one. Raising the token budget would make room,
+and that is a different change with its own costs that nobody has asked for or measured.
+
+**QUALITY DID NOT VISIBLY IMPROVE EITHER**, which matters because it removes the reason to
+pursue the token budget. With thinking on she was sometimes more vivid and sometimes worse: to
+*"what are you actually for?"* at `low` she recited her archive URL, project URL, model name
+and label, which is a spec sheet rather than an answer. The verbatim answers are in the
+briefing report.
+
+**THE PROMPT-SIDE LEVER DID NOT WIN EITHER.** A rule asking her to consider the strongest
+objection before answering was tested against the parameter. It cost nothing in latency and
+produced a SHORTER, thinner answer, not a better one. No rule is proposed.
+
+**SO THE DELIVERABLE IS THE DISPLAY, WHICH SHIPS REGARDLESS.** That was the operator's point
+and it stands whatever the research concluded: the setting was invisible, and a hidden state is
+exactly what this product argues you cannot trust. The Models page now states what is sent,
+that it is an explicit choice rather than the runtime default, where the value comes from (the
+application, on every request, from the machine the console runs on), what each setting costs,
+and why there is no dial.
+
+**THE CONTEXT MEASUREMENT IS REPORTED AND NOT APPLIED**, because the operator has been burned
+once by a context change pushing the model onto the CPU. On the 24 GB card: 8192 is 22.11 GB
+fully resident; 32768 is 29.15 GB with **6.21 GB spilled to CPU**; 16384 failed to load in two
+attempts and is reported as unmeasured rather than estimated. Nothing in the codebase sets
+`num_ctx`, and nothing now does.
+
+`npm run verify:reasoning` 20 checks, mutation-proven on the one thing a display must not do:
+the value it names is read back out of the transport, so a page that drifted from the code
+goes red. Full offline set 53/53. No prompt text moved.
+
+---
 ### D-153 - A law can be enacted, and removal is disable under another name
 
 **Status: IMPLEMENTED** (CCB-S4-051). The Book let the operator edit a law, enable it, disable

@@ -2844,6 +2844,43 @@ against the code:
 A hard delete is contradictory rather than merely redundant: the history references the rules
 table `ON DELETE CASCADE`, so it would erase the record the Book exists to keep. Asserted as a
 mutation in `verify:rule-creation`.
+## 45. What she thinks with (CCB-S4-052, D-154)
+
+`qwen3:32b` is a reasoning model and Ollama runs a reasoning pass by default for models that
+support it. This application does not: `ollama-reply.ts` sends `reasoning_effort: 'none'` on
+every request, on the OpenAI-compatible endpoint, and Ollama 0.32.6 honours it.
+
+### 45.1 Measured, in the production request shape
+
+| Setting | Latency | Reasoning | Unusable of 5 |
+| --- | --- | --- | --- |
+| `none` (shipped) | 2.8s | none | **0** |
+| `low` | 16.3s | 1463 chars | **3** |
+| `high` | 16.9s | 1228 chars | **3** |
+| no parameter | 14.8s | 889 chars | **3** |
+
+A reply is bounded at `max_tokens: 320` and the reasoning pass spends the same budget, so
+thinking truncates the answer to an empty completion that fails the JSON schema. In production
+that throws and falls back to the deterministic line.
+
+**No per-kind control was built.** The levels are not a gradient either (reasoning length is
+non-monotonic across low/medium/high), so there was never a depth dial to offer.
+
+### 45.2 The display, which ships regardless
+
+`src/interaction/reasoning.ts` holds the sent value and the measurements as data, so the
+console and `verify:reasoning` quote one source. The Models page states what is sent, that it
+is explicit rather than inherited, where it comes from, what it costs and why there is no dial.
+
+### 45.3 Context, reported and not applied
+
+| `num_ctx` | Total | VRAM | CPU |
+| --- | --- | --- | --- |
+| 8192 (production) | 22.11 GB | 22.11 GB | 0 |
+| 16384 | not measured | | |
+| 32768 | 29.15 GB | 22.95 GB | **6.21 GB spilled** |
+
+Nothing in the codebase sets `num_ctx`, and this changed nothing.
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

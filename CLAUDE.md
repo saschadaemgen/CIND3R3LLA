@@ -379,6 +379,12 @@ id, cannot be created outside every chapter, and DELETING one erases its history
 removal was not built.
 `npm run verify:rule-creation-live` enacts the operator's own swearing law and A/Bs it against a
 real model; it needs Ollama),
+`verify:reasoning` (what she thinks with, CCB-S4-052: that the console's stated reasoning
+setting is read back out of the transport, so a page that drifted from the code goes red, and
+that the measured figures it quotes are the ones on record. **Thinking is OFF and always has
+been**: `reasoning_effort: 'none'` is sent on every request and Ollama honours it. No dial was
+built, because the reasoning pass spends the same `max_tokens: 320` as the reply and turning it
+on made three replies in five come back empty and fall back to the deterministic line),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also
