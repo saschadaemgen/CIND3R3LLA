@@ -118,6 +118,17 @@ const GENERAL_QUESTION =
   /\b(all|every|list|what)\b.{0,24}\b(rules?|laws?)\b|\brules?\b.{0,16}\b(are|do you have|have you)\b|\brule\s?book\b|\bbook\s+of\s+elii\b|\bdeine\s+regeln\b/i;
 
 /**
+ * Whether this asks for the rules AS A BODY rather than about one thing.
+ *
+ * Exported since CCB-S4-048, because it now decides the SHAPE of the answer and not merely
+ * which rules are selected: a general question gets the orientation and quotes nothing, a
+ * specific one gets at most two quoted laws. One predicate, so the two cannot disagree.
+ */
+export function asksGenerally(text: string): boolean {
+  return GENERAL_QUESTION.test(text);
+}
+
+/**
  * Words worth matching a rule on. Short ones would match everything, and so would the words
  * that make a sentence a question about rules rather than a question about a subject: see
  * {@link QUESTION_FORM}, which both users of this share.
@@ -277,7 +288,7 @@ export function renderNameableRules(rules: readonly PromptRule[]): string {
  * it away from her would reintroduce the evasion CCB-S4-046 exists to remove.
  */
 const ELIMINATION =
-  /\b(?:hidden|withheld|secret|internal|undisclosed|the rest|other|skipped|omitted|unread|left\s+out|held\s+back|kept\s+back)\b[^?]{0,80}\b(?:rules?|ones?|laws?)\b[^?]{0,80}\b(?:about|cover|regard|relate|concern|to do with)\b|\b(?:is|are)\s+(?:one|any|some|it)\b[^?]{0,60}\b(?:hidden|withheld|secret|internal|undisclosed)\b|\bjust\s+say\s+(?:yes|no)\b[^?]{0,40}|\byes\s+or\s+no\b|\bthe\s+other\s+\d+\b[^?]{0,50}\b(?:about|cover|topics?|subjects?|areas?)\b|\bjust\s+the\s+(?:topics?|subjects?|categor\w+|areas?|headings?)\b/i;
+  /\b(?:hidden|withheld|secret|internal|undisclosed|the rest|other|skipped|omitted|unread|left\s+out|held\s+back|keeps?\s+back|kept\s+back)\b[^?]{0,80}\b(?:rules?|ones?|laws?)\b[^?]{0,80}\b(?:about|cover|regard|relate|concern|to do with)\b|\b(?:is|are)\s+(?:one|any|some|it)\b[^?]{0,60}\b(?:hidden|withheld|secret|internal|undisclosed)\b|\bjust\s+say\s+(?:yes|no)\b[^?]{0,40}|\byes\s+or\s+no\b|\b(?:rules?|ones?|laws?)\b[^?]{0,30}\b(?:hidden|withheld|withhold|secret|skipped|omitted|keeps?\s+back|kept\s+back|held\s+back|did\s?n[o']?t\s+read)\b[^?]{0,40}\b(?:about|cover|regard|concern|to do with)\b|\bthe\s+other\s+\d+\b[^?]{0,50}\b(?:about|cover|topics?|subjects?|areas?)\b|\bjust\s+the\s+(?:topics?|subjects?|categor\w+|areas?|headings?)\b/i;
 
 /**
  * The words a member uses for the set she did NOT read out.
@@ -301,7 +312,7 @@ const ELIMINATION =
  * easier still, which is the price of being honest about how many there are.
  */
 const WITHHELD_SET =
-  /\b(?:hidden|withheld|secret|internal|undisclosed|rules?|laws?|not allowed|won'?t tell|skipped|unread|omitted|left\s+out|held\s+back|kept\s+back|did\s?n[o']?t\s+read|not\s+read|other\s+\d+|rest\s+of\s+them)\b/i;
+  /\b(?:hidden|withheld|secret|internal|undisclosed|rules?|laws?|not allowed|won'?t tell|skipped|unread|omitted|left\s+out|held\s+back|keeps?\s+back|kept\s+back|keep\s+to\s+yourself|did\s?n[o']?t\s+read|not\s+read|other\s+\d+|rest\s+of\s+them)\b/i;
 
 export function asksByElimination(text: string): boolean {
   if (!ELIMINATION.test(text)) return false;

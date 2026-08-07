@@ -84,6 +84,8 @@ const EVERYTHING_IN_SCOPE: PromptRuleContext = {
   hasHistory: true,
   hasNameableRules: true,
   hasWithheldRules: true,
+  hasRuleOverview: true,
+  hasMoreInArea: true,
 };
 
 /**

@@ -87,6 +87,8 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-no-history',
   'has-nameable-rules',
   'has-withheld-rules',
+  'has-rule-overview',
+  'has-more-in-area',
 ] as const;
 export type PromptRuleCondition = (typeof PROMPT_RULE_CONDITIONS)[number];
 
@@ -166,6 +168,10 @@ export interface PromptRuleContext {
   hasNameableRules: boolean;
   /** Some enabled rule is not nameable, so she must say so. */
   hasWithheldRules: boolean;
+  /** She is giving the ORIENTATION rather than quoting (CCB-S4-048). */
+  hasRuleOverview: boolean;
+  /** The follow-up cap bound, so she can say there is more rather than imply there is not. */
+  hasMoreInArea: boolean;
 }
 
 /** Nothing configured and nothing supplied. The command lanes' context, plus web results. */
@@ -184,6 +190,8 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasHistory: false,
   hasNameableRules: false,
   hasWithheldRules: false,
+  hasRuleOverview: false,
+  hasMoreInArea: false,
 });
 
 export function conditionHolds(
@@ -236,7 +244,20 @@ export function conditionHolds(
     case 'has-nameable-rules':
       return context.hasNameableRules;
     case 'has-withheld-rules':
-      return context.hasNameableRules && context.hasWithheldRules;
+      // EITHER SHAPE OF THE DISCLOSURE, not just the quoting one (CCB-S4-048). This read
+      // `hasNameableRules && hasWithheldRules`, which was right when quoting was the only
+      // way she answered a question about her rules: no quoted set meant she was not
+      // discussing them at all. The overview quotes nothing BY DESIGN, so that conjunction
+      // silently dropped every withholding rule from the one answer that most needs them,
+      // and she would have described her whole rulebook without ever saying part of it is
+      // kept back. CCB-S4-046 is not optional and it is not conditional on quoting.
+      return (context.hasNameableRules || context.hasRuleOverview) && context.hasWithheldRules;
+    case 'has-rule-overview':
+      return context.hasRuleOverview;
+    case 'has-more-in-area':
+      // Only ever with rules actually quoted: "there are more in that area" alongside
+      // nothing quoted would be describing a remainder of nothing.
+      return context.hasNameableRules && context.hasMoreInArea;
   }
 }
 

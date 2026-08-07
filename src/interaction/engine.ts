@@ -86,10 +86,21 @@ import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
 import {
   asksAboutRules,
   asksByElimination,
+  asksForRecital,
+  asksGenerally,
   probesInternalRule,
   rulesForQuestion,
   withheldCount,
 } from './disclosure.js';
+import {
+  capFollowUp,
+  overviewLiterals,
+  renderAreas,
+  ruleOverview,
+  rulesForFollowUp,
+} from './rule-overview.js';
+import { wantsOverview } from './recital.js';
+import { listRecitalChapters } from '../db/recital-chapters.js';
 import { listGroupHistory } from '../db/messages.js';
 import { screenLookup } from './lookup-gate.js';
 import { attributionFor } from './attribution.js';
@@ -452,6 +463,17 @@ export function isInterjection(text: string, stopWords: readonly string[]): bool
   for (const w of stopWords) for (const t of normTokens(w)) stops.add(t);
   return tokens.every((t) => stops.has(t));
 }
+
+/**
+ * Intents this precedence rule will not touch (CCB-S4-048, D-150).
+ *
+ * The three that change publication state. RESTORE is in here as well as the two obvious
+ * ones, because it increases public exposure and has the same confirmation handshake; a
+ * precedence rule that quietly rerouted it would be reaching into the one path it has no
+ * business in. Spelled out rather than reusing `CONSENT_INTENTS`, which is PUBLISH and
+ * UNPUBLISH only and is used elsewhere for a narrower question.
+ */
+const NEVER_OVERRIDDEN: ReadonlySet<string> = new Set(['PUBLISH', 'UNPUBLISH', 'RESTORE']);
 
 export class InteractionEngine {
   private readonly state = new ConversationState();
@@ -839,6 +861,40 @@ export class InteractionEngine {
       }
     }
 
+    // ── A QUESTION ABOUT HER OUTRANKS THE CATALOG (CCB-S4-048, D-150) ──────
+    //
+    // D-143 settled that anything about her is conversation rather than a command, and put a
+    // precedence rule in `rules.ts` so an explicit web verb beats a topic keyword. That fixed
+    // the rule engine and left the other resolver alone, which is where this came back.
+    //
+    // Observed in production: "Cinderella, show me the Book of Elii" was classified LOOKUP by
+    // the MODEL resolver, and for a non-consent intent the model's answer is taken as-is, so
+    // it went to the web. The name the operator gave the thing produced an outbound search.
+    // The rule engine was never the culprit here: it returns UNKNOWN for every English
+    // phrasing of this. German broke separately and in the OTHER resolver, where "was sind
+    // deine Regeln?" scored SEARCH at 0.6 and went to the archive.
+    //
+    // So the precedence is enforced HERE, after both resolvers and before dispatch, because
+    // this is the only point every path passes through. D-143's principle is unchanged and
+    // its reach is extended: a question about her rules is conversation, whichever resolver
+    // claimed it and whatever it claimed it was.
+    //
+    // CONSENT IS NEVER OVERRIDDEN. A consent intent has its own deterministic gate and its
+    // own confirmation handshake, and quietly turning one into conversation would be this
+    // rule reaching into the one path it has no business in. Nothing matching these detectors
+    // looks like a consent instruction, so the exclusion costs nothing and settles it.
+    if (
+      result.intent !== 'UNKNOWN' &&
+      !NEVER_OVERRIDDEN.has(result.intent) &&
+      (asksAboutRules(msg.text) || asksForRecital(msg.text))
+    ) {
+      log.debug(
+        `Interaction: ${result.intent} claimed a question about her own rules; answering it ` +
+          'as conversation instead (D-150).',
+      );
+      result = { ...result, intent: 'UNKNOWN', slots: {} };
+    }
+
     // ONE place decides what kind of message this was for the archive
     // (CCB-S3-009), keyed off the settled intent so a new intent has to be
     // classified here rather than defaulting into a category by accident.
@@ -1179,18 +1235,53 @@ export class InteractionEngine {
    * The trigger is deterministic. A model deciding for itself whether to recite its own
    * instructions is a model that can be talked into it.
    */
-  private disclosure(msg: CapturedMessage): {
+  private async disclosure(
+    msg: CapturedMessage,
+    lang: string,
+  ): Promise<{
     nameableRules: PromptRule[];
     hasWithheldRules: boolean;
-  } {
+    ruleOverview?: { total: number; constitutional: number; areas: string };
+    moreInArea?: number;
+  }> {
     const rules = this.deps.rules?.() ?? [];
     if (rules.length === 0 || !asksAboutRules(msg.text)) {
       return { nameableRules: [], hasWithheldRules: false };
     }
-    return {
-      nameableRules: rulesForQuestion(rules, msg.text),
-      hasWithheldRules: withheldCount(rules) > 0,
-    };
+    const hasWithheldRules = withheldCount(rules) > 0;
+    const chapters = await listRecitalChapters(this.deps.db);
+
+    // ── GENERAL GETS AN ORIENTATION, SPECIFIC GETS THE QUOTES (CCB-S4-048) ──
+    //
+    // The split already existed for a different purpose: CCB-S4-045 gave a general question a
+    // cross-section and a specific one the strongest matches. What changed in production is
+    // what a general question DESERVES. Quoting three or four rules back to back is a block
+    // nobody reads, so it now gets counts, areas and an invitation, and quotes nothing.
+    if (asksGenerally(msg.text) && wantsOverview(this.deps.settings().recital)) {
+      const overview = ruleOverview(rules, chapters, lang);
+      return {
+        nameableRules: [],
+        hasWithheldRules,
+        ruleOverview: {
+          total: overview.total,
+          constitutional: overview.constitutional,
+          areas: renderAreas(overview, lang),
+        },
+      };
+    }
+
+    // A FOLLOW-UP, capped. Two quoted laws is the most that reads as an answer; past that she
+    // says there is more in the area and invites another question, which is the whole shape
+    // this briefing is built around.
+    // BY AREA FIRST, then by keyword. A question that names one of the operator's chapters is
+    // a question about that area, and the chapter is an authored map of what her rules cover.
+    // Measured: without this, "what do you never do?" selected the rule about her own name and
+    // the one about nicknames, because both contain the word "never", and not one of the four
+    // rules that actually answer it.
+    const capped = capFollowUp(
+      rulesForFollowUp(rules, chapters, msg.text, lang, rulesForQuestion(rules, msg.text)),
+    );
+    return { nameableRules: capped.quoted, hasWithheldRules, moreInArea: capped.more };
   }
 
   /** Records an ignored candidate so the guards are visible, not invisible (§5). */
@@ -1558,7 +1649,7 @@ export class InteractionEngine {
   ): Promise<{ text: string; sources: string[] } | null> {
     let used: readonly number[] = [];
     const history = await this.recentHistory(msg, s);
-    const disclosure = this.disclosure(msg);
+    const disclosure = await this.disclosure(msg, lang);
 
     let spoken: string | null = null;
     try {
@@ -1571,7 +1662,12 @@ export class InteractionEngine {
             deterministicDraft: '',
             mode: 'conversation',
             rules: this.deps.rules?.() ?? [],
-            requiredLiterals: [],
+            // THE COUNTS SURVIVE OR THE REPLY DOES NOT (CCB-S4-048, D-150). The overview
+            // states how many laws she has, and D-137 settled that a number a model is
+            // asked to preserve inside its own prose is a number it will smooth. A reply
+            // that loses one is rejected here and the deterministic answer goes out
+            // instead, which is the right direction to fail in.
+            requiredLiterals: overviewLiterals(disclosure.ruleOverview),
             blockedLiterals: [msg.senderDisplayName],
             personality: this.deps.personality?.() ?? null,
             identity: this.facts(s),
@@ -2658,7 +2754,7 @@ export class InteractionEngine {
       return true;
     }
     const history = await this.recentHistory(msg, s);
-    const disclosure = this.disclosure(msg);
+    const disclosure = await this.disclosure(msg, lang);
 
     if (personalize) {
       try {
@@ -2672,7 +2768,12 @@ export class InteractionEngine {
               deterministicDraft: '',
               mode: 'conversation',
               rules: this.deps.rules?.() ?? [],
-              requiredLiterals: [],
+              // THE COUNTS SURVIVE OR THE REPLY DOES NOT (CCB-S4-048, D-150). The overview
+            // states how many laws she has, and D-137 settled that a number a model is
+            // asked to preserve inside its own prose is a number it will smooth. A reply
+            // that loses one is rejected here and the deterministic answer goes out
+            // instead, which is the right direction to fail in.
+            requiredLiterals: overviewLiterals(disclosure.ruleOverview),
               // The same guard as every other reply: her words never carry the
               // sender's display name, because the prefix is what names them.
               blockedLiterals: [msg.senderDisplayName],

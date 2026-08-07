@@ -842,6 +842,8 @@ export function dialledPromptInputs(
     hasHistory: false,
     hasNameableRules: false,
     hasWithheldRules: false,
+    hasRuleOverview: false,
+    hasMoreInArea: false,
   };
 
   const values: Record<string, string> = {};
