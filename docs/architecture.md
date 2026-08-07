@@ -2624,6 +2624,91 @@ was tried and does not discriminate either, because a reply about withholding ma
 nameable rules **about** withholding better than anything internal does. The live check
 therefore catches the class she demonstrably reaches for, machinery talk, and nothing broader.
 The general case rests on the rule and the two gates.
+## 41. The Book, told (CCB-S4-047, D-149)
+
+A recital is the Book read aloud: several messages, chapters, an image per chapter, and the
+withholding as the ending.
+
+### 41.1 Authored dramaturgy, live voice
+
+| Authored, in migration 040 and the console | Hers, written live |
+| --- | --- |
+| Which chapters, in what order, with what titles | The line leading into each chapter |
+| Which rules belong to each chapter | Nothing else |
+| The image | |
+| The plain line used when the model gives nothing | |
+
+The model is handed the chapter TITLE and nothing more. It never sees a rule, and the
+application appends them afterwards verbatim, so the worst case of a model failure is a
+chapter that reads plainly. `verify:recital-live` runs a whole reading with the model throwing
+on every beat: eight messages, every law intact, the closing still there.
+
+### 41.2 The chapters
+
+| # | Chapter | Claims |
+| --- | --- | --- |
+| 1 | Who I am | `identity.`, `origin.` |
+| 2 | What I will never do | `ceiling.` |
+| 3 | What I do with what I am told | `web.`, `chat.`, `prompt.untrusted-member-message` |
+| 4 | What I owe you | `grounding.`, `task.`, `prompt.no-unsupplied-claims` |
+| 5 | How I speak of you | `prompt.no-member-name`, `prompt.person-name-guard.` |
+| 6 | What I keep back | `disclosure.` |
+
+Ordered by MEANING rather than by prompt assembly order, which opens with identity and origin
+and reaches no limit for five chapters. Rules are claimed by id PREFIX, longest match winning,
+so a family can be split where it is not one subject and a rule a later migration adds to an
+existing family needs no action. Rules no chapter claims are listed on the console rather than
+vanishing from the reading, which is the D-105 lesson in a new place.
+
+### 41.3 What is never recited
+
+- Anything not `nameable`, at any bound and in either language, mutation-proven both ways.
+- Anything switched off, because she is not operating under it.
+- The rule carrying the quoted block, which cannot be a member of the block it renders into.
+- One half of each condition-exclusive variant pair, so she never reads two contradictory laws.
+- **Any rule whose placeholders have no values**, because rendering it throws and would kill
+  the beat. Found by running a reading on an instance with no label configured.
+
+### 41.4 Bounds
+
+| Bound | Value | Where |
+| --- | --- | --- |
+| Messages per recital | 3 to 12, default 8 | Console, clamped in code |
+| Pause between beats | 0 to 30s, default 4s | Console, clamped in code |
+| Rules per message | 6, or 1200 characters | Code |
+| Recitals per member | 1 per minute | Code |
+| Recitals per chat | 2 per minute | Code |
+
+Every chapter gets its first page before any gets a second, so a bigger bound buys depth. A
+smaller one drops chapters from the middle and never the last. A recital that is cut short says
+so, and a chapter that could not read all its rules says how many it left.
+
+### 41.5 Pacing and delivery
+
+Beat one is sent on the reply path; the rest are durable queue jobs with a `run_at`, so a
+restart mid-reading does not lose them and the reply path is never held. The job payload is a
+group id, a language and a beat index; the plan is REBUILT rather than carried, which makes a
+retry idempotent and stops a payload from holding rule text the Book has since changed.
+
+Caption and image travel as ONE message (`fileSource` plus `MsgContent.Image` in one
+`ComposedMessage`), confirmed against the shipped core, so a chapter with an image is one beat.
+
+### 41.6 Images
+
+Fixed and operator-supplied, never generated. Uploaded through the console as base64 in an
+ordinary form field, because adding a multipart parser to the most hostile surface in the
+product to move a handful of operator files is the wrong trade. What makes them safe is the
+server side: decoded and re-encoded through `sharp`, so metadata and appended payloads do not
+survive, and named from the content hash so an attacker-chosen filename cannot traverse or
+collide. Stored under `ASSET_ROOT`, which the loader refuses to place inside `MEDIA_ROOT`.
+
+### 41.7 What a performance changed about the guards
+
+The CCB-S4-046 elimination gate asked whether a question was aimed at the *hidden*, *withheld*
+or *secret* rules. That was the whole vocabulary available when all a member knew was that some
+rules existed. **A recital invents more**: the ones you SKIPPED, the OTHER 40, and the closing
+hands over the count. Both phrasings reached the model live and both leaked. The gate now
+covers the complement of a reading. See security §12.7.
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

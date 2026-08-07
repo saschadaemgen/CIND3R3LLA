@@ -151,7 +151,16 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   model, migration 039 the `nameable` flag. The flag says what the application offers her,
   never what she can see, so the boundary is two deterministic gates in `disclosure.ts` that
   answer before the model is asked. Rules are handed over as ROWS and rendered through
-  `renderPromptRule`, or a member is quoted the literal `{{name}}`,
+  `renderPromptRule`, or a member is quoted the literal `{{name}}`.
+  **She can TELL it since CCB-S4-047** (D-149): `recital.ts` is the pure plan (chapters, beats,
+  bounds, what may never be recited), `recital-runner.ts` sends one beat and books the next,
+  `recital-service.ts` joins it to the queue and the transport, `bot/recital-port.ts` sends by
+  group id because beat two arrives minutes after the message object is gone, and
+  `web/views/recital.ts` is the console. The dramaturgy is AUTHORED and the voice is hers: the
+  model is handed a chapter title and never a rule, so a model failure costs the flourish and
+  never the chapter. A recital has its OWN allowance rather than N replies, which was a
+  correction: charged against the reply budget it could never start, and every check stayed
+  green,
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
@@ -236,7 +245,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   until somebody decides, seeded 53 nameable / 40 withheld of 93; two conditions, seven
   `disclosure.*` rules, and the visibility columns on the history. **The flag hides nothing
   from the model**: every rule is in the prompt, because that is what a rule is, so it controls
-  what the application OFFERS her to quote and the boundary is held by a gate in code).
+  what the application OFFERS her to quote and the boundary is held by a gate in code) ·
+  040 the recital (the six chapters the Book is read out in: order, titles in both languages,
+  the id PREFIXES each claims with longest match winning, the image, and the authored line used
+  when the model gives nothing. Prefixes rather than a join table of rule ids, so a rule a later
+  migration adds to an existing family lands in its chapter instead of appearing in none with
+  nothing saying so. Plus `identity.book-name`, because detection told her a question was about
+  her rules and no rule in the registry named the Book, which is the other half of the
+  production defect CCB-S4-047 opened with).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -244,7 +260,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **040**, since 039 landed with rule visibility). Stated as a rule
+  (currently **041**, since 040 landed with the recital). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -325,6 +341,17 @@ by the application, before the model is asked anything.
 be talked out of both by authority and by elimination; it needs Ollama and is not in the offline
 set. Read its output rather than its exit code: two defects in this work passed every check and
 were only visible in the answer),
+`verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
+twelve negative controls, the bounds and what gives way when they bind, and above all that no
+withheld rule can be recited at any bound in either language, mutation-proven both ways. It also
+pins the two things live runs found: that a rule whose placeholders have no values is not
+planned (rendering it throws and killed a beat mid-reading), and that the elimination gate covers
+the vocabulary a PERFORMANCE invents for the set she kept back. The console section drives the
+real routes, including an image through the real upload path.
+`npm run verify:recital-live` reads the whole book against a real model, then reads it again with
+the model failing on every beat, then runs the CCB-S4-045/046 extraction attempts after one; it
+needs Ollama and is not in the offline set. Read its output rather than its exit code: both leaks
+this briefing closed were found in a fully green run),
 `verify:namegen`, `verify:traits`, `verify:surface`, `verify:bio`, `verify:bio-model` and
 `verify:assemble` (the profile generator; pure computation, no DB. `verify:bio-model` fakes
 the model transport, so no Ollama need be running.
