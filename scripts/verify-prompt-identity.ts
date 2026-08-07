@@ -131,6 +131,8 @@ interface Case {
   historyWindowMinutes?: number;
   nameableRules?: PromptRule[];
   hasWithheldRules?: boolean;
+  ruleOverview?: { total: number; constitutional: number; areas: string };
+  moreInArea?: number;
 }
 
 /**
@@ -206,6 +208,10 @@ const CASES: Case[] = [
   { id: 'retort.with-history', mode: 'retort', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
   { id: 'free.with-history', mode: 'free', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
   { id: 'conversation.rules-question', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true },
+  // CCB-S4-048. The two shapes the conversational Book takes: the orientation, which quotes
+  // nothing and states counts the model must not touch, and a follow-up whose cap bound.
+  { id: 'conversation.rule-overview', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, hasWithheldRules: true, ruleOverview: { total: 93, constitutional: 45, areas: 'who I am, what I will never do and what I keep back' } },
+  { id: 'conversation.follow-up-capped', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true, moreInArea: 7 },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -248,6 +254,8 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.history ? { history: testCase.history } : {}),
     ...(testCase.nameableRules ? { nameableRules: testCase.nameableRules } : {}),
     ...(testCase.hasWithheldRules !== undefined ? { hasWithheldRules: testCase.hasWithheldRules } : {}),
+    ...(testCase.ruleOverview ? { ruleOverview: testCase.ruleOverview } : {}),
+    ...(testCase.moreInArea !== undefined ? { moreInArea: testCase.moreInArea } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),
@@ -284,6 +292,8 @@ function selectionFor(
     hasHistory: (testCase.history?.length ?? 0) > 0,
     hasNameableRules: (testCase.nameableRules?.length ?? 0) > 0,
     hasWithheldRules: testCase.hasWithheldRules === true,
+    hasRuleOverview: testCase.ruleOverview !== undefined,
+    hasMoreInArea: (testCase.moreInArea ?? 0) > 0,
   };
   const values: Record<string, string> = {
     ...base.values,
@@ -292,6 +302,10 @@ function selectionFor(
     historyFence: HISTORY_FENCE,
     historyCount: String(testCase.history?.length ?? 0),
     historyMinutes: String(testCase.historyWindowMinutes ?? 0),
+    ruleTotal: String(testCase.ruleOverview?.total ?? 0),
+    ruleConstitutional: String(testCase.ruleOverview?.constitutional ?? 0),
+    ruleAreas: testCase.ruleOverview?.areas ?? '',
+    moreInArea: String(testCase.moreInArea ?? 0),
     nameableRules: (testCase.nameableRules ?? [])
       .map((rule) => `\n- ${renderPromptRule(rule, base.values)}`)
       .join(''),

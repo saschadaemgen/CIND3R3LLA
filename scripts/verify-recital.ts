@@ -532,8 +532,8 @@ async function main(): Promise<void> {
   const csrf = /name="_csrf" value="([^"]+)"/.exec(pageRes.body)?.[1] ?? '';
   check('it shows the beats in order', pageRes.body.includes('What I keep back'));
   check(
-    'it names the mode setting and its default',
-    pageRes.body.includes('Recite when asked for the Book by name'),
+    'it names the mode setting and its new default',
+    pageRes.body.includes('Overview, then answer the follow-up'),
   );
   check(
     'it states what a recital costs a member, rather than leaving it to be discovered',
