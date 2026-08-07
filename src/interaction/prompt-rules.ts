@@ -89,6 +89,7 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-withheld-rules',
   'has-rule-overview',
   'has-more-in-area',
+  'has-invocation-record',
 ] as const;
 export type PromptRuleCondition = (typeof PROMPT_RULE_CONDITIONS)[number];
 
@@ -172,6 +173,8 @@ export interface PromptRuleContext {
   hasRuleOverview: boolean;
   /** The follow-up cap bound, so she can say there is more rather than imply there is not. */
   hasMoreInArea: boolean;
+  /** The record has something to say about the rules quoted (CCB-S4-050). */
+  hasInvocationRecord: boolean;
 }
 
 /** Nothing configured and nothing supplied. The command lanes' context, plus web results. */
@@ -192,6 +195,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasWithheldRules: false,
   hasRuleOverview: false,
   hasMoreInArea: false,
+  hasInvocationRecord: false,
 });
 
 export function conditionHolds(
@@ -254,6 +258,9 @@ export function conditionHolds(
       return (context.hasNameableRules || context.hasRuleOverview) && context.hasWithheldRules;
     case 'has-rule-overview':
       return context.hasRuleOverview;
+    case 'has-invocation-record':
+      // Only alongside quoted rules: a record about nothing is nothing.
+      return context.hasNameableRules && context.hasInvocationRecord;
     case 'has-more-in-area':
       // Only ever with rules actually quoted: "there are more in that area" alongside
       // nothing quoted would be describing a remainder of nothing.

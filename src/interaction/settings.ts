@@ -35,6 +35,11 @@ import {
   normalizeRecitalSettings,
   type RecitalSettings,
 } from './recital.js';
+import {
+  BOOK_STORY_DEFAULT_BEATS,
+  BOOK_STORY_MAX_BEATS,
+  BOOK_STORY_MIN_BEATS,
+} from './book-story.js';
 
 /**
  * The given facts about her, read out of the settings (CCB-S4-031, D-135).
@@ -344,6 +349,27 @@ export interface InteractionSettings {
    * them, so it is clamped in code as well as in the form.
    */
   recital: RecitalSettings;
+  /**
+   * The record of when a law was invoked (CCB-S4-050, D-152).
+   *
+   * On by default: it is content-free, it is small, and an operator who cannot see when a
+   * refusal happened cannot tell a working gate from a silent one. Retention exists because
+   * it grows with every refusal; 90 days is long enough to answer "has this been happening"
+   * and short enough that nobody accumulates rows forever. Zero keeps everything.
+   */
+  invocationRecord: { enabled: boolean; retentionDays: number };
+  /**
+   * The Book told as an artefact (CCB-S4-050, D-152).
+   *
+   * ON by default, because the distinction is the point of the briefing: a question about her
+   * RULES gets the overview, a question about the BOOK gets the story. Off means the Book by
+   * name falls back to the overview, which is CCB-S4-048's behaviour and a complete answer.
+   *
+   * Three beats by default: the ritual, the artefact, the record. That is the shorter end of
+   * what the operator asked for, because the objection to the recital was volume in a live
+   * group, never the drama.
+   */
+  bookStory: { enabled: boolean; maxBeats: number };
   /** Resolver confidence below which an instruction becomes UNKNOWN (0..1). */
   confidenceThreshold: number;
   /** Words that confirm a pending consent change. */
@@ -751,6 +777,8 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
   followUpSeconds: 60,
   memory: { ...DEFAULT_HISTORY_LIMITS },
   recital: { ...DEFAULT_RECITAL_SETTINGS },
+  invocationRecord: { enabled: true, retentionDays: 90 },
+  bookStory: { enabled: true, maxBeats: BOOK_STORY_DEFAULT_BEATS },
   confidenceThreshold: 0.55,
   affirmations: [
     'yes',
@@ -1064,6 +1092,25 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
     recital: normalizeRecitalSettings(
       o['recital'] as Partial<Record<keyof RecitalSettings, unknown>>,
     ),
+    bookStory: {
+      enabled: (o['bookStory'] as { enabled?: unknown } | undefined)?.enabled !== false,
+      maxBeats: int(
+        (o['bookStory'] as { maxBeats?: unknown } | undefined)?.maxBeats,
+        BOOK_STORY_MIN_BEATS,
+        BOOK_STORY_MAX_BEATS,
+        d.bookStory.maxBeats,
+      ),
+    },
+    invocationRecord: {
+      enabled: (o['invocationRecord'] as { enabled?: unknown } | undefined)?.enabled !== false,
+      // Clamped in code as well as in the form, like every other bound on this path.
+      retentionDays: int(
+        (o['invocationRecord'] as { retentionDays?: unknown } | undefined)?.retentionDays,
+        0,
+        3650,
+        d.invocationRecord.retentionDays,
+      ),
+    },
     confidenceThreshold: num(o['confidenceThreshold'], 0, 1, d.confidenceThreshold),
     affirmations:
       'affirmations' in o

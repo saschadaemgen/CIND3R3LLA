@@ -201,6 +201,14 @@ export interface AiReplyRequest {
    * and invite another question, rather than reading two of nine and stopping.
    */
   moreInArea?: number;
+  /**
+   * What the record holds for the rules quoted (CCB-S4-050, D-152).
+   *
+   * Only ever about rules that have ALREADY passed the nameable gate, because it is built from
+   * the same selection. An internal rule's invocations are as withheld as its text, by the
+   * same mechanism rather than by a second one.
+   */
+  ruleInvocations?: string;
 }
 
 /**
@@ -385,6 +393,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     hasWithheldRules: request.hasWithheldRules === true,
     hasRuleOverview: request.ruleOverview !== undefined,
     hasMoreInArea: (request.moreInArea ?? 0) > 0,
+    hasInvocationRecord: (request.ruleInvocations ?? '').length > 0,
   };
 
   // Everything except the quoted block, so the quoted block can be rendered WITH it.
@@ -412,6 +421,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     ruleConstitutional: String(request.ruleOverview?.constitutional ?? 0),
     ruleAreas: request.ruleOverview?.areas ?? '',
     moreInArea: String(request.moreInArea ?? 0),
+    ruleInvocations: request.ruleInvocations ?? '',
   };
 
   const values: Record<string, string> = {

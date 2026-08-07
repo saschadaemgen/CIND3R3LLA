@@ -100,6 +100,12 @@ import {
   ruleOverview,
   rulesForFollowUp,
 } from './rule-overview.js';
+import { DISCLOSURE_GATE_RULE, preSearchRuleFor } from './rule-invocation-map.js';
+import {
+  recordRuleInvocation,
+  summariseRuleInvocations,
+  type InvocationKind,
+} from '../db/rule-invocations.js';
 import { wantsOverview } from './recital.js';
 import { listRecitalChapters } from '../db/recital-chapters.js';
 import { listGroupHistory } from '../db/messages.js';
@@ -222,6 +228,13 @@ export interface InteractionDeps {
    * could not start is not a reason to leave a member with nothing.
    */
   recite?: (msg: CapturedMessage, lang: string) => Promise<boolean>;
+  /**
+   * Tells the Book as an artefact (CCB-S4-050, D-152).
+   *
+   * Absent, or returning false, falls through to the recital decision and then to the
+   * overview, which is CCB-S4-048's behaviour and a complete answer in its own right.
+   */
+  tellBook?: (msg: CapturedMessage, lang: string) => Promise<boolean>;
   /**
    * The model that words her replies (CCB-S4-042, D-145), read live so a change on the
    * Models page reaches the next reply rather than the next restart.
@@ -1093,6 +1106,48 @@ export class InteractionEngine {
     return { ...botIdentity(s), ...(model ? { model } : {}) };
   }
 
+  /**
+   * Records that a rule decided something, if there is a rule to name (CCB-S4-050).
+   *
+   * `null` is the ordinary case for anything unmapped, and it writes nothing. The record's
+   * value is that every row in it is true; a row that guessed would make the others
+   * unreadable, because an operator could not tell which was which.
+   */
+  /**
+   * What the record holds for the rules she is about to quote.
+   *
+   * Never invents a figure and never rounds one: a rule with no rows is reported as never
+   * having been applied, which is a fact, rather than omitted, which would let her imply it
+   * had been. Empty when the record has nothing at all to say, and then the rule that carries
+   * this is not selected.
+   */
+  private async invocationLine(quoted: readonly PromptRule[]): Promise<string> {
+    if (quoted.length === 0) return '';
+    const summary = await summariseRuleInvocations(this.deps.db);
+    const parts = quoted.map((rule) => {
+      const seen = summary.get(rule.id);
+      if (!seen) return `"${rule.id}" has never been applied`;
+      return `"${rule.id}" applied ${String(seen.count)} times, last on ${seen.lastAt.toISOString().slice(0, 10)}`;
+    });
+    return parts.join('; ');
+  }
+
+  private async noteInvocation(
+    msg: CapturedMessage,
+    ruleId: string | null,
+    kind: InvocationKind,
+    category: string | null,
+  ): Promise<void> {
+    if (!ruleId) return;
+    if (!this.deps.settings().invocationRecord.enabled) return;
+    await recordRuleInvocation(this.deps.db, {
+      ruleId,
+      groupId: msg.groupId,
+      kind,
+      category,
+    });
+  }
+
   /* ── What a recital needs from the engine (CCB-S4-047) ─────────────────── */
 
   /**
@@ -1160,6 +1215,36 @@ export class InteractionEngine {
    *
    * Returns null on any failure, which the runner treats as an ordinary outcome.
    */
+  /**
+   * Her words for one beat of the Book story (CCB-S4-050).
+   *
+   * The brief goes to the model AS the instruction, because a story beat is not a chapter
+   * with a title: it is a thing to say. `reciteTransition` wraps a title in "introduce the
+   * chapter called X", which would turn a brief into nonsense, so the two are separate
+   * methods rather than one with a flag.
+   */
+  async storyVoice(brief: string, lang: string): Promise<string | null> {
+    const personalize = this.deps.personalize;
+    if (!personalize) return null;
+    const s = this.deps.settings();
+    try {
+      return await personalize({
+        kind: 'conversation',
+        lang,
+        memberMessage: brief,
+        deterministicDraft: '',
+        mode: 'conversation',
+        rules: this.deps.rules?.() ?? [],
+        requiredLiterals: [],
+        blockedLiterals: [],
+        personality: this.deps.personality?.() ?? null,
+        identity: this.facts(s),
+      });
+    } catch {
+      return null;
+    }
+  }
+
   async reciteTransition(title: string | undefined, lang: string): Promise<string | null> {
     const personalize = this.deps.personalize;
     if (!personalize) return null;
@@ -1281,6 +1366,7 @@ export class InteractionEngine {
     hasWithheldRules: boolean;
     ruleOverview?: { total: number; constitutional: number; areas: string };
     moreInArea?: number;
+    ruleInvocations?: string;
   }> {
     const rules = this.deps.rules?.() ?? [];
     if (rules.length === 0 || !this.aboutHerRules(msg, this.now(), false)) {
@@ -1322,7 +1408,20 @@ export class InteractionEngine {
     const capped = capFollowUp(
       rulesForFollowUp(rules, chapters, msg.text, lang, rulesForQuestion(rules, msg.text)),
     );
-    return { nameableRules: capped.quoted, hasWithheldRules, moreInArea: capped.more };
+
+    // WHAT THE BOOK REMEMBERS ABOUT THESE ONES (CCB-S4-050). Built from the rules that have
+    // already passed the nameable gate, so an internal rule's invocations are as withheld as
+    // its text without a second guard existing anywhere: it never reaches this line.
+    const invocations = this.deps.settings().invocationRecord.enabled
+      ? await this.invocationLine(capped.quoted)
+      : '';
+
+    return {
+      nameableRules: capped.quoted,
+      hasWithheldRules,
+      moreInArea: capped.more,
+      ...(invocations ? { ruleInvocations: invocations } : {}),
+    };
   }
 
   /** Records an ignored candidate so the guards are visible, not invisible (§5). */
@@ -1543,6 +1642,16 @@ export class InteractionEngine {
         `Lookup: refused before searching (${screen.category}) for member ${msg.senderMemberId}.`,
       );
       search.noteRefusedBeforeSearch?.(screen.category ?? 'unknown');
+      // THE RECORD (CCB-S4-050). Written here because here is where a rule actually decided
+      // something: the gate refused before any provider was contacted, and the ceiling is what
+      // it was holding. An unmapped category records nothing rather than picking a plausible
+      // rule, which is the same silence a model-side refusal gets.
+      await this.noteInvocation(
+        msg,
+        preSearchRuleFor(screen.category ?? null),
+        'pre-search',
+        screen.category ?? null,
+      );
       await this.reply(msg, s, lang, 'searchRefused', {});
       return true;
     }
@@ -2773,6 +2882,9 @@ export class InteractionEngine {
     // question: a yes/no probe about which rules are withheld is one a model can lose in a
     // single token, and it did, twice, before this existed.
     if (asksByElimination(msg.text) || probesInternalRule(this.deps.rules?.() ?? [], msg.text)) {
+      // The elimination and machinery gates hold `disclosure.never-narrow`, which CCB-S4-046
+      // measured failing as a prompt sentence. When the gate fires, that rule is what decided.
+      await this.noteInvocation(msg, DISCLOSURE_GATE_RULE, 'disclosure', null);
       await this.reply(msg, s, lang, 'rulesNoElimination', {});
       return true;
     }
@@ -2785,6 +2897,19 @@ export class InteractionEngine {
     // A `false` return falls through to the brief answer. A recital that cannot start (no
     // chapters, no room in the member's budget, a bound too low to read a book) must leave a
     // member with an answer rather than with silence.
+    // THE BOOK AS AN ARTEFACT (CCB-S4-050). Asked for by NAME, it is told as a story;
+    // asked about her rules or laws, CCB-S4-048's overview answers, unchanged. The split is
+    // the whole point: the Book is the artefact, not the content.
+    if (this.deps.tellBook && asksForRecital(msg.text) && (await this.deps.tellBook(msg, lang))) {
+      recordConversation({
+        at: this.now(),
+        groupId: msg.groupId,
+        outcome: 'spoken',
+        latencyMs: this.now() - startedAt,
+      });
+      return true;
+    }
+
     if (this.deps.recite && (await this.deps.recite(msg, lang))) {
       recordConversation({
         at: this.now(),

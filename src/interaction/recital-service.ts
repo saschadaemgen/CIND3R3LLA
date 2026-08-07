@@ -38,6 +38,7 @@ import {
 } from './recital.js';
 import { sendRecitalBeat, type RecitalPort } from './recital-runner.js';
 import { asksAboutRules, asksForRecital } from './disclosure.js';
+import { planBookStory } from './book-story.js';
 
 export interface RecitalDeps {
   db: Queryable;
@@ -77,6 +78,13 @@ export interface RecitalDeps {
   reserve: (groupId: number, memberId: string) => boolean;
   /** Books the next beat on the durable queue. */
   schedule: (groupId: number, lang: string, beatIndex: number, delayMs: number) => Promise<void>;
+  /**
+   * Her words for one beat of the Book story, from a brief rather than a script.
+   *
+   * Absent means every beat reads as its authored line, which is the same degradation the
+   * recital already has and is a complete story, just a plainer one.
+   */
+  storyVoice?: (brief: string, lang: string) => Promise<string | null>;
 }
 
 /** Loads the chapters and builds the plan for a group, or null when there is nothing to read. */
@@ -117,6 +125,70 @@ function portFor(deps: RecitalDeps, groupId: number, lang: string): RecitalPort 
     },
     scheduleNext: (nextIndex, delayMs) => deps.schedule(groupId, lang, nextIndex, delayMs),
   };
+}
+
+/**
+ * Tells the Book as an artefact (CCB-S4-050, D-152).
+ *
+ * ── WHY THIS REUSES THE RECITAL AND DOES NOT BECOME A THIRD PATH ─────────────
+ *
+ * Everything a paced multi-message answer needs already exists: the runner that sends one beat
+ * and books the next, the durable queue behind it, the degradation to an authored line, the
+ * budget that stops it flooding. A third implementation of all that would be three places to
+ * fix the next time one of them is wrong.
+ *
+ * What differs is the MATERIAL, and only the material. A recital reads laws; the story is
+ * about the artefact and quotes nothing. So the beats carry no rules at all, which also means
+ * the whole disclosure question does not arise here: there is nothing to leak because nothing
+ * is selected.
+ */
+export async function startBookStory(
+  deps: RecitalDeps,
+  msg: CapturedMessage,
+  lang: string,
+  overview: { total: number; constitutional: number },
+  maxBeats: number,
+): Promise<boolean> {
+  const out = deps.send();
+  if (!out) return false;
+  if (!deps.reserve(msg.groupId, msg.senderMemberId)) return false;
+
+  const german = lang.toLowerCase().startsWith('de');
+  const story = planBookStory({ ...overview, areas: [] }, { german, maxBeats });
+  if (story.length === 0) return false;
+
+  // The story's beats carry no rules, so the plan is a shell the runner can walk: the icon is
+  // the title, the brief goes to the model, and the authored line is what a failure reads as.
+  const plan: RecitalPlan = {
+    beats: story.map((beat) => ({
+      kind: 'chapter' as const,
+      chapterId: beat.id,
+      title: beat.icon,
+      rules: [],
+      omitted: 0,
+      imagePath: null,
+      fallback: beat.fallback,
+    })),
+    truncated: false,
+    omitted: 0,
+    withheld: 0,
+  };
+
+  const port: RecitalPort = {
+    transition: (_beat, index) => {
+      const brief = story[index]?.brief;
+      return brief && deps.storyVoice ? deps.storyVoice(brief, lang) : Promise.resolve(null);
+    },
+    renderRule: (rule) => deps.renderRule(rule),
+    send: async (text) => {
+      await out.sendText(msg.groupId, text);
+    },
+    // The closing belongs to the last beat's own brief, so nothing is appended.
+    scheduleNext: (nextIndex, delayMs) => deps.schedule(msg.groupId, lang, nextIndex, delayMs),
+  };
+
+  log.info(`Book story: telling ${String(plan.beats.length)} beats in group ${String(msg.groupId)}.`);
+  return await sendRecitalBeat(port, plan, 0, { german, pacingMs: deps.recital().pacingMs });
 }
 
 /**

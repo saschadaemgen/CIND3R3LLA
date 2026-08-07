@@ -34,7 +34,13 @@ import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendToChat, sendViaRuntime } from './bot/send.js';
 import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
 import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
-import { startRecital, type RecitalDeps } from './interaction/recital-service.js';
+import {
+  startBookStory,
+  startRecital,
+  type RecitalDeps,
+} from './interaction/recital-service.js';
+import { ruleOverview } from './interaction/rule-overview.js';
+import { listRecitalChapters } from './db/recital-chapters.js';
 import { recitalSendPort } from './bot/recital-port.js';
 import { enqueueJob } from './queue/store.js';
 import { registerCapture } from './capture/handler.js';
@@ -277,6 +283,8 @@ async function startCaptureWorker(
       renderRule: (rule) => engine.renderRuleForMember(rule),
       renderableValues: () => engine.renderableValues(),
       transition: (beat, _index, lang) => engine.reciteTransition(beat.title, lang),
+      // Her voice for a story beat, from the brief rather than a chapter title.
+      storyVoice: (brief, lang) => engine.storyVoice(brief, lang),
       send: recitalSendPort,
       reserve: (groupId, memberId) => engine.allowRecital(groupId, memberId),
       schedule: async (groupId, lang, beatIndex, delayMs) => {
@@ -297,6 +305,23 @@ async function startCaptureWorker(
       // Reading the Book out loud (CCB-S4-047). Returns false when a recital cannot start,
       // and the engine then gives the brief answer rather than going quiet.
       recite: (msg, lang) => startRecital({ ...recitalDeps(), db: getPool() }, msg, lang),
+      // The Book as an artefact (CCB-S4-050). The counts come from the same computation
+      // the overview uses, so the two can never disagree about how many laws there are.
+      tellBook: async (msg, lang) => {
+        const s = interaction.get();
+        if (!s.bookStory.enabled) return false;
+        const rules = currentPromptRules();
+        if (rules.length === 0) return false;
+        const chapters = await listRecitalChapters(getPool());
+        const overview = ruleOverview(rules, chapters, lang);
+        return startBookStory(
+          { ...recitalDeps(), db: getPool() },
+          msg,
+          lang,
+          overview,
+          s.bookStory.maxBeats,
+        );
+      },
       // Her character and the four dials (CCB-S4-029), read live like the settings
       // above and for the same reason: an operator moving a slider expects the next
       // reply to sound different, not the next restart.
