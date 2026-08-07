@@ -83,6 +83,8 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-nicknames',
   'has-clock',
   'has-web-results',
+  'has-history',
+  'has-no-history',
 ] as const;
 export type PromptRuleCondition = (typeof PROMPT_RULE_CONDITIONS)[number];
 
@@ -148,6 +150,8 @@ export interface PromptRuleContext {
   hasNicknames: boolean;
   hasClock: boolean;
   hasWebResults: boolean;
+  /** Whether any remembered conversation was supplied (CCB-S4-044). */
+  hasHistory: boolean;
 }
 
 /** Nothing configured and nothing supplied. The command lanes' context, plus web results. */
@@ -163,6 +167,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasNicknames: false,
   hasClock: false,
   hasWebResults: false,
+  hasHistory: false,
 });
 
 export function conditionHolds(
@@ -208,6 +213,10 @@ export function conditionHolds(
       return context.hasClock;
     case 'has-web-results':
       return context.hasWebResults;
+    case 'has-history':
+      return context.hasHistory;
+    case 'has-no-history':
+      return !context.hasHistory;
   }
 }
 

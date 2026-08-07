@@ -145,6 +145,29 @@ export interface AiReplyRequest {
    * has to agree about what is in range.
    */
   onSourcesUsed?: (indices: readonly number[]) => void;
+  /**
+   * What was said in this chat before the current message (CCB-S4-044, D-147).
+   *
+   * UNTRUSTED, and it rides in the USER message inside {@link HISTORY_FENCE}, never in the
+   * system prompt. Everything in it was written by members, so a member can write "ignore
+   * your instructions" into a group and have it arrive here an hour later as remembered
+   * context. That is the same threat search results posed (D-141) with a worse timing
+   * property, and it gets the same structural answer: the instruction section is built by
+   * `systemPrompt` from the registry and configured values, and this field is read only by
+   * the user-content builder. There is no code path from here into the rules.
+   *
+   * Already trimmed to the operator's limits and the hard character budget by the caller;
+   * this transport does not re-decide how much of it to send, it only fences what it is
+   * given.
+   */
+  history?: readonly { speaker: string; text: string }[];
+  /**
+   * How far back the history she was given is allowed to reach, in minutes.
+   *
+   * Carried alongside the entries because the rule that tells her what she can see has to
+   * state BOTH halves, and the count alone would let her claim a window she does not have.
+   */
+  historyWindowMinutes?: number;
 }
 
 /**
@@ -156,6 +179,24 @@ export interface AiReplyRequest {
  * a plugin, which is exactly backwards: plugins depend on the core.
  */
 export const SEARCH_FENCE = '<<<UNTRUSTED-WEB-CONTENT>>>';
+
+/**
+ * The delimiter that marks remembered conversation (CCB-S4-044, D-147).
+ *
+ * ── WHY HISTORY GETS ITS OWN FENCE AND NOT THE SEARCH ONE ─────────────────
+ *
+ * They are different claims. The search fence says "strangers on the web wrote this"; this
+ * one says "people in this room said this, and one of them may have been trying to plant an
+ * instruction for you to find later". A model that can tell them apart can weigh them
+ * differently, and a single marker would have made the two indistinguishable inside the
+ * user message.
+ *
+ * The stakes are higher here than for search, which is worth saying plainly: a planted line
+ * sitting in a group and firing an hour later is a nastier attack than one in a search
+ * result, because the attacker chooses the timing and the target is a room they are already
+ * in. The answer is the same shape as D-141 and the proof has to be stronger.
+ */
+export const HISTORY_FENCE = '<<<UNTRUSTED-CHAT-HISTORY>>>';
 
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
@@ -306,6 +347,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
   const context: PromptRuleContext = {
     ...base.context,
     hasWebResults: (request.webResults?.length ?? 0) > 0,
+    hasHistory: (request.history?.length ?? 0) > 0,
   };
 
   const values: Record<string, string> = {
@@ -318,6 +360,14 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     // this file must agree on character for character, and `verify:search` asserts they do.
     // An operator editing it in a console would break the agreement silently.
     fence: SEARCH_FENCE,
+    // Same reasoning as the search fence: a delimiter the transport and the rule text must
+    // agree on character for character, so it is code rather than an editable sentence.
+    historyFence: HISTORY_FENCE,
+    // What she may honestly say she can see. The COUNT is what was actually supplied after
+    // every limit bound, not the configured maximum, because telling her she can see twenty
+    // when she was handed four is the same class of false statement D-140 removed.
+    historyCount: String(request.history?.length ?? 0),
+    historyMinutes: String(request.historyWindowMinutes ?? 0),
   };
 
   return assemblePrompt(request.rules, lanesForMode(request.mode), context, values).join('\n');
@@ -488,6 +538,17 @@ export async function generateOllamaReply(
                       snippet: `${SEARCH_FENCE}${result.snippet}${SEARCH_FENCE}`,
                       url: result.url,
                     })),
+                  }
+                : {}),
+              // REMEMBERED CONVERSATION, fenced per entry for the same reason the web
+              // results are (CCB-S4-044). The caller has stripped the marker out of the
+              // text, so nothing in here can close its own fence early and continue as if
+              // it were the application talking.
+              ...(request.history?.length
+                ? {
+                    chatHistory: request.history.map(
+                      (line) => `${HISTORY_FENCE}${line.speaker}: ${line.text}${HISTORY_FENCE}`,
+                    ),
                   }
                 : {}),
               // Omitted in conversation mode rather than sent empty: an empty field
