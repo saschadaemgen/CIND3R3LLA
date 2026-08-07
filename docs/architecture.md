@@ -2768,6 +2768,43 @@ keeps back. The recital taught *the ones you skipped* and *the other 40*; the co
 teaches *the ones you keep back*. The elimination gate now covers all three, and the pattern
 is the thing to carry: this is a standing consequence of the feature, not a one-off. See
 security §12.7.
+## 43. The Book as an artefact, and its record (CCB-S4-050, D-152)
+
+### 43.1 Two questions, two answers
+
+| Asked | Answer |
+| --- | --- |
+| about her **rules** or **laws** | CCB-S4-048's overview, then a capped follow-up. Unchanged. |
+| about the **Book of Elii** by name | the story: ritual, artefact, record |
+
+The story runs through CCB-S4-047's recital runner, so the pacing, the queue, the degradation
+and the flood budget are the ones already built. Only the material differs: the story is about
+the artefact and quotes nothing, so nothing is selected and nothing can leak.
+
+Beats are BRIEFS, not scripts. The counts come from the same `ruleOverview` the overview uses
+and travel as required literals (D-137). Icons are a small fixed set: 🕯️ ritual, 📖 the Book,
+📜 the record, 🔒 withheld.
+
+### 43.2 The record: `cinderella_rule_invocations`
+
+| Column | |
+| --- | --- |
+| `rule_id` | the law that decided |
+| `group_id` | the only identifier stored |
+| `kind` | `pre-search`, `disclosure`, `moderation` (fixed vocabulary, CHECK-constrained) |
+| `category` | the gate's own sub-classification, or NULL |
+
+Written at the deterministic gates and nowhere else. **Not** a record of which rules were in a
+prompt: that is the same list every time.
+
+### 43.3 What it refuses to say
+
+A model-side refusal attributes to no rule and writes no row. The attribution is a fixed map
+(`rule-invocation-map.ts`) rather than a search, because the gates are code and cannot name a
+law without being told which one they enforce. An unmapped category records nothing.
+
+The console states this limit in the operator's own view, because a record whose limits are
+only in the source is a record that will be misread.
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

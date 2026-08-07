@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-151**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-152**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -16,6 +16,74 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 
+### D-152 - The Book is an artefact, and the record says only what it knows
+
+**Status: IMPLEMENTED** (CCB-S4-050). Two decisions that belong together, because the second
+is what makes a sentence in the first one true.
+
+**THE BOOK IS NOT THE RULES.** Asked about her rules or laws she gives CCB-S4-048's overview,
+unchanged. Asked about the Book of Elii by name she tells a story: what the Book is, why it is
+readable, what it holds, and what it keeps back. Both questions previously landed on the same
+paragraph of counts, which reads like a database and not like a thing named after a book
+carried through a wasteland.
+
+**THE RITUAL IS WHAT MAKES IT AN ARTEFACT.** She says she is about to read and takes a beat to
+set the mood before reading anything. That one short message is the whole difference between a
+lookup and a ceremony, and it costs one message. Three beats by default: the ritual, the
+artefact, the record. That is the shorter end of what the operator asked for, because his
+objection to the recital was volume in a live group and never the drama.
+
+**IT REUSES THE RECITAL RATHER THAN BECOMING A THIRD PATH.** The runner that sends one beat and
+books the next, the durable queue behind it, the degradation to an authored line and the budget
+that stops it flooding all exist. What differs is the MATERIAL: the story is about the artefact
+and quotes nothing, so the disclosure question does not arise at all. Nothing is selected, so
+nothing can leak.
+
+The facts are still not hers. The counts come from the same `ruleOverview` the overview uses,
+so the two can never disagree about how many laws there are, and they travel as required
+literals per D-137. The beats are BRIEFS rather than scripts, so the gravity reads differently
+at different sharpness settings, which is what "with some weight" has to mean for something
+that must also work every time.
+
+**THE RECORD IS OF DECISIONS, NOT OF PRESENCE.** Every reply assembles most of the registry into
+a prompt, so recording which rules were present would be the same list every time: noise with a
+timestamp. What is recorded is the moments a rule actually DECIDED something, which in this
+product is a small and precise set, the deterministic gates: a lookup refused before any
+provider was contacted, and a refusal to confirm or deny which rules are withheld.
+
+**AND THE LIMIT IS THE DESIGN RATHER THAN A CAVEAT.** When the MODEL declines something on its
+own, no rule fired in a way the application can attribute: the ceiling is in its prompt and so
+are ninety-nine others, and which one it was weighing is not knowable from outside. The record
+stays silent, and the console says so in as many words.
+
+That silence is what makes the rest worth reading. A record that guessed would be a story about
+the system rather than a record of it, and an operator could not tell which rows were which.
+Proven live: she refused to write explicit content herself, and the record did not move.
+
+The attribution is a FIXED MAP rather than a search. The gates are code, not registry rules, so
+neither can name a law without being told which one it enforces; looking for a rule whose text
+resembles the category would be exactly the guesswork being refused. An unmapped category
+records nothing.
+
+**Content-free, like every log here**, and it bites harder than usual: a pre-search row
+carrying the query would be a permanent record of the thing the gate exists to refuse. The
+group id is the only identifier.
+
+**THE CHAT EXPOSURE WAS CHEAP, SO IT IS BUILT.** The follow-up path already selects rules and
+already gates them on `nameable`, so attaching a rule's invocation summary is a join on an id
+that has already passed the gate. An internal rule's invocations are as withheld as its text
+because that rule never reaches selection at all: the existing gate is the whole mechanism, and
+no second retrieval path or second guard was needed.
+
+**Both are operator controls with stated defaults**: the story on, three beats; the record on,
+90 days retention. Retention exists because the record grows with every refusal, and zero keeps
+everything.
+
+`npm run verify:book-artefact` 55 checks with the mutation the briefing asked for (a query the
+gate does not refuse yields no attribution at all), `verify:book-artefact-live` the whole story
+against `qwen3:32b` plus the record after a real refusal. Full offline set 51/51.
+
+---
 ### D-151 - She can hear the answer to her own question, and the window is the weakest signal
 
 **Status: IMPLEMENTED** (CCB-S4-049). CCB-S4-048's overview ends by naming the six chapters

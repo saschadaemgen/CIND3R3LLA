@@ -256,7 +256,13 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   041 the conversational Book (two conditions, the four overview rules whose counts are
   PLACEHOLDERS the application fills and protects as required literals, and the two that shape
   a capped follow-up. The general answer quotes nothing now: a wall of quoted rules is what
-  production rejected).
+  production rejected) ·
+  042 the invocation record (one row per DETERMINISTIC decision: which law, which chat, what
+  kind, and the gate's own category. Content-free, and the group id is the only identifier.
+  **It records nothing about the model's own refusals**, because no rule fired in a way the
+  application can attribute, and a record that guessed would make the true rows unreadable.
+  Plus the rule that lets her say it in the chat, which is free: the follow-up path had already
+  gated those rules on `nameable`).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -264,7 +270,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **042**, since 041 landed with the conversational Book). Stated as a rule
+  (currently **043**, since 042 landed with the invocation record). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -356,6 +362,12 @@ Extended by CCB-S4-049 with the follow-up detection: her own chapter names in bo
 the three-minute post-overview window, and the rule that the window is the WEAKEST of the three
 signals and promotes only what nothing else claimed, because letting it outrank the catalog
 cost the archive its own questions),
+`verify:book-artefact` (the Book as an artefact, CCB-S4-050: that a question about the BOOK gets
+the story while a question about her RULES keeps the overview, the three beats and their
+application-supplied counts, and the record's deliberate limit, mutation-proven by a query the
+gate does NOT refuse yielding no attribution at all.
+`npm run verify:book-artefact-live` tells the whole story against a real model and shows the
+record standing still while she refuses something herself; it needs Ollama),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also
