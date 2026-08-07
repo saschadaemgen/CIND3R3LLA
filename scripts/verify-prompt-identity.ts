@@ -46,6 +46,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  HISTORY_FENCE,
   SEARCH_FENCE,
   systemPrompt,
   type AiReplyMode,
@@ -126,7 +127,21 @@ interface Case {
   identity?: typeof IDENTITY_FULL | { name: string } | undefined;
   now?: CurrentTime | undefined;
   webResults?: { title: string; snippet: string; url: string }[];
+  history?: { speaker: string; text: string }[];
+  historyWindowMinutes?: number;
 }
+
+/**
+ * A short remembered thread, for the cases that pin the `has-history` branch (CCB-S4-044).
+ *
+ * Deliberately includes one of HER OWN lines, marked `You`, because that is the half of the
+ * feature that lets her follow her own thread and it must be visible in the baseline.
+ */
+const HISTORY = [
+  { speaker: 'Alice', text: 'what does this group actually archive?' },
+  { speaker: 'You', text: 'Only what you tell me to. Nothing before you say the word.' },
+  { speaker: 'Bob', text: 'and can I take it back afterwards?' },
+];
 
 /**
  * The matrix the briefing asks for, plus the branches the code actually has.
@@ -146,6 +161,9 @@ const CASES: Case[] = [
   { id: 'conversation.no-name', mode: 'conversation', personality: personality(), identity: { name: '' } as never, now: NOW },
   { id: 'conversation.name-only', mode: 'conversation', personality: personality(), identity: { name: 'CIND3R3LLA' }, now: NOW },
   { id: 'conversation.no-model', mode: 'conversation', personality: personality(), identity: { ...IDENTITY_FULL, model: '' }, now: NOW },
+  { id: 'conversation.with-history', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
+  { id: 'retort.with-history', mode: 'retort', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
+  { id: 'free.with-history', mode: 'free', personality: personality(), identity: IDENTITY_FULL, now: NOW, history: HISTORY, historyWindowMinutes: 30 },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -185,6 +203,10 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.identity ? { identity: testCase.identity } : {}),
     ...(testCase.now ? { now: testCase.now } : {}),
     ...(testCase.webResults ? { webResults: testCase.webResults } : {}),
+    ...(testCase.history ? { history: testCase.history } : {}),
+    ...(testCase.historyWindowMinutes !== undefined
+      ? { historyWindowMinutes: testCase.historyWindowMinutes }
+      : {}),
   };
   // The output bound is derived from the dial, so it is passed explicitly rather than left
   // to a default that would make the fixture depend on the transport's arithmetic.
@@ -215,11 +237,15 @@ function selectionFor(
   const context: PromptRuleContext = {
     ...base.context,
     hasWebResults: (testCase.webResults?.length ?? 0) > 0,
+    hasHistory: (testCase.history?.length ?? 0) > 0,
   };
   const values: Record<string, string> = {
     ...base.values,
     maxChars: String(maxCharsFor(testCase)),
     fence: SEARCH_FENCE,
+    historyFence: HISTORY_FENCE,
+    historyCount: String(testCase.history?.length ?? 0),
+    historyMinutes: String(testCase.historyWindowMinutes ?? 0),
   };
 
   return { rules: selectPromptRules(rules, lanesForMode(testCase.mode), context), values };
@@ -452,8 +478,18 @@ async function run(): Promise<void> {
 
   // A rule's ORDER. The text is untouched; only two lines swap places, which is the failure
   // a hash-only check would catch and a "does the prompt contain X" check would not.
-  const first = rules.find((rule) => rule.id === 'grounding.no-memory');
-  const second = rules.find((rule) => rule.id === 'grounding.no-memory-answer');
+  //
+  // THE PAIR IS ASSERTED TO EXIST FIRST, and that is not defensive noise: this mutation used
+  // to name `grounding.no-memory` and `grounding.no-memory-answer`, CCB-S4-044 deleted both,
+  // and the swap silently became a no-op that reported "0 cases went red". A mutation proof
+  // that quietly stops mutating is worse than no mutation proof, because it still prints a
+  // reassuring line. Two rules that vanish now fail here instead.
+  const first = rules.find((rule) => rule.id === 'ceiling.hard-limit');
+  const second = rules.find((rule) => rule.id === 'ceiling.never-explicit');
+  check(
+    'the two rules the order mutation swaps still exist',
+    first !== undefined && second !== undefined && first.ord !== second.ord,
+  );
   const orderMutation = rules.map((rule) =>
     rule.id === first?.id
       ? { ...rule, ord: second?.ord ?? rule.ord }

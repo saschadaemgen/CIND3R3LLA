@@ -81,7 +81,9 @@
     "verify:search-live": "tsx scripts/verify-search-live.ts",
     "verify:prompt-identity": "tsx scripts/verify-prompt-identity.ts",
     "verify:lessons-live": "tsx scripts/verify-lessons-live.ts",
-    "verify:book": "tsx scripts/verify-book-of-elii.ts"
+    "verify:book": "tsx scripts/verify-book-of-elii.ts",
+    "verify:memory": "tsx scripts/verify-memory.ts",
+    "verify:memory-live": "tsx scripts/verify-memory-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

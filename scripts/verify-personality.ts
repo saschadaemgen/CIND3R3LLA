@@ -723,13 +723,22 @@ async function main(): Promise<void> {
     'and tells her to say she does not know instead of filling the gap',
     clocked.includes('filling the gap is the one thing you must not do'),
   );
+  // CCB-S4-044 replaced the instruction this used to assert. D-140 booked that in advance:
+  // "you have no memory of this conversation" became a false statement she was told to make
+  // on the day memory was built, so it was deleted rather than softened. What is asserted now
+  // is the sentence that replaced it, for a prompt carrying NO history, which is the case
+  // this fixture is.
   check(
-    'she is told plainly that she has no conversation memory',
-    clocked.includes('You do not remember earlier messages in this conversation'),
+    'with nothing to see, she is told she cannot see anything earlier',
+    clocked.includes('You cannot see anything that was said before the message in front of you'),
   );
   check(
     'and told to say so rather than deflect, which is the observed defect',
     clocked.includes('Do not imply you chose not to keep track'),
+  );
+  check(
+    'and she is never told she has no memory at all, which is no longer true',
+    !clocked.includes('You do not remember earlier messages in this conversation'),
   );
   check(
     'the grounding rules do not reach a command rewrite either',
