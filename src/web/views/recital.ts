@@ -39,6 +39,11 @@ import {
 } from '../../media/assets.js';
 import { FOLLOW_UP_MAX_RULES } from '../../interaction/rule-overview.js';
 import {
+  BOOK_STORY_MAX_BEATS,
+  BOOK_STORY_MIN_BEATS,
+} from '../../interaction/book-story.js';
+import { listRecentRuleInvocations } from '../../db/rule-invocations.js';
+import {
   RECITAL_MAX_MESSAGES,
   RECITAL_MAX_PACING_MS,
   RECITAL_MIN_MESSAGES,
@@ -51,7 +56,7 @@ import {
 import { log } from '../../log.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
-import { badge, card, pageHeader } from './ui.js';
+import { badge, card, fmtDate, pageHeader } from './ui.js';
 
 function bodyString(body: unknown, key: string): string {
   const value = (body as Record<string, unknown> | null)?.[key];
@@ -183,6 +188,9 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
       const s = ctx.interaction.get().recital;
       const plan = planRecital(chapters, rules, { lang: 'en', maxMessages: s.maxMessages });
       const orphans = unassignedRules(chapters, rules);
+      const story = ctx.interaction.get().bookStory;
+      const record = ctx.interaction.get().invocationRecord;
+      const invocations = record.enabled ? await listRecentRuleInvocations(ctx.db, 100) : [];
 
       // What each chapter HOLDS against what the plan actually reads, so a bound that quietly
       // drops laws is visible as a number rather than as a surprise in a group.
@@ -369,6 +377,128 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
             `,
           )}
 
+          ${card(
+            'The Book, told as an artefact',
+            html`
+              <form method="post" action="/book/recital/story" class="grid gap-3">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="storyEnabled" ${story.enabled ? raw('checked') : ''} class="rounded" />
+                  <span>Tell the Book as a story when somebody asks for it by name</span>
+                </label>
+                <p class="text-xs text-slate-500">
+                  <strong>When it triggers.</strong> Only a question that names the Book:
+                  "show me the Book of Elii", "read me your book". A question about her RULES or
+                  LAWS is unaffected and still gets the overview with its counts, then the
+                  follow-up with quoted rules. The Book is the artefact; the rules are the
+                  content, and they are different questions.
+                </p>
+                <p class="text-xs text-slate-500">
+                  Switched off, a question naming the Book falls back to the overview, which is
+                  a complete answer.
+                </p>
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Messages the story takes</span>
+                  <input
+                    name="storyBeats"
+                    type="number"
+                    min="${String(BOOK_STORY_MIN_BEATS)}"
+                    max="${String(BOOK_STORY_MAX_BEATS)}"
+                    value="${String(story.maxBeats)}"
+                    class="${INPUT_CLS} sm:w-40"
+                  />
+                  <span class="text-xs text-slate-500">
+                    Three by default: the ritual, the artefact, the record. It opens by saying
+                    she is about to read and taking a beat to set the mood, which is what makes
+                    it a ceremony rather than a lookup. A tighter bound keeps the ritual and the
+                    artefact; a longer one is a set piece.
+                  </span>
+                </label>
+                <div>
+                  <button
+                    type="submit"
+                    class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+            `,
+          )}
+
+          ${card(
+            'The record: when a law was invoked',
+            html`
+              <form method="post" action="/book/recital/record" class="grid gap-3">
+                <input type="hidden" name="_csrf" value="${csrf}" />
+                <label class="flex items-center gap-2 text-sm">
+                  <input type="checkbox" name="recordEnabled" ${record.enabled ? raw('checked') : ''} class="rounded" />
+                  <span>Record when a rule decides something</span>
+                </label>
+                <div class="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                  <p class="font-medium">What this can and cannot say</p>
+                  <p class="mt-1">
+                    It records the moments a rule actually DECIDED something, which in this
+                    product means the deterministic gates: a lookup refused before any provider
+                    was contacted, and a refusal to confirm or deny which rules are withheld.
+                    Those are the places the application knows which law it was holding.
+                  </p>
+                  <p class="mt-1">
+                    <strong>It says nothing about the model's own judgement.</strong> When she
+                    declines something herself, no rule fired in a way this can attribute: the
+                    ceiling is in her prompt and so are ninety-nine others, and which one she was
+                    weighing is not knowable from outside. Those refusals leave no row rather
+                    than a guessed one. That silence is what makes the rest of it worth reading.
+                  </p>
+                </div>
+                <label class="flex flex-col gap-1 text-sm">
+                  <span class="font-medium text-slate-700">Keep rows for (days)</span>
+                  <input
+                    name="recordRetention"
+                    type="number"
+                    min="0"
+                    max="3650"
+                    value="${String(record.retentionDays)}"
+                    class="${INPUT_CLS} sm:w-40"
+                  />
+                  <span class="text-xs text-slate-500">
+                    90 by default: long enough to answer "has this been happening", short enough
+                    that nobody accumulates rows forever. 0 keeps everything. Nothing
+                    member-written is stored, so this is a size choice rather than a privacy one.
+                  </span>
+                </label>
+                <div>
+                  <button
+                    type="submit"
+                    class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                  >
+                    Save
+                  </button>
+                </div>
+              </form>
+
+              <div class="mt-4 border-t border-slate-200 pt-4">
+                <p class="text-sm font-medium text-slate-700">
+                  ${String(invocations.length)} recorded decisions
+                </p>
+                ${invocations.length === 0
+                  ? html`<p class="mt-1 text-xs text-slate-500">
+                      Nothing yet. A row appears the first time a gate refuses something.
+                    </p>`
+                  : html`<ul class="mt-2 space-y-1 text-xs text-slate-600">
+                      ${invocations.slice(0, 25).map(
+                        (row) => html`<li>
+                          <code>${row.ruleId}</code>
+                          <span class="text-slate-400">${row.kind}</span>
+                          ${row.category ? html`<span class="text-slate-400">${row.category}</span>` : null}
+                          <span class="text-slate-400">${fmtDate(row.occurredAt.toISOString())}</span>
+                        </li>`,
+                      )}
+                    </ul>`}
+              </div>
+            `,
+          )}
+
           ${orphans.length > 0
             ? card(
                 `${String(orphans.length)} rules she may name are claimed by no chapter`,
@@ -408,6 +538,36 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
           mode: bodyString(req.body, 'mode'),
           maxMessages: bodyString(req.body, 'maxMessages'),
           pacingMs: bodyString(req.body, 'pacingMs'),
+        },
+      },
+      actor,
+    );
+    return reply.redirect('/book/recital?saved=1');
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/book/recital/story', async (req, reply) => {
+    const actor = req.session?.username ?? 'unknown';
+    await ctx.interaction.save(
+      {
+        ...ctx.interaction.get(),
+        bookStory: {
+          enabled: 'storyEnabled' in req.body,
+          maxBeats: bodyString(req.body, 'storyBeats'),
+        },
+      },
+      actor,
+    );
+    return reply.redirect('/book/recital?saved=1');
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/book/recital/record', async (req, reply) => {
+    const actor = req.session?.username ?? 'unknown';
+    await ctx.interaction.save(
+      {
+        ...ctx.interaction.get(),
+        invocationRecord: {
+          enabled: 'recordEnabled' in req.body,
+          retentionDays: bodyString(req.body, 'recordRetention'),
         },
       },
       actor,
