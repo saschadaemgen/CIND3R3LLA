@@ -367,6 +367,107 @@ function modelDetailPanel(
   </article>`;
 }
 
+/**
+ * How hard she thinks before she speaks (CCB-S4-052, D-154).
+ *
+ * SHIPS WHETHER OR NOT THERE IS A CONTROL, which was the operator's point and it stands. The
+ * reasoning setting was invisible: nothing said whether she thinks before answering, at what
+ * depth, or where the value comes from. That is a hidden state in a product whose whole
+ * argument is that hidden states are what you cannot trust.
+ *
+ * It is knowable precisely because it is not a property of the model: it is a parameter this
+ * application sends with every request, from the same machine the console runs on.
+ */
+import {
+  CONTEXT_MEASUREMENTS,
+  REASONING_EFFORT_SENT,
+  REASONING_MEASUREMENTS,
+  REASONING_SOURCE,
+} from '../../interaction/reasoning.js';
+
+function reasoningCard(): SafeHtml {
+  return html`<section class="setup-card">
+    <h2>Thinking before she answers</h2>
+
+    <p class="setup-card-note">
+      She is running with reasoning <strong>off</strong>
+      (<code>reasoning_effort: "${REASONING_EFFORT_SENT}"</code>). That is an explicit choice in
+      the code, not the runtime's default: Ollama runs a reasoning pass by default for models
+      that support it, and this application turns it off on every request.
+    </p>
+    <p class="setup-card-note">
+      <strong>Where it comes from.</strong> It is ${REASONING_SOURCE}, so it is knowable from
+      here and would be changeable from here. It is not currently changeable, and the reason is
+      measured rather than assumed.
+    </p>
+
+    <table class="setup-table">
+      <thead>
+        <tr>
+          <th>Setting</th>
+          <th>Latency</th>
+          <th>Reasoning</th>
+          <th>Unusable replies</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${REASONING_MEASUREMENTS.map(
+          (m) => html`<tr>
+            <td>${m.label}</td>
+            <td>${(m.latencyMs / 1000).toFixed(1)}s</td>
+            <td>${m.reasoningChars === 0 ? 'none' : `${String(m.reasoningChars)} chars`}</td>
+            <td>${String(m.unusableOfFive)} of 5</td>
+          </tr>`,
+        )}
+      </tbody>
+    </table>
+
+    <p class="setup-card-note">
+      <strong>Why there is no dial.</strong> A reply is bounded at 320 tokens and the reasoning
+      pass spends the same budget. Measured in the real request shape, turning thinking on made
+      three replies in five come back empty and fail their schema, which in production throws
+      and falls back to the deterministic line. A control that silently replaced three in five
+      of her answers with a canned one is not a control worth having, and the quality at each
+      level was not visibly better in the first place.
+    </p>
+    <p class="setup-card-note">
+      Raising the token budget would make room, and that is a different change with its own
+      costs that nobody has measured. If it is ever wanted, this is the page it belongs on.
+    </p>
+
+    <h3>What a bigger context would cost</h3>
+    <p class="setup-card-note">
+      Measured on the 24 GB card and <strong>deliberately not applied</strong>: this is a
+      number to decide with, not a setting anybody moved.
+    </p>
+    <table class="setup-table">
+      <thead>
+        <tr>
+          <th>Context</th>
+          <th>Total</th>
+          <th>In VRAM</th>
+          <th>On CPU</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${CONTEXT_MEASUREMENTS.map(
+          (c) => html`<tr>
+            <td>${String(c.numCtx)}</td>
+            <td>${c.totalGb === null ? 'not measured' : `${c.totalGb.toFixed(2)} GB`}</td>
+            <td>${c.vramGb === null ? '' : `${c.vramGb.toFixed(2)} GB`}</td>
+            <td>${c.cpuGb === null ? '' : `${c.cpuGb.toFixed(2)} GB`}</td>
+          </tr>`,
+        )}
+      </tbody>
+    </table>
+    <p class="setup-card-note">
+      At 32768 the model spills 6.21 GB onto the CPU, which is the failure that has bitten this
+      deployment before. 16384 failed to load in two attempts and is reported as unmeasured
+      rather than estimated.
+    </p>
+  </section>`;
+}
+
 function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuery): SafeHtml {
   const models = snapshot.catalog.models;
   const routedModels = new Set([
@@ -399,6 +500,8 @@ function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuer
         </button>
       </form>
     </header>
+
+    ${reasoningCard()}
 
     ${notice(query)}
 
