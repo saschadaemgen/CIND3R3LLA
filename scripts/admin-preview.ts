@@ -10,6 +10,7 @@
  * on a public host.
  */
 
+import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import argon2 from 'argon2';
 import { buildServer, registerNav } from '../src/web/server.js';
@@ -177,6 +178,8 @@ async function main(): Promise<void> {
     simplexFilesFolder: './state/files',
     groupName: 'cinderella-test',
     mediaRoot: process.cwd(),
+    // Operator assets (CCB-S4-047), so the Recital page can actually take an image.
+    assetRoot: resolve('./state/preview-assets'),
     // Seeded so the Backups page has a real run record to render (CCB-S4-014/015).
     backupStatusPath: process.env['BACKUP_STATUS_PATH'] ?? './state/backup-status.json',
     backupRequestPath: process.env['BACKUP_REQUEST_PATH'] ?? './state/backup-request',

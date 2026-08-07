@@ -497,6 +497,12 @@ export function registerNav(): void {
           icon: icon('shield'),
         },
         {
+          key: 'book:recital',
+          href: '/book/recital',
+          label: 'The Recital',
+          icon: icon('shield'),
+        },
+        {
           key: 'book:assembled',
           href: '/book/assembled',
           label: 'The Assembled Word',

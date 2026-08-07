@@ -50,9 +50,13 @@ copyFileSync(
   join(root, 'assets', 'admin-personality.js'),
   join(root, 'public', 'assets', 'admin-personality.js'),
 );
+copyFileSync(
+  join(root, 'assets', 'admin-recital.js'),
+  join(root, 'public', 'assets', 'admin-recital.js'),
+);
 
 console.log(
   'copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, ' +
     'admin-setup-wizard.js, admin-access-control.js, admin-model-catalog.js, ' +
-    'admin-personality.js -> public/assets/',
+    'admin-personality.js, admin-recital.js -> public/assets/',
 );
