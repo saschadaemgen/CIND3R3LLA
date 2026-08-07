@@ -26,6 +26,7 @@ import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personal
 import { SettingsService } from '../src/settings/service.js';
 import { WebSearchService, setWebSearchService } from '../src/plugins/web-search/service.js';
 import { PromptRuleService, setPromptRuleService } from '../src/interaction/prompt-rule-service.js';
+import { setOverrideRecorded } from '../src/db/prompt-rule-overrides.js';
 import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -161,6 +162,87 @@ async function main(): Promise<void> {
     },
     'admin-preview',
   );
+
+  // ── A SECOND BOT, SO THE SCOPE OF A LAW IS VISIBLE (CCB-S5-001) ─────────
+  //
+  // With one bot every law reads "shared: 1 bot" and the whole distinction the briefing
+  // asks to be recognisable is invisible on the page. Two bots with opposite dials, and
+  // one law set for one of them, is the smallest fixture that shows it.
+  const supportBotId = await createBotOnboardingProfile(
+    db,
+    {
+      slug: 'support-desk',
+      displayName: 'SupportDesk',
+      enabled: true,
+      selectedForRuntime: false,
+      createAddress: true,
+      updateAddress: true,
+      updateProfile: true,
+      autoAcceptContacts: true,
+      welcomeMessage: '',
+      businessAddress: false,
+      allowFiles: true,
+      commandRegistryMode: 'cinderella_defaults',
+      customCommands: [],
+      useBotProfile: true,
+      logContacts: true,
+      logNetwork: false,
+      groupInvitationMode: 'manual',
+      expectedGroupRole: 'admin',
+      roleVerificationRequired: true,
+      policyActivationMode: 'manual',
+      remoteCommandsEnabled: false,
+      persistentChangesEnabled: false,
+      contactRequestRetentionHours: 168,
+      groupInvitationRetentionHours: 168,
+      maxPendingContactRequests: 100,
+      personality: { ...DEFAULT_PERSONALITY },
+    },
+    'admin-preview',
+  );
+  await updateBotPersonality(
+    db,
+    supportBotId,
+    {
+      baseCharacter:
+        'Patient, unhurried, and entirely uninterested in being clever. Answers the question ' +
+        'that was asked and then stops.',
+      origin: DEFAULT_ORIGIN,
+      sharpness: 2,
+      warmth: 9,
+      humor: 2,
+      permissiveness: 3,
+    },
+    'admin-preview',
+  );
+
+  // One standard law switched off for the support bot, so the Book shows a real
+  // deviation rather than an empty per-bot section.
+  {
+    const { rows } = await db.query<{ id: string; rule_text: string; enabled: boolean; ord: number; nameable: boolean }>(
+      `SELECT id, rule_text, enabled, ord, nameable
+         FROM cinderella_prompt_rules
+        WHERE tier = 'standard' AND enabled = TRUE
+        ORDER BY ord LIMIT 1`,
+    );
+    const target = rows[0];
+    if (target) {
+      await setOverrideRecorded(
+        db,
+        {
+          botProfileId: supportBotId,
+          ruleId: target.id,
+          enabled: false,
+          text: null,
+          sharedText: target.rule_text,
+          sharedEnabled: target.enabled,
+          sharedOrd: Number(target.ord),
+          sharedNameable: target.nameable,
+        },
+        'admin-preview',
+      );
+    }
+  }
 
   const adminCfg: AdminConfig = {
     adminPort: PORT,

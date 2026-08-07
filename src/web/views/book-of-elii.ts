@@ -56,6 +56,22 @@ import {
   type BotPersonality,
 } from '../../interaction/personality.js';
 import { invalidatePromptRules } from '../../interaction/prompt-rule-service.js';
+import {
+  clearOverrideRecorded,
+  listAllOverrides,
+  listOverridesForBot,
+  listOverridesForRule,
+  setOverrideRecorded,
+} from '../../db/prompt-rule-overrides.js';
+import {
+  applyOverrides,
+  canOverride,
+  describeScopes,
+  CONSTITUTIONAL_SCOPE_REASON,
+  type RuleOverride,
+  type RuleScope,
+} from '../../interaction/rule-scope.js';
+import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { currentReplyModel } from '../../interaction/ai-runtime.js';
 import { botIdentity } from '../../interaction/settings.js';
 import { currentBotPersonality } from '../../profiles/bot-personality.js';
@@ -95,6 +111,162 @@ function errorMessage(error: unknown): string {
 const EPIGRAPH =
   'Eighty-two sentences decide what she will and will not do. They are written down, they ' +
   'are hers to be held to, and they are yours to revise. Read before you change one.';
+
+/**
+ * What a law's scope is, said in the list and said again on its own page (CCB-S5-001).
+ *
+ * The briefing's requirement in one word: RECOGNISABLE. A rule you cannot read is a rule
+ * you cannot trust, and a rule whose scope you cannot read is the same problem one level
+ * up - an operator editing a sentence has to know, before typing, whether he is changing
+ * one bot or all of them.
+ */
+function scopeBadge(scope: RuleScope | undefined): SafeHtml | null {
+  if (!scope) return null;
+  if (scope.kind === 'constitutional') return badge('shared: every bot', 'red');
+  if (scope.kind === 'per-bot') {
+    return badge(
+      `per bot: ${String(scope.deviations.length)} differ${scope.deviations.length === 1 ? 's' : ''}`,
+      'amber',
+    );
+  }
+  return badge(`shared: ${String(scope.sharedBotCount)} bot(s)`, 'slate');
+}
+
+/** Which bots deviate and how, named rather than counted, for the rule's own page. */
+function scopeDetail(
+  scope: RuleScope | undefined,
+  botNames: Map<number, string>,
+): SafeHtml | null {
+  if (!scope) return null;
+  if (scope.kind === 'constitutional') {
+    // The reason already opens by saying it is shared and cannot be set for one, so a
+    // lead-in that says it again reads as a stutter on the rendered page. Seen there
+    // rather than reasoned about: D-111's rule, applied to copy.
+    return html`<p class="mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+      ${CONSTITUTIONAL_SCOPE_REASON}
+    </p>`;
+  }
+  if (scope.kind === 'shared') {
+    return html`<p class="mt-2 text-xs text-slate-500">
+      Shared. Every one of the ${String(scope.sharedBotCount)} bot(s) reads this exact sentence.
+    </p>`;
+  }
+  return html`<div class="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+    <p class="font-semibold">Set per bot.</p>
+    <ul class="mt-1 list-disc pl-4">
+      ${scope.deviations.map(
+        (d) => html`<li>
+          ${botNames.get(d.botProfileId) ?? `bot ${String(d.botProfileId)}`}:
+          ${d.off ? 'switched off' : null}${d.off && d.reworded ? ' and ' : null}${d.reworded
+            ? 'reworded'
+            : null}
+        </li>`,
+      )}
+    </ul>
+    <p class="mt-1">
+      The other ${String(scope.sharedBotCount)} bot(s) read the shared sentence above.
+    </p>
+  </div>`;
+}
+
+/**
+ * Setting one law for one bot (CCB-S5-001).
+ *
+ * A CONSTITUTIONAL law gets a sentence saying it cannot be done and why, rather than a
+ * control that accepts the click and then refuses. The briefing asks for exactly that
+ * distinction, and it is the difference between a system that explains itself and one that
+ * argues with you.
+ */
+function perBotPanel(
+  rule: PromptRule,
+  bots: { id: number; displayName: string; enabled: boolean }[],
+  overrides: RuleOverride[],
+  csrf: string,
+): SafeHtml {
+  if (!canOverride(rule)) {
+    return html`<section class="mt-4 rounded-xl border border-red-200 bg-red-50/60 p-4">
+      <h3 class="text-sm font-bold text-red-900">This law cannot be set for one bot</h3>
+      <p class="mt-1 text-sm text-red-900">${CONSTITUTIONAL_SCOPE_REASON}</p>
+      <p class="mt-2 text-xs text-red-800">
+        If you need genuinely different limits for a community, that is a whole rulebook
+        rather than an exception to this one, and it is not built yet.
+      </p>
+    </section>`;
+  }
+
+  const byBot = new Map(overrides.map((o) => [o.botProfileId, o]));
+
+  return html`<section class="mt-4 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <h3 class="text-sm font-bold text-slate-900">This law, per bot</h3>
+    <p class="mt-1 text-sm text-slate-600">
+      Leave a bot alone and it reads the shared sentence, and keeps tracking it when the
+      shared sentence is edited. Switch it off, or give that one bot different words.
+    </p>
+    <div class="mt-3 flex flex-col gap-3">
+      ${bots.map((bot) => {
+        const o = byBot.get(bot.id);
+        const deviates = o !== undefined;
+        return html`<form
+          method="post"
+          action="/book/rule/${rule.id}/bot"
+          class="rounded-lg border ${deviates
+            ? 'border-amber-300 bg-amber-50/50'
+            : 'border-slate-200 bg-slate-50'} p-3"
+        >
+          <input type="hidden" name="_csrf" value="${csrf}" />
+          <input type="hidden" name="botProfileId" value="${String(bot.id)}" />
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-sm font-semibold text-slate-900">${bot.displayName}</span>
+            ${bot.enabled ? null : badge('not running', 'slate')}
+            ${deviates ? badge('has its own version', 'amber') : badge('shared', 'slate')}
+          </div>
+          <div class="mt-2 flex flex-wrap items-center gap-4">
+            <label class="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                name="enabled"
+                ${(o?.enabled ?? rule.enabled) ? raw('checked') : ''}
+                class="rounded"
+              />
+              In effect for this bot
+            </label>
+          </div>
+          <label class="mt-2 flex flex-col gap-1 text-sm">
+            <span class="text-slate-700">
+              Its own wording ${o?.text === null || o?.text === undefined
+                ? html`<span class="text-slate-400">(empty = use the shared sentence)</span>`
+                : null}
+            </span>
+            <textarea
+              name="text"
+              rows="3"
+              placeholder="${rule.text}"
+              class="w-full rounded-lg border border-slate-300 px-2 py-1.5 font-mono text-xs"
+            >${o?.text ?? ''}</textarea>
+          </label>
+          <div class="mt-2 flex flex-wrap gap-3">
+            <button
+              type="submit"
+              class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white"
+            >
+              Save for ${bot.displayName} only
+            </button>
+            ${deviates
+              ? html`<button
+                  type="submit"
+                  name="action"
+                  value="clear"
+                  class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+                >
+                  Put this bot back on the shared law
+                </button>`
+              : null}
+          </div>
+        </form>`;
+      })}
+    </div>
+  </section>`;
+}
 
 function tierBadge(tier: string): SafeHtml {
   if (tier === 'constitutional') return badge('constitutional', 'red');
@@ -141,10 +313,16 @@ function alarm(rules: PromptRuleSet): SafeHtml | null {
 
 /* ── One rule ────────────────────────────────────────────────────────────── */
 
+interface ScopeView {
+  scopes: Map<string, RuleScope>;
+  botNames: Map<number, string>;
+}
+
 function ruleCard(
   entry: { rule: PromptRule; position?: number; conditional: boolean; shippedText?: string },
   csrf: string,
   openId: string,
+  view?: ScopeView,
 ): SafeHtml {
   const rule = entry.rule;
   const open = openId === rule.id;
@@ -163,12 +341,15 @@ function ruleCard(
       ${rule.enabled ? null : badge('disabled', 'amber')}
       ${drifted ? badge('changed from shipped', 'amber') : null}
       ${rule.nameable ? badge('nameable', 'green') : badge('withheld', 'slate')}
+      ${scopeBadge(view?.scopes.get(rule.id))}
       <span class="ml-auto text-xs text-slate-400">
         lane ${rule.lane} · ord ${String(rule.ord)} · ${rule.appliesWhen}
       </span>
     </div>
 
     <p class="mt-2 whitespace-pre-wrap text-sm text-slate-800">${rule.text}</p>
+
+    ${view ? scopeDetail(view.scopes.get(rule.id), view.botNames) : null}
 
     <p class="mt-2 text-xs text-slate-400">
       from <code>${rule.source}</code>
@@ -179,7 +360,7 @@ function ruleCard(
       <a class="underline" href="/book/history?rule=${rule.id}">History</a>
     </div>
 
-    ${open ? editor(rule, csrf, entry.shippedText) : null}
+    ${open ? editor(rule, csrf, entry.shippedText, view?.scopes.get(rule.id)) : null}
   </article>`;
 }
 
@@ -190,7 +371,12 @@ function ruleCard(
  * control uses: a checkbox is one you tick once and then forever, and the id is the one
  * string that cannot be typed by muscle memory because it is different for every rule.
  */
-function editor(rule: PromptRule, csrf: string, shippedText?: string): SafeHtml {
+function editor(
+  rule: PromptRule,
+  csrf: string,
+  shippedText?: string,
+  scope?: RuleScope,
+): SafeHtml {
   const constitutional = rule.tier === 'constitutional';
 
   return html`<form
@@ -210,6 +396,22 @@ function editor(rule: PromptRule, csrf: string, shippedText?: string): SafeHtml 
             she may not do with a stranger's text. Changing it changes what she is permitted to
             do, not how she sounds. Nothing below stops you. Type the rule's id to say you meant
             it, and the change is recorded with both sides of it.
+          </p>
+        </div>`
+      : null}
+
+    ${scope && scope.kind !== 'constitutional'
+      ? html`<div class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700">
+          <p class="font-semibold">What this edit will touch, before you make it.</p>
+          <p class="mt-1">
+            This is the SHARED sentence. Saving it changes
+            ${String(scope.sharedBotCount)} bot(s)${scope.deviations.length > 0
+              ? html` - every bot except the ${String(scope.deviations.length)} that
+                  ${scope.deviations.length === 1 ? 'has' : 'have'} its own version of this law,
+                  which ${scope.deviations.length === 1 ? 'keeps' : 'keep'} what
+                  ${scope.deviations.length === 1 ? 'it was' : 'they were'} given`
+              : null}.
+            To change it for one bot only, use the per-bot section on the rule's own page.
           </p>
         </div>`
       : null}
@@ -403,7 +605,12 @@ function previewCard(
 }
 /* ── Sections ────────────────────────────────────────────────────────────── */
 
-function sectionBlock(section: BookSection, csrf: string, openId: string): SafeHtml {
+function sectionBlock(
+  section: BookSection,
+  csrf: string,
+  openId: string,
+  view?: ScopeView,
+): SafeHtml {
   return html`<section class="mt-6">
     <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">
       ${section.title}
@@ -413,7 +620,7 @@ function sectionBlock(section: BookSection, csrf: string, openId: string): SafeH
     </h2>
     <p class="mt-1 text-sm text-slate-500">${section.note}</p>
     <div class="mt-3 flex flex-col gap-3">
-      ${section.entries.map((entry) => ruleCard(entry, csrf, openId))}
+      ${section.entries.map((entry) => ruleCard(entry, csrf, openId, view))}
     </div>
   </section>`;
 }
@@ -439,6 +646,34 @@ function viewTabs(mode: string, query: string): SafeHtml {
 /* ── Registration ────────────────────────────────────────────────────────── */
 
 export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void {
+  /**
+   * Every law's scope, and the bots it is measured against (CCB-S5-001).
+   *
+   * Read together, because a scope is meaningless without the bot count: "shared" has to
+   * say how many, and "per bot" has to name which.
+   */
+  const readScopes = async (
+    rules: PromptRuleSet,
+  ): Promise<{
+    view: ScopeView;
+    bots: { id: number; displayName: string; enabled: boolean }[];
+  }> => {
+    const profiles = await listBotOnboardingProfiles(ctx.db);
+    const bots = profiles.map((p) => ({
+      id: p.id,
+      displayName: p.displayName,
+      enabled: p.enabled,
+    }));
+    const overrides = await listAllOverrides(ctx.db);
+    return {
+      view: {
+        scopes: describeScopes(rules, overrides, bots.length),
+        botNames: new Map(bots.map((b) => [b.id, b.displayName])),
+      },
+      bots,
+    };
+  };
+
   /** The Book: read, search, and open one rule for editing. */
   app.get<{ Querystring: { view?: string; q?: string; saved?: string; error?: string } }>(
     '/book',
@@ -456,6 +691,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           : bookByLane(rules, shipped, query);
 
       const shown = sections.reduce((n, s) => n + s.entries.length, 0);
+      const { view: scopeView } = await readScopes(rules);
       reply.type('text/html');
 
       return page({
@@ -523,7 +759,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             </p>
           </div>
 
-          ${sections.map((section) => sectionBlock(section, csrf, ''))}
+          ${sections.map((section) => sectionBlock(section, csrf, '', scopeView))}
         `,
       });
     },
@@ -821,6 +1057,8 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       }
 
       const history = await listPromptRuleHistory(ctx.db, rule.id, 20);
+      const { view: scopeView, bots } = await readScopes(rules);
+      const ruleOverrides = await listOverridesForRule(ctx.db, rule.id);
       const entry = {
         rule,
         conditional: rule.appliesWhen !== 'always',
@@ -839,7 +1077,8 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               </div>`
             : null}
           <p class="mb-4 text-sm"><a class="underline" href="/book">Back to the book</a></p>
-          ${ruleCard(entry, csrf, rule.id)}
+          ${ruleCard(entry, csrf, rule.id, scopeView)}
+          ${perBotPanel(rule, bots, ruleOverrides, csrf)}
           <div class="mt-4">${changeTable(history, csrf, false)}</div>
         `,
       });
@@ -967,11 +1206,98 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
   );
 
   /** The Assembled Word: every mode's prompt, as it stands right now. */
-  app.get('/book/assembled', async (req, reply) => {
+  /**
+   * Set or clear ONE law for ONE bot (CCB-S5-001).
+   *
+   * Separate from the shared-law route on purpose. They write different rows, record
+   * different actions, and reach different numbers of bots, and one route deciding which
+   * of those it meant from the shape of a form body is how an edit intended for one bot
+   * reaches all of them.
+   */
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/book/rule/:id/bot',
+    async (req, reply) => {
+      const ruleId = req.params.id;
+      const rules = await listPromptRules(ctx.db);
+      const rule = rules.find((r) => r.id === ruleId);
+      const back = (msg: string, ok = false): string =>
+        `/book/rule/${encodeURIComponent(ruleId)}?${ok ? 'saved=1' : 'error=' + encodeURIComponent(msg)}`;
+
+      if (!rule) return reply.redirect('/book?error=' + encodeURIComponent('No such rule.'));
+
+      // The gate, before anything is written. The database refuses this too; this exists so
+      // the operator gets a sentence rather than a constraint violation.
+      if (!canOverride(rule)) {
+        return reply.redirect(back(CONSTITUTIONAL_SCOPE_REASON));
+      }
+
+      const botProfileId = Number.parseInt(bodyString(req.body, 'botProfileId'), 10);
+      if (!Number.isSafeInteger(botProfileId) || botProfileId <= 0) {
+        return reply.redirect(back('That form did not say which bot it was for.'));
+      }
+
+      const shared = {
+        sharedText: rule.text,
+        sharedEnabled: rule.enabled,
+        sharedOrd: rule.ord,
+        sharedNameable: rule.nameable,
+      };
+      const actor = req.session?.username ?? 'operator';
+
+      if (bodyString(req.body, 'action') === 'clear') {
+        await clearOverrideRecorded(ctx.db, { botProfileId, ruleId, ...shared }, actor);
+        invalidatePromptRules();
+        return reply.redirect(back('', true));
+      }
+
+      const text = bodyString(req.body, 'text').replace(/\r\n/g, '\n').trim();
+      const enabled = bodyString(req.body, 'enabled') !== '';
+      // An empty box means INHERIT rather than an empty rule: a law with no words is not a
+      // law, and the placeholder in the form says the shared sentence is what fills it.
+      const nextText = text.length === 0 ? null : text;
+      // Nothing to store when the bot would read exactly the shared law anyway. Writing a
+      // row here would show the bot as deviating on the page while changing nothing.
+      if (nextText === null && enabled === rule.enabled) {
+        await clearOverrideRecorded(ctx.db, { botProfileId, ruleId, ...shared }, actor);
+        invalidatePromptRules();
+        return reply.redirect(back('', true));
+      }
+
+      try {
+        await setOverrideRecorded(
+          ctx.db,
+          { botProfileId, ruleId, enabled, text: nextText, ...shared },
+          actor,
+        );
+      } catch (err) {
+        return reply.redirect(back(err instanceof Error ? err.message : String(err)));
+      }
+      invalidatePromptRules();
+      return reply.redirect(back('', true));
+    },
+  );
+
+  app.get<{ Querystring: { bot?: string } }>('/book/assembled', async (req, reply) => {
     const csrf = req.session?.csrfToken ?? '';
-    const rules = await listPromptRules(ctx.db);
-    const personality = currentBotPersonality();
+    const shared = await listPromptRules(ctx.db);
+
+    // ── WHICH BOT THIS PREVIEWS, SAID OUT LOUD (CCB-S5-001) ────────────────
+    //
+    // The briefing asks for it by name, and the reason is that this page became a lie the
+    // moment laws could differ: it assembled the shared registry and the primary's dials
+    // and presented the result as "what she is told", when a bot that had reworded a law
+    // was being told something else. An unlabelled prompt is worse than no prompt.
+    const profiles = await listBotOnboardingProfiles(ctx.db);
+    const requested = Number.parseInt(req.query.bot ?? '', 10);
+    const selected =
+      profiles.find((p) => p.id === requested) ??
+      profiles.find((p) => p.selectedForRuntime) ??
+      profiles[0];
+    const overrides = selected ? await listOverridesForBot(ctx.db, selected.id) : [];
+    const rules = applyOverrides(shared, overrides);
+    const personality = currentBotPersonality(selected?.id);
     const identity = previewIdentity(ctx);
+    const deviations = overrides.length;
     reply.type('text/html');
 
     // THE REPLY PATH'S OWN FUNCTION, not a second assembly that agrees with it today.
@@ -1008,6 +1334,32 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       csrfToken: csrf,
       body: html`
         ${pageHeader('The Assembled Word', 'What each kind of reply is told, in the order it is told.')}
+        <div class="mb-4 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+          <p>
+            Previewing
+            <strong>${selected?.displayName ?? 'no bot'}</strong>${selected?.selectedForRuntime
+              ? html` <span class="text-slate-400">(the primary)</span>`
+              : null}.
+            ${deviations > 0
+              ? html`It has <strong>${String(deviations)}</strong> law(s) of its own; the rest
+                  it shares with every other bot.`
+              : html`It reads the shared laws exactly, with none of its own.`}
+          </p>
+          ${profiles.length > 1
+            ? html`<p class="mt-2 flex flex-wrap gap-2">
+                ${profiles.map(
+                  (p) =>
+                    html`<a
+                      class="rounded-lg px-2 py-1 text-xs ${p.id === selected?.id
+                        ? 'bg-slate-900 font-medium text-white'
+                        : 'border border-slate-300 text-slate-700'}"
+                      href="/book/assembled?bot=${String(p.id)}"
+                      >${p.displayName}</a
+                    >`,
+                )}
+              </p>`
+            : null}
+        </div>
         <p class="mb-4 text-sm text-slate-600">
           The book lists rules; this lists <strong>prompts</strong>. A rule's lane and condition
           decide whether it appears at all, so the only way to see what a mode actually receives
