@@ -25,6 +25,11 @@ import { writeAudit } from '../db/audit.js';
 import type { ReplyCategory } from '../archive/settings.js';
 import { DEFAULT_HELP_TEMPLATE, missingHelpPlaceholders } from './help.js';
 import type { BotIdentity } from './personality.js';
+import {
+  DEFAULT_HISTORY_LIMITS,
+  normalizeHistoryLimits,
+  type HistoryLimits,
+} from './history.js';
 
 /**
  * The given facts about her, read out of the settings (CCB-S4-031, D-135).
@@ -315,6 +320,15 @@ export interface InteractionSettings {
   maxPrefixChars: number;
   /** Seconds a member may keep talking to her without repeating the wake word. */
   followUpSeconds: number;
+  /**
+   * What she can see of the conversation she is in (CCB-S4-044, D-147).
+   *
+   * Three limits, and the tightest wins. The two an operator sets answer different
+   * questions (twenty messages is a lot in a busy group and nothing in a quiet one; thirty
+   * minutes is the reverse), and the character budget is the transport's, because a few
+   * long messages can blow the context while satisfying both of the others.
+   */
+  memory: HistoryLimits;
   /** Resolver confidence below which an instruction becomes UNKNOWN (0..1). */
   confidenceThreshold: number;
   /** Words that confirm a pending consent change. */
@@ -716,6 +730,7 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
   maxPrefixWords: 3,
   maxPrefixChars: 20,
   followUpSeconds: 60,
+  memory: { ...DEFAULT_HISTORY_LIMITS },
   confidenceThreshold: 0.55,
   affirmations: [
     'yes',
@@ -1023,6 +1038,9 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
     maxPrefixWords: int(o['maxPrefixWords'], 0, 6, d.maxPrefixWords),
     maxPrefixChars: int(o['maxPrefixChars'], 0, 80, d.maxPrefixChars),
     followUpSeconds: int(o['followUpSeconds'], 0, 3600, d.followUpSeconds),
+    // Bounded by the model rather than by the form, so a hand-crafted POST cannot produce
+    // a history that crowds her own rules out of the context.
+    memory: normalizeHistoryLimits(o['memory'] as Partial<Record<keyof HistoryLimits, unknown>>),
     confidenceThreshold: num(o['confidenceThreshold'], 0, 1, d.confidenceThreshold),
     affirmations:
       'affirmations' in o

@@ -75,6 +75,9 @@ import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from '.
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
 import type { PromptRuleSet } from './prompt-rules.js';
+import { HISTORY_FENCE } from './ollama-reply.js';
+import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
+import { listGroupHistory } from '../db/messages.js';
 import { screenLookup } from './lookup-gate.js';
 import { attributionFor } from './attribution.js';
 import type { SearchResult as WebSearchResult } from '../plugins/web-search/providers/types.js';
@@ -1011,6 +1014,48 @@ export class InteractionEngine {
     return { ...botIdentity(s), ...(model ? { model } : {}) };
   }
 
+  /**
+   * What was said in this chat before now (CCB-S4-044, D-147).
+   *
+   * THE WHOLE GROUP THREAD, not only the messages of the person she is answering. The
+   * defect that motivated this was her being unable to react to something a different
+   * member said three messages ago, so scoping it per member would have fixed the smaller
+   * half and left the one the operator raised.
+   *
+   * Never throws. A history that cannot be read costs her the thread, and turning that into
+   * a reason not to answer at all would be the tail wagging the dog: she falls back to the
+   * behaviour she had before this briefing, which is a worse reply rather than no reply.
+   */
+  private async recentHistory(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+  ): Promise<HistoryEntry[]> {
+    const limits = s.memory;
+    if (limits.maxMessages <= 0 || limits.maxChars <= 0 || limits.windowMinutes <= 0) return [];
+
+    const now = this.now();
+    try {
+      const rows = await listGroupHistory(this.deps.db, msg.groupId, {
+        // Over-fetch against the COUNT only. The character budget can drop entries the
+        // count allowed, and fetching exactly `maxMessages` would then return fewer lines
+        // than the operator asked for whenever one of them was long.
+        limit: Math.min(limits.maxMessages * 2, 200),
+        sinceIso: new Date(now - limits.windowMinutes * 60_000).toISOString(),
+        // The message she is answering is the CURRENT one, not history. Without this it
+        // would appear twice: once as the question and once as a thing she remembers.
+        beforeMessageId: msg.itemId,
+      });
+      return trimHistory(rows, limits, now);
+    } catch (error) {
+      log.warn(
+        `Interaction: could not read the conversation history (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
+      );
+      return [];
+    }
+  }
+
   /** Records an ignored candidate so the guards are visible, not invisible (§5). */
   private noteNearMiss(
     msg: CapturedMessage,
@@ -1375,6 +1420,7 @@ export class InteractionEngine {
     results: readonly WebSearchResult[],
   ): Promise<{ text: string; sources: string[] } | null> {
     let used: readonly number[] = [];
+    const history = await this.recentHistory(msg, s);
 
     let spoken: string | null = null;
     try {
@@ -1395,6 +1441,10 @@ export class InteractionEngine {
             // The untrusted material. Fenced and labelled by `systemPrompt`; see the
             // field's own documentation for why it rides in the user message.
             webResults: results,
+            // The room she is standing in (CCB-S4-044). A lookup is still a conversation:
+            // "and what about the other one" only means anything with the thread in view.
+            history: toPromptHistory(history, HISTORY_FENCE),
+            historyWindowMinutes: s.memory.windowMinutes,
             onSourcesUsed: (indices) => {
               used = indices;
             },
@@ -2443,6 +2493,7 @@ export class InteractionEngine {
     // Wall clock around the model call, for Diagnostics (CCB-S4-031 gap 5). Measured
     // whatever the outcome: a slow failure is the fact an operator most wants to see.
     const startedAt = this.now();
+    const history = await this.recentHistory(msg, s);
 
     if (personalize) {
       try {
@@ -2470,6 +2521,11 @@ export class InteractionEngine {
               // model was told everything about her voice and nothing about her identity,
               // and denied the name.
               identity: this.facts(s),
+              // THE ROOM (CCB-S4-044, D-147). The whole group thread, hers included, fenced
+              // in the user message and incapable of causing anything. This is the field
+              // that turns "what did I just say" into an answerable question.
+              history: toPromptHistory(history, HISTORY_FENCE),
+              historyWindowMinutes: s.memory.windowMinutes,
               // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
               // the violation counter read. THIS is the path that matters for it: free
               // conversation is where somebody asks what year it is, and where she

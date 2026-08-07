@@ -839,6 +839,7 @@ export function dialledPromptInputs(
     hasNicknames: nicknames.length > 0,
     hasClock: stamp !== null,
     hasWebResults: false,
+    hasHistory: false,
   };
 
   const values: Record<string, string> = {};
