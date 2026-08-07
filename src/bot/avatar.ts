@@ -32,6 +32,25 @@ import type { Queryable } from '../db/pool.js';
 
 type Chat = api.ChatApi;
 
+/**
+ * The one bot whose avatar is being flushed (CCB-S5-001).
+ *
+ * This used to be implicit: `apiGetActiveUser()` for the profile and a bare
+ * `apiSendTextMessage` for the send, both of which resolve to whichever profile the core
+ * last made active. With one bot pinned active at boot that was the right one by
+ * construction; with several it is whichever one most recently issued a command, so a
+ * flush could read A's image, list A's groups, and post into B's. Naming the bot removes
+ * the ambiguity rather than scheduling around it.
+ */
+export interface AvatarBot {
+  /** The profile record the runtime read at start, for this bot specifically. */
+  user: T.User;
+  /** For logs, so a flush says whose it was. */
+  displayName: string;
+  /** Send as THIS bot, through the active-user scheduler. */
+  sendToGroup: (groupId: number, text: string) => Promise<unknown>;
+}
+
 /** Keep the data URI well under the ~15,610-byte profile envelope. */
 const MAX_DATA_URI_CHARS = 12000;
 const SIZES = [192, 160, 128];
@@ -92,8 +111,23 @@ export async function loadAvatarDataUri(avatarPath: string): Promise<string | un
   return dataUri;
 }
 
-/** Marker (in `settings`) recording which avatar has been flushed to the group. */
-const FLUSH_MARKER_KEY = 'avatarGroupFlushMarker';
+/**
+ * Marker (in `settings`) recording which avatar has been flushed to the group.
+ *
+ * PER BOT since CCB-S5-001. It used to be the bare string, one key for the whole
+ * deployment, which was correct while one bot could exist and silently wrong the moment
+ * a second did: bot A flushing its avatar wrote the marker, bot B then read its own
+ * image against A's marker, and - only if the two images happened to differ - flushed.
+ * Two bots sharing one avatar file would have left B's members with no picture forever,
+ * with nothing logged, because the code had already decided the work was done.
+ *
+ * The legacy unsuffixed key is deliberately NOT migrated. It would have to be attributed
+ * to a bot to be worth keeping, nothing records which bot wrote it, and the cost of
+ * ignoring it is one extra flush message per bot on the first boot after this change.
+ */
+function flushMarkerKey(simplexUserId: number): string {
+  return `avatarGroupFlushMarker:${String(simplexUserId)}`;
+}
 /** A minimal, one-time group message whose only job is to flush the profile. */
 const FLUSH_MESSAGE = '🕯️✨';
 
@@ -111,16 +145,16 @@ const FLUSH_MESSAGE = '🕯️✨';
  * flushed the profile and won't re-piggyback; normal command replies keep it
  * current thereafter.
  */
-export async function flushAvatarToGroups(chat: Chat, db: Queryable): Promise<void> {
-  const user = await chat.apiGetActiveUser();
-  if (!user) return;
+export async function flushAvatarToGroups(chat: Chat, db: Queryable, bot: AvatarBot): Promise<void> {
+  const user = bot.user;
   const image = util.fromLocalProfile(user.profile).image;
   if (!image) return; // nothing to flush
 
   const marker = createHash('sha256').update(image).digest('hex').slice(0, 16);
-  const stored = await getSetting(db, FLUSH_MARKER_KEY);
+  const key = flushMarkerKey(user.userId);
+  const stored = await getSetting(db, key);
   if (stored === marker) {
-    log.debug('Avatar already flushed to groups; no group send needed.');
+    log.debug(`Avatar already flushed to ${bot.displayName}'s groups; no group send needed.`);
     return;
   }
 
@@ -131,22 +165,24 @@ export async function flushAvatarToGroups(chat: Chat, db: Queryable): Promise<vo
   let sent = 0;
   for (const g of groups) {
     try {
-      const chatInfo: T.ChatInfo = { type: 'group', groupInfo: g };
-      await chat.apiSendTextMessage(chatInfo, FLUSH_MESSAGE);
+      // Through the bot's own scheduled send: `apiSendTextMessage` takes no user id, so
+      // issued bare it would post THIS bot's flush message into whichever profile the
+      // core last made active - into a group that bot may not even be in.
+      await bot.sendToGroup(g.groupId, FLUSH_MESSAGE);
       sent++;
     } catch (err) {
       log.warn(
-        `Could not flush profile to group ${g.localDisplayName}: ${
+        `Could not flush ${bot.displayName}'s profile to group ${g.localDisplayName}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );
     }
   }
   if (sent > 0) {
-    await setSetting(db, FLUSH_MARKER_KEY, marker);
+    await setSetting(db, key, marker);
     log.info(
-      `Flushed member profile (avatar) to ${sent} group(s) via one group message — ` +
-        'members receive the XInfo profile update on this send.',
+      `Flushed member profile (avatar) for ${bot.displayName} to ${sent} group(s) via one group ` +
+        'message — members receive the XInfo profile update on this send.',
     );
   }
 }

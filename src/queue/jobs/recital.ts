@@ -35,9 +35,23 @@ import { continueRecital, type RecitalDeps } from '../../interaction/recital-ser
 export const RECITAL_JOB = 'recital.beat';
 
 /** Bound at startup, because the worker cannot reach into the wiring that built the bot. */
-let deps: (() => Omit<RecitalDeps, 'db'>) | null = null;
+/**
+ * Resolved PER GROUP since CCB-S5-001.
+ *
+ * A beat is sent minutes after the message that started the reading, by a job that holds
+ * only a group id. With one bot the wiring could close over the one engine; with several
+ * it has to find the engine of the bot that OWNS that group, or beat four of one bot's
+ * book would be worded in another bot's voice, drawn from another bot's laws, and charged
+ * against another bot's reply budget.
+ *
+ * Returns null when the group belongs to no hosted bot, which the handler retries: during
+ * a restart the ownership index is briefly empty and the beat is worth waiting for.
+ */
+let deps: ((groupId: number) => Omit<RecitalDeps, 'db'> | null) | null = null;
 
-export function setRecitalJobDeps(next: (() => Omit<RecitalDeps, 'db'>) | null): void {
+export function setRecitalJobDeps(
+  next: ((groupId: number) => Omit<RecitalDeps, 'db'> | null) | null,
+): void {
   deps = next;
 }
 
@@ -58,11 +72,12 @@ export async function handleRecitalBeat(payload: Record<string, unknown>): Promi
       `recital.beat payload is not usable: ${JSON.stringify(payload).slice(0, 120)}`,
     );
   }
-  const resolved = deps?.();
+  const resolved = deps?.(groupId) ?? null;
   if (!resolved) {
     // Not permanent. Nothing is hosting YET is the ordinary state during a restart, and the
     // beat is worth retrying; a recital that resumes late is better than one that stops.
-    throw new Error('the recital is not wired yet');
+    // The same applies to a group whose owning bot has not been indexed yet.
+    throw new Error('the recital is not wired for that group yet');
   }
   const sent = await continueRecital({ ...resolved, db: getPool() }, groupId, lang, beatIndex);
   if (!sent) {

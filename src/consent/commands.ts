@@ -10,10 +10,8 @@ import { log } from '../log.js';
 import { getPool } from '../db/pool.js';
 import { applyConsentChange } from './apply.js';
 import { status } from '../web/status.js';
-import { sendToChat } from '../bot/send.js';
 import { formatOutbound } from '../interaction/reply.js';
 import { DEFAULT_INTERACTION, type InteractionSettings } from '../interaction/settings.js';
-import type { BotHandle } from '../bot/client.js';
 import type { CapturedMessage } from '../capture/message.js';
 import type { BotReplyMeta } from '../capture/bot-message.js';
 
@@ -104,11 +102,10 @@ export function welcomeMessage(wakeWord: string): string {
  * are. Do not reintroduce the quote to "prove" who opted in.
  */
 async function reply(
-  botHandle: BotHandle,
   msg: CapturedMessage,
   text: string,
   s: InteractionSettings,
-  send: ConsentSender | undefined,
+  send: ConsentSender,
 ): Promise<void> {
   try {
     const out = formatOutbound(text, {
@@ -132,11 +129,7 @@ async function reply(
         ? [{ displayName: out.prefixName, memberId: msg.senderMemberId }]
         : [],
     };
-    if (send) {
-      await send(msg, out.text, meta);
-    } else {
-      await sendToChat(botHandle.chat, msg, out.text, { quote: out.quote });
-    }
+    await send(msg, out.text, meta);
   } catch (err) {
     log.warn(
       `Failed to send consent confirmation to member ${msg.senderMemberId}: ` +
@@ -150,17 +143,27 @@ async function reply(
  * replies with a confirmation.
  */
 export function makeConsentHandler(
-  botHandle: BotHandle,
-  interaction?: { get(): InteractionSettings },
+  interaction: { get(): InteractionSettings } | undefined,
   /** Called after a confirmation is sent, so the follow-up window opens (§7c). */
-  onReplied?: (groupId: number, memberId: string) => void,
-  /**
-   * The archiving transport (CCB-S3-007). Optional so the harnesses and the
-   * connect script can still build a handler with nothing behind it; when it is
-   * absent the confirmation is sent exactly as before and simply not archived.
-   */
-  opts?: {
-    send?: ConsentSender;
+  onReplied: ((groupId: number, memberId: string) => void) | undefined,
+  opts: {
+    /**
+     * The archiving transport (CCB-S3-007), and now the ONLY way out.
+     *
+     * ── WHY IT STOPPED BEING OPTIONAL (CCB-S5-001) ──────────────────────────
+     *
+     * It was optional so that "the harnesses and the connect script can still build a
+     * handler with nothing behind it", and when absent the reply went straight out
+     * through `sendToChat(botHandle.chat, ...)`. That claim had gone stale: this
+     * function has exactly one caller, `src/index.ts`, and it has always passed a
+     * transport. So the fallback was unreachable code that nonetheless reached the
+     * core with an unscheduled, unheld, unattributed send - which with a second bot
+     * hosted would post a member's consent confirmation as the wrong bot.
+     *
+     * Requiring it deletes that call site rather than scheduling it, which is the
+     * cheaper of the two correct answers.
+     */
+    send: ConsentSender;
     /**
      * Asks the hide-or-delete question after a `/unpublish` (CCB-S3-013), so the
      * slash path and the spoken path mean the same thing by a revocation.
@@ -195,7 +198,7 @@ export function makeConsentHandler(
           source: 'slash',
         });
         log.info(`Consent: opt-in recorded for member ${msg.senderMemberId}.`);
-        await reply(botHandle, msg, PUBLISH_REPLY, presentation, opts?.send);
+        await reply(msg, PUBLISH_REPLY, presentation, opts.send);
         onReplied?.(msg.groupId, msg.senderMemberId);
       } else {
         const { hadActive } = await applyConsentChange(db, {
@@ -207,14 +210,14 @@ export function makeConsentHandler(
         log.info(
           `Consent: opt-out recorded for member ${msg.senderMemberId} (had active consent: ${hadActive}).`,
         );
-        await reply(botHandle, msg, UNPUBLISH_REPLY, presentation, opts?.send);
+        await reply(msg, UNPUBLISH_REPLY, presentation, opts.send);
         onReplied?.(msg.groupId, msg.senderMemberId);
         // Hide or delete (CCB-S3-013). Asked after the confirmation so the member
         // sees the revocation land first, and the content is already hidden either
         // way. A failure here must not report the revocation itself as failed: it
         // succeeded, and the choice can be asked again.
         try {
-          await opts?.askRevokeChoice?.(msg);
+          await opts.askRevokeChoice?.(msg);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           log.error(
@@ -235,7 +238,7 @@ export function makeConsentHandler(
       status.error(
         `Consent command /${command} failed for member ${msg.senderMemberId}: ${message}`,
       );
-      await reply(botHandle, msg, FAILURE_REPLY, presentation, opts?.send);
+      await reply(msg, FAILURE_REPLY, presentation, opts.send);
     }
   };
 }

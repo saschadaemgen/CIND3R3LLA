@@ -16,9 +16,7 @@
  * reach into the wiring that built the bot.
  */
 
-import { T as TV } from '@simplex-chat/types';
 import type { T } from '@simplex-chat/types';
-import type { api } from 'simplex-chat';
 import { log } from '../log.js';
 
 export interface RecitalSendPort {
@@ -49,16 +47,35 @@ export function recitalSendPort(): RecitalSendPort | null {
   return port;
 }
 
-/** Binds the port to a live SDK handle. */
-export function sdkRecitalPort(chat: api.ChatApi): RecitalSendPort {
-  const groupRef = (groupId: number): [T.ChatType, number] => [TV.ChatType.Group, groupId];
+/**
+ * What the runtime supplies so a beat is sent as the bot that owns the group.
+ *
+ * ── WHY THIS IS NOT A BARE `ChatApi` ANY MORE (CCB-S5-001) ───────────────────
+ *
+ * Neither `apiSendTextMessage` nor `apiSendMessages` takes a user id, so both execute as
+ * whichever profile the core last made active. A recital beat is booked on the queue and
+ * sent minutes later, so the profile that happens to be active when beat four fires has
+ * nothing to do with the bot that started the reading: one bot would read the other's
+ * book into the other's group, and the core would raise nothing, because a member of that
+ * group did legitimately send a message.
+ *
+ * Resolving the owner from the group id and issuing through the scheduler is what makes
+ * the beat land as the bot that began the chapter.
+ */
+export interface RecitalRuntimePort {
+  sendGroupText(groupId: number, text: string): Promise<unknown>;
+  sendGroupComposedAsOwner(groupId: number, composed: T.ComposedMessage[]): Promise<unknown>;
+}
+
+/** Binds the port to the runtime, which knows which bot owns which group. */
+export function sdkRecitalPort(runtime: RecitalRuntimePort): RecitalSendPort {
   return {
     async sendText(groupId, text) {
-      await chat.apiSendTextMessage(groupRef(groupId), text);
+      await runtime.sendGroupText(groupId, text);
     },
     async sendImage(groupId, filePath, caption, preview) {
       try {
-        await chat.apiSendMessages(groupRef(groupId), [
+        await runtime.sendGroupComposedAsOwner(groupId, [
           {
             fileSource: { filePath },
             msgContent: { type: 'image', text: caption, image: preview ?? '' },
@@ -73,7 +90,7 @@ export function sdkRecitalPort(chat: api.ChatApi): RecitalSendPort {
             err instanceof Error ? err.message : String(err)
           }); sending the chapter as text.`,
         );
-        await chat.apiSendTextMessage(groupRef(groupId), caption);
+        await runtime.sendGroupText(groupId, caption);
       }
     },
   };

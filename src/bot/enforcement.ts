@@ -33,12 +33,37 @@ import { T } from '@simplex-chat/types';
 import type { MemberRole } from '../adapter/types.js';
 import type { EnforcementPort } from '../moderation/apply.js';
 import { log } from '../log.js';
-import type { BotHandle } from './client.js';
+/**
+ * ── ROUTED BY GROUP OWNER SINCE CCB-S5-001 ───────────────────────────────────
+ *
+ * This held a `BotHandle` and called `bot.chat.apiSetMembersRole(...)` directly. None of
+ * the three SDK calls it makes takes a user id, so all three execute as whichever profile
+ * the core last made active. With one bot pinned active that was the right one by
+ * construction. With several it is whichever bot most recently issued any command, so a
+ * mute decided by bot A's ladder could be issued as bot B - which is usually not even a
+ * member of that group, so the SDK refuses and a correct moderation decision reads as a
+ * bug; and where both bots ARE admins of one group, it succeeds as the wrong one.
+ *
+ * So the module holds a PORT that resolves the owning bot from the group id and issues
+ * through the scheduler, and refuses when the owner is unknown rather than acting as
+ * somebody arbitrary. This is the moderation path: acting on the wrong member's standing
+ * as the wrong identity is not a failure to degrade quietly around.
+ */
 
 /** The live bot, when one is running. Absent in harnesses and one-shot scripts. */
-let handle: BotHandle | null = null;
+/** What the runtime supplies: run this command as whichever bot owns the group. */
+export interface EnforcementRuntimePort {
+  runForGroup<R>(groupId: number, label: string, fn: () => Promise<R>): Promise<R>;
+  readonly chat: { 
+    apiSetMembersRole(groupId: number, memberIds: number[], role: T.GroupMemberRole): Promise<unknown>;
+    apiBlockMembersForAll(groupId: number, memberIds: number[], blocked: boolean): Promise<unknown>;
+    apiRemoveMembers(groupId: number, memberIds: number[]): Promise<unknown>;
+  };
+}
 
-export function setEnforcementHandle(h: BotHandle | null): void {
+let handle: EnforcementRuntimePort | null = null;
+
+export function setEnforcementHandle(h: EnforcementRuntimePort | null): void {
   handle = h;
 }
 
@@ -91,7 +116,7 @@ const ROLE_TO_SDK: Record<MemberRole, T.GroupMemberRole> = {
  */
 export const NEVER_ENFORCE_AGAINST: readonly MemberRole[] = ['owner'];
 
-function requireHandle(): BotHandle {
+function requireHandle(): EnforcementRuntimePort {
   if (!handle) throw new EnforcementUnavailableError();
   return handle;
 }
@@ -122,7 +147,9 @@ export async function setMemberRole(
 ): Promise<void> {
   const bot = requireHandle();
   const memberId = requireMemberId(groupMemberId, `set a member's role in group ${groupId}`);
-  await bot.chat.apiSetMembersRole(groupId, [memberId], ROLE_TO_SDK[role]);
+  await bot.runForGroup(groupId, 'moderation:role', () =>
+    bot.chat.apiSetMembersRole(groupId, [memberId], ROLE_TO_SDK[role]),
+  );
   log.info(`Moderation: set member ${memberId} in group ${groupId} to ${role}.`);
 }
 
@@ -134,7 +161,9 @@ export async function blockMemberForAll(
 ): Promise<void> {
   const bot = requireHandle();
   const memberId = requireMemberId(groupMemberId, `block a member in group ${groupId}`);
-  await bot.chat.apiBlockMembersForAll(groupId, [memberId], blocked);
+  await bot.runForGroup(groupId, 'moderation:block', () =>
+    bot.chat.apiBlockMembersForAll(groupId, [memberId], blocked),
+  );
   log.info(
     `Moderation: ${blocked ? 'blocked' : 'unblocked'} member ${memberId} in group ${groupId}.`,
   );
@@ -154,7 +183,9 @@ export async function removeMember(
 ): Promise<void> {
   const bot = requireHandle();
   const memberId = requireMemberId(groupMemberId, `remove a member from group ${groupId}`);
-  await bot.chat.apiRemoveMembers(groupId, [memberId]);
+  await bot.runForGroup(groupId, 'moderation:remove', () =>
+    bot.chat.apiRemoveMembers(groupId, [memberId]),
+  );
   log.info(`Moderation: removed member ${memberId} from group ${groupId}.`);
 }
 
