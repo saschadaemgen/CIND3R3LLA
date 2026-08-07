@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-152**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-153**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -16,6 +16,63 @@ Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 ---
 ---
 
+### D-153 - A law can be enacted, and removal is disable under another name
+
+**Status: IMPLEMENTED** (CCB-S4-051). The Book let the operator edit a law, enable it, disable
+it and reorder it, and not add one. CCB-S4-043 asked for editing and never asked for creation,
+so creation was never built: an omission in the briefing rather than in the build. It surfaced
+the first time he wanted a new law and had nowhere to put it. A Book he can rewrite but not add
+to is a record of decisions somebody else made, not the place where he governs.
+
+**EVERY FIELD IS ASKED FOR, NOT DEFAULTED**, because each is a decision he would otherwise
+discover later: the id he cannot change, the lane that decides which replies see it, the
+position that decides how much weight it carries against the model's trained habits. The form
+says plainly that later carries more weight and defaults to last, and each field carries its
+one-line explanation.
+
+**AN ID MUST LAND IN A CHAPTER, AND THE FORM REFUSES ONE THAT DOES NOT.** The briefing offered
+a choice between guiding the operator to a family and surfacing unclaimed laws afterwards. The
+Recital page already does the second, and it is discovery after the fact: you learn in a week
+that a law you enacted has never been read out. For a law being written now the console can do
+better, so it refuses, and the message names the families in use and the other way out.
+
+The stake is specific. Chapters claim rules by id prefix and the conversational answer selects
+BY AREA (CCB-S4-049), so a law outside every family would be in her prompt, governing her, and
+unreachable by anybody asking about that part of the Book. Silently unreadable is the worst of
+the three states a law can be in. Measured on the first real use: `voice.swearing`, the natural
+id for the operator's own first law, is refused, and `identity.swearing` is not.
+
+**REMOVAL IS NOT BUILT, AND THAT IS THE FINDING.** The briefing defined it as: leaves the
+assembled prompt, stays in history, can be brought back. Each clause was checked against the
+code rather than assumed, and `disable` satisfies all four. `selectPromptRules` filters on
+`enabled`, so a disabled law is genuinely absent from what she runs under; the Book still shows
+it; the history holds both sides; enabling it is one click.
+
+A HARD delete is worse than redundant, it is contradictory: `cinderella_prompt_rule_history`
+references the rules table ON DELETE CASCADE, so dropping a law would **erase the record of it
+ever having existed**, which is the one thing the Book is for. That is asserted as a mutation:
+the check deletes a law and confirms its history vanishes.
+
+So no second destructive action was added. The gap was in the WORDING rather than the
+machinery, and the console now says that disabling is how a law leaves the prompt. A briefing
+that ships a redundant destructive action has made the product worse, and this one nearly did.
+
+**CREATION IS A HISTORY EVENT**, with a `create` action added to the vocabulary. A creation row
+carries empty old text and identical old/new flags, which keeps the invariant D-146 rests on:
+the oldest row per rule is what that rule shipped as. It also means rollback cannot walk a law
+back to before it existed, which is correct, because undoing a creation is disabling it and
+that is a different act with its own record.
+
+**Shipping this briefing moves no prompt text.** Migration 043 adds a constraint value and no
+law, so `verify:prompt-identity` is untouched by the ship. A law an operator enacts DOES move
+the assembled prompt, deliberately, and the preview shows exactly that before anything is
+written.
+
+`npm run verify:rule-creation` 52 checks with three mutations (no id, no chapter, and the
+delete that erases history), `verify:rule-creation-live` the operator's own swearing law
+enacted and A/B'd against `qwen3:32b`. Full offline set 52/52.
+
+---
 ### D-152 - The Book is an artefact, and the record says only what it knows
 
 **Status: IMPLEMENTED** (CCB-S4-050). Two decisions that belong together, because the second

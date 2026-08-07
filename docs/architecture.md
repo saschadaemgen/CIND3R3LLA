@@ -2805,6 +2805,45 @@ law without being told which one they enforce. An unmapped category records noth
 
 The console states this limit in the operator's own view, because a record whose limits are
 only in the source is a record that will be misread.
+## 44. Enacting a law (CCB-S4-051, D-153)
+
+### 44.1 What the console asks for
+
+| Field | Why it is asked rather than defaulted |
+| --- | --- |
+| id | permanent; history, checks and the chapter assignment all key on it |
+| tier | constitutional creation takes the same type-to-confirm as constitutional editing |
+| lane | decides which replies see it |
+| condition | from the fixed vocabulary (D-144), never free text |
+| position | **later carries more weight**; defaults to last |
+| nameable | internal by default: a law nobody decided about should not be quotable |
+| critical | its absence turns the suite red and shouts on the page |
+
+The same preview the edit path has, rendered through `systemPrompt`, before anything is
+written.
+
+### 44.2 An id must land in a chapter
+
+`rejectRuleId` refuses an id no chapter claims, rather than letting it be discovered later on
+the Recital page. A law outside every family would be in her prompt and unreachable by the
+conversational answer, which selects by area. The message names the families in use and the
+alternative (give a chapter the prefix first).
+
+### 44.3 Removal: not built, and why
+
+`disable` already satisfies every clause of what the briefing called removal, each verified
+against the code:
+
+| Clause | Where it holds |
+| --- | --- |
+| leaves the assembled prompt | `selectPromptRules` filters on `enabled` |
+| stays in the Book | the list shows disabled laws with a badge |
+| stays in history | both sides of the change are recorded |
+| can be brought back | one click, recorded as `enable` |
+
+A hard delete is contradictory rather than merely redundant: the history references the rules
+table `ON DELETE CASCADE`, so it would erase the record the Book exists to keep. Asserted as a
+mutation in `verify:rule-creation`.
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

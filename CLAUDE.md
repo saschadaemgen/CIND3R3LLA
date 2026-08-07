@@ -262,7 +262,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **It records nothing about the model's own refusals**, because no rule fired in a way the
   application can attribute, and a record that guessed would make the true rows unreadable.
   Plus the rule that lets her say it in the chat, which is free: the follow-up path had already
-  gated those rules on `nameable`).
+  gated those rules on `nameable`) ·
+  043 enacting a law (a `create` action on the history, and nothing else. **No removal**: the
+  briefing's definition of it is what `disable` already does, verified clause by clause, and a
+  hard delete would ERASE the law's history through the existing cascade, which is the one
+  thing the Book is for).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -270,7 +274,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **043**, since 042 landed with the invocation record). Stated as a rule
+  (currently **044**, since 043 landed with law creation). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -368,6 +372,13 @@ application-supplied counts, and the record's deliberate limit, mutation-proven 
 gate does NOT refuse yielding no attribution at all.
 `npm run verify:book-artefact-live` tells the whole story against a real model and shows the
 record standing still while she refuses something herself; it needs Ollama),
+`verify:rule-creation` (enacting a law, CCB-S4-051: every field the console asks for, the
+preview, the typed confirmation for a constitutional law, a duplicate id refused by name, and
+the history a creation writes. Mutation-proven three ways: a law cannot be created without an
+id, cannot be created outside every chapter, and DELETING one erases its history, which is why
+removal was not built.
+`npm run verify:rule-creation-live` enacts the operator's own swearing law and A/Bs it against a
+real model; it needs Ollama),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also
