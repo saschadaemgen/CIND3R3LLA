@@ -38,8 +38,30 @@ export type RuntimeProfileSpec =
        * edits `BOT_DISPLAY_NAME` would, under name matching, get a brand new profile
        * that is in no groups and captures nothing, while every log line said the boot
        * had succeeded. Adopting the active user cannot do that.
+       *
+       * AT MOST ONE SPEC MAY USE THIS (CCB-S5-001). There is one active user, so two
+       * specs adopting it would host one profile twice: one SimpleX identity carrying
+       * two characters and two sets of laws, answering each message as whichever of
+       * the two the router reached first. The caller decides which one adopts - the
+       * primary, since it is the profile that already holds the group membership - and
+       * every other unbound bot uses `create`.
        */
       adopt: 'activeUser';
+    }
+  | {
+      simplexUserId?: undefined;
+      displayName: string;
+      /**
+       * Make a NEW profile for this bot (CCB-S5-001).
+       *
+       * What a second bot needs on its first boot: it has no SimpleX identity yet, and
+       * it must not take over the first bot's. Adoption is deliberately not an option
+       * here - there is one active user and the primary has it.
+       *
+       * The caller must persist the resulting id against the bot's configuration, or
+       * the next boot creates another one. `hosted-bots.ts` does that immediately.
+       */
+      adopt: 'create';
     };
 
 /** The three core calls resolution needs, and nothing else. */
@@ -116,6 +138,17 @@ export async function resolveProfileSpecs(
       continue;
     }
 
+    if (spec.adopt === 'create') {
+      const made = await dir.createUser(profileFor(spec.displayName));
+      log.info('runtime: created a SimpleX profile for a bot that had none', {
+        simplexUserId: made.userId,
+        displayName: made.profile.displayName,
+        note: 'created through the guarded bot profile: peerType Bot, file transfer allowed',
+      });
+      resolved.push({ user: made, configuredName: spec.displayName, how: 'created' });
+      continue;
+    }
+
     const active = await dir.getActiveUser();
     if (active !== undefined) {
       if (active.profile.displayName !== spec.displayName) {
@@ -152,6 +185,28 @@ export async function resolveProfileSpecs(
       note: 'created through the guarded bot profile: peerType Bot, file transfer allowed',
     });
     resolved.push({ user: created, configuredName: spec.displayName, how: 'created' });
+  }
+
+  // ── TWO BOTS ON ONE SIMPLEX IDENTITY (CCB-S5-001) ─────────────────────────
+  //
+  // Loud, and checked after resolution rather than over the specs, because the specs can
+  // be distinct while the resolution is not: two `adopt: 'activeUser'` entries name no
+  // ids at all and land on the same user. The result would be one profile hosted twice,
+  // so one member's message would be answered by whichever of the two characters the
+  // router happened to reach first, and the moderation counters and reply budgets of two
+  // bots would apply to one identity. Nothing downstream can detect that, because every
+  // individual part of it looks correct.
+  const seen = new Map<number, string>();
+  for (const r of resolved) {
+    const already = seen.get(r.user.userId);
+    if (already !== undefined) {
+      throw new Error(
+        `Runtime: bots "${already}" and "${r.configuredName}" both resolved to SimpleX user ` +
+          `${r.user.userId}. One profile cannot host two characters: bind each bot to its own ` +
+          `SimpleX profile, or leave only one of them enabled.`,
+      );
+    }
+    seen.set(r.user.userId, r.configuredName);
   }
 
   return resolved;

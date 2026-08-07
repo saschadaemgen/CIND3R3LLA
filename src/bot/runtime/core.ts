@@ -49,6 +49,7 @@ import {
 } from './profiles.js';
 
 export { botProfileFor, type RuntimeProfile, type RuntimeProfileSpec };
+import { GroupOwnership, UnknownGroupOwnerError, type OwnedGroup } from './ownership.js';
 import {
   emptyCounters,
   type ActiveUserCore,
@@ -154,6 +155,15 @@ export class MultiProfileRuntime {
   private schedulerInstance: ActiveUserScheduler | undefined;
   private hosted: RuntimeProfile[] = [];
   private readonly users = new Map<number, T.User>();
+
+  /**
+   * Which hosted bot owns which group (CCB-S5-001).
+   *
+   * Populated by {@link refreshOwnership}, which the host calls once the core is ready
+   * and again whenever a membership event says the answer may have changed. Empty until
+   * then, and an empty index makes {@link runForGroup} throw rather than guess.
+   */
+  readonly ownership = new GroupOwnership();
 
   /** Settled when the machine reaches `ready`, or rejected when it stops first. */
   private readyResolve: (() => void) | undefined;
@@ -455,6 +465,157 @@ export class MultiProfileRuntime {
     });
   }
 
+  /* ── Which bot owns which group (CCB-S5-001, D-155) ───────────────────────── */
+
+  /**
+   * Rebuild the group index from what each hosted profile reports.
+   *
+   * `apiListGroups` takes an EXPLICIT user id, so it needs no scheduler: it is one of
+   * the few commands that cannot be misrouted. It is still listed per profile rather
+   * than once, because there is no "all groups" command and each profile only ever sees
+   * its own rows.
+   *
+   * One profile failing does not blank the others: `adopt` is per profile, and a failed
+   * read leaves that profile's previous entries alone. Surfaced rather than swallowed,
+   * because a stale index routes an erasure at the wrong bot.
+   */
+  async refreshOwnership(): Promise<void> {
+    const chat = this.requireChat();
+    for (const profile of this.hosted) {
+      try {
+        const groups = await chat.apiListGroups(profile.simplexUserId);
+        this.ownership.adopt(
+          profile.simplexUserId,
+          groups.map((g) => ({
+            groupId: g.groupId,
+            localDisplayName: g.localDisplayName,
+            sharedKey: sharedGroupKey(g),
+          })),
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        log.error('runtime: could not list groups for a hosted profile', {
+          simplexUserId: profile.simplexUserId,
+          displayName: profile.displayName,
+          error: message,
+        });
+        this.options.onError?.(
+          `Could not read the groups of bot "${profile.displayName}", so commands aimed at ` +
+            `its groups may not be routable: ${message}`,
+        );
+      }
+    }
+    log.debug('runtime: group ownership refreshed', {
+      groups: this.ownership.size,
+      profiles: this.hosted.length,
+    });
+  }
+
+  /** The bot that owns a group, or undefined when the group is not hosted. */
+  ownerOf(groupId: number): number | undefined {
+    return this.ownership.owner(groupId);
+  }
+
+  /**
+   * The bot that owns a DIRECT chat, reading the contact index in if it is empty.
+   *
+   * Lazy on purpose. `apiListContacts` loads every contact into one response (the SDK
+   * says so in as many words), and a bot with a public contact address can accumulate
+   * a great many; nothing books a direct-chat erasure today, so paying that on every
+   * boot would be cost for a path with no caller. The first request for one pays it.
+   */
+  private async contactOwner(contactId: number): Promise<number | undefined> {
+    const known = this.ownership.contactOwner(contactId);
+    if (known !== undefined) return known;
+    const chat = this.requireChat();
+    for (const profile of this.hosted) {
+      const contacts = await chat.apiListContacts(profile.simplexUserId);
+      this.ownership.adoptContacts(
+        profile.simplexUserId,
+        contacts.map((c) => c.contactId),
+      );
+    }
+    return this.ownership.contactOwner(contactId);
+  }
+
+  /**
+   * Run a command as whichever bot owns `groupId`.
+   *
+   * The seam every group-addressed command that takes no explicit user id must go
+   * through. Throws {@link UnknownGroupOwnerError} when the group belongs to no hosted
+   * bot, because the alternative is issuing it as the active profile, which for the
+   * erasure path means deleting zero rows and reporting success (see `ownership.ts`).
+   */
+  async runForGroup<R>(groupId: number, label: string, fn: () => Promise<R>): Promise<R> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    return await this.scheduler.run(owner, `${label}:g${String(groupId)}`, fn);
+  }
+
+  /**
+   * Erase chat items from the core's own database, as the bot that owns the chat.
+   *
+   * `apiDeleteChatItems` takes no user id and the core scopes the DELETE by `user_id`,
+   * so issued as the wrong profile it removes nothing and raises nothing. For a DIRECT
+   * chat there is no group index to consult, so the caller states the bot.
+   */
+  async deleteChatItems(
+    chatType: T.ChatType,
+    chatId: number,
+    itemIds: readonly number[],
+  ): Promise<void> {
+    const chat = this.requireChat();
+    const owner =
+      chatType === T.ChatType.Direct
+        ? await this.contactOwner(chatId)
+        : this.ownership.owner(chatId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(chatId);
+    await this.scheduler.run(owner, `deleteChatItems:${String(chatId)}`, async () => {
+      await chat.apiDeleteChatItems(chatType, chatId, [...itemIds], T.CIDeleteMode.Internal);
+    });
+  }
+
+  /** Send one composed message (an image with its caption) as a given bot. */
+  async sendGroupComposed(
+    simplexUserId: number,
+    groupId: number,
+    composed: T.ComposedMessage[],
+  ): Promise<T.AChatItem[]> {
+    const chat = this.requireChat();
+    return await this.scheduler.run(simplexUserId, `sendComposed:${String(groupId)}`, async () =>
+      chat.apiSendMessages([T.ChatType.Group, groupId], composed),
+    );
+  }
+
+  /**
+   * Send text into a group as whichever bot owns it.
+   *
+   * For the paths that hold a group id and NOT a bot: the recital, whose beats two
+   * onward are sent by a queue job minutes after the message object is gone. Throws on
+   * an unknown owner rather than sending as the active profile, which would read one
+   * bot's book into another bot's group.
+   */
+  async sendGroupTextAsOwner(groupId: number, text: string): Promise<T.AChatItem[]> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    return await this.sendGroupText(owner, groupId, text);
+  }
+
+  /** The composed-message form of {@link sendGroupTextAsOwner}. */
+  async sendGroupComposedAsOwner(
+    groupId: number,
+    composed: T.ComposedMessage[],
+  ): Promise<T.AChatItem[]> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    return await this.sendGroupComposed(owner, groupId, composed);
+  }
+
+  /** Every group a hosted profile holds, as the index last saw them. */
+  groupsOf(simplexUserId: number): OwnedGroup[] {
+    return this.ownership.groupsOf(simplexUserId);
+  }
+
   /**
    * Set or clear a reaction, working around a known SDK defect (§10).
    *
@@ -538,6 +699,32 @@ export const REJECTED_REACTIONS: readonly string[] = Object.freeze([
  * `undefined`, so an unattributable event is a value the router must handle rather than
  * a missing field that reads as profile zero.
  */
+/**
+ * A stable identity for the REAL group behind one profile's `GroupInfo` (CCB-S5-001).
+ *
+ * The group id cannot answer "are two of my bots in the same group", because two
+ * profiles in one group hold two rows with two different ids (see `ownership.ts`). These
+ * two fields can, and they are taken in order of how much they actually prove:
+ *
+ *   `groupKeys.publicGroupId`  the group's own identifier, shared by every member.
+ *                              Present for public groups, which is what this product is.
+ *   `viaGroupLinkUri`          the link the profile joined through. Two bots that used
+ *                              the same invitation link joined the same group.
+ *
+ * Returns null when the core reports neither, and null MUST NOT be read as "not shared":
+ * it means the question cannot be answered from what the core gave us. The display name
+ * is deliberately NOT a fallback - a group admin can rename a group, and two unrelated
+ * groups can be called the same thing, so it would produce both false matches and false
+ * misses on a question whose wrong answer duplicates the archive.
+ */
+export function sharedGroupKey(group: T.GroupInfo): string | null {
+  const publicId = group.groupKeys?.publicGroupId;
+  if (typeof publicId === 'string' && publicId.length > 0) return `pub:${publicId}`;
+  const link = group.viaGroupLinkUri;
+  if (typeof link === 'string' && link.length > 0) return `link:${link}`;
+  return null;
+}
+
 export function toRoutable(tag: string, event: unknown): RoutableEvent {
   const user = (event as { user?: { userId?: unknown } } | null)?.user;
   const userId = typeof user?.userId === 'number' ? user.userId : null;

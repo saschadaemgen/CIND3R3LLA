@@ -73,6 +73,8 @@ export const MUTED_ROLE: MemberRole = 'observer';
 export const NEVER_ENFORCE_AGAINST: readonly MemberRole[] = ['owner'];
 
 export interface ApplyRequest {
+  /** Which bot is acting (CCB-S5-001), so the record says whose ladder decided it. */
+  botProfileId: number | null;
   groupId: number;
   memberId: string;
   memberDisplayName: string;

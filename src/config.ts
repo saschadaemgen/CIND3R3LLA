@@ -69,17 +69,6 @@ export interface Config {
    * file is absent the profile image is left as-is.
    */
   avatarPath: string;
-  /**
-   * Host the bot on the multi-profile runtime (CCB-S4-021) rather than on the SDK's
-   * `bot.run`. ON by default, which is the supported path.
-   *
-   * It exists as a switch for one reason: this is the first deploy that changes HOW
-   * the bot starts, on a shared production host, and `BOT_RUNTIME_HOSTING=false` plus
-   * a restart is a faster and less disruptive way back than a revert-and-rebuild if
-   * the first live boot misbehaves. It is not a supported long-term configuration:
-   * the pre-runtime path cannot host a second profile, and half two removes it.
-   */
-  runtimeHosting: boolean;
   /** PostgreSQL connection string (the archive DB — separate from the SimpleX DB). */
   databaseUrl: string;
   /** Log verbosity. */
@@ -267,7 +256,6 @@ export function loadConfig(): Config {
     quarantineRoot: resolveQuarantineRoot(),
     assetRoot: resolveAssetRoot(),
     avatarPath: resolveAvatarPath(),
-    runtimeHosting: optionalBoolean('BOT_RUNTIME_HOSTING', true),
     databaseUrl: required('DATABASE_URL'),
     logLevel: parseLogLevel(process.env['LOG_LEVEL']),
   };
@@ -490,7 +478,6 @@ export function redactConfig(cfg: Config): Record<string, string> {
     groupName: cfg.groupName || '(all groups)',
     mediaRoot: cfg.mediaRoot,
     quarantineRoot: cfg.quarantineRoot,
-    runtimeHosting: cfg.runtimeHosting ? 'on (multi-profile runtime)' : 'off (pre-runtime bot.run)',
     databaseUrl: safeDbUrl,
     logLevel: cfg.logLevel,
   };

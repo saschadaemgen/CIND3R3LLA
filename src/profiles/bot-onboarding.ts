@@ -678,6 +678,29 @@ export async function updateBotPersonality(
  * dials. See `conversationVoice` in src/interaction/personality.ts.
  */
 export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonality | null> {
+  return await readBotPersonality(db, `WHERE selected_for_runtime = TRUE`, []);
+}
+
+/**
+ * The personality of ONE bot (CCB-S5-001).
+ *
+ * The per-bot form of {@link runtimeBotPersonality}, needed because every enabled bot is
+ * hosted now and the engine that answers a member has to read the character of the bot
+ * that received the message rather than of whichever row carries the primary flag.
+ * Same null semantics: absence is an answer, not a default.
+ */
+export async function botPersonalityById(
+  db: Queryable,
+  botProfileId: number,
+): Promise<BotPersonality | null> {
+  return await readBotPersonality(db, `WHERE id = $1`, [botProfileId]);
+}
+
+async function readBotPersonality(
+  db: Queryable,
+  where: string,
+  params: unknown[],
+): Promise<BotPersonality | null> {
   const result = await db.query<{
     base_character: string | null;
     origin: string | null;
@@ -690,8 +713,9 @@ export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonali
     `SELECT base_character, origin, axis_sharpness, axis_warmth, axis_humor, axis_verbosity,
             axis_permissiveness
        FROM cinderella_bot_profiles
-      WHERE selected_for_runtime = TRUE
+      ${where}
       LIMIT 1`,
+    params,
   );
 
   const row = result.rows[0];

@@ -33,16 +33,31 @@
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import type { BotPersonality } from '../interaction/personality.js';
-import { runtimeBotPersonality } from './bot-onboarding.js';
+import { botPersonalityById, runtimeBotPersonality } from './bot-onboarding.js';
 
+/**
+ * ── PER BOT SINCE CCB-S5-001 ─────────────────────────────────────────────────
+ *
+ * This used to cache ONE personality, the `selected_for_runtime` row's, because one bot
+ * ran. Every enabled bot runs now and each has its own character, so the cache is keyed
+ * by bot: a message is answered in the voice of the bot that RECEIVED it, and reading
+ * the primary's dials for all of them would have given every bot the primary's voice
+ * while every setting page still showed the right one.
+ *
+ * The invalidation contract is unchanged and still whole-cache: an operator saving one
+ * bot's dials drops all of them, which costs one query per bot on the next reply and
+ * removes any chance of a per-key invalidation missing the key that mattered.
+ */
 export class BotPersonalityService {
-  private value: BotPersonality | null = null;
+  private readonly values = new Map<number, BotPersonality | null>();
+  /** The primary's, for the paths that still ask without naming a bot. */
+  private primary: BotPersonality | null = null;
   private loaded = false;
   private refreshing: Promise<void> | null = null;
 
   constructor(private readonly db: Queryable) {}
 
-  /** Read the runtime bot's personality once, at boot. */
+  /** Read the primary bot's personality once, at boot. */
   static async load(db: Queryable): Promise<BotPersonalityService> {
     const service = new BotPersonalityService(db);
     await service.refresh();
@@ -55,26 +70,50 @@ export class BotPersonalityService {
    * Synchronous by design: this is called from the reply path. Before the first load
    * completes it returns null, which the prompt builder reads as "not configured" and
    * answers with the ceiling and the original voice, never with an error.
+   *
+   * With no bot named this answers for the PRIMARY, which is what the console's default
+   * views want. The reply path always names one.
    */
-  get(): BotPersonality | null {
+  get(botProfileId?: number): BotPersonality | null {
     if (!this.loaded) void this.kickRefresh();
-    return this.value;
+    if (botProfileId === undefined) return this.primary;
+    const cached = this.values.get(botProfileId);
+    if (cached !== undefined) return cached;
+    void this.kickRefreshFor(botProfileId);
+    // Not the primary's as a stand-in: handing one bot another bot's character is the
+    // exact failure this became per-bot to prevent, and it would be invisible. Null is
+    // read as "not configured", which produces the original voice and the ceiling.
+    return null;
   }
 
-  /** Drop the cached value and read it again. Called by the console after every save. */
+  /** Drop every cached value and read again. Called by the console after every save. */
   invalidate(): void {
     this.loaded = false;
+    this.values.clear();
     void this.kickRefresh();
   }
 
   async refresh(): Promise<void> {
     try {
-      this.value = await runtimeBotPersonality(this.db);
+      this.primary = await runtimeBotPersonality(this.db);
       this.loaded = true;
     } catch (error) {
       log.warn(
         `Personality: reading the runtime bot personality failed, keeping the last known ` +
           `value (${error instanceof Error ? error.message : String(error)}).`,
+      );
+    }
+  }
+
+  /** Load one bot's personality into the cache. */
+  async refreshFor(botProfileId: number): Promise<void> {
+    try {
+      this.values.set(botProfileId, await botPersonalityById(this.db, botProfileId));
+    } catch (error) {
+      log.warn(
+        `Personality: reading bot ${botProfileId}'s personality failed (${
+          error instanceof Error ? error.message : String(error)
+        }).`,
       );
     }
   }
@@ -85,6 +124,17 @@ export class BotPersonalityService {
       this.refreshing = null;
     });
     return this.refreshing;
+  }
+
+  private readonly inFlight = new Map<number, Promise<void>>();
+
+  private kickRefreshFor(botProfileId: number): Promise<void> {
+    let p = this.inFlight.get(botProfileId);
+    if (p === undefined) {
+      p = this.refreshFor(botProfileId).finally(() => this.inFlight.delete(botProfileId));
+      this.inFlight.set(botProfileId, p);
+    }
+    return p;
   }
 }
 
@@ -107,7 +157,18 @@ export function invalidateBotPersonality(): void {
   active?.invalidate();
 }
 
-/** The getter the interaction engine is wired with. */
-export function currentBotPersonality(): BotPersonality | null {
-  return active?.get() ?? null;
+/**
+ * The getter the interaction engine is wired with.
+ *
+ * Each engine belongs to one bot and passes its own id (CCB-S5-001). The no-argument
+ * form answers for the primary and is what the console's default views use; it must not
+ * be used on the reply path, because there it would give every bot the primary's voice.
+ */
+export function currentBotPersonality(botProfileId?: number): BotPersonality | null {
+  return active?.get(botProfileId) ?? null;
+}
+
+/** Warm one bot's personality into the cache, so its first reply does not race a read. */
+export async function warmBotPersonality(botProfileId: number): Promise<void> {
+  await active?.refreshFor(botProfileId);
 }

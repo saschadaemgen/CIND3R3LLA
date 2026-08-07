@@ -32,12 +32,12 @@
 
 import { util } from 'simplex-chat';
 import { log } from '../../log.js';
-import type { RuntimeBotHandle } from './host.js';
+import type { HostedBot, RuntimeHost } from './host.js';
 
-/** The live runtime-hosted bot, when one is running. Absent in harnesses and scripts. */
-let handle: RuntimeBotHandle | null = null;
+/** The live runtime, when one is running. Absent in harnesses and scripts. */
+let handle: RuntimeHost | null = null;
 
-export function setRuntimeAdminHandle(h: RuntimeBotHandle | null): void {
+export function setRuntimeAdminHandle(h: RuntimeHost | null): void {
   handle = h;
 }
 
@@ -61,15 +61,45 @@ export interface HostedIdentity {
   state: string;
 }
 
-export function hostedIdentity(): HostedIdentity | null {
+/**
+ * Who the runtime is hosting.
+ *
+ * Takes a bot profile id since CCB-S5-001: every enabled bot is hosted, so "the hosted
+ * identity" is not a single answer any more and a console page that acts on the wrong one
+ * would create an address for, or accept a contact as, a bot the operator was not looking
+ * at. With no id it answers for the primary, which is the console's default selection.
+ */
+export function hostedIdentity(botProfileId?: number): HostedIdentity | null {
   if (handle === null) return null;
-  const profile = handle.runtime.profiles[0];
-  if (profile === undefined) return null;
+  const bot = pick(handle, botProfileId);
+  if (bot === undefined) return null;
   return {
-    simplexUserId: profile.simplexUserId,
-    displayName: profile.displayName,
+    simplexUserId: bot.simplexUserId,
+    displayName: bot.config.displayName,
     state: handle.runtime.state,
   };
+}
+
+/** Every hosted bot, so a console page can show which identities exist. */
+export function hostedIdentities(): HostedIdentity[] {
+  if (handle === null) return [];
+  const state = handle.runtime.state;
+  return handle.bots.map((b) => ({
+    simplexUserId: b.simplexUserId,
+    displayName: b.config.displayName,
+    state,
+  }));
+}
+
+/** The shared chat handle. Every use of it here is inside a scheduled critical section. */
+function chatOf(): RuntimeHost['chat'] {
+  if (handle === null) throw new RuntimeActionUnavailableError('The SimpleX runtime is not running.');
+  return handle.chat;
+}
+
+function pick(host: RuntimeHost, botProfileId?: number): HostedBot | undefined {
+  if (botProfileId === undefined) return host.primary;
+  return host.bots.find((b) => b.config.botProfileId === botProfileId);
 }
 
 /**
@@ -79,26 +109,33 @@ export function hostedIdentity(): HostedIdentity | null {
  */
 function requireReadyBot(
   what: string,
-): { bot: RuntimeBotHandle; simplexUserId: number; displayName: string } {
-  const bot = handle;
-  if (bot === null) {
+  botProfileId?: number,
+): { bot: HostedBot; simplexUserId: number; displayName: string } {
+  const host = handle;
+  if (host === null) {
     throw new RuntimeActionUnavailableError(
       `The SimpleX runtime is not running, so ${what} yet. Start the bot and try again.`,
     );
   }
-  const profile = bot.runtime.profiles[0];
-  if (profile === undefined) {
+  const bot = pick(host, botProfileId);
+  if (bot === undefined) {
+    // Named rather than falling back to the primary. Acting as a different bot than the
+    // page the operator is looking at is exactly the confusion hosting several of them
+    // introduces, and doing it silently would create an address on the wrong identity.
     throw new RuntimeActionUnavailableError(
-      'The runtime is running but is hosting no profile, so there is no identity to act as.',
+      botProfileId === undefined
+        ? 'The runtime is running but is hosting no profile, so there is no identity to act as.'
+        : `Bot ${String(botProfileId)} is not currently hosted, so nothing can be done as it. ` +
+            `Enable it and restart, or pick a bot that is running.`,
     );
   }
-  if (bot.runtime.state !== 'ready') {
+  if (host.runtime.state !== 'ready') {
     throw new RuntimeActionUnavailableError(
-      `The SimpleX core is still starting up (${bot.runtime.state}). It settles a few ` +
+      `The SimpleX core is still starting up (${host.runtime.state}). It settles a few ` +
         `seconds after a restart; try again once the bot is live.`,
     );
   }
-  return { bot, simplexUserId: profile.simplexUserId, displayName: profile.displayName };
+  return { bot, simplexUserId: bot.simplexUserId, displayName: bot.config.displayName };
 }
 
 export interface BotAddress {
@@ -117,17 +154,18 @@ export interface BotAddress {
  * either, because an operator who sees an error reasonably concludes the first press
  * did not work.
  */
-export async function createOrShowBotAddress(): Promise<BotAddress> {
+export async function createOrShowBotAddress(botProfileId?: number): Promise<BotAddress> {
   // Refused rather than queued while the core is still subscribing. Creating an address
   // is an interactive network command and the core settles about ten seconds after a
   // restart (D-125); holding an HTTP request open for that long would look like a hung
   // console, while saying so and letting the operator press again takes one sentence.
   const { bot, simplexUserId, displayName } = requireReadyBot(
     'no contact address can be created',
+    botProfileId,
   );
 
   const existing = await bot.runScheduled('address:show', () =>
-    bot.chat.apiGetUserAddress(simplexUserId),
+    chatOf().apiGetUserAddress(simplexUserId),
   );
   if (existing?.connLinkContact) {
     const link = util.contactAddressStr(existing.connLinkContact);
@@ -136,7 +174,7 @@ export async function createOrShowBotAddress(): Promise<BotAddress> {
   }
 
   const created = await bot.runScheduled('address:create', () =>
-    bot.chat.apiCreateUserAddress(simplexUserId),
+    chatOf().apiCreateUserAddress(simplexUserId),
   );
   const link = util.contactAddressStr(created);
   if (!link) {
@@ -170,10 +208,13 @@ export interface AcceptedContact {
  * request with nothing raised. Going through the scheduler is what keeps that from
  * being a discovery.
  */
-export async function acceptContactRequest(contactRequestId: number): Promise<AcceptedContact> {
-  const { bot, simplexUserId } = requireReadyBot('this request cannot be accepted');
+export async function acceptContactRequest(
+  contactRequestId: number,
+  botProfileId?: number,
+): Promise<AcceptedContact> {
+  const { bot, simplexUserId } = requireReadyBot('this request cannot be accepted', botProfileId);
   const contact = await bot.runScheduled(`contact:accept:${contactRequestId}`, () =>
-    bot.chat.apiAcceptContactRequest(contactRequestId),
+    chatOf().apiAcceptContactRequest(contactRequestId),
   );
   if (typeof contact?.contactId !== 'number') {
     // The SDK already throws when the core answers anything but acceptingContactRequest;
@@ -201,10 +242,13 @@ export async function acceptContactRequest(contactRequestId: number): Promise<Ac
  * The SDK notes that the sender is NOT notified, which is worth knowing before pressing
  * it: from their side the invitation simply never completes.
  */
-export async function rejectContactRequest(contactRequestId: number): Promise<void> {
-  const { bot, simplexUserId } = requireReadyBot('this request cannot be rejected');
+export async function rejectContactRequest(
+  contactRequestId: number,
+  botProfileId?: number,
+): Promise<void> {
+  const { bot, simplexUserId } = requireReadyBot('this request cannot be rejected', botProfileId);
   await bot.runScheduled(`contact:reject:${contactRequestId}`, () =>
-    bot.chat.apiRejectContactRequest(contactRequestId),
+    chatOf().apiRejectContactRequest(contactRequestId),
   );
   log.info('runtime: contact request rejected', { contactRequestId, simplexUserId });
 }
@@ -229,10 +273,13 @@ export interface JoinedGroup {
  * active. With one profile hosted and pinned there is nothing to misroute to today; with
  * two, this would join somebody else's group with nothing raised.
  */
-export async function joinInvitedGroup(groupId: number): Promise<JoinedGroup> {
-  const { bot, simplexUserId } = requireReadyBot('this group cannot be joined');
+export async function joinInvitedGroup(
+  groupId: number,
+  botProfileId?: number,
+): Promise<JoinedGroup> {
+  const { bot, simplexUserId } = requireReadyBot('this group cannot be joined', botProfileId);
   const info = await bot.runScheduled(`group:join:${groupId}`, () =>
-    bot.chat.apiJoinGroup(groupId),
+    chatOf().apiJoinGroup(groupId),
   );
   const role = info?.membership?.memberRole;
   if (typeof role !== 'string' || !role) {

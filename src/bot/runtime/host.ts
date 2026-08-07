@@ -1,20 +1,26 @@
 /**
- * Hosting ONE bot on the multi-profile runtime (CCB-S4-021, wiring half one).
+ * Hosting EVERY enabled bot on the multi-profile runtime (CCB-S5-001, D-155).
  *
- * The runtime landed dormant under CCB-S4-020: it could host N profiles and nothing
- * called it, so the bot still booted through `bot.run()`. This file is the caller. It
- * hosts exactly one profile, which is the whole scope of half one, and the reason is
- * isolation rather than timidity: if putting the runtime under the bot changes how the
- * bot behaves, that shows up with one profile where it is attributable, before N
- * profiles make it a puzzle.
+ * ── WHAT THIS WAS, AND WHY IT CHANGED ────────────────────────────────────────
+ *
+ * CCB-S4-021 wired the bot onto the runtime with exactly one profile hosted, and said
+ * why: isolation. If putting the runtime under the bot changed how the bot behaved, that
+ * had to show up with one profile, where it was attributable, before N profiles made it a
+ * puzzle. It did not change anything, and this is half two.
+ *
+ * The operator arrived at the same place from the other end: he had one bot in two
+ * groups, decided that was wrong, and wants a bot per group so each can have its own
+ * character. Everything a second bot needs already existed per bot - personality, dials,
+ * origin, onboarding, moderation. The only thing that did not exist was hosting more than
+ * one at a time.
  *
  * ── WHAT IT HAS TO REPRODUCE, BECAUSE bot.run() DID IT FOR US ───────────────
  *
  * `startBot()` (`../client.ts`) is a thin wrapper over the SDK's `bot.run`, and
  * `bot.run` quietly does five things this path must keep doing:
  *
- *   1. RESOLVE the user: active-user-else-create. Reproduced by `adopt: 'activeUser'`
- *      in the runtime, NOT by matching display names - see the note there.
+ *   1. RESOLVE the user: active-user-else-create. Reproduced by the specs
+ *      `hosted-bots.ts` builds. Exactly one bot may adopt the active user; see there.
  *   2. MARK the profile as a bot: `mkBotProfile` forces `peerType = Bot` and
  *      `preferences.files`, without which the profile silently cannot receive media.
  *      Reproduced by `botProfileFor`.
@@ -34,46 +40,72 @@
  * (D-085, factor 65). Receiving is attached immediately, so a message that arrives
  * during the warm-up is still captured; only the answer waits. Waiting is bounded by
  * the state machine's ceiling, so a reply is delayed at worst, never dropped.
+ *
+ * ── ONE EVENT SOURCE PER BOT, NOT ONE FOR THE PROCESS ───────────────────────
+ *
+ * The single-bot wiring gave every profile the same `RoutedEventSource`, which was
+ * harmless when there was one. With several it would undo the router: capture, the
+ * interaction engine and the file receiver would each see every bot's events and answer
+ * in whichever character the wiring happened to hand them. So each hosted bot gets its
+ * own source, its own file receiver, and its own graph above them.
  */
 
 import type { T } from '@simplex-chat/types';
+import type { api } from 'simplex-chat';
 import type { Config } from '../../config.js';
+import type { Queryable } from '../../db/pool.js';
 import { log } from '../../log.js';
 import { status } from '../../web/status.js';
-import { configureFilesFolder, ensureDirs, type BotHandle, type StartBotOptions } from '../client.js';
+import { configureFilesFolder, ensureDirs, type StartBotOptions } from '../client.js';
 import { loadAvatarDataUri } from '../avatar.js';
 import { FileReceiver } from '../files.js';
+import {
+  bindSimplexUser,
+  listBotsToHost,
+  toRuntimeSpecs,
+  type HostedBotConfig,
+} from '../../profiles/hosted-bots.js';
 import { MultiProfileRuntime, botProfileFor } from './core.js';
 import { RoutedEventSource } from './events.js';
 import { heldUntilReady } from './gate.js';
 import type { RoutableEvent } from './types.js';
 
-/**
- * A {@link BotHandle}, so every existing consumer is untouched, plus the runtime
- * underneath it and the readiness gate.
- */
-export interface RuntimeBotHandle extends BotHandle {
-  runtime: MultiProfileRuntime;
-  /** The event source capture and the file receiver subscribe to. */
+/** One running bot: its configuration, its SimpleX identity, and its own transports. */
+export interface HostedBot {
+  config: HostedBotConfig;
+  simplexUserId: number;
+  /** The `T.User` the core reported for this profile at start. */
+  user: T.User;
+  /** THIS bot's events. Capture and the interaction engine subscribe here. */
   events: RoutedEventSource;
-  /** Resolves when the core has settled. Everything that SENDS awaits this. */
-  whenReady: () => Promise<void>;
+  /** THIS bot's file receiver. */
+  fileReceiver: FileReceiver;
   /**
-   * Run something that depends on the ACTIVE profile through the scheduler.
-   *
-   * For the calls this file does not wrap: the avatar flush is the one at boot. With
-   * one profile hosted nothing can be misrouted, but going through the scheduler is
-   * what keeps that true when a second arrives, and it is one line here against an
-   * archaeology exercise later.
-   */
-  runScheduled: <R>(label: string, fn: () => Promise<R>) => Promise<R>;
-  /**
-   * Send text to a group as this bot, and return what the core created.
+   * Send text to a group as this bot.
    *
    * Waits for readiness, goes through the scheduler, and is attributed from
    * `r.user.userId` on the raw command's response (D-124, D-096 Decision 5).
    */
   sendGroupText: (groupId: number, text: string, quotedItemId?: number) => Promise<T.AChatItem[]>;
+  /** Run something active-profile-dependent as this bot, through the scheduler. */
+  runScheduled: <R>(label: string, fn: () => Promise<R>) => Promise<R>;
+}
+
+export interface RuntimeHost {
+  runtime: MultiProfileRuntime;
+  /**
+   * The raw chat handle.
+   *
+   * For profile-INDEPENDENT commands only (`/_files_folder`) and for commands taking an
+   * explicit user id. Anything addressed at a chat goes through a {@link HostedBot} or
+   * through `runtime.runForGroup`, or it executes as whichever profile is active.
+   */
+  chat: api.ChatApi;
+  bots: HostedBot[];
+  /** The console's default selection. Never the answer to "who should send this". */
+  primary: HostedBot;
+  whenReady: () => Promise<void>;
+  close: () => Promise<void>;
 }
 
 /**
@@ -95,28 +127,53 @@ function profileDiffers(stored: T.Profile, desired: T.Profile): boolean {
   return p(stored) !== p(desired);
 }
 
-export async function startRuntimeBot(
+export async function startRuntimeHost(
   cfg: Config,
+  db: Queryable,
   opts: StartBotOptions = {},
-): Promise<RuntimeBotHandle> {
+): Promise<RuntimeHost> {
   await ensureDirs(cfg);
+
+  const configured = await listBotsToHost(db);
+  if (configured.length === 0) {
+    throw new Error(
+      'Runtime host: no bot is enabled, so there is nothing to host. Enable at least one ' +
+        'on the AI bots page.',
+    );
+  }
 
   // Loaded before the core starts, for the same reason the old path loaded it there:
   // the avatar has to be IN the profile that gets written, and an unreadable file must
   // leave the stored profile alone rather than blanking it.
   const image = await loadAvatarDataUri(cfg.avatarPath);
 
-  // Built before the runtime, because the runtime binds the profile's handler before
-  // it starts the core (see `handlerFor`), and the handler dispatches into this.
-  const events = new RoutedEventSource();
+  // One source per hosted profile, keyed by the SimpleX user id the router attributes
+  // events with. Built before the runtime, because the runtime binds each profile's
+  // handler before it starts the core (see `handlerFor`), and the handler dispatches
+  // into these.
+  const sources = new Map<number, RoutedEventSource>();
+  const sourceFor = (simplexUserId: number): RoutedEventSource => {
+    let s = sources.get(simplexUserId);
+    if (s === undefined) {
+      s = new RoutedEventSource();
+      sources.set(simplexUserId, s);
+    }
+    return s;
+  };
 
-  log.info('Starting the multi-profile runtime with one profile…');
+  log.info(`Starting the multi-profile runtime with ${configured.length} profile(s)…`, {
+    bots: configured.map((b) => b.displayName).join(', '),
+  });
+
   const runtime = new MultiProfileRuntime({
     dbPrefix: cfg.simplexDbPrefix,
-    profiles: [{ displayName: cfg.botDisplayName, adopt: 'activeUser' }],
+    profiles: toRuntimeSpecs(configured),
     profileFor: (displayName) => botProfileFor(displayName, image),
     onError: (message) => status.error(message),
-    handlerFor: () => (event: RoutableEvent) => events.dispatch(event),
+    handlerFor: (profile) => {
+      const source = sourceFor(profile.simplexUserId);
+      return (event: RoutableEvent) => source.dispatch(event);
+    },
     onTransition: (from, to, detail) => {
       log.info('runtime: state', {
         from,
@@ -144,38 +201,108 @@ export async function startRuntimeBot(
   log.info('runtime: start() resolved', {
     ms: Date.now() - startedAt,
     state: runtime.state,
+    profiles: runtime.profiles.length,
     note: 'this is NOT readiness; nothing sends until ready',
   });
 
-  const hosted = runtime.profiles[0];
-  if (hosted === undefined) {
-    throw new Error('Runtime host: start() hosted no profile, so there is no bot to run.');
-  }
-  const user = runtime.user(hosted.simplexUserId);
-  if (user === undefined) {
+  // The runtime resolved the specs in the order they were given, which is the order
+  // `listBotsToHost` returned. Pairing by index is therefore exact, and it is asserted
+  // rather than trusted: a mispairing would give a bot another bot's character silently.
+  if (runtime.profiles.length !== configured.length) {
     throw new Error(
-      `Runtime host: no SimpleX user record for hosted profile ${hosted.simplexUserId}.`,
+      `Runtime host: asked for ${configured.length} profile(s) and the runtime hosted ` +
+        `${runtime.profiles.length}. Refusing to guess which configuration belongs to which.`,
     );
   }
-  const chat = runtime.chat;
 
-  // Pin the active user through the scheduler rather than trusting whatever the core
-  // last persisted. Commands that take no explicit user id (the file receiver's
-  // `/freceive` among them) execute as the ACTIVE profile, so leaving it unset would
-  // make media receipt depend on a value nothing in this process has stated.
-  await runtime.scheduler.run(hosted.simplexUserId, 'adopt-active-user', () =>
+  const chat = runtime.chat;
+  const bots: HostedBot[] = [];
+
+  for (const [index, config] of configured.entries()) {
+    const hosted = runtime.profiles[index];
+    if (hosted === undefined) {
+      throw new Error(`Runtime host: no hosted profile at index ${index} for ${config.displayName}.`);
+    }
+    const user = runtime.user(hosted.simplexUserId);
+    if (user === undefined) {
+      throw new Error(
+        `Runtime host: no SimpleX user record for hosted profile ${hosted.simplexUserId}.`,
+      );
+    }
+
+    // Written down NOW, before anything is hosted. A bot that CREATED a profile and is
+    // not bound creates another on the next boot and abandons this one in the core
+    // database as a bot in no groups that nothing hosts.
+    if (config.simplexUserId !== hosted.simplexUserId) {
+      await bindSimplexUser(db, config.botProfileId, hosted.simplexUserId);
+      config.simplexUserId = hosted.simplexUserId;
+    }
+
+    const events = sourceFor(hosted.simplexUserId);
+    const fileReceiver = new FileReceiver(chat, cfg.simplexFilesFolder, opts.getFileTimeoutMs);
+    events.on('rcvFileComplete', (ev) => fileReceiver.handleComplete(ev));
+    events.on('rcvFileError', (ev) => fileReceiver.handleError(ev));
+    // rcvFileWarning is transient (the XFTP agent keeps retrying) — do NOT treat it
+    // as terminal, or media that later completes would be dropped.
+    events.on('rcvFileWarning', (ev) => fileReceiver.handleWarning(ev));
+
+    const sendGroupText = heldUntilReady(
+      (groupId: number, text: string, quotedItemId?: number): Promise<T.AChatItem[]> =>
+        runtime.sendGroupText(hosted.simplexUserId, groupId, text, quotedItemId),
+      {
+        ready: () => runtime.whenReady(),
+        isReady: () => runtime.state === 'ready',
+        onHold: (label) =>
+          log.info('runtime: holding a send until the core is ready', {
+            label,
+            bot: config.displayName,
+            state: runtime.state,
+          }),
+      },
+      `group-reply:${config.slug}`,
+    );
+
+    bots.push({
+      config,
+      simplexUserId: hosted.simplexUserId,
+      user,
+      events,
+      fileReceiver,
+      sendGroupText,
+      runScheduled: <R>(label: string, fn: () => Promise<R>): Promise<R> =>
+        runtime.scheduler.run(hosted.simplexUserId, label, fn),
+    });
+  }
+
+  // Pin an active user through the scheduler rather than trusting whatever the core
+  // last persisted. Commands that take no explicit user id still exist (the file
+  // receiver's `/freceive` among them), and leaving the active user unset would make
+  // media receipt depend on a value nothing in this process has stated. With several
+  // bots this is a STARTING POINT and not a guarantee: anything addressed at a chat
+  // goes through the scheduler naming its own bot.
+  const primary = bots[0];
+  if (primary === undefined) throw new Error('Runtime host: no bot was hosted.');
+  await runtime.scheduler.run(primary.simplexUserId, 'adopt-active-user', () =>
     Promise.resolve(undefined),
   );
 
-  await applyProfileUpdate(runtime, hosted.simplexUserId, cfg.botDisplayName, image, user);
-  await configureFilesFolder(chat, cfg.simplexFilesFolder);
+  // ── THE AVATAR IS THE PRIMARY'S, DELIBERATELY ────────────────────────────
+  //
+  // `AVATAR_PATH` is one image in the environment, and the per-bot avatar layer is
+  // explicitly not in this briefing. Writing that one image onto every hosted profile
+  // would give every bot the same face, which is a worse answer than leaving the others
+  // alone: a second bot with no picture is obviously unfinished, while a second bot
+  // wearing the first one's picture looks deliberate and is not.
+  await applyProfileUpdate(runtime, primary.simplexUserId, cfg.botDisplayName, image, primary.user);
+  if (bots.length > 1 && image !== undefined) {
+    log.info('runtime: the configured avatar was applied to the primary bot only', {
+      primary: primary.config.displayName,
+      others: bots.slice(1).map((b) => b.config.displayName).join(', '),
+      note: 'per-bot avatars are a later briefing; one AVATAR_PATH cannot dress several bots',
+    });
+  }
 
-  const fileReceiver = new FileReceiver(chat, cfg.simplexFilesFolder, opts.getFileTimeoutMs);
-  events.on('rcvFileComplete', (ev) => fileReceiver.handleComplete(ev));
-  events.on('rcvFileError', (ev) => fileReceiver.handleError(ev));
-  // rcvFileWarning is transient (the XFTP agent keeps retrying) — do NOT treat it
-  // as terminal, or media that later completes would be dropped.
-  events.on('rcvFileWarning', (ev) => fileReceiver.handleWarning(ev));
+  await configureFilesFolder(chat, cfg.simplexFilesFolder);
 
   // The handler was bound by `handlerFor` before the core started. Assert it, because
   // a profile with no handler loses its entire event stream to a `log.debug` line and
@@ -191,7 +318,9 @@ export async function startRuntimeBot(
   }
 
   const close = async (): Promise<void> => {
-    fileReceiver.abortAll('bot shutting down before file receipt completed');
+    for (const bot of bots) {
+      bot.fileReceiver.abortAll('bot shutting down before file receipt completed');
+    }
     await new Promise((r) => setTimeout(r, 250));
     try {
       // Stops the chat AND closes the database; see MultiProfileRuntime.stop.
@@ -201,36 +330,13 @@ export async function startRuntimeBot(
     }
   };
 
-  const whenReady = (): Promise<void> => runtime.whenReady();
-
-  const sendGroupText = heldUntilReady(
-    (groupId: number, text: string, quotedItemId?: number): Promise<T.AChatItem[]> =>
-      runtime.sendGroupText(hosted.simplexUserId, groupId, text, quotedItemId),
-    {
-      ready: whenReady,
-      isReady: () => runtime.state === 'ready',
-      onHold: (label) =>
-        log.info('runtime: holding a send until the core is ready', {
-          label,
-          state: runtime.state,
-        }),
-    },
-    'group-reply',
-  );
-
-  const runScheduled = <R>(label: string, fn: () => Promise<R>): Promise<R> =>
-    runtime.scheduler.run(hosted.simplexUserId, label, fn);
-
   return {
-    chat,
-    user,
-    fileReceiver,
-    close,
     runtime,
-    events,
-    whenReady,
-    sendGroupText,
-    runScheduled,
+    chat,
+    bots,
+    primary,
+    whenReady: () => runtime.whenReady(),
+    close,
   };
 }
 

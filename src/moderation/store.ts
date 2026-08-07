@@ -28,6 +28,17 @@ import {
 } from './rules.js';
 
 export interface ViolationInput {
+  /**
+   * Which bot counted this (CCB-S5-001).
+   *
+   * Two bots must never share a count. The ladders are per bot, so a shared counter lets
+   * one bot's strict ladder fire on what another bot's lenient one tolerated - and the
+   * member is sanctioned by a bot that never saw a third of the messages it counted.
+   *
+   * Null only where no bot can be named at all, which the engine never does: it always
+   * knows whose reply path it is.
+   */
+  botProfileId: number | null;
   groupId: number;
   memberId: string;
   memberDisplayName: string;
@@ -49,9 +60,16 @@ export interface ViolationRow {
 export async function recordViolation(db: Queryable, input: ViolationInput): Promise<void> {
   await db.query(
     `INSERT INTO cinderella_violations
-       (group_id, member_id, member_display_name, member_role, type)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [input.groupId, input.memberId, input.memberDisplayName, input.memberRole, input.type],
+       (bot_profile_id, group_id, member_id, member_display_name, member_role, type)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [
+      input.botProfileId,
+      input.groupId,
+      input.memberId,
+      input.memberDisplayName,
+      input.memberRole,
+      input.type,
+    ],
   );
 }
 
@@ -64,21 +82,27 @@ export async function recordViolation(db: Queryable, input: ViolationInput): Pro
  */
 export async function countViolations(
   db: Queryable,
-  scope: { groupId: number; memberId: string; type: ViolationType },
+  scope: { botProfileId: number | null; groupId: number; memberId: string; type: ViolationType },
   windowSeconds: number,
   now: Date,
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - windowSeconds * 1000).toISOString();
+  // `IS NOT DISTINCT FROM` rather than `=`, so the pre-044 rows (bot_profile_id NULL)
+  // count for a caller that also passes null and for nobody else. An `=` would make
+  // every one of them invisible to every count, silently resetting every member's
+  // history at the moment this shipped.
   const { rows } = await db.query<{ n: string | number }>(
     `SELECT count(*)::int AS n
        FROM cinderella_violations
-      WHERE group_id = $1 AND member_id = $2 AND type = $3 AND at >= $4`,
-    [scope.groupId, scope.memberId, scope.type, cutoff],
+      WHERE bot_profile_id IS NOT DISTINCT FROM $1::bigint
+        AND group_id = $2 AND member_id = $3 AND type = $4 AND at >= $5`,
+    [scope.botProfileId, scope.groupId, scope.memberId, scope.type, cutoff],
   );
   return Number(rows[0]?.n ?? 0);
 }
 
 export interface SanctionInput {
+  botProfileId: number | null;
   groupId: number;
   memberId: string;
   memberDisplayName: string;
@@ -119,12 +143,13 @@ export interface SanctionRow extends Omit<SanctionInput, 'mode' | 'spoken'> {
 export async function recordSanction(db: Queryable, input: SanctionInput): Promise<void> {
   await db.query(
     `INSERT INTO cinderella_sanctions
-       (group_id, member_id, member_display_name, member_role, action,
+       (bot_profile_id, group_id, member_id, member_display_name, member_role, action,
         violation_type, violation_count, window_seconds, rung_threshold, reason, mode,
         spoken_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-             CASE WHEN $12::boolean THEN now() ELSE NULL END)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+             CASE WHEN $13::boolean THEN now() ELSE NULL END)`,
     [
+      input.botProfileId,
       input.groupId,
       input.memberId,
       input.memberDisplayName,
@@ -170,13 +195,14 @@ export async function recordEnforcedSanction(
 ): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO cinderella_sanctions
-       (group_id, member_id, member_display_name, member_role, action,
+       (bot_profile_id, group_id, member_id, member_display_name, member_role, action,
         violation_type, violation_count, window_seconds, rung_threshold, reason, mode,
         spoken_at, previous_role, group_member_id, expires_at, enforced_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'enforced',
-             CASE WHEN $11::boolean THEN now() ELSE NULL END, $12, $13, $14, $15)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'enforced',
+             CASE WHEN $12::boolean THEN now() ELSE NULL END, $13, $14, $15, $16)
      RETURNING id`,
     [
+      input.botProfileId,
       input.groupId,
       input.memberId,
       input.memberDisplayName,
@@ -214,13 +240,14 @@ export async function markSanctionFailed(
 ): Promise<string> {
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO cinderella_sanctions
-       (group_id, member_id, member_display_name, member_role, action,
+       (bot_profile_id, group_id, member_id, member_display_name, member_role, action,
         violation_type, violation_count, window_seconds, rung_threshold, reason, mode,
         spoken_at, enforcement_error)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'enforced',
-             CASE WHEN $11::boolean THEN now() ELSE NULL END, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'enforced',
+             CASE WHEN $12::boolean THEN now() ELSE NULL END, $13)
      RETURNING id`,
     [
+      input.botProfileId,
       input.groupId,
       input.memberId,
       input.memberDisplayName,
@@ -249,7 +276,7 @@ export interface ActiveSanctionRow extends SanctionRow {
   overdue: boolean;
 }
 
-const ACTIVE_COLUMNS = `id, group_id, member_id, member_display_name, member_role, action,
+const ACTIVE_COLUMNS = `id, bot_profile_id, group_id, member_id, member_display_name, member_role, action,
                         violation_type, violation_count, window_seconds, rung_threshold,
                         reason, mode, decided_at, spoken_at, enforced_at, expires_at,
                         undone_at, previous_role, group_member_id, expired_at, undone_by,
@@ -423,11 +450,13 @@ interface SanctionDbRow {
   enforced_at: string | null;
   expires_at: string | null;
   undone_at: string | null;
+  bot_profile_id: string | null;
 }
 
 function toSanction(row: SanctionDbRow): SanctionRow {
   return {
     id: row.id,
+    botProfileId: row.bot_profile_id === null ? null : Number(row.bot_profile_id),
     groupId: Number(row.group_id),
     memberId: row.member_id,
     memberDisplayName: row.member_display_name,
@@ -447,7 +476,7 @@ function toSanction(row: SanctionDbRow): SanctionRow {
   };
 }
 
-const SANCTION_COLUMNS = `id, group_id, member_id, member_display_name, member_role, action,
+const SANCTION_COLUMNS = `id, bot_profile_id, group_id, member_id, member_display_name, member_role, action,
                           violation_type, violation_count, window_seconds, rung_threshold,
                           reason, mode, decided_at, spoken_at, enforced_at, expires_at,
                           undone_at`;
