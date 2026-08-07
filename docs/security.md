@@ -1082,6 +1082,27 @@ STORED and nothing about what leaves the process: every one of them is applicati
 written by the operator, and none of it is member-derived. The registry is read from the
 local Postgres by the same process; no rule is fetched from anywhere off the host.
 
+**Per-bot laws change which sentences are assembled, not where they come from** (CCB-S5-001,
+D-155). `cinderella_prompt_rule_overrides` lets a bot deviate from a STANDARD law; the
+deviation is operator-authored, stored in the same local Postgres, and read by the same
+process. Two properties are load-bearing for this section:
+
+- **Constitutional laws cannot be set per bot.** The safety, privacy and honesty boundaries -
+  the permissiveness ceiling, the child-safety line, the web-result fence - are identical in
+  every bot's prompt. That is refused in three places: the console never offers the control,
+  the application gate refuses it, and a database trigger refuses it when both are bypassed.
+  `applyOverrides` also ignores a constitutional override it is handed, so a row that somehow
+  existed would change nothing. The reason is that five bots with five different outermost
+  limits means nobody can state what any of them will refuse, and tightening a limit later
+  would reach only the bots nobody had touched.
+- **A deviation cannot change the tier, lane, condition or order** of a law. Those are
+  contracts the assembler implements in code, so a per-bot value for any of them would be a
+  per-bot change to how the prompt is BUILT rather than to what it says - which is how a
+  fenced section could be un-fenced for one bot without anybody editing a fence.
+
+`verify:multi-bot` mutation-proves both, in both directions, with a positive control showing
+the same forged override does take effect on a standard law.
+
 **No member text beyond the addressed instruction is ever transmitted.** No message history,
 no other member's text, no archive rows, no captured media, no consent records. The
 deterministic draft is the bot's own prepared reply; it can contain member-derived values such

@@ -1569,16 +1569,26 @@ population layer, the validation layer, bios, avatars, and persistence of any of
 D-082 for why the schema still stores only `{ personalityId, seed, configVersion }` and
 writes nothing.
 
-## 32. The multi-profile runtime (CCB-S4-004, D-096), hosting one bot (CCB-S4-021, D-125)
+## 32. The multi-profile runtime (CCB-S4-004, D-096), hosting EVERY enabled bot (CCB-S5-001, D-155)
 
-**Merged under CCB-S4-020 and WIRED under CCB-S4-021: the bot boots on the runtime, with
-exactly one profile hosted.** `src/index.ts` calls
-[`startRuntimeBot`](../src/bot/runtime/host.ts), not `startBot`. The pre-runtime `bot.run`
-path in [`client.ts`](../src/bot/client.ts) still exists, is still what `npm run connect`
-uses, and is reachable at runtime with `BOT_RUNTIME_HOSTING=false` as the rollback lever;
-it cannot host a second profile and half two removes it. **Hosting a second profile is not
-built** (D-096's deferral stands): capture is still bound to one group, and widening it
-needs conversation canonicalisation first.
+**Half two landed under CCB-S5-001: every enabled bot is hosted.** `src/index.ts` calls
+[`startRuntimeHost`](../src/bot/runtime/host.ts), which reads
+`cinderella_bot_profiles WHERE enabled = TRUE` and hosts all of them on one core. The
+pre-runtime `bot.run` path and its `BOT_RUNTIME_HOSTING` rollback lever are **gone**, as
+D-125 said they would be: that path cannot host a second profile, so keeping the switch
+would have been a configuration that silently reduced the deployment to one bot.
+`startBot` in [`client.ts`](../src/bot/client.ts) still exists because `npm run connect`
+uses it; nothing boots through it.
+
+Each hosted bot gets **its own** `RoutedEventSource`, `FileReceiver`, interaction engine,
+consent handler and capture registration. Sharing any of them would undo the router: one
+bot's messages would reach another bot's engine and be answered in the wrong character,
+with the wrong laws and against the wrong reply budget. See §32.3.
+
+**CCB-S4-021 hosted exactly one, deliberately**, and the reason was isolation: if putting
+the runtime under the bot changed how the bot behaved, that had to show up with one
+profile where it was attributable. It did not, which is what made half two a wiring change
+rather than a rewrite.
 
 `src/bot/runtime/` hosts many SimpleX profiles on one in-process core: one
 `ChatApi.init()`, one `startChat()`, every enabled profile subscribed simultaneously, no
@@ -1605,7 +1615,7 @@ with no Haskell core. `verify:runtime-host` asserts that property directly, beca
 `verify:adapter-seam` cannot: it permits the SDK anywhere under `src/bot/`, which is all
 of these.
 
-### 32.1 How one bot is hosted (CCB-S4-021)
+### 32.1 How a bot is hosted (CCB-S4-021, generalised CCB-S5-001)
 
 `startRuntimeBot` reproduces the five things `bot.run` was doing silently, and changes one
 thing deliberately.
@@ -1676,10 +1686,19 @@ the §14 safety invariants are CHECK constraints; the half containing the word *
 is application logic in [`bot-registry.ts`](../src/profiles/bot-registry.ts), which audits
 every transition and refuses the two §14 forbids.
 
-**Capture stays bound to exactly one profile.** Under D-083 a conversation carries N group
-ids across N participating profiles, and `UNIQUE (group_id, group_msg_id)` permits all N
-rows, so widening capture without conversation canonicalisation would store N copies of
-every message with N consent derivations. See D-096 for the full deferral list.
+**Each bot captures its own groups, and two bots in ONE group is reported (CCB-S5-001).**
+The concern D-096 recorded is real and unchanged: under D-083 a conversation carries N group
+ids across N participating profiles, and `UNIQUE (group_id, group_msg_id)` permits all N rows,
+so two bots in one group store two copies of every message with two consent derivations. What
+changed is that this is now DETECTED and raised to the admin dashboard by name rather than left
+as a reason not to host a second bot. It is not refused: refusing would make a bot go deaf in a
+group the operator deliberately put it in, and the condition is fixed by removing one of them. A
+bot per group is the supported arrangement.
+
+Detection cannot use the group id, because the core gives two profiles in one real group two
+DIFFERENT ids (see §32.4). It uses `groupKeys.publicGroupId`, falling back to the join link, and
+groups for which the core reports neither are listed as UNCHECKED rather than passed over -
+silence there would read as "checked, none found".
 
 **`/_start` subscribes EVERY user in a shared database, not only the active one.**
 Verified, and it is the assumption the whole design rests on, so the evidence is recorded
@@ -1773,6 +1792,80 @@ running bot.
 address on an `smp*.simplex.im` relay and the page moved to the Contact step showing the
 link and "waiting for a contact request"; second press took the `apiGetUserAddress` path,
 returned the identical link, kept the original timestamp and raised nothing.
+
+
+### 32.3 One graph per bot (CCB-S5-001, D-155)
+
+`startRuntimeHost` returns a `HostedBot` per enabled bot, and `buildBotGraph` in
+[`index.ts`](../src/index.ts) builds everything conversational per bot on top of it. What is
+shared and what is not:
+
+| Per bot | Shared across the deployment |
+|---|---|
+| `RoutedEventSource`, `FileReceiver` | the SimpleX core and its scheduler |
+| interaction engine, so the conversation state, follow-up windows and reply budgets | the market-data and web-search services |
+| consent handler and capture registration | the plugin registry and the settings services |
+| personality, laws, moderation ladders | the rule REGISTRY (the laws themselves) |
+
+The engine holds the follow-up windows and the reply budgets, so two bots sharing one would
+let a member's reply to bot A open a window on bot B, and would spend one budget across two
+groups. `verify:multi-bot` asserts that separately.
+
+**Which bot config is which SimpleX profile** is `cinderella_bot_profiles.simplex_user_id`
+(migration 044). Before it there was no join at all between the table holding the character and
+the table holding the SimpleX id, which nothing noticed while one bot ran because the answer was
+always the single primary row. The primary is hosted first and is the only bot allowed to adopt
+the core's active user; every other unbound bot gets a new profile, and the id is written back
+immediately or the next boot creates another one.
+
+### 32.4 Which bot owns which group (CCB-S5-001, D-155)
+
+Read out of the shipped core database rather than assumed: `groups.group_id` is
+`INTEGER PRIMARY KEY` over the whole file, not per user, with `user_id` beside it and
+uniqueness on `(user_id, group_profile_id)`. Three consequences:
+
+1. **Group ids cannot collide across bots**, so `UNIQUE (group_id, group_msg_id)` on `messages`
+   stays sound with any number of bots hosted.
+2. **A group id maps to exactly one profile**, so the owning bot is DERIVABLE. That is what let
+   the consent-erasure path stay keyed on `(group_id, item_id)` with no bot column on the archive.
+3. **Two profiles in one real group hold two different ids**, which is why co-tenancy is detected
+   from the shared group identity instead.
+
+[`ownership.ts`](../src/bot/runtime/ownership.ts) is the index, refreshed once the core has
+settled. `runtime.runForGroup` is the seam every group-addressed command that takes no explicit
+user id must go through, and it THROWS on an unknown owner rather than falling back to the active
+profile. `contacts.contact_id` is global on the same terms, so direct chats use the same index,
+filled lazily because nothing books a direct erasure today and `apiListContacts` loads every
+contact into one response.
+
+**Why the refusal is loud.** `apiDeleteChatItems` takes no user id and the core runs
+`DELETE FROM chat_items WHERE user_id = ? AND group_id = ? AND chat_item_id = ?`. Issued as the
+wrong bot, `user_id` matches nothing: zero rows deleted, no error raised, because deleting what
+does not exist for that user is not an error. A member's erasure would be recorded as done with
+the content still on the host.
+
+**The five call sites that reach the core outside the scheduler are now none.** D-125 named
+three; two more were added after it was written and nothing pointed at them. See D-155 for the
+table.
+
+### 32.5 What several bots cost each other (CCB-S5-001)
+
+Bots cost no VRAM: the model is loaded once and shared. They cost QUEUE TIME, because Ollama
+runs one request at a time in this deployment (`OLLAMA_NUM_PARALLEL=1`, set during a Season 4
+incident).
+
+[`model-queue.ts`](../src/interaction/model-queue.ts) records every model call with the bot that
+made it, how many were already in flight, and the latency; the AI Telemetry page shows calls,
+queued count, average wait, average generate, worst wait and replies per minute, per bot and
+overall. **The wait/generate split is INFERRED and labelled as such on the page**: Ollama reports
+neither figure and exposes no endpoint for its own parallelism, so the split rests on the stated
+serialisation assumption, and the parallelism shown is the operator's record of a server setting
+rather than a reading. Calls and latency are measured exactly.
+
+Measured locally under real concurrency (four replies at once across two bots): 3 of 8 calls
+queued behind another, average wait 452 ms against average generate 1359 ms. **Nothing is tuned**
+- the briefing asked for measurement and stopped there, and raising the parallelism trades VRAM
+for concurrency on a host where that trade has gone wrong before.
 
 ## 33. The personality layer (CCB-S4-029, D-133)
 
@@ -2881,6 +2974,42 @@ is explicit rather than inherited, where it comes from, what it costs and why th
 | 32768 | 29.15 GB | 22.95 GB | **6.21 GB spilled** |
 
 Nothing in the codebase sets `num_ctx`, and this changed nothing.
+## 46. Standard laws per bot (CCB-S5-001, D-155)
+
+One registry, with per-bot deviations recorded against it. Not a rulebook per bot: that answers
+"what is bot B told" and cannot answer "what does this law say", because there would be N answers
+with no way to tell which was the law.
+
+`cinderella_prompt_rule_overrides` (migration 045) holds `(bot_profile_id, rule_id, enabled,
+rule_text)`, **NULL meaning inherit in both value columns**. That is what makes "off for this
+bot" and "reworded for this bot" one mechanism rather than two, and it means a row that only
+switches a law off keeps tracking later edits to the shared wording instead of freezing a copy.
+
+- [`rule-scope.ts`](../src/interaction/rule-scope.ts) is the pure model: `applyOverrides` builds
+  one bot's rulebook, `describeScopes` answers what the console has to print.
+- [`prompt-rule-overrides.ts`](../src/db/prompt-rule-overrides.ts) is the SQL, and writes the
+  history row in the same transaction as the override.
+- `PromptRuleService.get(botProfileId)` caches each bot's rulebook beside the shared set.
+
+**Only `enabled` and `text` are overridable.** The tier, lane, condition and order are contracts
+the assembler implements in code, so a per-bot value for any of them would be a per-bot change to
+how the prompt is BUILT rather than to what it says.
+
+**Constitutional laws cannot be set per bot**, refused in three places: the console never offers
+the control and says why instead, the application gate refuses with a sentence, and a
+BEFORE INSERT OR UPDATE trigger refuses it in the database. `applyOverrides` additionally ignores
+a constitutional override it is handed, so a row that somehow existed would change nothing.
+
+**Scope is visible wherever a law appears**: a badge per law in the Book, the deviating bots
+named on the law's own page, an edit warning stating what the edit touches and how many bots it
+reaches, a constitutional law saying it cannot be per bot and why, and the assembled-prompt
+preview naming which bot it previews. The shared count excludes deviating bots, because a law
+three of five bots have reworded is shared for two.
+
+`verify:prompt-identity` still reads the SHARED registry, so it pins what ships and an operator's
+per-bot deviation cannot move it. That is correct: the drift to watch for is production diverging
+from the shipped set, which the Book counts and badges.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

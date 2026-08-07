@@ -1044,10 +1044,15 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       constraints and audited application logic.
 - [x] **Two SDK workarounds** — the reactions defect (both directions throw although the
       operation succeeded) and `apiSendMessages` discarding the sending user.
-- [ ] **Multi-profile capture.** THE significant deferral. `registerCapture` is bound to
-      one profile; widening it without conversation canonicalisation stores N copies of
-      every message with N consent derivations and an N-times FTS index. Needs
-      `via_group_link_uri_hash` canonicalisation first (D-083).
+- [ ] **Two bots in ONE group.** Still not supported, and now DETECTED rather than merely
+      warned about in a document (CCB-S5-001). Each bot captures its own groups, which is a
+      bot per group and is the supported arrangement. Two bots in one group would store two
+      copies of every message with two consent derivations, so the condition is raised to
+      the admin dashboard by name; it is not refused, because that would make a bot go deaf
+      in a group the operator deliberately put it in. Supporting it properly still needs
+      `via_group_link_uri_hash` canonicalisation first (D-083), and note that canonicalising
+      would also collapse the accidental per-bot isolation of the moderation counters - which
+      is why migration 044 made that dimension explicit before the day arrives.
 - [ ] **Conversation canonicalisation** via `groups.via_group_link_uri_hash`. Do not make
       the column `NOT NULL` until the group-*creator* path has been checked against a
       database containing one; all 27 sampled profiles had joined via a link.
@@ -1101,14 +1106,41 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       deliberately and nothing populates `cinderella_bot_registry` yet, so the
       create-address action guards on the flag and shows the hosted identity instead. When
       the registry is populated, that guard should become the FK.
-- [ ] **Hosting a SECOND profile** (half two), per-profile `status`, `deleteFromCore`
-      taking a profile, `FileReceiver` keyed by `(userId, fileId)`, the `userId` dimension
-      on `runtime-policy.ts`.
-- [ ] **The three call sites that still reach the core outside the scheduler** (D-125):
-      core erasure (`apiDeleteChatItems`, on the consent path), the consent handler's
-      fallback branch, and `flushAvatarToGroups`'s internals. Correct today only because
-      one profile is hosted and the host pins it active; each must be revisited before a
-      second profile exists.
+- [x] **Hosting EVERY enabled profile** (half two, CCB-S5-001, D-155). `startRuntimeHost`
+      hosts `cinderella_bot_profiles WHERE enabled = TRUE`; each gets its own event source,
+      file receiver, engine, consent handler and capture registration. `deleteFromCore` now
+      resolves the owning bot from the group id rather than taking one.
+- [ ] **Per-profile `status`.** The dashboard still reports one bot-running state for the
+      deployment. With several hosted, one bot failing to reach ready is not visible as
+      distinct from all of them failing. `FileReceiver` is per bot now, so the `(userId,
+      fileId)` keying that item asked for is moot; the `userId` dimension on
+      `runtime-policy.ts` is still open.
+- [x] **The call sites that reached the core outside the scheduler** (D-125, closed by
+      CCB-S5-001). **There were five, not three.** D-125 named core erasure, the consent
+      fallback and `flushAvatarToGroups`; `recital-port.ts` (CCB-S4-047) and
+      `enforcement.ts` (CCB-S4-035) were added after that list was written and nothing
+      pointed at them. The second is the moderation path: `apiSetMembersRole`,
+      `apiBlockMembersForAll` and `apiRemoveMembers` all take a group id and no user id.
+      All five now route by group owner through the scheduler, except the consent fallback,
+      which was unreachable code and was deleted. See D-155 for the table.
+      **Standing lesson:** a list of "revisit these later" call sites goes stale the moment
+      somebody adds a sixth, because nothing in the code points back at the list. The
+      replacement is structural - `runtime.runForGroup` is the seam, and a new site that
+      does not use it is a new site that names no bot.
+- [ ] **Per-bot avatars.** `AVATAR_PATH` is one image in the environment, applied to the
+      PRIMARY only (CCB-S5-001). Writing it onto every hosted profile would give every bot
+      the same face, which reads as deliberate and is not; a second bot with no picture reads
+      as unfinished, which it is. `cinderella_bot_registry` already carries `avatar_source`
+      and `avatar_ref` for this.
+- [ ] **Whole rulebook profiles**, with export and import. The clean answer if the operator
+      ever wants genuinely different outermost limits for a community (an adults-only group
+      behind an AVS). Explicitly NOT per-bot suspension of a constitutional law, which
+      CCB-S5-001 refuses in three places on purpose.
+- [ ] **The onboarding console pages do not yet name their bot.** `admin-actions.ts` takes an
+      optional bot profile id and defaults to the primary; the views have not been threaded
+      through, so with several bots hosted the address and contact-request actions still act
+      as the primary. The refusal path is correct (a bot that is not hosted is named and
+      refused); what is missing is the caller passing the id.
 - [ ] **Close the boot event-loss window.** Capture subscribes after `startRuntimeBot`
       returns, so an event in between reaches a tag with no handler. Narrower than the
       pre-runtime path's and now COUNTED (`RoutedEventSource.unhandled`, with a

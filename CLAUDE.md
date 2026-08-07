@@ -168,12 +168,20 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
   SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
-  Wired under CCB-S4-021 with **exactly one profile hosted** (`host.ts` is the caller,
-  `src/index.ts` calls it); hosting a second is half two. Nothing sends before the core is
-  ready, because `startChat()` returning is 44 ms and readiness is ten seconds later,
-  measured. `BOT_RUNTIME_HOSTING=false` falls back to the pre-runtime `bot.run` path and is
-  the rollback lever, not a configuration. Eight of its ten files import no SDK so it is
-  testable with no core; see architecture §32, D-096, D-124 and D-125),
+  Wired under CCB-S4-021 with one profile hosted, and **hosting EVERY enabled bot since
+  CCB-S5-001** (`startRuntimeHost` in `host.ts` is the caller, `src/index.ts` calls it).
+  Each hosted bot gets its OWN event source, file receiver, engine, consent handler and
+  capture registration; sharing any of them would undo the router. Nothing sends before the
+  core is ready, because `startChat()` returning is 44 ms and readiness is ten seconds
+  later, measured. **`BOT_RUNTIME_HOSTING` and the pre-runtime `bot.run` boot path are
+  gone** (D-155): that path cannot host a second profile, so the lever would have been a
+  switch that silently reduced the deployment to one bot. `startBot` stays for
+  `npm run connect`. `ownership.ts` answers which bot owns which group, and
+  `runtime.runForGroup` is the seam every group-addressed command that takes no explicit
+  user id must go through - it THROWS on an unknown owner rather than acting as whichever
+  profile is active, because issuing the consent erasure as the wrong bot deletes zero rows
+  and raises nothing. Most of its files import no SDK so it is testable with no core; see
+  architecture §32, D-096, D-124, D-125 and D-155),
   `generator/` (**offline tooling, no runtime caller**: the profile generator, built one
   component per briefing. Shared deterministic `rng.ts`, then `names/` and `traits/`.
   Nothing outside it imports it and nothing writes its output; see architecture §31.
@@ -266,7 +274,21 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   043 enacting a law (a `create` action on the history, and nothing else. **No removal**: the
   briefing's definition of it is what `disable` already does, verified clause by clause, and a
   hard delete would ERASE the law's history through the existing cascade, which is the one
-  thing the Book is for).
+  thing the Book is for) ·
+  044 hosting more than one of her (`simplex_user_id` on `cinderella_bot_profiles`, which is
+  the edge that did not exist: the character, dials, origin and ladders all hang off that
+  table and the SimpleX id lived on `cinderella_bot_registry` with no link back, so nothing
+  could ask which personality the profile that received a message has. Plus the bot dimension
+  on the moderation counters, made explicit while the backfill is still provably right:
+  they were isolated only by the accident that the core's group ids differ per profile, and
+  conversation canonicalisation would collapse that. `selected_for_runtime` becomes THE
+  PRIMARY, the console's default selection and nothing more) ·
+  045 standard laws per bot (`cinderella_prompt_rule_overrides`, NULL meaning inherit in both
+  value columns so on, off and reworded are ONE mechanism. **The `bot` tier 035 reserved for
+  this is the wrong mechanism and stays unused**: a tier is a property of a row and cannot
+  express one law with two texts without a duplicate id, and five things are keyed on that id.
+  A trigger refuses any override of a constitutional law, because five bots with five
+  different outermost limits means nobody can say what any of them will refuse).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -274,7 +296,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **044**, since 043 landed with law creation). Stated as a rule
+  (currently **046**, since 045 landed with the per-bot law overrides). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -385,6 +407,16 @@ that the measured figures it quotes are the ones on record. **Thinking is OFF an
 been**: `reasoning_effort: 'none'` is sent on every request and Ollama honours it. No dial was
 built, because the reasoning pass spends the same `max_tokens: 320` as the reply and turning it
 on made three replies in five come back empty and fall back to the deterministic line),
+`verify:multi-bot` (more than one of her, CCB-S5-001: which bot owns which group and the
+refusal to guess, two bots never resolving to one SimpleX profile, moderation counters and reply
+budgets proven not to merge, a standard law on for one bot and off for another, and the
+constitutional refusal at all three layers. Mutation-proven both ways, and every guarantee has a
+POSITIVE CONTROL beside it, because each of these passes trivially against an implementation that
+does nothing: a counter check passes if nothing is ever counted.
+`npm run verify:multi-bot-live` drives two characters with opposite dials against a real model,
+prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
+in the offline set. Read its output rather than its exit code: the voice is the point, and no
+check can assert it),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also

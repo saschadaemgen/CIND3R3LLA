@@ -1,6 +1,6 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-154**._
+> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-155**._
 
 Standing record of the architectural and operational decisions taken across
 Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
@@ -10,6 +10,142 @@ actually behaves today, the divergence is called out inline.
 
 Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
 `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+---
+---
+---
+---
+
+### D-155 - One rulebook with per-bot deviations; the constitution is shared and the scope is always visible
+
+**Status: IMPLEMENTED** (CCB-S5-001). Half two of the multi-profile runtime: every enabled bot
+is hosted, standard laws can differ per bot, constitutional laws cannot, and what a law's scope
+is can be read from every page it appears on. Supersedes nothing; **completes D-125**, which
+deferred exactly this and named what it would have to fix first.
+
+**THE INHERITANCE MODEL: ONE REGISTRY, PER-BOT DEVIATIONS.** Not a rulebook per bot. A rulebook
+per bot answers "what is bot B told" and answers "what does this law say" not at all, because
+there would be N answers with no way to tell which was the law. Every question the console has
+to answer - is this shared, who differs, what will this edit touch, how many bots does it reach
+- is a question about ONE law and its deviations, so that is the shape.
+`cinderella_prompt_rule_overrides` (migration 045) holds `(bot_profile_id, rule_id, enabled,
+rule_text)` with NULL meaning inherit in both value columns, which makes "off for this bot" and
+"reworded for this bot" ONE mechanism rather than the three the briefing warned against. A row
+that only switches a law off keeps tracking later edits to the shared wording instead of
+freezing a copy of it.
+
+**THE `bot` TIER WAS THE OBVIOUS MECHANISM AND IT IS THE WRONG ONE.** Migration 035 reserved it
+for this day. A tier is a property of a ROW, so promoting a rule to `bot` says "this row belongs
+to one bot"; it cannot say "this law exists once and bot B words it differently", because that is
+two texts for one law and a row holds one text. Expressing it needs a second row with a different
+id, and FIVE things are keyed on the rule id and would fork: the history (037), `nameable` (039),
+the recital's chapter prefixes (040), the invocation record (042), and
+`verify:prompt-identity`'s byte baseline, which would have to carry N copies of every rule for N
+bots and thereby stop pinning anything. The tier stays in the vocabulary, unused and documented
+as such; removing a CHECK value from an applied migration would be a change to history.
+
+**CONSTITUTIONAL LAWS ARE SHARED, AND THE REFUSAL IS IN THREE PLACES.** Not because a bot cannot
+be vicious, which is entirely a matter of dials and standard laws and is now easier rather than
+harder, but because five bots with five different outermost limits means nobody can say what any
+of them will refuse, and tightening a limit tomorrow would reach only the bots nobody had
+touched. The console never offers the control and says why instead of accepting a click it will
+refuse; the application gate refuses it with a sentence; and a BEFORE INSERT OR UPDATE trigger
+refuses it in the database, which is the layer that holds when the other two are bypassed.
+`applyOverrides` additionally ignores a constitutional override it is handed, so a row that
+somehow existed would change nothing - mutation-proven in both directions, with a positive
+control showing the same forged shape does take effect on a standard law. Genuinely different
+limits, for an adults-only community behind an AVS, are whole rulebook profiles and are parked;
+they are deliberately not per-bot suspension of a constitutional law.
+
+**SCOPE VISIBILITY IS A REQUIREMENT, NOT A COURTESY.** A rule you cannot read is a rule you
+cannot trust, and a rule whose scope you cannot read is the same problem one level up. Every law
+in the Book carries a scope badge; a per-bot law names which bots deviate and how; the edit form
+states what the edit will touch and how many bots it reaches BEFORE it is made; a constitutional
+law says it cannot be set per bot and why; and the assembled-prompt preview names the bot it is
+previewing and how many laws of its own that bot has. The count deliberately EXCLUDES deviating
+bots: a law three of five bots have reworded is shared for two, and a warning that said five
+would be a false number on the one control whose whole job is to be trusted.
+
+**`selected_for_runtime` NOW MEANS THE PRIMARY, AND NOTHING ELSE.** It used to mean the one bot
+that runs; it cannot mean that when every enabled bot runs. It is now the console's default
+selection - which bot a page shows before the operator picks one, and where the prompt preview
+starts. It decides nothing about hosting, capture, or who answers a member. The one-row partial
+unique index from 019 is unchanged; what changed is the sentence it enforces.
+
+**THE MISSING EDGE, WHICH IS WHY THIS NEEDED A MIGRATION AT ALL.** Everything a second bot needs
+already existed per bot - character and dials (028), origin (031), moderation ladders (029),
+onboarding and contact address (019, 024) - and all of it hangs off `cinderella_bot_profiles`.
+The SimpleX user id does not: it lives on `cinderella_bot_registry` (023) with no link back, so
+there was NO WAY to ask which personality the profile that just received a message has. Nothing
+noticed, because with one profile hosted the answer was always the single primary row: the join
+was not missing so much as unnecessary. Migration 044 adds `simplex_user_id` to
+`cinderella_bot_profiles`, written by the runtime when it adopts or creates the profile, so
+binding is recorded rather than re-derived from a display name on every boot.
+
+**THE THREE UNSCHEDULED CALL SITES WERE FIVE.** D-125 named three - core erasure, the consent
+fallback, and `flushAvatarToGroups` - and the list had gone stale, because two more were added
+after it was written and nothing pointed at them. The full set:
+
+| Site | What was wrong | Fix |
+|---|---|---|
+| `core-delete.ts` | `apiDeleteChatItems` takes no user id and the core scopes its DELETE by `user_id`. Issued as the wrong bot it deletes ZERO ROWS AND RAISES NOTHING, because deleting what does not exist for that user is not an error. A member's erasure would be marked done with the content still on the host | a port that resolves the owning bot from the chat id and throws when it cannot, so the queue retries |
+| `consent/commands.ts` | the fallback reached the core with an unscheduled, unheld, unattributed send. Its comment said the harnesses and connect script needed it; `makeConsentHandler` has one caller and has always passed a transport, so it was unreachable code | the transport is required and the call site is DELETED rather than scheduled |
+| `avatar.ts` | `apiGetActiveUser()` reads whichever profile is active, and the flush marker was ONE GLOBAL `settings` key: bot A flushing marked it done, and two bots sharing an avatar file would leave B's members with no picture forever, with nothing logged | the bot is named, the send goes through its scheduler, and the marker is per SimpleX user |
+| `recital-port.ts` (CCB-S4-047, post-dates D-125) | beats two onward are sent by a queue job minutes later; unscheduled, one bot would read its book into another bot's group | resolved by group owner through the runtime |
+| `enforcement.ts` (CCB-S4-035, post-dates D-125) | `apiSetMembersRole`, `apiBlockMembersForAll` and `apiRemoveMembers` all take a group id and NO user id. A mute decided by bot A's ladder could be issued as bot B, which is usually not in that group, so a correct moderation decision reads as a bug - and where both are admins of one group, it succeeds as the wrong one | routed by group owner through the scheduler |
+
+**GROUP IDS ARE GLOBAL, READ OUT OF THE SHIPPED CORE RATHER THAN ASSUMED.** `groups.group_id` in
+the SimpleX core is `INTEGER PRIMARY KEY` over the whole database, not per user, with `user_id`
+beside it and uniqueness on `(user_id, group_profile_id)`. Three consequences decided the design:
+group ids CANNOT collide across bots, so `UNIQUE (group_id, group_msg_id)` on `messages` stays
+sound with any number of bots; a group id maps to exactly one profile, so the owning bot is
+DERIVABLE and no bot column was needed on the archive; and two profiles in the same real group
+hold two DIFFERENT ids, which is why co-tenancy cannot be detected from the id and is detected
+from `groupKeys.publicGroupId` or the join link instead. `contacts.contact_id` is global on the
+same terms, so direct chats use the same index, filled lazily because nothing books a direct
+erasure today and `apiListContacts` loads every contact into one response.
+
+**THE MODERATION COUNTERS WERE ALREADY ISOLATED, BY ACCIDENT, AND THE ACCIDENT HAS AN EXPIRY.**
+`cinderella_violations` counts per `(group_id, member_id, type)`, and because group ids differ
+per profile even for one real group, two bots could not share a count. That is isolation by how
+the core allocates ids rather than by design, and D-083/D-096 record that canonicalising
+conversation ids is planned work; the day it lands, group ids stop distinguishing bots and every
+counter silently merges, so a member could be sanctioned by bot B for what bot A counted.
+Migration 044 makes the dimension explicit NOW, while the accident still holds and the backfill
+to the current primary is therefore provably right - which it can never be again after today.
+
+**THE PRE-RUNTIME PATH AND ITS ROLLBACK LEVER ARE GONE**, as D-125 said they would be when half
+two arrived. `BOT_RUNTIME_HOSTING` and the `startBot` boot path cannot host a second profile, so
+keeping the switch would have meant a configuration that silently reduced the deployment to one
+bot. `startBot` itself stays: `npm run connect` uses it.
+
+**WHAT IS REPORTED RATHER THAN REFUSED.** Two hosted bots in one SimpleX group would capture
+every message twice, under two group ids, and derive consent for both copies - not a
+duplicate-key error, two archive entries for one utterance. It is detected and raised to the
+admin dashboard by name, and NOT refused: refusing would make a bot go deaf in a group the
+operator deliberately put it in, and the condition is fixed by removing one of them. Groups whose
+shared identity the core does not report are listed as unchecked rather than passed over, because
+silence there would read as "checked, none found".
+
+**PERFORMANCE IS MEASURED AND NOT TUNED**, which is what the briefing asked for and where it
+stops. Bots cost no VRAM - the model is loaded once and shared - they cost QUEUE TIME.
+`model-queue.ts` records every model call with the bot that made it, how many were already in
+flight, and the latency, and the Telemetry page shows calls, queued count, average wait, average
+generate, worst wait and replies per minute, per bot and overall. The wait/generate split is
+INFERRED and labelled as such on the page as well as in the source: Ollama reports neither figure
+and exposes no endpoint for `OLLAMA_NUM_PARALLEL`, so the split rests on the stated serialisation
+assumption and the parallelism shown is the operator's record of a server setting rather than a
+reading. Measured locally under real concurrency: four replies at once across two bots, 3 of 8
+calls queued behind another, average wait 452 ms against average generate 1359 ms.
+
+**PROVEN LOCALLY, DELIBERATELY NOT ON THE LIVE HOST.** `verify:multi-bot` covers the mechanism
+offline and is mutation-proven, including one mutation that fails if a constitutional law can be
+set per bot and one that fails if two bots share a counter, each with a positive control so no
+check can pass against an empty result. `verify:multi-bot-live` drives two characters with
+opposite dials against a real model, prints both replies, and measures the queue under genuine
+concurrency. Neither involves a SimpleX core: the live group has real members, and two bots in it
+would double-archive everything while the work was still being tested, so the operator runs the
+two-profile case on the VPS himself after deploying.
 
 ---
 ---
