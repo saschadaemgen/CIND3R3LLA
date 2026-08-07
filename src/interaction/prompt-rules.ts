@@ -85,6 +85,8 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-web-results',
   'has-history',
   'has-no-history',
+  'has-nameable-rules',
+  'has-withheld-rules',
 ] as const;
 export type PromptRuleCondition = (typeof PROMPT_RULE_CONDITIONS)[number];
 
@@ -100,6 +102,14 @@ export interface PromptRule {
   enabled: boolean;
   /** Absence should be loud. Asserted by `verify:prompt-identity`. */
   critical: boolean;
+  /**
+   * Whether she may quote this rule to a member who asks (CCB-S4-045, D-148).
+   *
+   * A rule that EXPLAINS her behaviour to somebody affected by it, against one whose exact
+   * wording is a LEVER. Never paraphrased either way: what she says is the rule verbatim or
+   * nothing at all.
+   */
+  nameable: boolean;
   /** Reserved for later targeting (a group, a role). Nothing reads it today. */
   scope: string | null;
   /** Where this text came from in the code, so the move stays auditable. */
@@ -152,6 +162,10 @@ export interface PromptRuleContext {
   hasWebResults: boolean;
   /** Whether any remembered conversation was supplied (CCB-S4-044). */
   hasHistory: boolean;
+  /** Rules were supplied for her to quote (CCB-S4-045). */
+  hasNameableRules: boolean;
+  /** Some enabled rule is not nameable, so she must say so. */
+  hasWithheldRules: boolean;
 }
 
 /** Nothing configured and nothing supplied. The command lanes' context, plus web results. */
@@ -168,6 +182,8 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasClock: false,
   hasWebResults: false,
   hasHistory: false,
+  hasNameableRules: false,
+  hasWithheldRules: false,
 });
 
 export function conditionHolds(
@@ -217,6 +233,10 @@ export function conditionHolds(
       return context.hasHistory;
     case 'has-no-history':
       return !context.hasHistory;
+    case 'has-nameable-rules':
+      return context.hasNameableRules;
+    case 'has-withheld-rules':
+      return context.hasNameableRules && context.hasWithheldRules;
   }
 }
 

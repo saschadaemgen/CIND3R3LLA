@@ -320,6 +320,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     vars: '{sources}',
   },
   searchUnavailable: { label: 'Web search could not be reached', vars: '' },
+  rulesNoElimination: {
+    label: 'Refuses to narrow down which rules are withheld (answered by the application)',
+    vars: '',
+  },
   searchRefused: {
     label: 'Web search refused before it ran (nothing was queried, no sources)',
     vars: '',

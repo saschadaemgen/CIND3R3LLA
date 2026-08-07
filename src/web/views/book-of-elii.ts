@@ -144,6 +144,7 @@ function ruleCard(
       ${tierBadge(rule.tier)} ${rule.critical ? badge('critical', 'red') : null}
       ${rule.enabled ? null : badge('disabled', 'amber')}
       ${drifted ? badge('changed from shipped', 'amber') : null}
+      ${rule.nameable ? badge('nameable', 'green') : badge('withheld', 'slate')}
       <span class="ml-auto text-xs text-slate-400">
         lane ${rule.lane} · ord ${String(rule.ord)} · ${rule.appliesWhen}
       </span>
@@ -208,6 +209,10 @@ function editor(rule: PromptRule, csrf: string, shippedText?: string): SafeHtml 
       <label class="flex items-center gap-2 text-sm">
         <input type="checkbox" name="enabled" ${rule.enabled ? raw('checked') : ''} class="rounded" />
         Enabled
+      </label>
+      <label class="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="nameable" ${rule.nameable ? raw('checked') : ''} class="rounded" />
+        She may quote this to a member who asks
       </label>
       <label class="flex flex-col gap-1 text-sm">
         <span class="font-medium text-slate-700">Order</span>
@@ -462,7 +467,9 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               ${String(rules.length)} rules ·
               ${String(rules.filter((r) => r.tier === 'constitutional').length)} constitutional ·
               ${String(rules.filter((r) => !r.enabled).length)} switched off ·
-              ${String(drifted.length)} changed from what shipped
+              ${String(drifted.length)} changed from what shipped ·
+              ${String(rules.filter((r) => r.nameable).length)} she may name ·
+              ${String(rules.filter((r) => !r.nameable).length)} withheld from members
             </p>
           </div>
 
@@ -568,6 +575,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
         text: bodyString(req.body, 'text').replace(/\r\n/g, '\n').trim(),
         enabled: bodyString(req.body, 'enabled') !== '',
         ord: Number.parseInt(bodyString(req.body, 'ord'), 10),
+        nameable: bodyString(req.body, 'nameable') !== '',
       };
 
       if (!edit.text) {
@@ -603,6 +611,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
                   <input type="hidden" name="_csrf" value="${csrf}" />
                   <input type="hidden" name="text" value="${edit.text}" />
                   ${edit.enabled ? html`<input type="hidden" name="enabled" value="on" />` : null}
+                  ${edit.nameable ? html`<input type="hidden" name="nameable" value="on" />` : null}
                   <input type="hidden" name="ord" value="${String(edit.ord)}" />
                   ${rule.tier === 'constitutional'
                     ? html`<label class="flex flex-col gap-1 text-sm">

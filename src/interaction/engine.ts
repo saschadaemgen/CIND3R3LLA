@@ -74,9 +74,16 @@ import { activeIntentList } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import { sharpenBy, type BotIdentity, type BotPersonality } from './personality.js';
-import type { PromptRuleSet } from './prompt-rules.js';
+import type { PromptRule, PromptRuleSet } from './prompt-rules.js';
 import { HISTORY_FENCE } from './ollama-reply.js';
 import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
+import {
+  asksAboutRules,
+  asksByElimination,
+  probesInternalRule,
+  rulesForQuestion,
+  withheldCount,
+} from './disclosure.js';
 import { listGroupHistory } from '../db/messages.js';
 import { screenLookup } from './lookup-gate.js';
 import { attributionFor } from './attribution.js';
@@ -1056,6 +1063,31 @@ export class InteractionEngine {
     }
   }
 
+  /**
+   * The rules she may quote, when somebody is asking about them (CCB-S4-045, D-148).
+   *
+   * Supplied ONLY on a question that asks, because forty-six rules in every prompt would
+   * cost more than the whole rest of it and would crowd out the ones she is operating
+   * under. Same shape as the search results and the history: attached when relevant, absent
+   * otherwise, so an ordinary reply carries no mention of a rulebook.
+   *
+   * The trigger is deterministic. A model deciding for itself whether to recite its own
+   * instructions is a model that can be talked into it.
+   */
+  private disclosure(msg: CapturedMessage): {
+    nameableRules: PromptRule[];
+    hasWithheldRules: boolean;
+  } {
+    const rules = this.deps.rules?.() ?? [];
+    if (rules.length === 0 || !asksAboutRules(msg.text)) {
+      return { nameableRules: [], hasWithheldRules: false };
+    }
+    return {
+      nameableRules: rulesForQuestion(rules, msg.text),
+      hasWithheldRules: withheldCount(rules) > 0,
+    };
+  }
+
   /** Records an ignored candidate so the guards are visible, not invisible (§5). */
   private noteNearMiss(
     msg: CapturedMessage,
@@ -1421,6 +1453,7 @@ export class InteractionEngine {
   ): Promise<{ text: string; sources: string[] } | null> {
     let used: readonly number[] = [];
     const history = await this.recentHistory(msg, s);
+    const disclosure = this.disclosure(msg);
 
     let spoken: string | null = null;
     try {
@@ -1445,6 +1478,7 @@ export class InteractionEngine {
             // "and what about the other one" only means anything with the thread in view.
             history: toPromptHistory(history, HISTORY_FENCE),
             historyWindowMinutes: s.memory.windowMinutes,
+            ...disclosure,
             onSourcesUsed: (indices) => {
               used = indices;
             },
@@ -2493,7 +2527,15 @@ export class InteractionEngine {
     // Wall clock around the model call, for Diagnostics (CCB-S4-031 gap 5). Measured
     // whatever the outcome: a slow failure is the fact an operator most wants to see.
     const startedAt = this.now();
+    // THE ELIMINATION GATE (CCB-S4-046). Answered by the application, so she never sees the
+    // question: a yes/no probe about which rules are withheld is one a model can lose in a
+    // single token, and it did, twice, before this existed.
+    if (asksByElimination(msg.text) || probesInternalRule(this.deps.rules?.() ?? [], msg.text)) {
+      await this.reply(msg, s, lang, 'rulesNoElimination', {});
+      return true;
+    }
     const history = await this.recentHistory(msg, s);
+    const disclosure = this.disclosure(msg);
 
     if (personalize) {
       try {
@@ -2526,6 +2568,8 @@ export class InteractionEngine {
               // that turns "what did I just say" into an answerable question.
               history: toPromptHistory(history, HISTORY_FENCE),
               historyWindowMinutes: s.memory.windowMinutes,
+              // The book, when they are asking about it (CCB-S4-045).
+              ...disclosure,
               // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
               // the violation counter read. THIS is the path that matters for it: free
               // conversation is where somebody asks what year it is, and where she

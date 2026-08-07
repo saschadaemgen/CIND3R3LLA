@@ -20,6 +20,8 @@ import {
   NOTHING_IN_SCOPE,
   assemblePrompt,
   lanesForMode,
+  renderPromptRule,
+  type PromptRule,
   type PromptRuleContext,
   type PromptRuleSet,
 } from './prompt-rules.js';
@@ -168,6 +170,22 @@ export interface AiReplyRequest {
    * state BOTH halves, and the count alone would let her claim a window she does not have.
    */
   historyWindowMinutes?: number;
+  /**
+   * The rules she may quote, supplied EXACTLY (CCB-S4-045, D-148).
+   *
+   * Application-authored text, unlike the history and the search results, so it is not
+   * fenced as untrusted: these are her own laws. What it is instead is EXACT. The registry
+   * text is handed over verbatim and she is told to quote rather than reword, because D-137
+   * settled that a model asked to preserve a fact inside prose it rewrites corrupts it, and
+   * a paraphrased rule is her stating her own law inaccurately.
+   *
+   * RULES rather than strings, because the registry holds placeholders and a rule quoted from
+   * `rule.text` would hand a member the literal `{{name}}`. They go through the same renderer
+   * as the prompt stream, with the same values, so what she quotes is what she is under.
+   */
+  nameableRules?: readonly PromptRule[];
+  /** Whether anything is withheld. Decides whether she is told to say so. */
+  hasWithheldRules?: boolean;
 }
 
 /**
@@ -348,9 +366,12 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     ...base.context,
     hasWebResults: (request.webResults?.length ?? 0) > 0,
     hasHistory: (request.history?.length ?? 0) > 0,
+    hasNameableRules: (request.nameableRules?.length ?? 0) > 0,
+    hasWithheldRules: request.hasWithheldRules === true,
   };
 
-  const values: Record<string, string> = {
+  // Everything except the quoted block, so the quoted block can be rendered WITH it.
+  const quoteValues: Record<string, string> = {
     ...base.values,
     // The INSTRUCTION half of the length bound. The number itself is computed from the
     // verbosity dial by the caller (see `generateOllamaReply`), because it is also the hard
@@ -368,6 +389,23 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     // when she was handed four is the same class of false statement D-140 removed.
     historyCount: String(request.history?.length ?? 0),
     historyMinutes: String(request.historyWindowMinutes ?? 0),
+  };
+
+  const values: Record<string, string> = {
+    ...quoteValues,
+    // One rule per line, rendered exactly as she is holding it. Handing over raw `rule.text`
+    // quoted `{{name}}` at a member, which is her own law stated wrong: the failure D-137
+    // describes, arriving through the one path that exists to state the law accurately.
+    // `renderPromptRule` throws on a value it was not given, so a rule quoted outside the
+    // lane whose values are in scope fails the reply into the deterministic fallback rather
+    // than reaching a member with a hole in it.
+    // Leading newline so the first rule starts a line of its own. Without it the block renders
+    // as "...quoted for you: - Never write explicit sexual content.", which reads as prose
+    // continuing the sentence rather than as the first item of a list, and the one rule most
+    // likely to be the answer is the one that stops looking like a quotation.
+    nameableRules: (request.nameableRules ?? [])
+      .map((rule) => `\n- ${renderPromptRule(rule, quoteValues)}`)
+      .join(''),
   };
 
   return assemblePrompt(request.rules, lanesForMode(request.mode), context, values).join('\n');

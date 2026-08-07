@@ -840,6 +840,8 @@ export function dialledPromptInputs(
     hasClock: stamp !== null,
     hasWebResults: false,
     hasHistory: false,
+    hasNameableRules: false,
+    hasWithheldRules: false,
   };
 
   const values: Record<string, string> = {};

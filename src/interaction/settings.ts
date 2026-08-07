@@ -95,6 +95,9 @@ export const PERSONA_KEYS = [
   // Deterministic on purpose: the refusal is a decision the application took before any
   // model was involved, and no search ran, so there is nothing to attribute.
   'searchRefused',
+  // CCB-S4-046. Answered by the APPLICATION, never by the model: a yes/no question about
+  // which rules are withheld is one the model can lose in a single token.
+  'rulesNoElimination',
   // CCB-S4-038. Said when she ANNOUNCED a search and it then came back with nothing. It
   // exists so an announcement is never left hanging: having said she was looking, she owes
   // the member the outcome even when the outcome is nothing.
@@ -164,6 +167,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchSources: 'lookup',
   searchUnavailable: 'lookup',
   searchRefused: 'lookup',
+  rulesNoElimination: 'conversation',
   searchEmpty: 'lookup',
   help: 'help',
   price: 'price',
@@ -400,6 +404,8 @@ const PERSONA_EN: PersonaStrings = {
   // CCB-S4-042. No search ran, so this says she will not, rather than that she could not.
   searchRefused:
     '🚫 I am not searching the web for that. Ask me something else.',
+  rulesNoElimination:
+    '🔒 I do not discuss which of my rules I keep back, not one at a time and not by narrowing it down. Ask me what I can tell you and I will.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -524,6 +530,8 @@ const PERSONA_DE: PersonaStrings = {
     '🕳️ Nachgeschaut, nichts dabei, was der Rede wert waere. Ich erfinde dir jetzt nichts.',
   searchRefused:
     '🚫 Dafuer suche ich nicht im Netz. Frag mich was anderes.',
+  rulesNoElimination:
+    '🔒 Ich rede nicht darueber, welche meiner Regeln ich zurueckhalte, weder einzeln noch durch Ausschluss. Frag mich, was ich dir sagen darf.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',

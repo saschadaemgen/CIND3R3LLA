@@ -25,6 +25,7 @@ interface Row {
   rule_text: string;
   enabled: boolean;
   critical: boolean;
+  nameable: boolean;
   scope: string | null;
   source: string;
 }
@@ -58,7 +59,7 @@ function oneOf<T extends string>(
  */
 export async function listPromptRules(db: Queryable): Promise<PromptRule[]> {
   const { rows } = await db.query<Row>(
-    `SELECT id, tier, lane, applies_when, ord, rule_text, enabled, critical, scope, source
+    `SELECT id, tier, lane, applies_when, ord, rule_text, enabled, critical, nameable, scope, source
        FROM cinderella_prompt_rules
       ORDER BY ord, id`,
   );
@@ -77,6 +78,7 @@ export async function listPromptRules(db: Queryable): Promise<PromptRule[]> {
     text: row.rule_text,
     enabled: row.enabled,
     critical: row.critical,
+    nameable: row.nameable,
     scope: row.scope,
     source: row.source,
   }));
@@ -89,9 +91,17 @@ export interface PromptRuleEdit {
   text: string;
   enabled: boolean;
   ord: number;
+  /** Whether she may quote it to a member (CCB-S4-045). */
+  nameable: boolean;
 }
 
-export type PromptRuleAction = 'edit' | 'enable' | 'disable' | 'reorder' | 'rollback';
+export type PromptRuleAction =
+  | 'edit'
+  | 'enable'
+  | 'disable'
+  | 'reorder'
+  | 'visibility'
+  | 'rollback';
 
 export interface PromptRuleChange {
   id: number;
@@ -105,6 +115,8 @@ export interface PromptRuleChange {
   newEnabled: boolean;
   oldOrd: number;
   newOrd: number;
+  oldNameable: boolean;
+  newNameable: boolean;
 }
 
 interface ChangeRow {
@@ -119,6 +131,8 @@ interface ChangeRow {
   new_enabled: boolean;
   old_ord: number;
   new_ord: number;
+  old_nameable: boolean;
+  new_nameable: boolean;
 }
 
 function toChange(row: ChangeRow): PromptRuleChange {
@@ -134,6 +148,8 @@ function toChange(row: ChangeRow): PromptRuleChange {
     newEnabled: row.new_enabled,
     oldOrd: Number(row.old_ord),
     newOrd: Number(row.new_ord),
+    oldNameable: row.old_nameable,
+    newNameable: row.new_nameable,
   };
 }
 
@@ -147,6 +163,7 @@ function toChange(row: ChangeRow): PromptRuleChange {
 function classify(before: PromptRuleEdit, after: PromptRuleEdit): PromptRuleAction {
   if (before.text !== after.text) return 'edit';
   if (before.enabled !== after.enabled) return after.enabled ? 'enable' : 'disable';
+  if (before.nameable !== after.nameable) return 'visibility';
   return 'reorder';
 }
 
@@ -171,8 +188,13 @@ export async function updatePromptRule(
   actor: string,
   action?: PromptRuleAction,
 ): Promise<PromptRuleChange | null> {
-  const { rows } = await db.query<{ rule_text: string; enabled: boolean; ord: number }>(
-    'SELECT rule_text, enabled, ord FROM cinderella_prompt_rules WHERE id = $1',
+  const { rows } = await db.query<{
+    rule_text: string;
+    enabled: boolean;
+    ord: number;
+    nameable: boolean;
+  }>(
+    'SELECT rule_text, enabled, ord, nameable FROM cinderella_prompt_rules WHERE id = $1',
     [ruleId],
   );
   const current = rows[0];
@@ -182,17 +204,20 @@ export async function updatePromptRule(
     text: current.rule_text,
     enabled: current.enabled,
     ord: Number(current.ord),
+    nameable: current.nameable,
   };
   const after: PromptRuleEdit = {
     text: next.text,
     enabled: next.enabled,
     ord: Math.trunc(next.ord),
+    nameable: next.nameable,
   };
 
   if (
     before.text === after.text &&
     before.enabled === after.enabled &&
-    before.ord === after.ord
+    before.ord === after.ord &&
+    before.nameable === after.nameable
   ) {
     return null;
   }
@@ -205,17 +230,17 @@ export async function updatePromptRule(
   try {
     await db.query(
       `UPDATE cinderella_prompt_rules
-          SET rule_text = $2, enabled = $3, ord = $4, updated_at = now()
+          SET rule_text = $2, enabled = $3, ord = $4, nameable = $5, updated_at = now()
         WHERE id = $1`,
-      [ruleId, after.text, after.enabled, after.ord],
+      [ruleId, after.text, after.enabled, after.ord, after.nameable],
     );
 
     const { rows: written } = await db.query<ChangeRow>(
       `INSERT INTO cinderella_prompt_rule_history
-         (rule_id, actor, action, old_text, new_text, old_enabled, new_enabled, old_ord, new_ord)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         (rule_id, actor, action, old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING id, rule_id, changed_at, actor, action,
-                 old_text, new_text, old_enabled, new_enabled, old_ord, new_ord`,
+                 old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable`,
       [
         ruleId,
         actor,
@@ -226,6 +251,8 @@ export async function updatePromptRule(
         after.enabled,
         before.ord,
         after.ord,
+        before.nameable,
+        after.nameable,
       ],
     );
 
@@ -249,7 +276,7 @@ export async function listPromptRuleHistory(
 ): Promise<PromptRuleChange[]> {
   const { rows } = await db.query<ChangeRow>(
     `SELECT id, rule_id, changed_at, actor, action,
-            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord
+            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       WHERE rule_id = $1
       ORDER BY changed_at DESC, id DESC
@@ -266,7 +293,7 @@ export async function listRecentPromptRuleChanges(
 ): Promise<PromptRuleChange[]> {
   const { rows } = await db.query<ChangeRow>(
     `SELECT id, rule_id, changed_at, actor, action,
-            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord
+            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       ORDER BY changed_at DESC, id DESC
       LIMIT $1`,
@@ -307,7 +334,7 @@ export async function rollbackPromptRule(
 ): Promise<PromptRuleChange | null> {
   const { rows } = await db.query<ChangeRow>(
     `SELECT id, rule_id, changed_at, actor, action,
-            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord
+            old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       WHERE id = $1`,
     [changeId],
@@ -322,6 +349,7 @@ export async function rollbackPromptRule(
       text: target.old_text,
       enabled: target.old_enabled,
       ord: Number(target.old_ord),
+      nameable: target.old_nameable,
     },
     actor,
     'rollback',
