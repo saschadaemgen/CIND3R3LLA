@@ -24,6 +24,7 @@ import {
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import { SettingsService } from '../src/settings/service.js';
 import { WebSearchService, setWebSearchService } from '../src/plugins/web-search/service.js';
+import { PromptRuleService, setPromptRuleService } from '../src/interaction/prompt-rule-service.js';
 import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -196,6 +197,11 @@ async function main(): Promise<void> {
   previewSearch.noteRefusedBeforeSearch('sexual-explicit');
   previewSearch.noteRefusedBeforeSearch('darknet');
   setWebSearchService(previewSearch);
+
+  // The registry, so the Book of Elii previews a real prompt and the Memory page can measure
+  // one (CCB-S4-044). Without it both pages render their honest "nothing loaded" branch,
+  // which is correct but is not what an operator is looking at the preview to see.
+  setPromptRuleService(await PromptRuleService.load(db));
 
   registerNav();
   const app = buildServer({

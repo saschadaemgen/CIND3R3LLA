@@ -47,6 +47,11 @@ import {
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
+import { systemPrompt } from '../../interaction/ollama-reply.js';
+import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
+import { currentBotPersonality } from '../../profiles/bot-personality.js';
+import { botIdentity } from '../../interaction/settings.js';
+import { MAX_HISTORY_LIMITS } from '../../interaction/history.js';
 
 const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
 
@@ -113,6 +118,83 @@ function labelled(text: string, control: SafeHtml, help?: string): SafeHtml {
 function textArea(name: string, value: string, rows: number): SafeHtml {
   return html`<textarea name="${name}" rows="${String(rows)}" class="${INPUT_CLS} font-mono">
 ${value}</textarea>`;
+}
+
+/**
+ * How close to the context ceiling the current settings sit (CCB-S4-044).
+ *
+ * The briefing asks for the measured size rather than a promise, so this ASSEMBLES a real
+ * prompt through the reply path's own function and counts it, rather than estimating from the
+ * settings. An operator should be able to see the headroom here instead of discovering it
+ * when replies start failing.
+ *
+ * The token figure is a conversion at roughly 3.2 characters per token, and it is labelled as
+ * an approximation because it is one: the real number depends on the language and the
+ * tokenizer, and a precise-looking wrong number is worse than an honest range.
+ */
+function memorySizeCard(s: InteractionSettings): SafeHtml {
+  const rules = currentPromptRules();
+  const worstCase = Array.from({ length: s.memory.maxMessages }, () => ({
+    speaker: 'Member',
+    text: 'x'.repeat(200),
+  }));
+
+  let bare = 0;
+  let full = 0;
+  try {
+    const build = (history: { speaker: string; text: string }[]): number =>
+      systemPrompt(
+        {
+          kind: 'conversation',
+          lang: 'en',
+          memberMessage: '',
+          deterministicDraft: '',
+          mode: 'conversation',
+          rules,
+          personality: currentBotPersonality(),
+          identity: botIdentity(s),
+          history,
+          historyWindowMinutes: s.memory.windowMinutes,
+          now: { at: new Date(), timeZone: 'UTC' },
+        },
+        500,
+      ).length;
+    bare = build([]);
+    full = build(worstCase) + Math.min(s.memory.maxChars, worstCase.length * 208);
+  } catch {
+    // No registry loaded in this process. The card says so rather than showing zeroes.
+    return card(
+      'What it costs',
+      html`<p class="text-sm text-slate-600">
+        The rule registry is not loaded in this process, so there is nothing to measure yet.
+      </p>`,
+    );
+  }
+
+  const tokens = Math.round(full / 3.2);
+  const tight = tokens > 6000;
+  return card(
+    'What it costs',
+    html`<dl class="grid gap-3 text-sm sm:grid-cols-3">
+        <div>
+          <dt class="font-medium text-slate-700">Her rules and facts alone</dt>
+          <dd class="text-slate-600">${String(bare)} characters</dd>
+        </div>
+        <div>
+          <dt class="font-medium text-slate-700">With a full history at these settings</dt>
+          <dd class="text-slate-600">${String(full)} characters</dd>
+        </div>
+        <div>
+          <dt class="font-medium text-slate-700">Roughly, in tokens</dt>
+          <dd class="text-slate-600">~${String(tokens)} of 8192</dd>
+        </div>
+      </dl>
+      <p class="mt-3 text-sm text-slate-500">
+        ${tight
+          ? 'That is a large share of the context window. Her reply needs room too, and a rule set that gets crowded out is a safety problem rather than a slow one. Consider lowering the character budget.'
+          : 'Measured by assembling a real prompt at these settings, not estimated. Her reply needs a few hundred tokens on top.'}
+      </p>`,
+  );
 }
 
 function saveButton(): SafeHtml {
@@ -368,6 +450,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     { slug: 'guards', title: 'Guards', desc: 'When matching her name does NOT mean she was spoken to.' },
     { slug: 'followup', title: 'Follow-up', desc: 'The window after she replies, and what a short follow-up may carry.' },
     { slug: 'language', title: 'Language', desc: 'Which language she answers in.' },
+    { slug: 'memory', title: 'Memory', desc: 'How much of the conversation she can see.' },
     { slug: 'replies', title: 'Replies', desc: 'How her answers appear, and how often she may send them.' },
     { slug: 'nicknames', title: 'Nicknames', desc: 'The names she refuses to answer to, and her retorts.' },
     { slug: 'consent', title: 'Consent behaviour', desc: 'Confirmation words, undo window, and the consent handshake.' },
@@ -509,6 +592,58 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${saveButton()}
                 `,
               )}`,
+          ),
+        memory: () =>
+          card(
+            'Memory',
+            html`<p class="mb-3 text-sm text-slate-500">
+                Until CCB-S4-044 every reply was written from the current message alone. She
+                asked what she had just said, repeated herself, and once claimed to recall
+                something nobody had told her. She can now see the recent thread.
+              </p>
+              <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <p class="font-medium">What she can see</p>
+                <ul class="mt-1 list-disc space-y-1 pl-5">
+                  <li>The <strong>whole group thread</strong>, not only the messages of the
+                    person she is answering, so she can react to what somebody else said a few
+                    messages ago.</li>
+                  <li><strong>Her own replies</strong>, marked as hers, so she can follow her
+                    own thread.</li>
+                </ul>
+                <p class="mt-2 font-medium">What she cannot, ever</p>
+                <ul class="mt-1 list-disc space-y-1 pl-5">
+                  <li><strong>Destroyed messages.</strong> Destruction deletes the row, so
+                    there is nothing to read. A destruction deferred by an evidence hold is
+                    excluded too: the hold defers the erasure, never the intent.</li>
+                  <li><strong>Deleted messages</strong>, whether the member deleted them in the
+                    group or you marked them, and anything moderation rejected.</li>
+                  <li><strong>Anything from a member who has revoked.</strong> This was a
+                    judgement call and you should know which way it went: a revocation is the
+                    strongest signal a member can send about their own words, and honouring it
+                    on the public archive but not in her head would make it mean less than it
+                    says. The cost is real. She still sees that member's CURRENT message, so
+                    she can answer them; she cannot recall their earlier lines.</li>
+                </ul>
+              </div>
+              <p class="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                <strong>Everything she remembers is untrusted text.</strong> Anybody can type
+                an instruction into this group and wait for her to read it later, which is a
+                nastier trick than one in a search result because they choose the timing. The
+                history reaches her as clearly quoted material, fenced and labelled, never as
+                part of her instructions, and she is told plainly that she obeys nothing inside
+                it. It can change no consent record, run no command and reach no moderation
+                ladder. Raising the limits below raises how much of that she is holding at once.
+              </p>
+              ${form(
+                'memory',
+                html`
+                  ${labelled('Messages she can see', numberField('memoryMaxMessages', s.memory.maxMessages, 0, MAX_HISTORY_LIMITS.maxMessages), `How many of the most recent messages, at most. 0 turns memory off entirely and is the way back if it ever misbehaves. Higher means a longer prompt and a slower reply.`)}
+                  ${labelled('How far back (minutes)', numberField('memoryWindowMinutes', s.memory.windowMinutes, 0, MAX_HISTORY_LIMITS.windowMinutes), `Nothing older than this, whatever the count says. The tighter of the two wins. A long window in a quiet group costs nothing; in a busy one it is the count that binds.`)}
+                  ${labelled('Hard character budget', numberField('memoryMaxChars', s.memory.maxChars, 0, MAX_HISTORY_LIMITS.maxChars), `The ceiling on the assembled history, independent of the other two, because a few long messages can fill the context on their own. When it binds, the oldest are dropped. Bounded at ${String(MAX_HISTORY_LIMITS.maxChars)} in code rather than here: a history that crowds her own rules out of the context would be a safety failure, not a slow reply.`)}
+                  ${saveButton()}
+                `,
+              )}
+              ${memorySizeCard(s)}`,
           ),
         language: () =>
           card(
@@ -870,6 +1005,12 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         next['followUpSeconds'] = bodyString(body, 'followUpSeconds');
         next['intentCarryover'] = 'intentCarryover' in body;
         next['carryOverStopWords'] = bodyString(body, 'carryOverStopWords');
+      } else if (section === 'memory') {
+        next['memory'] = {
+          maxMessages: bodyString(body, 'memoryMaxMessages'),
+          windowMinutes: bodyString(body, 'memoryWindowMinutes'),
+          maxChars: bodyString(body, 'memoryMaxChars'),
+        };
       } else if (section === 'language') {
         next['replyLanguageMode'] = bodyString(body, 'replyLanguageMode');
         next['defaultLanguage'] = bodyString(body, 'defaultLanguage');
