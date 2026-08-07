@@ -96,6 +96,7 @@ export interface PromptRuleEdit {
 }
 
 export type PromptRuleAction =
+  | 'create'
   | 'edit'
   | 'enable'
   | 'disable'
@@ -354,4 +355,96 @@ export async function rollbackPromptRule(
     actor,
     'rollback',
   );
+}
+
+/* ── Enacting a law (CCB-S4-051, D-153) ────────────────────────────────────── */
+
+export interface NewPromptRule {
+  id: string;
+  tier: PromptRuleTier;
+  lane: PromptRuleLane;
+  appliesWhen: PromptRuleCondition;
+  ord: number;
+  text: string;
+  enabled: boolean;
+  critical: boolean;
+  nameable: boolean;
+}
+
+export class DuplicateRuleIdError extends Error {}
+
+/**
+ * Writes a new law, and its first history row, as one unit.
+ *
+ * ── WHAT A CREATION ROW HOLDS, AND WHY ───────────────────────────────────────
+ *
+ * The history stores both sides of every editable field. For a law that did not exist, the old
+ * side is empty text and the flags it is being created with.
+ *
+ * That choice keeps the invariant D-146 rests on: the OLDEST row per rule is what that rule
+ * shipped as, which is how the console can mark a law as changed from its original without
+ * storing a second copy anywhere. It also means a rollback cannot walk a law back to before it
+ * existed, which is right: undoing a creation is disabling the law, and that is a different
+ * act with its own record.
+ *
+ * The duplicate check is a SELECT inside the transaction rather than a caught unique
+ * violation, because the operator needs to be told which id is taken, and an error message
+ * from a constraint is not that.
+ */
+export async function createPromptRule(
+  db: Queryable,
+  rule: NewPromptRule,
+  actor: string,
+): Promise<PromptRuleChange> {
+  await db.query('BEGIN');
+  try {
+    const { rows: existing } = await db.query<{ id: string }>(
+      'SELECT id FROM cinderella_prompt_rules WHERE id = $1',
+      [rule.id],
+    );
+    if (existing.length > 0) {
+      throw new DuplicateRuleIdError(
+        `A law with the id "${rule.id}" already exists. Ids are permanent, so pick another.`,
+      );
+    }
+
+    await db.query(
+      `INSERT INTO cinderella_prompt_rules
+         (id, tier, lane, applies_when, ord, rule_text, enabled, critical, nameable, scope, source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULL, $10)`,
+      [
+        rule.id,
+        rule.tier,
+        rule.lane,
+        rule.appliesWhen,
+        Math.trunc(rule.ord),
+        rule.text,
+        rule.enabled,
+        rule.critical,
+        rule.nameable,
+        // Where it came from, in the same field every seeded law uses. "The console" is the
+        // honest answer and it distinguishes an enacted law from one that shipped.
+        `the console (${actor})`,
+      ],
+    );
+
+    const { rows: written } = await db.query<ChangeRow>(
+      `INSERT INTO cinderella_prompt_rule_history
+         (rule_id, actor, action, old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable)
+       VALUES ($1, $2, 'create', '', $3, $4, $4, $5, $5, $6, $6)
+       RETURNING id, rule_id, changed_at, actor, action,
+                 old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable`,
+      [rule.id, actor, rule.text, rule.enabled, Math.trunc(rule.ord), rule.nameable],
+    );
+
+    const row = written[0];
+    if (!row) {
+      throw new Error(`Law ${rule.id} was written but its history row was not.`);
+    }
+    await db.query('COMMIT');
+    return toChange(row);
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw error;
+  }
 }

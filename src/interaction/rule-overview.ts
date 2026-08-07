@@ -257,3 +257,74 @@ const CHAPTER_PHRASINGS: readonly RegExp[] = [
 export function asksChapterQuestion(text: string): boolean {
   return CHAPTER_PHRASINGS.some((pattern) => pattern.test(text));
 }
+
+/* ── Enacting a law: which chapter would claim it (CCB-S4-051) ─────────────── */
+
+/**
+ * The chapter a proposed id would land in, or null when nothing claims it.
+ *
+ * ── WHY THIS GUIDES RATHER THAN ONLY REPORTS ─────────────────────────────────
+ *
+ * The Recital page already lists laws no chapter claims, which is discovery AFTER the fact:
+ * the operator finds out that a law he enacted last week has never been read out. For a law
+ * being created right now the console can do better, and refuse.
+ *
+ * The stake is specific. Chapters claim rules by id prefix, longest match wins, so a law with
+ * an id outside every family is in no chapter, and the conversational answer selects BY AREA
+ * (CCB-S4-049). Such a law would be in her prompt, governing her, and unreachable by anybody
+ * asking about that part of the Book. Silently unreadable is the worst of the three states a
+ * law can be in.
+ */
+export function chapterForNewRule(
+  chapters: readonly RecitalChapter[],
+  ruleId: string,
+): RecitalChapter | null {
+  let best: RecitalChapter | null = null;
+  let bestLength = -1;
+  for (const chapter of chapters) {
+    if (!chapter.enabled) continue;
+    for (const prefix of chapter.rulePrefixes) {
+      if (ruleId.startsWith(prefix) && prefix.length > bestLength) {
+        best = chapter;
+        bestLength = prefix.length;
+      }
+    }
+  }
+  return best;
+}
+
+/** Every prefix a chapter claims, for the console to offer as the families in use. */
+export function ruleFamilies(chapters: readonly RecitalChapter[]): string[] {
+  return [
+    ...new Set(chapters.filter((c) => c.enabled).flatMap((c) => c.rulePrefixes)),
+  ].sort();
+}
+
+/**
+ * Why an id is not usable, or null when it is.
+ *
+ * Shape first, then family. The shape rules are the registry's own conventions rather than
+ * taste: lowercase dotted segments are what every seeded id uses, and the console's own search
+ * and the chapter prefixes both key on them.
+ */
+export function rejectRuleId(
+  chapters: readonly RecitalChapter[],
+  ruleId: string,
+): string | null {
+  const id = ruleId.trim();
+  if (!id) return 'A law needs an id. It is what history and every check refer to.';
+  if (!/^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+$/.test(id)) {
+    return (
+      'An id is lowercase, dotted, and has at least two parts, like "voice.swearing". ' +
+      'The part before the first dot is the family, and it decides which chapter reads it out.'
+    );
+  }
+  if (chapterForNewRule(chapters, id) === null) {
+    return (
+      `No chapter claims "${id}", so it would be in her prompt and unreadable by anybody ` +
+      `asking about that part of the Book. Use one of the families in use, or give a chapter ` +
+      `this prefix first on the Recital page.`
+    );
+  }
+  return null;
+}
