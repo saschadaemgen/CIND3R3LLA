@@ -342,6 +342,13 @@ async function main(): Promise<void> {
     db,
     settings: () => interaction,
     rules: () => RULES,
+    // THE ENGINE'S CLOCK, PINNED TO THE FIXTURE'S. Without this the planted messages are
+    // stored at a hardcoded instant while the history window is measured against the real
+    // one, so the whole section passed for thirty minutes after that instant and failed
+    // silently ever after: `sawHistory` fell to zero, which is precisely the vacuous run the
+    // check below exists to catch. It caught it. Found while working on CCB-S4-047, which
+    // did not cause it.
+    now: () => now,
     personality: () => ({ ...DEFAULT_PERSONALITY }),
     personalize: (req) => {
       if ((req.history?.length ?? 0) > 0) sawHistory += 1;
