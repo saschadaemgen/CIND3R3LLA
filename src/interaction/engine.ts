@@ -81,6 +81,11 @@ import {
 } from './personality.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
+import {
+  PAGE_FRAMING_MAX_CHARS,
+  renderBookPage,
+  sceneVoiceUsable,
+} from './book-scene.js';
 import { HISTORY_FENCE } from './ollama-reply.js';
 import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
 import {
@@ -94,12 +99,20 @@ import {
 } from './disclosure.js';
 import {
   asksChapterQuestion,
+  asksForAnotherLaw,
   capFollowUp,
   overviewLiterals,
   renderAreas,
   ruleOverview,
   rulesForFollowUp,
 } from './rule-overview.js';
+import {
+  asksForLawNumber,
+  lawByNumber,
+  lawNumberOf,
+  nextLawAfter,
+  numberedLawCount,
+} from './law-numbers.js';
 import { DISCLOSURE_GATE_RULE, preSearchRuleFor } from './rule-invocation-map.js';
 import {
   recordRuleInvocation,
@@ -134,6 +147,8 @@ export interface InteractionDeps {
    * Null only where no bot configuration exists at all, which is the harnesses.
    */
   botProfileId?: number | null;
+  /** This bot's display name, for operator-facing diagnostics (CCB-S5-006). */
+  botName?: string | null;
   /** Live settings — read per message, never cached across edits. */
   settings: () => InteractionSettings;
   /**
@@ -237,12 +252,20 @@ export interface InteractionDeps {
    */
   recite?: (msg: CapturedMessage, lang: string) => Promise<boolean>;
   /**
-   * Tells the Book as an artefact (CCB-S4-050, D-152).
+   * Tells the Book as a SCENE (CCB-S5-005, D-159).
    *
-   * Absent, or returning false, falls through to the recital decision and then to the
-   * overview, which is CCB-S4-048's behaviour and a complete answer in its own right.
+   * Takes the law the last scene in this chat read out and returns the one this scene read,
+   * or null when no scene was told. The engine owns that memory because the engine owns every
+   * other piece of per-chat state; the service stays a function of its arguments.
+   *
+   * Null falls through to the recital decision and then to the overview, which is
+   * CCB-S4-048's behaviour and a complete answer in its own right.
    */
-  tellBook?: (msg: CapturedMessage, lang: string) => Promise<boolean>;
+  tellBook?: (
+    msg: CapturedMessage,
+    lang: string,
+    previousLawId: string | null,
+  ) => Promise<string | null>;
   /**
    * The model that words her replies (CCB-S4-042, D-145), read live so a change on the
    * Models page reaches the next reply rather than the next restart.
@@ -1224,14 +1247,26 @@ export class InteractionEngine {
    * Returns null on any failure, which the runner treats as an ordinary outcome.
    */
   /**
-   * Her words for one beat of the Book story (CCB-S4-050).
+   * Her words for one half of the Book scene (CCB-S5-005).
    *
-   * The brief goes to the model AS the instruction, because a story beat is not a chapter
+   * The brief goes to the model AS the instruction, because half a scene is not a chapter
    * with a title: it is a thing to say. `reciteTransition` wraps a title in "introduce the
    * chapter called X", which would turn a brief into nonsense, so the two are separate
    * methods rather than one with a flag.
+   *
+   * NO RULE TEXT IS PASSED, and that is not an omission. The law goes into the message
+   * afterwards, by the application, which is where the one-law bound lives: she cannot quote
+   * a second law because she has not been handed a first one.
+   *
+   * `maxChars` is the scene's own bound rather than the conversation budget, and the
+   * `requiredLiterals` carry the count, so a closing that loses it is rejected and the
+   * authored line goes out with the number intact.
    */
-  async storyVoice(brief: string, lang: string): Promise<string | null> {
+  async sceneVoice(
+    brief: string,
+    lang: string,
+    opts: { maxChars: number; requiredLiterals: string[] },
+  ): Promise<string | null> {
     const personalize = this.personalizeForThisBot();
     if (!personalize) return null;
     const s = this.deps.settings();
@@ -1243,7 +1278,8 @@ export class InteractionEngine {
         deterministicDraft: '',
         mode: 'conversation',
         rules: this.deps.rules?.() ?? [],
-        requiredLiterals: [],
+        maxChars: opts.maxChars,
+        requiredLiterals: opts.requiredLiterals,
         blockedLiterals: [],
         personality: this.deps.personality?.() ?? null,
         identity: this.facts(s),
@@ -1339,12 +1375,15 @@ export class InteractionEngine {
    * ARCHIVE STATUS reply, and "what do you never do?" reached free conversation with nothing
    * quoted. Two symptoms, one cause.
    *
-   * Three ways in, narrowest first:
+   * Four ways in, narrowest first:
    *
    *   1. It says so: `asksAboutRules`, unchanged since CCB-S4-045.
-   *   2. It repeats one of her own chapter names back at her.
-   *   3. It arrives inside the short window an overview opens, where she has just asked which
-   *      part interests them and any question is plausibly the answer.
+   *   2. It asks for a law by its NUMBER (CCB-S5-005). "Law 12" carries no rule word, so
+   *      without this the most precise question anybody can ask about the Book was the one
+   *      question that reached nothing.
+   *   3. It repeats one of her own chapter names back at her.
+   *   4. It arrives inside the short window an overview or a SCENE opens, where she has just
+   *      invited a question and any question is plausibly the answer.
    *
    * ── AND WHY THE WINDOW IS NOT ENOUGH TO OUTRANK THE CATALOG ────────────────
    *
@@ -1361,9 +1400,22 @@ export class InteractionEngine {
    * belongs, and only an otherwise-unclaimed question becomes a follow-up.
    */
   private aboutHerRules(msg: CapturedMessage, now: number, explicit: boolean): boolean {
-    if (asksAboutRules(msg.text) || asksChapterQuestion(msg.text)) return true;
+    if (
+      asksAboutRules(msg.text) ||
+      asksForLawNumber(msg.text) !== null ||
+      asksChapterQuestion(msg.text)
+    ) {
+      return true;
+    }
     if (explicit) return false;
-    return this.state.inOverviewWindow(msg.groupId, msg.senderMemberId, now);
+    if (this.state.inOverviewWindow(msg.groupId, msg.senderMemberId, now)) return true;
+    // THE SCENE'S WINDOW IS NARROWER (CCB-S5-005). It admits only a message asking for
+    // another page, because a scene's invitation is a narrower offer than an overview's and
+    // an ordinary question shortly after one must stay an ordinary conversation.
+    return (
+      asksForAnotherLaw(msg.text) &&
+      this.state.inSceneWindow(msg.groupId, msg.senderMemberId, now)
+    );
   }
 
   private async disclosure(
@@ -1375,6 +1427,15 @@ export class InteractionEngine {
     ruleOverview?: { total: number; constitutional: number; areas: string };
     moreInArea?: number;
     ruleInvocations?: string;
+    /**
+     * The page the application will print under her reply, when this is a page answer.
+     *
+     * NOT named `lawPage`, because this object is spread straight into the reply request and
+     * what the MODEL gets is a bare boolean. Naming them the same would put the law text and
+     * its number into the prompt by accident, which is the one thing this whole path exists
+     * to avoid.
+     */
+    page?: { number: number; total: number; law: string };
   }> {
     const rules = this.deps.rules?.() ?? [];
     if (rules.length === 0 || !this.aboutHerRules(msg, this.now(), false)) {
@@ -1382,6 +1443,62 @@ export class InteractionEngine {
     }
     const hasWithheldRules = withheldCount(rules) > 0;
     const chapters = await listRecitalChapters(this.deps.db);
+
+    /**
+     * ── ONE PAGE OF THE BOOK, WHICH THE APPLICATION PRINTS ────────────────
+     *
+     * Two questions land here: a page asked for by NUMBER, and a bare request for ANOTHER
+     * after a scene. Both name a page rather than a subject, so there is nothing for a
+     * relevance score to improve on and the application does the selecting.
+     *
+     * It hands the model NO RULE, which is the point. Measured against `qwen3:32b`, handing
+     * her a law and its page number produced the right law under the wrong number, the wrong
+     * law under a number she was given, and a law she had never been shown. So the page is
+     * printed by the application under her words, whole and numbered, exactly as the scene
+     * prints its law, and her contribution is the line that hands over to it.
+     *
+     * An out-of-range number never reaches here: the deterministic answer in
+     * `freeConversation` has already gone out.
+     */
+    const page = (rule: PromptRule): { number: number; total: number; law: string } | null => {
+      const number = lawNumberOf(rules, rule.id);
+      if (number === null) return null;
+      // Where the book is now open, so a following "another" turns from THIS page.
+      this.state.noteLawShown(msg.groupId, rule.id);
+      return {
+        number,
+        total: numberedLawCount(rules),
+        law: this.renderRuleForMember(rule),
+      };
+    };
+
+    const asked = asksForLawNumber(msg.text);
+    const wanted =
+      asked !== null
+        ? lawByNumber(rules, asked)
+        : asksForAnotherLaw(msg.text) &&
+            this.state.inSceneWindow(msg.groupId, msg.senderMemberId, this.now())
+          ? nextLawAfter(rules, this.state.lastLawShown(msg.groupId))
+          : null;
+
+    if (wanted) {
+      // A law whose placeholders cannot be filled for a member is not a page she can open.
+      // `renderRuleForMember` throws on one, and a throw here would cost the whole reply for
+      // a reason nothing on the surface explains, so it falls through to the ordinary answer.
+      let opened: { number: number; total: number; law: string } | null = null;
+      try {
+        opened = page(wanted);
+      } catch (error) {
+        log.warn(
+          `Interaction: law ${wanted.id} cannot be rendered for a member (${
+            error instanceof Error ? error.message : String(error)
+          }); answering without opening the page.`,
+        );
+      }
+      if (opened) {
+        return { nameableRules: [], hasWithheldRules, page: opened };
+      }
+    }
 
     // ── GENERAL GETS AN ORIENTATION, SPECIFIC GETS THE QUOTES (CCB-S4-048) ──
     //
@@ -1414,7 +1531,17 @@ export class InteractionEngine {
     // the one about nicknames, because both contain the word "never", and not one of the four
     // rules that actually answer it.
     const capped = capFollowUp(
-      rulesForFollowUp(rules, chapters, msg.text, lang, rulesForQuestion(rules, msg.text)),
+      rulesForFollowUp(
+        rules,
+        chapters,
+        msg.text,
+        lang,
+        rulesForQuestion(rules, msg.text),
+        // NOT THE ONE THE SCENE JUST READ (CCB-S5-005). The scene ends by inviting another
+        // page, so the commonest follow-up is "tell me another", and handing back the law
+        // she has just performed would make the invitation a joke.
+        this.state.lastLawShown(msg.groupId),
+      ),
     );
 
     // WHAT THE BOOK REMEMBERS ABOUT THESE ONES (CCB-S4-050). Built from the rules that have
@@ -1448,6 +1575,8 @@ export class InteractionEngine {
     if (!s.addressing.logNearMisses) return;
     const entry: NearMiss = {
       at: now,
+      botProfileId: this.deps.botProfileId ?? null,
+      botName: this.deps.botName ?? null,
       groupId: msg.groupId,
       who: msg.senderDisplayName,
       reason,
@@ -1807,7 +1936,10 @@ export class InteractionEngine {
   ): Promise<{ text: string; sources: string[] } | null> {
     let used: readonly number[] = [];
     const history = await this.recentHistory(msg, s);
-    const disclosure = await this.disclosure(msg, lang);
+    // The page block is dropped rather than carried: this lane answers a web lookup, so
+    // there is nothing under it for a page to be printed beneath. See the note at the free
+    // conversation call site for why it is pulled out rather than left unread.
+    const { page: _page, ...disclosure } = await this.disclosure(msg, lang);
 
     let spoken: string | null = null;
     try {
@@ -2923,6 +3055,23 @@ export class InteractionEngine {
       return true;
     }
 
+    // A PAGE NUMBER THAT IS NOT THERE (CCB-S5-005). Deterministic for the same reason as the
+    // gate above: a model asked for "law 400" and given no law writes one, and a statute she
+    // invented and attributed to herself is the worst answer this path can produce. The
+    // application knows exactly how many pages there are, so it says so.
+    const askedFor = asksForLawNumber(msg.text);
+    if (askedFor !== null) {
+      const rules = this.deps.rules?.() ?? [];
+      const total = numberedLawCount(rules);
+      if (total > 0 && lawByNumber(rules, askedFor) === null) {
+        await this.reply(msg, s, lang, 'rulesNoSuchLaw', {
+          n: String(askedFor),
+          total: String(total),
+        });
+        return true;
+      }
+    }
+
     // THE RECITAL (CCB-S4-047). After the gates and never before them: being asked for a
     // performance does not suspend the two deterministic answers above, and a request to be
     // read the Book is still a message like any other. Reciting is the one path that sends
@@ -2931,17 +3080,32 @@ export class InteractionEngine {
     // A `false` return falls through to the brief answer. A recital that cannot start (no
     // chapters, no room in the member's budget, a bound too low to read a book) must leave a
     // member with an answer rather than with silence.
-    // THE BOOK AS AN ARTEFACT (CCB-S4-050). Asked for by NAME, it is told as a story;
-    // asked about her rules or laws, CCB-S4-048's overview answers, unchanged. The split is
-    // the whole point: the Book is the artefact, not the content.
-    if (this.deps.tellBook && asksForRecital(msg.text) && (await this.deps.tellBook(msg, lang))) {
-      recordConversation({
-        at: this.now(),
-        groupId: msg.groupId,
-        outcome: 'spoken',
-        latencyMs: this.now() - startedAt,
-      });
-      return true;
+    // THE BOOK AS A SCENE (CCB-S5-005, D-159). Asked for by NAME, she performs one message:
+    // fire and light, what the book means to her, ONE law, and an invitation. Asked about her
+    // rules or laws, CCB-S4-048's overview answers, unchanged. The split is the whole point:
+    // the Book is the artefact, not the content.
+    if (this.deps.tellBook && asksForRecital(msg.text)) {
+      const shown = await this.deps.tellBook(
+        msg,
+        lang,
+        this.state.lastLawShown(msg.groupId),
+      );
+      if (shown) {
+        // THE INVITATION HAS TO WORK (CCB-S5-005). The scene ends by asking for another page
+        // and, until this line, opened no window to hear the answer in: CCB-S4-049 built that
+        // window for the overview and the scene did not exist yet, which is the failure mode
+        // D-105 names. It is the scene's OWN window rather than the overview's, because the
+        // two invitations are not the same offer.
+        this.state.noteScene(msg.groupId, msg.senderMemberId, this.now());
+        this.state.noteLawShown(msg.groupId, shown);
+        recordConversation({
+          at: this.now(),
+          groupId: msg.groupId,
+          outcome: 'spoken',
+          latencyMs: this.now() - startedAt,
+        });
+        return true;
+      }
     }
 
     if (this.deps.recite && (await this.deps.recite(msg, lang))) {
@@ -2954,7 +3118,11 @@ export class InteractionEngine {
       return true;
     }
     const history = await this.recentHistory(msg, s);
-    const disclosure = await this.disclosure(msg, lang);
+    // `page` is pulled OUT of what goes to the model rather than merely left unread there.
+    // The rest of this object is spread straight into the reply request, and a spread carries
+    // whatever it holds: leaving the law text and its number in would put both within reach of
+    // the one path built to keep them away from her. See `renderBookPage`.
+    const { page, ...disclosure } = await this.disclosure(msg, lang);
 
     if (personalize) {
       try {
@@ -2994,6 +3162,15 @@ export class InteractionEngine {
               historyWindowMinutes: s.memory.windowMinutes,
               // The book, when they are asking about it (CCB-S4-045).
               ...disclosure,
+              // A page answer tells her only THAT a page is being printed under her reply,
+              // never which one (CCB-S5-005): see `renderBookPage` for what a model does with
+              // a law and a number when it is given both.
+              lawPage: page !== undefined,
+              // ONE LINE above a printed page (CCB-S5-005). At the ordinary conversation
+              // budget she used the room to invent a law and, once, to announce that the
+              // page did not exist while it was being printed. Neither reached a member;
+              // both were wasted calls.
+              ...(page ? { maxChars: PAGE_FRAMING_MAX_CHARS } : {}),
               // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
               // the violation counter read. THIS is the path that matters for it: free
               // conversation is where somebody asks what year it is, and where she
@@ -3014,7 +3191,11 @@ export class InteractionEngine {
     // the address signal was. NOT `notUnderstood` either way: she heard perfectly well,
     // and telling a member they were unclear when they were not is the kind of small
     // untruth this project does not tell.
-    if (spoken === null) {
+    //
+    // A PAGE ANSWER IS THE EXCEPTION (CCB-S5-005), because the answer is not hers: the
+    // application is holding the law the member asked for, and going quiet over a model
+    // failure would withhold something it already has. The page goes out on its own.
+    if (spoken === null && !page) {
       recordConversation({
         at: this.now(),
         groupId: msg.groupId,
@@ -3024,7 +3205,35 @@ export class InteractionEngine {
       return false;
     }
 
-    const sent = await this.replyWithText(msg, s, lang, spoken, 'conversation');
+    /**
+     * ── THE PAGE IS PRINTED HERE, NOT WRITTEN BY HER (CCB-S5-005, D-159) ────
+     *
+     * Same shape as the search sources: application-owned text appended verbatim, because a
+     * fact the model carries inside its own prose is a fact it corrupts (D-137). Measured
+     * against `qwen3:32b`, being handed a law and its page number produced the right law
+     * under the wrong number, the wrong law under a number she was given, and a law she had
+     * never been shown. She was never told which page this is, so nothing she wrote can
+     * disagree with it.
+     *
+     * Her half goes through the same fabricated-law gate the scene uses, so a line that
+     * invents a statute above the real one costs her the flourish rather than the member the
+     * truth.
+     */
+    let body = spoken ?? '';
+    if (page) {
+      const framing = spoken !== null && sceneVoiceUsable(spoken) ? spoken.trim() : '';
+      body = [
+        framing,
+        renderBookPage({
+          ...page,
+          german: lang.toLowerCase().startsWith('de'),
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+    }
+
+    const sent = await this.replyWithText(msg, s, lang, body, 'conversation');
     // 'rate-limited' is a separate outcome rather than a missing row, because a dropped
     // reply and a reply that never happened look identical from the group and the
     // operator has to be able to tell them apart. It is the one thing this log records

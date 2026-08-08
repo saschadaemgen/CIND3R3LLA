@@ -160,7 +160,18 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   model is handed a chapter title and never a rule, so a model failure costs the flourish and
   never the chapter. A recital has its OWN allowance rather than N replies, which was a
   correction: charged against the reply budget it could never start, and every check stayed
-  green,
+  green.
+  **Asked for the BOOK by name she plays a SCENE since CCB-S5-005** (D-159): `book-scene.ts` is
+  the pure model (the two briefs, the one law, the fabricated-law gate, the bounds) and
+  `recital-service.ts`'s `tellBookScene` sends it as ONE message. It replaced CCB-S4-050's
+  three-beat story, which was the third answer the operator rejected for volume. **The one-law
+  bound is structural**: the scene holds one rule rather than an array, and neither brief
+  contains any rule text, so quoting a second is not something the model can do wrong.
+  `law-numbers.ts` gives every law she may name a stable page number, derived from the registry
+  by id rather than stored, over the NAMEABLE set only, because numbering the withheld ones lets
+  a member read their subject off their neighbours. **The application prints the page and she
+  never states the number**, measured: handed a law and its number, `qwen3:32b` put the number on
+  a different law,
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
@@ -296,7 +307,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   spine and the prohibition that fences her are one boundary with two sides, and the spine is
   emitted FIRST because a model handed "you cannot" first answers from the lack. The first
   draft caused the failure it was meant to prevent by containing a sentence she could recite;
-  see D-156).
+  see D-156) ·
+  048 the page of a law (one condition and the two rules that hand a page over, for the answer
+  where she is given NO law to quote: the application prints it under her words, whole and
+  numbered. **Handing her the law and its number was the first build and it was measured
+  failing**, four turns against `qwen3:32b`, with the law text surviving every time and the
+  number landing on the wrong law. So these rules say what she does not do, and they are the
+  same two sentences the scene's brief carries. Numbered 048 rather than 047 because CCB-S5-006
+  was allocating 047 in the same working tree at the same time; see D-159).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -304,9 +322,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **047**, since 046 landed with the self-capability fence). Stated as a rule
+  (currently **049**, since 048 landed with the page of a law). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
+  **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
+  of each other by two briefings running at once, both from a highest-on-disk of 046, which is
+  the same parallel-allocation failure the decision numbers already have twice.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
 - `deploy/` — `cinderella.service`, `nginx-admin.conf`, `RUNBOOK.md`, `backup.sh`.
 - Git-ignored: `.env`, `state/`, `media/`, `public/` (built assets), `dist/`.
@@ -400,12 +421,18 @@ Extended by CCB-S4-049 with the follow-up detection: her own chapter names in bo
 the three-minute post-overview window, and the rule that the window is the WEAKEST of the three
 signals and promotes only what nothing else claimed, because letting it outrank the catalog
 cost the archive its own questions),
-`verify:book-artefact` (the Book as an artefact, CCB-S4-050: that a question about the BOOK gets
-the story while a question about her RULES keeps the overview, the three beats and their
-application-supplied counts, and the record's deliberate limit, mutation-proven by a query the
-gate does NOT refuse yielding no attribution at all.
-`npm run verify:book-artefact-live` tells the whole story against a real model and shows the
-record standing still while she refuses something herself; it needs Ollama),
+`verify:book-scene` (the Book as a SCENE, CCB-S5-005, renamed from `verify:book-artefact`: that a
+question about the BOOK gets the scene while a question about her RULES keeps the overview, that
+the scene is ONE message carrying EXACTLY ONE law, that the laws have stable page numbers and no
+withheld law has one, that the invitation is heard while an ordinary question after a scene is
+not, and the record's deliberate limit from CCB-S4-050. **The one-law bound is asserted
+structurally rather than by inspection**: the counter is mutation-proven in both directions, the
+briefs are proven to contain no rule text over the whole registry, and a model that invents a law
+is driven end to end and shown to get the authored line instead.
+`npm run verify:book-scene-live` plays the whole conversation at two sharpness settings against a
+real model: the scene, another law, and a law by number. Read its output rather than its exit
+code, and read the `her framing:` lines: every defect this briefing fixed was found in a run that
+was green on everything structural),
 `verify:rule-creation` (enacting a law, CCB-S4-051: every field the console asks for, the
 preview, the typed confirmation for a constitutional law, a duplicate id refused by name, and
 the history a creation writes. Mutation-proven three ways: a law cannot be created without an
@@ -419,6 +446,16 @@ that the measured figures it quotes are the ones on record. **Thinking is OFF an
 been**: `reasoning_effort: 'none'` is sent on every request and Ollama honours it. No dial was
 built, because the reasoning pass spends the same `max_tokens: 320` as the reply and turning it
 on made three replies in five come back empty and fall back to the deterministic line),
+`verify:interaction-scope` and `verify:two-names` (two bots, one name, CCB-S5-006: the
+inventory of which interaction settings are shared and which are one bot's, and the proof that
+two bots answer only to their own. The inventory ships as DATA in `setting-scope.ts` rather than
+as a table in a document, and the first check asserts EVERY key of `InteractionSettings` is
+placed, so a setting added later without a placement goes red instead of silently defaulting to
+shared - which is exactly how `wakeWord` came to be shared. It also reads the per-bot key list
+out of the DATABASE constraint and compares it to the code, because the duplication between them
+is deliberate and the drift would not be. `verify:two-names` drives the real `detectAddress`,
+because the defect was never that the settings object had one wake word but that both bots woke
+on it; its mutation puts a bot back on the shared value and shows both waking again),
 `verify:self-claims` (what she may claim about herself, CCB-S5-002: that the fence is present,
 constitutional and critical, that the spine is emitted before the prohibition, that it reaches
 every lane that speaks in her voice and NO command lane, and above all that the detector the live

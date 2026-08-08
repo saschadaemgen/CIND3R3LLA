@@ -47,6 +47,19 @@ import {
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
+import {
+  SETTING_SCOPES,
+  describeSettingScopes,
+  readPath,
+  type SettingScopeView,
+} from '../../interaction/setting-scope.js';
+import {
+  clearSettingOverride,
+  listAllSettingOverrides,
+  setSettingOverride,
+} from '../../db/interaction-overrides.js';
+import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
+import { writeAudit } from '../../db/audit.js';
 import { systemPrompt } from '../../interaction/ollama-reply.js';
 import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
 import { currentBotPersonality } from '../../profiles/bot-personality.js';
@@ -324,6 +337,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Refuses to narrow down which rules are withheld (answered by the application)',
     vars: '',
   },
+  rulesNoSuchLaw: {
+    label: 'Asked for a law by a page number she has none for (answered by the application)',
+    vars: '{n} {total}',
+  },
   searchRefused: {
     label: 'Web search refused before it ran (nothing was queried, no sources)',
     vars: '',
@@ -437,6 +454,121 @@ function bodyString(body: Record<string, unknown>, key: string): string {
   return typeof v === 'string' ? v : '';
 }
 
+
+/**
+ * Which of this page's settings are shared, and which belong to one bot (CCB-S5-006).
+ *
+ * ── WHY IT IS GENERATED FROM THE INVENTORY ──────────────────────────────────
+ *
+ * The scopes live in `SETTING_SCOPES`, so this renders them rather than restating them.
+ * A hand-written list here would be a second copy of the answer, and the drift would run
+ * in the worst direction: the page would say "shared" for something the database had
+ * started accepting per bot, and an operator would edit one bot expecting to change all.
+ *
+ * ── WHY IT MATCHES THE BOOK RATHER THAN INVENTING A SECOND LANGUAGE ─────────
+ *
+ * The operator's standing requirement carries over word for word from CCB-S5-001: it must
+ * always be visible which is which. The Book already answers it with a badge per law, the
+ * deviating bots named, and a count on the edit warning. Same three, same words, same
+ * colours: an operator who has learned to read one page should not have to learn a second.
+ */
+function scopePanel(
+  section: string,
+  scopes: Map<string, SettingScopeView>,
+  bots: { id: number; displayName: string }[],
+  selectedBotId: number | null,
+  slug: string,
+): SafeHtml | null {
+  const here = SETTING_SCOPES.filter((p) => p.section === section);
+  if (here.length === 0) return null;
+
+  const names = new Map(bots.map((b) => [b.id, b.displayName]));
+  const selected = selectedBotId === null ? null : names.get(selectedBotId) ?? null;
+  const perBot = here.filter((p) => p.scope === 'per-bot');
+  const shared = here.filter((p) => p.scope === 'shared');
+
+  const line = (key: string): SafeHtml | null => {
+    const v = scopes.get(key);
+    if (!v) return null;
+    const deviating = v.deviatingBotIds
+      .map((id) => names.get(id) ?? `bot ${String(id)}`)
+      .join(', ');
+    return html`<li class="flex flex-wrap items-baseline gap-2 py-0.5">
+      <code class="text-xs text-slate-800">${key}</code>
+      ${v.scope === 'per-bot'
+        ? v.deviatingBotIds.length > 0
+          ? badge(`per bot: ${String(v.deviatingBotIds.length)} differ`, 'amber')
+          : badge('per bot: none set', 'slate')
+        : badge(`shared: ${String(v.sharedBotCount)} bot(s)`, 'slate')}
+      <span class="text-xs text-slate-500">${v.reason}</span>
+      ${v.deviatingBotIds.length > 0
+        ? html`<span class="text-xs text-amber-800">Set for ${deviating}.</span>`
+        : null}
+    </li>`;
+  };
+
+  return card(
+    'What this page changes',
+    html`
+      ${bots.length > 1
+        ? html`<div class="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            <p>
+              Editing
+              <strong>${selected ?? 'the shared settings'}</strong>.
+              ${selected === null
+                ? html`Saving here changes the shared value, which reaches every bot that has
+                    not been given its own.`
+                : html`Saving a per-bot setting here changes <strong>${selected}</strong> only;
+                    the others keep what they have.`}
+            </p>
+            <p class="mt-2 flex flex-wrap gap-2">
+              <a
+                class="rounded-lg px-2 py-1 text-xs ${selectedBotId === null
+                  ? 'bg-slate-900 font-medium text-white'
+                  : 'border border-slate-300 text-slate-700'}"
+                href="/interaction/${slug}"
+                >Shared</a
+              >
+              ${bots.map(
+                (b) =>
+                  html`<a
+                    class="rounded-lg px-2 py-1 text-xs ${b.id === selectedBotId
+                      ? 'bg-slate-900 font-medium text-white'
+                      : 'border border-slate-300 text-slate-700'}"
+                    href="/interaction/${slug}?bot=${String(b.id)}"
+                    >${b.displayName}</a
+                  >`,
+              )}
+            </p>
+          </div>`
+        : null}
+
+      ${perBot.length > 0
+        ? html`<div>
+            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Set per bot
+            </h4>
+            <ul class="mt-1">${perBot.map((p) => line(p.key))}</ul>
+          </div>`
+        : null}
+
+      ${shared.length > 0
+        ? html`<div class="${perBot.length > 0 ? 'mt-3' : ''}">
+            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Shared across every bot
+            </h4>
+            <ul class="mt-1">${shared.map((p) => line(p.key))}</ul>
+            <p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              These cannot be set for one bot, and the reason is beside each one. Editing any of
+              them changes
+              <strong>${String(bots.length)}</strong> bot(s).
+            </p>
+          </div>`
+        : null}
+    `,
+  );
+}
+
 export function registerInteraction(app: FastifyInstance, ctx: ViewContext): void {
   const { interaction } = ctx;
 
@@ -463,15 +595,28 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     { slug: 'diagnostics', title: 'Diagnostics', desc: 'The near-miss log, and the resolver currently in use.' },
   ];
 
-  app.get<{ Params: { section?: string }; Querystring: { saved?: string; tested?: string; error?: string } }>(
+  app.get<{ Params: { section?: string }; Querystring: { saved?: string; tested?: string; error?: string; bot?: string } }>(
     '/interaction/:section',
     async (req, reply) => {
       const slug = req.params.section ?? 'addressing';
       const meta = SECTIONS.find((x) => x.slug === slug);
       if (!meta) return reply.redirect('/interaction/addressing');
 
-      const s = interaction.get();
       const csrf = req.session?.csrfToken ?? '';
+
+      // WHICH BOT this page is editing (CCB-S5-006). No `?bot=` means the shared values,
+      // which is what a single-bot deployment always wants and what every existing
+      // bookmark resolves to, so nothing changes for an operator with one bot.
+      const botProfiles = await listBotOnboardingProfiles(ctx.db);
+      const bots = botProfiles.map((b) => ({ id: b.id, displayName: b.displayName }));
+      const requestedBot = Number.parseInt(req.query.bot ?? '', 10);
+      const selectedBotId = bots.some((b) => b.id === requestedBot) ? requestedBot : null;
+      const settingOverrides = await listAllSettingOverrides(ctx.db);
+      const settingScopes = describeSettingScopes(settingOverrides, bots.length);
+
+      // The values shown are the SELECTED bot's, so the wake word on the page is the one
+      // that bot actually answers to rather than the shared default it may not use.
+      const s = selectedBotId === null ? interaction.get() : interaction.get(selectedBotId);
 
       const notice = req.query.tested
         ? html`<div
@@ -497,6 +642,9 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         html`<form method="post" action="/interaction" class="flex flex-col gap-3">
           <input type="hidden" name="_csrf" value="${csrf}" />
           <input type="hidden" name="section" value="${section}" />
+          ${selectedBotId === null
+            ? null
+            : html`<input type="hidden" name="botProfileId" value="${String(selectedBotId)}" />`}
           ${inner}
         </form>`;
 
@@ -956,7 +1104,10 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
 
       const body = html`
         ${pageHeader(`Interaction — ${meta.title}`, meta.desc)} ${submenu} ${notice}
-        <div class="flex flex-col gap-6">${cardsFor[slug]?.()}</div>
+        <div class="flex flex-col gap-6">
+          ${scopePanel(slug, settingScopes, bots, selectedBotId, slug)}
+          ${cardsFor[slug]?.()}
+        </div>
       `;
 
       reply.type('text/html');
@@ -1101,6 +1252,41 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         throw new Error('Unknown local AI runtime action.');
       } else {
         return reply.redirect(`/interaction/addressing?error=${encodeURIComponent('Unknown section.')}`);
+      }
+
+      // ── SHARED SAVE, OR ONE BOT'S DEVIATION (CCB-S5-006) ──────────────────
+      //
+      // The whole `next` object has already been parsed by the section handlers above, so
+      // this reuses every one of them rather than adding a second parser that would drift.
+      // What it changes is WHERE the result goes: with a bot selected, only the per-bot
+      // keys are written, as deviations, and a value equal to the shared one CLEARS the
+      // deviation rather than storing a copy of it. Storing the copy would freeze that bot
+      // at today's shared value and quietly stop later shared edits reaching it.
+      const targetBot = Number.parseInt(bodyString(body, 'botProfileId'), 10);
+      if (Number.isSafeInteger(targetBot) && targetBot > 0) {
+        const shared = interaction.get();
+        let written = 0;
+        let cleared = 0;
+        for (const placement of SETTING_SCOPES) {
+          if (placement.scope !== 'per-bot') continue;
+          if (placement.section !== pageFor(section)) continue;
+          const submitted = readPath(next as unknown as InteractionSettings, placement.key);
+          if (JSON.stringify(submitted) === JSON.stringify(readPath(shared, placement.key))) {
+            if (await clearSettingOverride(ctx.db, targetBot, placement.key)) cleared++;
+          } else {
+            await setSettingOverride(ctx.db, targetBot, placement.key, submitted);
+            written++;
+          }
+        }
+        // Every bot's effective settings derive from the shared record plus its own rows,
+        // so the cache has to drop or the next message answers from the old wake word.
+        interaction.invalidate();
+        await writeAudit(ctx.db, actor, 'interaction.per-bot.update', `bot-profile:${targetBot}`, {
+          section: pageFor(section),
+          written,
+          cleared,
+        });
+        return reply.redirect(`${back('?saved=1')}&bot=${String(targetBot)}`);
       }
 
       await interaction.save(next, actor);

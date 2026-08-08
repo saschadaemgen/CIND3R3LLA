@@ -34,12 +34,11 @@ import { sendViaRuntime } from './bot/send.js';
 import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
 import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
 import {
-  startBookStory,
   startRecital,
+  tellBookScene,
   type RecitalDeps,
 } from './interaction/recital-service.js';
-import { ruleOverview } from './interaction/rule-overview.js';
-import { listRecitalChapters } from './db/recital-chapters.js';
+import { sceneClosingChars, sceneOpeningChars } from './interaction/book-scene.js';
 import { recitalSendPort } from './bot/recital-port.js';
 import { enqueueJob } from './queue/store.js';
 import { registerCapture } from './capture/handler.js';
@@ -209,10 +208,12 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
    * rewrites "that member" sees it take effect on the next reply.
    */
   const placeholderFor = (lang: string): string => {
-    const p = interaction.get().persona;
+    // THIS bot's persona (CCB-S5-006): the strings are per bot, so a placeholder read from
+    // the shared record would be another bot's wording.
+    const p = interaction.get(botProfileId).persona;
     return (
       p[lang]?.redactedMember ??
-      p[interaction.get().defaultLanguage]?.redactedMember ??
+      p[interaction.get(botProfileId).defaultLanguage]?.redactedMember ??
       p['en']?.redactedMember ??
       'that member'
     );
@@ -262,7 +263,7 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // THIS bot's laws, which is the whole point of a per-bot rulebook: a bot that has
     // reworded a law must read out the wording it was actually given.
     rules: () => currentPromptRules(botProfileId),
-    recital: () => interaction.get().recital,
+    recital: () => interaction.get(botProfileId).recital,
     assetRoot: cfg.assetRoot,
     // Both go through the ENGINE rather than being rebuilt here. It already owns the one
     // identity builder, the one clock and the one rate limiter, and a second copy of any
@@ -270,8 +271,8 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     renderRule: (rule) => engine.renderRuleForMember(rule),
     renderableValues: () => engine.renderableValues(),
     transition: (beat, _index, lang) => engine.reciteTransition(beat.title, lang),
-    // Her voice for a story beat, from the brief rather than a chapter title.
-    storyVoice: (brief, lang) => engine.storyVoice(brief, lang),
+    // Her voice for half a scene, from the brief rather than a chapter title.
+    sceneVoice: (brief, lang, opts) => engine.sceneVoice(brief, lang, opts),
     send: recitalSendPort,
     reserve: (groupId, memberId) => engine.allowRecital(groupId, memberId),
     schedule: async (groupId, lang, beatIndex, delayMs) => {
@@ -289,27 +290,38 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // Whose engine this is (CCB-S5-001). Everything per bot below reads it, and the
     // moderation counters are written against it.
     botProfileId,
-    settings: () => interaction.get(),
+    // For the Diagnostics page, so a near miss says which bot ignored it (CCB-S5-006).
+    botName: bot.config.displayName,
+    // THIS bot's settings (CCB-S5-006). The wake word, the nickname list, the retorts, the
+    // persona and the guards are per bot; reading the shared record here is what made two
+    // bots answer to one name.
+    settings: () => interaction.get(botProfileId),
     personalize: personalizeAiReply,
     // Reading the Book out loud (CCB-S4-047). Returns false when a recital cannot start,
     // and the engine then gives the brief answer rather than going quiet.
     recite: (msg, lang) => startRecital({ ...recitalDeps(), db: getPool() }, msg, lang),
-    // The Book as an artefact (CCB-S4-050). The counts come from the same computation
-    // the overview uses, so the two can never disagree about how many laws there are.
-    tellBook: async (msg, lang) => {
-      const s = interaction.get();
-      if (!s.bookStory.enabled) return false;
+    // The Book as a SCENE (CCB-S5-005, D-159). One message: fire and light, what the book
+    // means to her, ONE law, and an invitation. The law and both counts come from the
+    // application, so nothing here can be quoted wrong or counted wrong.
+    tellBook: async (msg, lang, previousLawId) => {
+      const s = interaction.get(botProfileId);
+      if (!s.bookScene.enabled) return null;
       const rules = currentPromptRules(botProfileId);
-      if (rules.length === 0) return false;
-      const chapters = await listRecitalChapters(getPool());
-      const overview = ruleOverview(rules, chapters, lang);
-      return startBookStory(
-        { ...recitalDeps(), db: getPool() },
-        msg,
-        lang,
-        overview,
-        s.bookStory.maxBeats,
-      );
+      if (rules.length === 0) return null;
+
+      // The scene has its OWN length bound, moved by the verbosity dial underneath it. A
+      // terse bot gets a terser scene; no setting turns it back into three paragraphs.
+      const verbosity = currentBotPersonality(botProfileId)?.verbosity ?? 5;
+      let shown: string | null = null;
+      const told = await tellBookScene({ ...recitalDeps(), db: getPool() }, msg, lang, {
+        previousLawId,
+        openingChars: sceneOpeningChars(verbosity),
+        closingChars: sceneClosingChars(verbosity),
+        onLawShown: (lawId) => {
+          shown = lawId;
+        },
+      });
+      return told ? shown : null;
     },
     // THIS bot's character and dials (CCB-S4-029, per bot since CCB-S5-001). Read live,
     // so an operator moving a slider expects the next reply to sound different, not the
@@ -466,7 +478,15 @@ async function startCaptureWorker(
     const graphs: BotGraph[] = [];
     for (const bot of host.bots) {
       const id = bot.config.botProfileId;
-      await Promise.all([warmBotPersonality(id), warmPromptRules(id), warmModerationRules(id)]);
+      await Promise.all([
+        warmBotPersonality(id),
+        warmPromptRules(id),
+        warmModerationRules(id),
+        // Its wake word, nicknames, retorts, persona and guards (CCB-S5-006). Without this
+        // the first message to a freshly booted bot races the read and is answered against
+        // the SHARED wake word, which is the defect wearing a timing hat.
+        interaction.refreshFor(id),
+      ]);
       graphs.push(buildBotGraph(bot, { cfg, interaction, plugins, prices, webSearch, host }));
     }
 
@@ -482,8 +502,14 @@ async function startCaptureWorker(
     await reportGroups(host, cfg);
 
     const ia = interaction.get();
+    // The wake words are PER BOT (CCB-S5-006), so one name in this line would be a lie the
+    // moment a second bot is hosted, and it is the exact lie this briefing fixes. Each bot
+    // is named with the word it actually answers to.
+    const wakeWords = host.bots
+      .map((b) => `${b.config.displayName}="${interaction.get(b.config.botProfileId).wakeWord}"`)
+      .join(', ');
     log.info(
-      `Interaction layer: wake word "${ia.wakeWord}", natural addressing ` +
+      `Interaction layer: wake words ${wakeWords}, natural addressing ` +
         `${ia.naturalAddressing ? 'on' : 'off'}, ` +
         `plugins [${plugins
           .list()

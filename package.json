@@ -90,8 +90,8 @@
     "verify:recital-live": "tsx scripts/verify-recital-live.ts",
     "verify:rule-conversation": "tsx scripts/verify-rule-conversation.ts",
     "verify:rule-conversation-live": "tsx scripts/verify-rule-conversation-live.ts",
-    "verify:book-artefact": "tsx scripts/verify-book-artefact.ts",
-    "verify:book-artefact-live": "tsx scripts/verify-book-artefact-live.ts",
+    "verify:book-scene": "tsx scripts/verify-book-scene.ts",
+    "verify:book-scene-live": "tsx scripts/verify-book-scene-live.ts",
     "verify:rule-creation": "tsx scripts/verify-rule-creation.ts",
     "verify:rule-creation-live": "tsx scripts/verify-rule-creation-live.ts",
     "verify:reasoning": "tsx scripts/verify-reasoning.ts",
@@ -99,7 +99,9 @@
     "verify:multi-bot-live": "tsx scripts/verify-multi-bot-live.ts",
     "verify:self-claims-live": "tsx scripts/verify-self-claims-live.ts",
     "verify:self-claims": "tsx scripts/verify-self-claims.ts",
-    "verify:decisions-index": "tsx scripts/verify-decisions-index.ts"
+    "verify:decisions-index": "tsx scripts/verify-decisions-index.ts",
+    "verify:interaction-scope": "tsx scripts/verify-interaction-scope.ts",
+    "verify:two-names": "tsx scripts/verify-two-names.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

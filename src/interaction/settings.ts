@@ -20,6 +20,10 @@
  */
 
 import { getSetting, setSetting } from '../db/settings.js';
+import { listSettingOverridesForBot } from '../db/interaction-overrides.js';
+import { applySettingOverrides } from './setting-scope.js';
+import { log } from '../log.js';
+import { status } from '../web/status.js';
 import type { Queryable } from '../db/pool.js';
 import { writeAudit } from '../db/audit.js';
 import type { ReplyCategory } from '../archive/settings.js';
@@ -35,11 +39,6 @@ import {
   normalizeRecitalSettings,
   type RecitalSettings,
 } from './recital.js';
-import {
-  BOOK_STORY_DEFAULT_BEATS,
-  BOOK_STORY_MAX_BEATS,
-  BOOK_STORY_MIN_BEATS,
-} from './book-story.js';
 
 /**
  * The given facts about her, read out of the settings (CCB-S4-031, D-135).
@@ -108,6 +107,10 @@ export const PERSONA_KEYS = [
   // CCB-S4-046. Answered by the APPLICATION, never by the model: a yes/no question about
   // which rules are withheld is one the model can lose in a single token.
   'rulesNoElimination',
+  // CCB-S5-005. Asked for a law by a number she has no page for. Deterministic, because the
+  // wrong answer here is a plausible one: a model handed "law 400" and no law will write a
+  // law, and an invented statute presented as hers is the worst failure this path has.
+  'rulesNoSuchLaw',
   // CCB-S4-038. Said when she ANNOUNCED a search and it then came back with nothing. It
   // exists so an announcement is never left hanging: having said she was looking, she owes
   // the member the outcome even when the outcome is nothing.
@@ -178,6 +181,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchUnavailable: 'lookup',
   searchRefused: 'lookup',
   rulesNoElimination: 'conversation',
+  rulesNoSuchLaw: 'conversation',
   searchEmpty: 'lookup',
   help: 'help',
   price: 'price',
@@ -359,17 +363,17 @@ export interface InteractionSettings {
    */
   invocationRecord: { enabled: boolean; retentionDays: number };
   /**
-   * The Book told as an artefact (CCB-S4-050, D-152).
+   * The Book, asked for by name, told as a SCENE (CCB-S5-005, D-159).
    *
-   * ON by default, because the distinction is the point of the briefing: a question about her
-   * RULES gets the overview, a question about the BOOK gets the story. Off means the Book by
-   * name falls back to the overview, which is CCB-S4-048's behaviour and a complete answer.
+   * ON by default, because the distinction is the point: a question about her RULES gets the
+   * overview, a question about the BOOK gets the scene. Off means the Book by name falls back
+   * to the overview, which is CCB-S4-048's behaviour and a complete answer.
    *
-   * Three beats by default: the ritual, the artefact, the record. That is the shorter end of
-   * what the operator asked for, because the objection to the recital was volume in a live
-   * group, never the drama.
+   * There is no length here any more, and that is deliberate. CCB-S4-050's `maxBeats` let an
+   * operator dial the answer up to six messages, and the whole objection to that answer was
+   * its volume. A scene is ONE message; the only decision left is whether she performs it.
    */
-  bookStory: { enabled: boolean; maxBeats: number };
+  bookScene: { enabled: boolean };
   /** Resolver confidence below which an instruction becomes UNKNOWN (0..1). */
   confidenceThreshold: number;
   /** Words that confirm a pending consent change. */
@@ -443,6 +447,10 @@ const PERSONA_EN: PersonaStrings = {
     '🚫 I am not searching the web for that. Ask me something else.',
   rulesNoElimination:
     '🔒 I do not discuss which of my rules I keep back, not one at a time and not by narrowing it down. Ask me what I can tell you and I will.',
+  // CCB-S5-005. Honest about the miss, and it says nothing about the withheld set beyond
+  // what she already says out loud: that there are more of them.
+  rulesNoSuchLaw:
+    '📕 There is no law {n} I can read to you. {total} of them I can turn to by number, and there are more that stay mine. Ask me for one of those, or ask me what an area covers.',
   published:
     '✨ Done. From now on your words shine in the public archive. Say *{wake}, unpublish me* ' +
     'whenever you want to take them back.',
@@ -569,6 +577,8 @@ const PERSONA_DE: PersonaStrings = {
     '🚫 Dafuer suche ich nicht im Netz. Frag mich was anderes.',
   rulesNoElimination:
     '🔒 Ich rede nicht darueber, welche meiner Regeln ich zurueckhalte, weder einzeln noch durch Ausschluss. Frag mich, was ich dir sagen darf.',
+  rulesNoSuchLaw:
+    '📕 Ein Gesetz {n} kann ich dir nicht vorlesen. {total} davon kann ich mit Nummer aufschlagen, und es gibt weitere, die meine bleiben. Frag nach einem davon, oder frag mich, was ein Bereich abdeckt.',
   published:
     '✨ Erledigt. Von nun an leuchten deine Worte im öffentlichen Archiv. Sag *{wake}, widerrufe ' +
     'das*, wann immer du sie zurücknehmen willst.',
@@ -778,7 +788,7 @@ export const DEFAULT_INTERACTION: InteractionSettings = {
   memory: { ...DEFAULT_HISTORY_LIMITS },
   recital: { ...DEFAULT_RECITAL_SETTINGS },
   invocationRecord: { enabled: true, retentionDays: 90 },
-  bookStory: { enabled: true, maxBeats: BOOK_STORY_DEFAULT_BEATS },
+  bookScene: { enabled: true },
   confidenceThreshold: 0.55,
   affirmations: [
     'yes',
@@ -1092,14 +1102,14 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
     recital: normalizeRecitalSettings(
       o['recital'] as Partial<Record<keyof RecitalSettings, unknown>>,
     ),
-    bookStory: {
-      enabled: (o['bookStory'] as { enabled?: unknown } | undefined)?.enabled !== false,
-      maxBeats: int(
-        (o['bookStory'] as { maxBeats?: unknown } | undefined)?.maxBeats,
-        BOOK_STORY_MIN_BEATS,
-        BOOK_STORY_MAX_BEATS,
-        d.bookStory.maxBeats,
-      ),
+    bookScene: {
+      // The LEGACY KEY is read as a fallback, and it is not a courtesy. `bookStory` is what
+      // CCB-S4-050 persisted, so an operator who had switched the Book answer OFF has that
+      // decision stored under the old name; ignoring it would silently switch a feature back
+      // on in production during a rename. Once `bookScene` has been saved once, it wins.
+      enabled:
+        (o['bookScene'] as { enabled?: unknown } | undefined)?.enabled !== false &&
+        (o['bookStory'] as { enabled?: unknown } | undefined)?.enabled !== false,
     },
     invocationRecord: {
       enabled: (o['invocationRecord'] as { enabled?: unknown } | undefined)?.enabled !== false,
@@ -1157,7 +1167,22 @@ const INTERACTION_KEY = 'interaction';
  * In-process cache of the interaction settings, refreshed on write — the bot
  * reads these on every incoming message, so it must never hit the DB per message.
  */
+/**
+ * ── PER BOT SINCE CCB-S5-006 ─────────────────────────────────────────────────
+ *
+ * This held ONE settings record and handed it to every bot, which is how two hosted bots
+ * came to answer to the same name: `wakeWord` lives here, one instance was shared, and both
+ * bots woke on it. The record is still one record; what changed is that a bot may DEVIATE
+ * from it, on the mechanism D-155 established for the laws.
+ *
+ * The cache is keyed by bot beside the shared value, and invalidation is whole-cache for
+ * the reason the rule service gives: a per-key invalidation that missed the key that
+ * mattered would leave a bot answering to a name the console says it no longer has.
+ */
 export class InteractionService {
+  private readonly perBot = new Map<number, InteractionSettings>();
+  private readonly inFlight = new Map<number, Promise<void>>();
+
   private constructor(
     private readonly db: Queryable,
     private current: InteractionSettings,
@@ -1173,8 +1198,54 @@ export class InteractionService {
     return new InteractionService(db, normalizeInteraction({}));
   }
 
-  get(): InteractionSettings {
+  /**
+   * The settings, for a bot or shared.
+   *
+   * With no bot named this is the SHARED record, which is what the console's default view
+   * and every deployment-wide reader want. The reply path always names one: a bot reading
+   * the shared record would be reading another bot's name.
+   */
+  get(botProfileId?: number): InteractionSettings {
+    if (botProfileId === undefined) return this.current;
+    const cached = this.perBot.get(botProfileId);
+    if (cached !== undefined) return cached;
+    void this.kickRefreshFor(botProfileId);
+    // The SHARED record while the deviations load, which is the same trade the rule service
+    // makes: the shared value IS the setting and a deviation is a departure from it, so a
+    // bot briefly reading what it inherits is a smaller wrong than a bot reading nothing.
+    // The window is one query on the first message after a save.
     return this.current;
+  }
+
+  /** Load one bot's effective settings. */
+  async refreshFor(botProfileId: number): Promise<void> {
+    try {
+      const overrides = await listSettingOverridesForBot(this.db, botProfileId);
+      this.perBot.set(botProfileId, applySettingOverrides(this.current, overrides));
+    } catch (error) {
+      log.warn(
+        `Interaction: reading bot ${botProfileId}'s settings failed; it is answering from ` +
+          `the shared ones (${error instanceof Error ? error.message : String(error)}).`,
+      );
+      status.error(
+        `The per-bot interaction settings of bot ${botProfileId} could not be read. It is ` +
+          `using the shared ones, so its wake word and retorts may not be its own.`,
+      );
+    }
+  }
+
+  private kickRefreshFor(botProfileId: number): Promise<void> {
+    let p = this.inFlight.get(botProfileId);
+    if (p === undefined) {
+      p = this.refreshFor(botProfileId).finally(() => this.inFlight.delete(botProfileId));
+      this.inFlight.set(botProfileId, p);
+    }
+    return p;
+  }
+
+  /** Drop every per-bot value. Called after any save, shared or per bot. */
+  invalidate(): void {
+    this.perBot.clear();
   }
 
   async save(next: unknown, actor: string): Promise<InteractionSettings> {
@@ -1182,6 +1253,9 @@ export class InteractionService {
     await setSetting(this.db, INTERACTION_KEY, normalized);
     await writeAudit(this.db, actor, 'interaction.update', 'interaction', normalized);
     this.current = normalized;
+    // Every bot's effective settings are derived from this one, so a shared save
+    // invalidates all of them. Cheap: one query per bot on its next message.
+    this.perBot.clear();
     return normalized;
   }
 }

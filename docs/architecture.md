@@ -2868,22 +2868,82 @@ keeps back. The recital taught *the ones you skipped* and *the other 40*; the co
 teaches *the ones you keep back*. The elimination gate now covers all three, and the pattern
 is the thing to carry: this is a standing consequence of the feature, not a one-off. See
 security §12.7.
-## 43. The Book as an artefact, and its record (CCB-S4-050, D-152)
+## 43. The Book as an artefact, and its record (CCB-S4-050, D-152; the answer rewritten under CCB-S5-005, D-159)
 
 ### 43.1 Two questions, two answers
 
 | Asked | Answer |
 | --- | --- |
 | about her **rules** or **laws** | CCB-S4-048's overview, then a capped follow-up. Unchanged. |
-| about the **Book of Elii** by name | the story: ritual, artefact, record |
+| about the **Book of Elii** by name | the SCENE: one message (§43.1a) |
+| for a **page**, by number or by asking for another | her line, then the page, printed (§43.1b) |
 
-The story runs through CCB-S4-047's recital runner, so the pacing, the queue, the degradation
-and the flood budget are the ones already built. Only the material differs: the story is about
-the artefact and quotes nothing, so nothing is selected and nothing can leak.
+CCB-S4-050's three-beat story is gone. It ran through the recital runner and it was still what
+the operator objected to three times: three paragraphs of exposition arriving one after another
+into a live group read as a catalogue whatever they are about.
 
-Beats are BRIEFS, not scripts. The counts come from the same `ruleOverview` the overview uses
-and travel as required literals (D-137). Icons are a small fixed set: 🕯️ ritual, 📖 the Book,
-📜 the record, 🔒 withheld.
+### 43.1a The scene (`book-scene.ts`)
+
+ONE message, assembled from three parts:
+
+```
+🕯️🕯️🕯️
+<her opening: the pause, the making of the book, what the laws are to her, a line handing over>
+
+📜 *Law 2 of 60*
+> HARD LIMIT. This sits above every dial. No dial value relaxes any part of it, including 10.
+
+🕯️ <her closing: how many she can read out, and the invitation>
+```
+
+Two short model calls, one send. Her halves come from BRIEFS rather than scripts, so the scene
+reads differently at different sharpness; each has an authored line behind it, so a model
+failure costs the flourish and never the scene. The count travels as a required literal (D-137).
+
+**The one-law bound is structural in three places, none of them an instruction.** `BookScene.law`
+is a rule rather than an array; neither brief contains any rule text, so the model has not been
+shown a law to quote; and `renderBookScene` emits one block. The law is the **ceiling**
+(`CEILING_RULE_IDS`), rotating, never twice running in a chat.
+
+**`sceneVoiceUsable` refuses a fabricated law in her own prose** — a quoted span, a blockquote,
+or an invented page number — and the authored line takes its place. Measured: the first live run
+invented a statute above the real one at both sharpness settings, and every structural check
+passed while it happened, because an invented law is not in the registry.
+
+### 43.1b Pages (`law-numbers.ts`)
+
+Every law she may name has a page number: its 1-based position among the nameable, enabled
+rules, sorted by **id** on raw code units. By id rather than `ord`, because `ord` is editable
+from the Book and an id is not; on code units rather than `localeCompare`, because a numbering
+that moves with the host's ICU build is not one.
+
+**Only what she can show is numbered.** Numbering withheld laws too would put each between two
+she reads out, and ids are family-clustered, so a member walking the numbers could read a
+withheld law's subject off its neighbours. Rules carrying a reply-assembly placeholder
+(`{{nameableRules}}`, `{{ruleInvocations}}`, the overview counts, the fences) are excluded as
+well: a sentence with a runtime hole in it is not a page anybody can be handed, and rendering
+one for a member throws.
+
+**The application prints the page; she never states the number.** Measured against `qwen3:32b`:
+handed a law and its number, she put the number on a different law, put a different number on
+the right law, and once read out a law she had not been given. The model is told only that a
+page is being printed (`lawPage` is a boolean); the block itself is spread out of the reply
+request so the text and the number are not even in reach. Her line above it goes through the
+same fabricated-law gate and is bounded at `PAGE_FRAMING_MAX_CHARS`.
+
+Out of range is answered by the application (`rulesNoSuchLaw`): no such page, this many have
+one, more stay hers. No model is asked, because a model handed "law 400" and no law writes one.
+
+### 43.1c The invitation, and what it does not swallow
+
+The scene opens its OWN window, narrower than CCB-S4-049's. That one promotes any unclaimed
+message within three minutes, which suits an overview that names six chapters and asks which
+interests you. A scene offers one page, so only `asksForAnotherLaw` is promoted inside it. The
+other three routes into the Book (a rule word, a page number, a chapter name) need no window.
+An ordinary question shortly after a scene therefore stays an ordinary question.
+
+"Tell me another" is a **page turn**, not a search: routed through the keyword selector it
+returned `disclosure.more-in-area` on the strength of containing the word "another".
 
 ### 43.2 The record: `cinderella_rule_invocations`
 
@@ -3086,6 +3146,58 @@ progress**, or a poll landing in the gap between them shows yesterday's run as t
 **Encryption has no plaintext fallback** (D-121). See `security.md` §11d; the architectural point is
 that the preconditions are checked **before the first encrypt**, so a misconfigured host fails with
 nothing written rather than with an unencrypted archive in the retention set.
+
+## 48. Which interaction settings are one bot's (CCB-S5-006, D-158)
+
+CCB-S5-001 made personality and standard laws per bot and left the Interaction settings shared.
+That was not a decision: it named personality and laws, never mentioned identity, and nothing
+pointed at it. `wakeWord` therefore sat in one shared record handed to every hosted bot, and
+**two bots answered to the same name**.
+
+**The inventory is data.** [`setting-scope.ts`](../src/interaction/setting-scope.ts) holds
+`SETTING_SCOPES`: every key of `InteractionSettings` with its scope, its console section and a
+one-line reason. Not a table in a document, because a document drifts from the code and the
+drift runs the worst way - a setting added later would simply be shared by default, silently,
+which is how `wakeWord` came to be shared in the first place. `verify:interaction-scope`
+asserts every key is placed, so adding one without placing it fails a check.
+
+The split, in summary:
+
+| Group | Scope |
+|---|---|
+| `wakeWord`, `botLabel`, `nicknames.words`, `retorts`, `persona` | per bot |
+| Guards: `silenceOnUnknown`, `strongSignal*`, `maxInstructionLength`, `lengthGuardConfidence`, `confidenceThreshold` | per bot |
+| Consent behaviour, entire | shared |
+| `archiveUrl`, `projectUrl` | shared: a destination, not an identity |
+| Addressing prefixes, follow-up, language, memory, replies, the Book | shared |
+
+**The mechanism is D-155's**, unchanged: shared defaults with per-bot deviations in
+`cinderella_interaction_overrides` (migration 047), where absence means inherit. A shared edit
+still reaches every bot that has not deviated, which copying at creation time could not have
+done.
+
+**A CHECK list rather than a trigger**, because unlike a rule's tier the per-bot key set is
+static and lives in no other table. The list is duplicated between the migration and
+`SETTING_SCOPES` deliberately; `verify:interaction-scope` reads the constraint out of the
+database with `pg_get_constraintdef` and compares, so it cannot drift.
+
+**A new bot gets its own name.** `createBotOnboardingProfile` writes a `wakeWord` override from
+the display name, and only when it differs from the shared value: an unconditional write stores
+a deviation that matches the default, which the console then shows as a difference and which
+would freeze that bot so later shared edits stopped reaching it. A display name that cannot
+serve as a wake word yields no row at all, never a fallback to the shared value.
+
+**Visibility matches the Book of Elii** rather than inventing a second language: the same
+badges, the same wording, and the shared count excluding deviating bots. The panel is generated
+from `SETTING_SCOPES`, so it cannot claim a scope the database does not enforce. `?bot=` selects
+which bot a page edits; no parameter means the shared values, so a single-bot deployment is
+unchanged.
+
+**The Diagnostics buffers carried the counters' defect.** `near-misses.ts` and
+`conversation-log.ts` are module-level in-process buffers that every hosted bot writes into, so
+two bots interleaved into one stream. Both now carry the bot, for the reason D-155 gives about
+the moderation counters: `groupId` distinguishes them only by the accident that the core's group
+ids differ per profile, and that accident expires when conversation ids are canonicalised.
 
 ## Appendix: divergences (code wins)
 
