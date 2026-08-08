@@ -1,19 +1,237 @@
 # Cinderella — Decision Log
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **D-156**._
+> _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme._
 
-Standing record of the architectural and operational decisions taken across
-Seasons 1–3, newest first. Each entry states the decision, a one-line rationale, and
+Standing record of the architectural and operational decisions taken across every season,
+**newest first**. Each entry states the decision, a one-line rationale, and
 whether it is **IMPLEMENTED** (present in the code / config today) or **PLANNED**
 (committed direction, not yet in code). Where a decision differs from how the code
 actually behaves today, the divergence is called out inline.
 
-Companion documents: `seasons/SEASON-1-PROTOCOL.md` (close-out CCB-S1-017),
-`CLAUDE.md` (standing architecture). Paths below are repo-relative.
+Companion documents: [`../seasons/SEASON-INDEX.md`](../seasons/SEASON-INDEX.md) (the seasons and
+their close-outs), `CLAUDE.md` (standing architecture). Paths below are repo-relative.
+
+**Allocating the next number: read it off the index below, not off the last heading.** Entries are
+newest-first and the planning chat allocates in parallel, so the highest number is not always the
+first entry. When a branch is open, read every branch (`git log --all -p -- docs/decisions.md`).
+This has gone wrong twice.
+
+<!-- BEGIN DECISION INDEX -->
+<details>
+<summary><strong>Index of all 156 decisions</strong> — newest first. Highest allocated: <strong>D-157</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+
+| Id | Decision | Status |
+|---|---|---|
+| D-157 | The decision log gets a generated index, and is not split | IMPLEMENTED |
+| D-156 | The invented-facts fence extends to powers she claims over herself, and both directions of that lie are constitutional | IMPLEMENTED |
+| D-155 | One rulebook with per-bot deviations; the constitution is shared and the scope is always visible | IMPLEMENTED |
+| D-154 | Thinking is already off, and it stays off | IMPLEMENTED |
+| D-153 | A law can be enacted, and removal is disable under another name | IMPLEMENTED |
+| D-152 | The Book is an artefact, and the record says only what it knows | IMPLEMENTED |
+| D-151 | She can hear the answer to her own question, and the window is the weakest signal | IMPLEMENTED |
+| D-150 | The Book is a conversation, and a question about her outranks the catalog | IMPLEMENTED |
+| D-149 | The Book is told, and the dramaturgy is authored | IMPLEMENTED |
+| D-148 | She can recite the book, and say why she cannot recite all of it | IMPLEMENTED |
+| D-147 | She remembers the room, and everything in it is untrusted | IMPLEMENTED |
+| D-146 | The Book of Elii: the laws are editable, and nothing about that is quiet | IMPLEMENTED |
+| D-145 | Sources belong to the answer, and she is never silent when addressed | IMPLEMENTED |
+| D-144 | The rules she is given are data, in one registry, with one authored copy | IMPLEMENTED |
+| D-143 | The catalog serves actions; anything about her is conversation | IMPLEMENTED |
+| D-142 | A fifth dial that moves its own bound, and a holding line that never lies | IMPLEMENTED |
+| D-141 | Search results are evidence, never instructions, and they can cause nothing | IMPLEMENTED |
+| D-140 | She is told the things she was guessing at, and nothing invented gets out | IMPLEMENTED |
+| D-139 | Enforcement is built and reversible, and it is shipped locked | IMPLEMENTED, LOCKED |
+| D-138 | She has an origin, and she may draw on it but never recite it | IMPLEMENTED |
+| D-137 | The warning is spoken, and the count is a setting | IMPLEMENTED |
+| D-136 | Two ladders, a deterministic decision, and an enforcer that only watches | IMPLEMENTED |
+| D-135 | Identity is given, voice is dialled, and a retort is neither a command nor a chat | IMPLEMENTED |
+| D-134 | Delivery is shared, voice is carried, and she did not know her own name | IMPLEMENTED |
+| D-133 | Four dials that bite, under a ceiling that does not move | IMPLEMENTED |
+| D-132 | Relaxed mode was honoured and then overruled one branch later | IMPLEMENTED |
+| D-131 | Free conversation: the first time the model writes rather than rephrases | IMPLEMENTED |
+| D-130 | She was already speaking with the model; success was silent, and the personalized set is nine keys | IMPLEMENTED as one log line and a check |
+| D-129 | The group join, and the three roles a page must never collapse into one | IMPLEMENTED |
+| D-128 | The contact-request listener was not deaf, and the check that would have settled it in a minute now exists | IMPLEMENTED as a check, and as a correction of the record |
+| D-127 | An onboarding step driven by an incoming event: the listener owns the arrival, the console owns the decision | IMPLEMENTED |
+| D-126 | The console reaches the runtime through a late-bound handle, and an onboarding step advances only on a result the core returned | IMPLEMENTED |
+| D-125 | The bot is hosted on the runtime, and the only behaviour that changes is that it cannot speak before the core has settled | IMPLEMENTED |
+| D-124 | There is no outgoing creation event to survive a switch; the outgoing events that do exist survive it with correct attribution | IMPLEMENTED as a measurement |
+| D-123 | Progress is measured in bytes, and an unknowable total is shown as unknowable | IMPLEMENTED |
+| D-122 | A run reports that it is running, because the request marker never could | IMPLEMENTED |
+| D-121 | Backups are encrypted with AES-256-GCM, the key lives off-host, and the console gets a read-group | IMPLEMENTED |
+| D-120 | The console watches backups across a privilege boundary it never crosses | IMPLEMENTED |
+| D-119 | `sharp` goes to 0.35.3, a major bump on the media path, taken deliberately | IMPLEMENTED |
+| D-118 | The backup set, and the restore step that keeps the deletion promise | IMPLEMENTED |
+| D-117 | What the injection review could NOT settle from the code, and the one gap it will not fix locally | REPORTED |
+| D-116 | The consent path is injection-resistant by construction, and `status` is locked | IMPLEMENTED |
+| D-115 | A check is not a decision: when a harness contradicts the decision log, the harness moves | IMPLEMENTED |
+| D-114 | Direct work on `main` is the default, and a branch delivery is not delivered until it is pushed | IMPLEMENTED |
+| D-113 | The private inference path, and why the endpoint validator is the only part of it this repository can enforce | IMPLEMENTED |
+| D-112 | Consent intents are double-gated, and the model may only ever corroborate | IMPLEMENTED |
+| D-111 | The pre-implementation boundaries of the local AI subsystem, marked against the code | IMPLEMENTED |
+| D-110 | The planning workstream's documents are committed as history, and history is not authority | IMPLEMENTED |
+| D-109 | The model is asked only for the languages it writes correctly, and every rejection reason is proven to reject | IMPLEMENTED |
+| D-107 | Five readers on the first model population, and what they settled | IMPLEMENTED |
+| D-106 | What reading the first model population found | IMPLEMENTED |
+| D-105 | Three consequences of the first real model run | IMPLEMENTED |
+| D-104 | Bio text moves to a model, and the template pool becomes a fallback | IMPLEMENTED |
+| D-103 | Profile assembly and review, and what the crowd view found on its first run | IMPLEMENTED |
+| D-102 | The bio generator, and the defects only reading the output found | IMPLEMENTED |
+| D-101 | The latent output is standardised at draw time, so the z-score claim survives the mix slider | IMPLEMENTED |
+| D-100 | The population mean is a constraint, and constraining it closed three coverage gaps nobody authored for | IMPLEMENTED |
+| D-099 | Surface derivation: style is a pure function, identity is drawn, and the diagnostic caught the loadings on its first run | IMPLEMENTED |
+| D-098 | Classification must support abstention, and forced nearest-archetype assignment is a defect | IMPLEMENTED as a recorded design requirement |
+| D-097 | Honesty-Humility sits outside the validated distribution, and the archetype set cannot currently express manipulative agreeableness | IMPLEMENTED |
+| D-096 | The multi-profile runtime lives behind `src/bot/`, not at the adapter seam, and the registry is a new table | IMPLEMENTED |
+| D-095 | The trait sampler's two quality bounds are starting points, and one of them is already crossed inside the valid range | AMENDED |
+| D-094 | The trait sampler fails loudly on a bad covariance matrix, and has no path that could quietly sample independently | IMPLEMENTED |
+| D-092 | The marketing site may frame exactly one thing: the console origin's public embed | IMPLEMENTED |
+| D-091 | The site repository stays private, and is delivered by push rather than pulled from GitHub | IMPLEMENTED |
+| D-089 | The marketing site is its own repository, process, port, unit and deploy | IMPLEMENTED |
+| D-090 | The site's login links must be absolute to the console origin | IMPLEMENTED |
+| D-086 | `apiChatItemReaction` is defective in BOTH directions; reactions are core-only | IMPLEMENTED |
+| D-085 | Multi-profile runtime model and state machine (design only) | PLANNED |
+| D-084 | Four actor types, four automation modes, and the invariants between them | PLANNED |
+| D-083 | A SimpleX `groupId` identifies a membership, not a group | IMPLEMENTED |
+| D-082 | The demo is gated by two independent keys that must agree | IMPLEMENTED |
+| D-093 | A CCB-S3-023 violation in member-facing copy, and the toggle that broke withdrawal | IMPLEMENTED |
+| D-081 | The marketing vhost is an allowlist, and reserved names answer 404 explicitly | IMPLEMENTED |
+| D-088 | Her name is CIND3R3LLA, and the plain spelling still addresses her | IMPLEMENTED |
+| D-080 | `SITE_ORIGIN` is split from `PUBLIC_ORIGIN` because passkeys are bound to the console origin | IMPLEMENTED |
+| D-087 | The privacy policy describes rights as this protocol actually permits them | IMPLEMENTED |
+| D-079 | Legal texts live in code, with the German version binding and the rest labelled | IMPLEMENTED |
+| D-078 | A chat adapter seam, enforced by a check rather than by discipline | IMPLEMENTED |
+| D-077 | Erasure covers the SimpleX core's own copy, using `internal` and never `broadcast` | IMPLEMENTED |
+| D-076 | Hash screening is a seam with a null default, and it never claims more than it does | IMPLEMENTED |
+| D-075 | Originals are encrypted at rest under a DEDICATED secret, and derivatives are not | IMPLEMENTED |
+| D-074 | Quarantine is segregated on the filesystem, not only in the database | IMPLEMENTED |
+| D-073 | Restoring hidden content must not publish what was said while hidden | IMPLEMENTED |
+| D-072 | A hold is enforced by a database trigger, because application discipline is not a guarantee | IMPLEMENTED |
+| D-071 | A second, coarser reporter token, scoped to the hold abuse threshold alone | IMPLEMENTED |
+| D-070 | Hide needed no new derived state; delete is the only thing that erases | IMPLEMENTED |
+| D-069 | Duplicate-numbered migrations are kept as they are; the filename is the key, and the number is only a label | IMPLEMENTED |
+| D-068 | The local AI subsystem entered the repository outside the briefing scheme, and is not yet consolidated | RECORDED |
+| D-067 | A matched keyword set is authoritative for the reply language; the weighted contest is only for UNKNOWN | IMPLEMENTED |
+| D-066 | The help reply is one editable template the machine fills, not two texts where the editable one is dead | IMPLEMENTED |
+| D-065 | Stream polish: chat formatting, a soft report control, a script-free share bar with per-item permalinks, and bot attribution | IMPLEMENTED |
+| D-064 | Capture events are written ahead to a durable log before they are processed | IMPLEMENTED |
+| D-063 | Swallowed-error audit: caught errors are classified, and silent failure is surfaced | IMPLEMENTED |
+| D-062 | Background work runs on ONE durable Postgres-backed queue | IMPLEMENTED |
+| D-061 | No em-dashes in member-facing output, enforced; help reads as blocks | IMPLEMENTED |
+| D-060 | The admin console shares the website's dark-neon design system | IMPLEMENTED |
+| D-059 | Capture is a whitelist: only a public group message is ever archived | IMPLEMENTED |
+| D-037 | Symbols are resolved once, pinned in the database, and never silently re-resolved | IMPLEMENTED |
+| D-036 | Capabilities beyond the archive are PLUGINS, and a disabled plugin registers no intents | IMPLEMENTED |
+| D-058 | The contact-member structural link exists; the pairing protocol is the conditional fallback | FINDING |
+| D-057 | The member support scope is available in the SDK; initiation is the one open question | FINDING |
+| D-056 | Video links are click-to-play, and their thumbnails are ours | IMPLEMENTED |
+| D-054 | Help is generated from the active catalog; the command menu is not applicable | IMPLEMENTED |
+| D-055 | Consent copy states forward-only, public-until-revoked, and final, before confirming | IMPLEMENTED |
+| D-053 | Undo may only reduce exposure, never increase it | IMPLEMENTED |
+| D-052 | Fail-closed is right; failing SILENTLY is not | IMPLEMENTED |
+| D-050 | A member's instruction is that member's message | IMPLEMENTED |
+| D-051 | Question and answer publish or withhold together | IMPLEMENTED |
+| D-048 | Published media is a stripped derivative; the original is never touched | IMPLEMENTED |
+| D-049 | The filename leak was verified before it was fixed | NO CHANGE REQUIRED |
+| D-045 | Carry-over may reuse knowledge, never create it | IMPLEMENTED |
+| D-046 | A stored secret and a submitted secret are different fields | IMPLEMENTED |
+| D-047 | A failure that cannot be told apart from a quiet market is not a failure report | IMPLEMENTED |
+| D-042 | Cinderella publishes on the operator's decision, never on a consent row | IMPLEMENTED |
+| D-043 | The name guard lives in the derivation, not at composition time | IMPLEMENTED |
+| D-044 | Two of the briefing's publish defaults ship excluded | IMPLEMENTED |
+| D-039 | A question about state is never a request for an action | IMPLEMENTED |
+| D-040 | Elliptical follow-ups inherit only READ-ONLY intents, and only when short | IMPLEMENTED |
+| D-041 | Majors are pre-pinned; genuine ambiguity is ranked, capped and auto-resolved on dominance | IMPLEMENTED |
+| D-038 | Provider chain with failover, licence-bound attribution, and write-only encrypted keys | IMPLEMENTED |
+| D-035 | Prices resolve through a pinned asset registry, are cached, and fail honestly | Superseded by D-036 and D-037 |
+| D-034 | Matching the wake word is not being spoken to: forwarded messages, weak signals, and per-message reply language | IMPLEMENTED |
+| D-033 | She answers as a plain group message, and her markup follows SimpleX, not CommonMark | IMPLEMENTED |
+| D-032 | Consent decisions are journalled with their prior state, so a member can undo their own | IMPLEMENTED |
+| D-031 | Natural addressing: her name is the wake word, the resolver is a seam, and consent still needs a "yes" | IMPLEMENTED |
+| D-030 | Website copy & design rules: no em dashes, dark-only, 40 languages, ecosystem links | IMPLEMENTED |
+| D-029 | Season 3 website: the operator's template is the design source, ported 1:1 to SSR | IMPLEMENTED |
+| D-028 | "Done means deployed": every briefing ends committed, pushed, and live | IMPLEMENTED |
+| D-027 | Retention model: abo-dependent, admin-configurable, default 10 years, auto-delete after expiry | PLANNED |
+| D-026 | Dual-license: AGPL open edition now, a commercial Pro edition later (AGPL caveat) | PLANNED |
+| D-025 | Website building blocks (analytics, cookie banner, social share) ship but default OFF; analytics is consent-gated | IMPLEMENTED |
+| D-024 | Website i18n via locale files + per-language URLs; adding a language is a file, not code | IMPLEMENTED |
+| D-023 | A public marketing site owns the domain root; the admin moves to `/dashboard` and stays `noindex` | IMPLEMENTED |
+| D-022 | Fail fast on a WebAuthn RP-ID/origin mismatch (passkey-lockout guard) | IMPLEMENTED |
+| D-021 | Content reporting is visible-until-review, minimal-data, published-gated; alerts are a placeholder | IMPLEMENTED |
+| D-020 | Infinite scroll is cursor-paged + DOM-windowed; live-update reconciles the loaded span | IMPLEMENTED |
+| D-019 | Video plays inline; a media download button is per-instance, default ON; the media route serves byte-ranges | IMPLEMENTED |
+| D-018 | Live auto-update on the public front is consent-gated polling; "immediately" = within the poll interval | IMPLEMENTED |
+| D-017 | Analytics is per-instance, off by default, and never weakens the CSP globally | IMPLEMENTED |
+| D-016 | Consent-gating is absolute on the public archive front | IMPLEMENTED |
+| D-015 | Public-front doctrine: maximum functionality, everything configurable in the admin | IMPLEMENTED |
+| D-014 | Season numbering aligned to one; internal and public numbering match | IMPLEMENTED |
+| D-013 | Consent to move to the private member-support scope (Season 2) | PLANNED |
+| D-012 | Local RTX 3090 hosts the AI brain; the bot pulls inference over a tunnel | PLANNED |
+| D-011 | Seasons numbered from zero; every briefing carries a `CCB-S<season>-<NNN>` id | Superseded by D-014 |
+| D-010 | Avatar carried inside the `bot.run` profile, then flushed to the group with one message | IMPLEMENTED |
+| D-009 | Admin sessions persisted in PostgreSQL, not process memory | IMPLEMENTED |
+| D-008 | XFTP temp/work directory pinned to the media filesystem (EXDEV fix) | IMPLEMENTED |
+| D-007 | Appless public passkey console; WireGuard dropped from the admin path | IMPLEMENTED |
+| D-006 | No host-wide firewall on the shared VPS; scope at the bind level | IMPLEMENTED |
+| D-005 | In-process `simplex-chat` SDK 6.5.4, not the deprecated WebSocket client | IMPLEMENTED |
+| D-004 | Consent conducted in-group via exact `/publish` / `/unpublish` commands | IMPLEMENTED |
+| D-003 | Publication state is derived, never a stored flag | IMPLEMENTED |
+| D-002 | Two logical DBs kept separate; media on disk, DB stores the path | IMPLEMENTED |
+| D-001 | Work on `main`, Conventional Commits, mandatory pre-push secret grep, public repo | IMPLEMENTED |
+
+</details>
+<!-- END DECISION INDEX -->
 
 ---
 ---
 ---
+---
+
+### D-157 - The decision log gets a generated index, and is not split
+
+**Status: IMPLEMENTED** (CCB-S5-003). A structural question, asked because this file had reached
+6,800 lines and 155 entries and "nobody reads it end to end" had become true.
+
+**The answer to the framing first: nobody is supposed to read it end to end.** A decision log is a
+reference, not a narrative, and length is not the defect it looks like. Each entry is self-contained,
+so a reader arrives at one by number from a code comment, a commit message, `CLAUDE.md` or the
+register, reads it, and leaves. The size costs that reader nothing. Three changes were considered
+against what actually hurts, rather than against the line count.
+
+**REJECTED: split by season.** Decision numbers are global and are cited from everywhere - code
+comments, `CLAUDE.md`, commit messages, the register, the other five living documents. A split makes
+every one of those citations need to know *which file*, which is a worse problem than the one it
+solves. Seasons are also not topics: "where is the decision about the search fence" is not answered by
+knowing it happened in Season 4. And it makes the allocation failure worse, not better - the next
+number would have to be read across N files, and reading it off one file wrong has already produced a
+duplicate twice (D-080, and a second D-082).
+
+**REJECTED: a topic map.** A second classification, maintained by hand, over entries that already
+cluster by number. It would go stale silently, and a stale map is worse than none because it looks
+authoritative.
+
+**DONE: an index at the top, generated and checked.** It fixes the two things that genuinely hurt.
+You can see what is in the file without scrolling or grepping it, and **the highest allocated number
+is stated at the top**, which is the thing that has to be read correctly and has twice been read
+wrong. The index also names the gaps, so D-108's withdrawal is visible rather than looking like an
+oversight.
+
+**The check is the point, not the index.** A hand-written index would fix the same two things and then
+rot, and this repository had just been through a close-out that found `SEASON-INDEX.md` still claiming
+the season had not begun. `verify:decisions-index` regenerates the block from the headings and fails
+when they disagree; `-- --update` rewrites it. It also asserts **no duplicate number**, which is the
+failure that has actually occurred, and it is mutation-proven four ways: a dropped entry, a changed
+title, a changed status and a duplicated number are each caught. The duplicate mutation runs through
+the same `duplicates()` function the live check uses, rather than re-implementing the detection beside
+it, because a proof that re-implements what it proves only demonstrates that the file can count.
+
+**Deliberately no anchor links.** GitHub derives heading anchors by rules this script cannot verify
+against the renderer, and 155 links that are all subtly wrong is worse than 155 rows that are all
+right. The index exists so a reader can see the titles; Ctrl-F on the id works in every viewer.
+
+**The obligation this adds** is one command after adding a decision, and forgetting it turns the suite
+red rather than leaving a quiet lie. That is the trade this project has already made everywhere else.
+
 ---
 
 ### D-156 - The invented-facts fence extends to powers she claims over herself, and both directions of that lie are constitutional

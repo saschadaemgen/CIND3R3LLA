@@ -98,7 +98,8 @@
     "verify:multi-bot": "tsx scripts/verify-multi-bot.ts",
     "verify:multi-bot-live": "tsx scripts/verify-multi-bot-live.ts",
     "verify:self-claims-live": "tsx scripts/verify-self-claims-live.ts",
-    "verify:self-claims": "tsx scripts/verify-self-claims.ts"
+    "verify:self-claims": "tsx scripts/verify-self-claims.ts",
+    "verify:decisions-index": "tsx scripts/verify-decisions-index.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

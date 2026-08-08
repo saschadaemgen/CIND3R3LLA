@@ -321,6 +321,10 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
+`verify:decisions-index` (the generated index at the top of `docs/decisions.md`, D-157: that it
+matches the headings byte for byte, that every entry has a Status, and above all that **no decision
+number is allocated twice**, which has happened twice. Mutation-proven four ways. Regenerate with
+`npm run verify:decisions-index -- --update` after touching a decision heading or its Status),
 `verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: sixteen
 configurations covering every lane and every condition branch, compared against
 `scripts/fixtures/prompt-baseline.json`, which was captured from the code one commit BEFORE
@@ -502,6 +506,14 @@ allocates in parallel. The check is one command, and it is not optional:
 
 ```bash
 grep -oE "^### D-[0-9]+" docs/decisions.md | grep -oE "[0-9]+" | sort -n | tail -1
+```
+
+Since D-157 the **generated index at the top of `docs/decisions.md` states the highest allocated
+number and names the gaps**, so that is the fastest read; the command above remains the check.
+**After adding, retitling or restatusing a decision, regenerate the index** or the suite goes red:
+
+```bash
+npm run verify:decisions-index -- --update
 ```
 
 Same discipline for briefing ids and migration numbers (D-069): allocate from what is
