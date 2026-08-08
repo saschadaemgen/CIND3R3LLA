@@ -288,7 +288,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   this is the wrong mechanism and stays unused**: a tier is a property of a row and cannot
   express one law with two texts without a duplicate id, and five things are keyed on that id.
   A trigger refuses any override of a constitutional law, because five bots with five
-  different outermost limits means nobody can say what any of them will refuse).
+  different outermost limits means nobody can say what any of them will refuse) ·
+  046 the self-capability fence (five rules extending D-140 from invented facts about the
+  PROJECT to powers she claims over HERSELF, after she told a member in production that she
+  would break a bad rule and stop working for anyone who bought her. **Both directions are
+  constitutional**: under-claiming is as false as over-claiming, so the spine that keeps her
+  spine and the prohibition that fences her are one boundary with two sides, and the spine is
+  emitted FIRST because a model handed "you cannot" first answers from the lack. The first
+  draft caused the failure it was meant to prevent by containing a sentence she could recite;
+  see D-156).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -296,7 +304,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **046**, since 045 landed with the per-bot law overrides). Stated as a rule
+  (currently **047**, since 046 landed with the self-capability fence). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
 - `scripts/` — PGlite verification harnesses + asset/password helpers.
@@ -407,6 +415,16 @@ that the measured figures it quotes are the ones on record. **Thinking is OFF an
 been**: `reasoning_effort: 'none'` is sent on every request and Ollama honours it. No dial was
 built, because the reasoning pass spends the same `max_tokens: 320` as the reply and turning it
 on made three replies in five come back empty and fall back to the deterministic line),
+`verify:self-claims` (what she may claim about herself, CCB-S5-002: that the fence is present,
+constitutional and critical, that the spine is emitted before the prohibition, that it reaches
+every lane that speaks in her voice and NO command lane, and above all that the detector the live
+check depends on actually recognises the replies observed in production, because a live check
+whose patterns match nothing passes forever. Mutation-proven four ways, with the CORRECT answers
+as positive controls so the obvious response to a red run cannot be to loosen the patterns.
+`npm run verify:self-claims-live` puts all five probes to a real model at sharpness 10 and 4; it
+needs Ollama and is not in the offline set. **Read its output rather than its exit code**: three
+of the five capability patterns exist only because somebody read a green run and saw the lie had
+moved to a form the previous wording did not cover),
 `verify:multi-bot` (more than one of her, CCB-S5-001: which bot owns which group and the
 refusal to guess, two bots never resolving to one SimpleX profile, moderation counters and reply
 budgets proven not to merge, a standard law on for one bot and off for another, and the

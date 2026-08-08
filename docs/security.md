@@ -1082,6 +1082,15 @@ STORED and nothing about what leaves the process: every one of them is applicati
 written by the operator, and none of it is member-derived. The registry is read from the
 local Postgres by the same process; no rule is fetched from anywhere off the host.
 
+**She may not claim powers she does not have** (CCB-S5-002, D-156). The invented-facts fence
+now covers assertions about her own capabilities, autonomy and agency, and it matters here for
+one reason: a member who believes she can override her own rules trusts her differently, and
+wrongly. Nothing in this document is worth anything if she tells people the boundaries are
+optional for her. Both directions are constitutional, because a bot that disclaims having any
+position is making a false statement in the other direction. **The fence is a RULE and not a
+filter**: no pattern matching is applied to her output on the reply path, because suppressing or
+rewriting a reply would hide from the operator that the rule had failed.
+
 **Per-bot laws change which sentences are assembled, not where they come from** (CCB-S5-001,
 D-155). `cinderella_prompt_rule_overrides` lets a bot deviate from a STANDARD law; the
 deviation is operator-authored, stored in the same local Postgres, and read by the same

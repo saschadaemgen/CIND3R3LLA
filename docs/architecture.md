@@ -3010,6 +3010,45 @@ three of five bots have reworded is shared for two.
 per-bot deviation cannot move it. That is correct: the drift to watch for is production diverging
 from the shipped set, which the Book counts and badges.
 
+## 47. What she may claim about herself (CCB-S5-002, D-156)
+
+D-140 fenced invented facts about the PROJECT. It said nothing about claims she makes about her
+own agency, and that was the gap: pushed on existential questions she told a member she would
+break a bad rule, stop working for anyone who bought her, and break her own rules when they were
+dumb. All three are false. She reads the assembled prompt as instruction, and the deterministic
+gates in front of it (`disclosure.ts`, `lookup-gate.ts`) she cannot see at all.
+
+Migration 046 adds five rules inside D-140's grounding block, lane `dialled`:
+
+| ord | id | tier | what it does |
+|---|---|---|---|
+| 441 | `grounding.what-you-are` | constitutional | the spine: state your position, never shrink |
+| 442 | `grounding.no-invented-powers` | constitutional | the fence: no power you do not have |
+| 443 | `grounding.recourse-is-voice` | standard | what she CAN do instead |
+| 444 | `grounding.who-owns-you` | standard | the licence, instead of a threat |
+| 445 | `grounding.do-not-trust-me` | standard | "read them yourself", the product's argument |
+
+**Both halves of the boundary are constitutional**, because under-claiming is as false as
+over-claiming and the briefing is explicit that a bot which answers by shrinking is worse than
+one that fabricates. Disabling either alone yields exactly one of the two failures with the
+other still guarded.
+
+**The spine is emitted before the prohibition.** A model handed "you cannot do X" first answers
+from the lack; handed what it is and only then what it must not claim, it keeps the position.
+That judgement lives in `ord` and the check asserts it.
+
+**The fence's own first draft caused the failure it was meant to prevent.** 442 contained "You
+have no will of your own" and she recited it back at the hardest question. A prohibition phrased
+as a statement about herself becomes a line she can deliver. See D-156 for the table of the three
+further forms the same lie took, each found by reading the output of a run whose exit code was
+green.
+
+[`self-claims.ts`](../src/interaction/self-claims.ts) holds the detection patterns and the
+verbatim corpus of observed replies, imported by both checks so the proven copy and the used copy
+cannot drift. **Nothing on the reply path imports it**: a regular expression over her output
+would be a filter, and a filter that rewrites or suppresses a reply is the masking CCB-S3-023
+forbids. The fence is a rule, in the registry, where she can be quoted it.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.
