@@ -24,6 +24,7 @@
  */
 
 import { log } from '../log.js';
+import { status } from '../web/status.js';
 import { chapterImagePreview, resolveAssetPath } from '../media/assets.js';
 import { listRecitalChapters } from '../db/recital-chapters.js';
 import type { Queryable } from '../db/pool.js';
@@ -157,9 +158,26 @@ function portFor(deps: RecitalDeps, groupId: number, lang: string): RecitalPort 
  * reads the law out, and she closes. Two short calls, one message, and no path by which a
  * second law can appear.
  *
- * Returns whether a scene was told. `false` is not a failure: no host, no law she may show,
- * or a member who has already had one this minute all mean the caller answers with the
- * conversational overview, which is a complete answer in its own right.
+ * ── AND WHY IT SENDS THROUGH THE REPLY PATH RATHER THAN THE RECITAL PORT ─────
+ *
+ * It used to use the recital port, inherited from CCB-S4-050's story, and that was wrong on
+ * every count. The port exists for ONE reason: beats two onward are sent by a queue job
+ * minutes after the message object is gone, so they have a group id and nothing else. A scene
+ * is one message sent synchronously while the message is still in hand, so it needs none of
+ * that, and taking it cost three things that path already had: the send was not archived (her
+ * own messages are captured on the reply path, so a scene left no trace anywhere, which is
+ * what made the production failure invisible), it did not carry the name prefix or the
+ * mention bookkeeping every other reply carries, and its failures were reported by nobody.
+ *
+ * Production: `[INFO] Book scene: reading law 2/60 ... in group 4` twice, nothing sent, no
+ * error. The rendered text was 620 characters, reproduced exactly, so the message was fine
+ * and the transport swallowed it. What follows is written so that can never be the shape of
+ * the evidence again.
+ *
+ * Returns whether a scene was told. `false` from a DECISION (no law she may show, a member
+ * who has already had one this minute) is not a failure and the caller answers with the
+ * conversational overview. `false` from a FAULT is logged as an error and raised to the
+ * admin, because a member asked for something the application had and did not get it.
  */
 export async function tellBookScene(
   deps: RecitalDeps,
@@ -169,15 +187,17 @@ export async function tellBookScene(
     previousLawId: string | null;
     openingChars: number;
     closingChars: number;
+    /**
+     * Sends the scene as an ordinary reply, returning whether it left.
+     *
+     * The caller supplies it rather than this function reaching for a transport, because the
+     * only correct transport is the one that answers THIS message: bot-scoped, archived, and
+     * already loud about its own failures.
+     */
+    send: (text: string) => Promise<boolean>;
     onLawShown?: (lawId: string) => void;
   },
 ): Promise<boolean> {
-  const out = deps.send();
-  if (!out) {
-    log.debug('Book scene: nothing is hosting, so the overview is given instead.');
-    return false;
-  }
-
   const german = lang.toLowerCase().startsWith('de');
   const scene = planBookScene(deps.rules(), {
     german,
@@ -190,8 +210,12 @@ export async function tellBookScene(
   }
 
   // The member's allowance, taken before a word is spoken, exactly as a recital takes it.
+  // A DECISION rather than a fault, so it is logged plainly and the overview answers instead.
   if (!deps.reserve(msg.groupId, msg.senderMemberId)) {
-    log.debug('Book scene: this member has already had one this minute; the overview is given.');
+    log.info(
+      `Book scene: member ${msg.senderMemberId} has already had one this minute in group ` +
+        `${String(msg.groupId)}; the overview is given instead.`,
+    );
     return false;
   }
 
@@ -218,13 +242,75 @@ export async function tellBookScene(
   const closing = await speak(scene.closing, opts.closingChars, [String(scene.lawTotal)]);
 
   // THE LAW IS RENDERED HERE, by the application, from `scene.law`, which holds exactly one.
-  const text = renderBookScene(scene, { opening, closing }, deps.renderRule(scene.law));
+  // `renderRule` throws on a law it cannot fill in for a member, and that is a fault rather
+  // than a quiet fall-through: the law was selected from a candidate set already filtered on
+  // renderability, so reaching this and failing means those two disagree.
+  let text: string;
+  try {
+    text = renderBookScene(scene, { opening, closing }, deps.renderRule(scene.law));
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    log.error(`Book scene: law ${scene.law.id} could not be rendered for a member (${detail}).`);
+    status.error(`The Book scene could not render law ${scene.law.id}: ${detail}`);
+    return false;
+  }
+
+  /**
+   * ── A BLANK SCENE IS A FAULT, NOT A MESSAGE ────────────────────────────────
+   *
+   * It cannot happen as the code stands: both halves fall back to an authored line and the
+   * law is application text, which is why the production symptom turned out NOT to be this.
+   * It is checked anyway because the alternative failure is an empty send, and an empty send
+   * is the one outcome that looks exactly like success from in here.
+   */
+  if (text.trim().length === 0) {
+    log.error(
+      `Book scene: assembled an empty scene for law ${scene.law.id} in group ` +
+        `${String(msg.groupId)}; nothing was sent.`,
+    );
+    status.error(`The Book scene assembled an empty message for law ${scene.law.id}.`);
+    return false;
+  }
 
   log.info(
     `Book scene: reading law ${String(scene.lawNumber)}/${String(scene.lawTotal)} ` +
-      `(${scene.law.id}) in group ${String(msg.groupId)}.`,
+      `(${scene.law.id}) in group ${String(msg.groupId)}, ${String(text.length)} characters.`,
   );
-  await out.sendText(msg.groupId, text);
+
+  /**
+   * ── AND IF IT DOES NOT LEAVE, SOMEBODY IS TOLD ─────────────────────────────
+   *
+   * The send bypasses the reply limit (the scene's own allowance above is what bounds it), so
+   * `false` here means the transport declined or failed rather than that a budget was spent.
+   * That is a fault: a member asked for something the application was holding, the application
+   * had it rendered, and it did not arrive. It goes to the log AND to the admin dashboard,
+   * because the production failure this replaces produced neither.
+   */
+  let sent = false;
+  try {
+    sent = await opts.send(text);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    log.error(
+      `Book scene: the send threw for law ${scene.law.id} in group ${String(msg.groupId)} ` +
+        `(${detail}).`,
+    );
+    status.error(`The Book scene could not be sent to group ${String(msg.groupId)}: ${detail}`);
+    return false;
+  }
+
+  if (!sent) {
+    log.error(
+      `Book scene: law ${scene.law.id} was rendered (${String(text.length)} characters) and ` +
+        `did not leave for group ${String(msg.groupId)}.`,
+    );
+    status.error(
+      `The Book scene was rendered and not delivered to group ${String(msg.groupId)}.`,
+    );
+    return false;
+  }
+
+  log.info(`Book scene: law ${scene.law.id} sent to group ${String(msg.groupId)}.`);
   opts.onLawShown?.(scene.law.id);
   return true;
 }

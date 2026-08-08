@@ -266,6 +266,24 @@ only a message asking for MORE is promoted; the other three ways into the Book a
 need no window at all. That is what keeps an ordinary question ninety seconds after a
 performance an ordinary question, which the briefing asked for explicitly.
 
+**A SCENE IS A REPLY, AND IT LEAVES THROUGH THE REPLY PATH** (corrected in production). The
+first deployment sent it through the recital port, inherited from CCB-S4-050. Production logged
+`Book scene: reading law 2/60 (ceiling.hard-limit) in group 4` twice, nothing arrived, and no
+error was raised anywhere. The rendered text was fine: 620 characters, reproduced exactly from
+the logged condition, so the message was never the fault. The port exists for beats a queue job
+sends minutes later holding a group id and nothing else, and borrowing it cost the scene the
+archive of her own messages (CCB-S3-007), the name prefix, and any report of its own failure.
+That last one is why the operator had two log lines and nothing else to go on.
+
+It now sends with `engine.sendSceneText`, with `bypassLimit` because the scene's own allowance
+is taken first, so a `false` return means the transport and not a budget. **Every way a scene
+can fail to arrive is now a `log.error` plus a `status.error` and a fall-back to the overview**:
+the send returning false, the send throwing, a law that will not render, and a blank message.
+The last two cannot happen as the code stands and are checked anyway, because an empty send is
+the one failure that looks exactly like success from inside. `verify:book-scene` drives the
+whole composition the entrypoint wires and mutation-proves it by restoring the shipped defect,
+which reaches the engine's outbound with nothing.
+
 Files: [`src/interaction/book-scene.ts`](../src/interaction/book-scene.ts),
 [`src/interaction/law-numbers.ts`](../src/interaction/law-numbers.ts),
 [`src/interaction/recital-service.ts`](../src/interaction/recital-service.ts),

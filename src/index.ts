@@ -317,6 +317,9 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
         previousLawId,
         openingChars: sceneOpeningChars(verbosity),
         closingChars: sceneClosingChars(verbosity),
+        // THIS bot's reply path, not the recital port: archived, prefixed, and loud when it
+        // fails. The port is for beats sent minutes later by a queue job; a scene is a reply.
+        send: (text) => engine.sendSceneText(msg, lang, text),
         onLawShown: (lawId) => {
           shown = lawId;
         },

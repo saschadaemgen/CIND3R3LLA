@@ -2910,6 +2910,28 @@ or an invented page number — and the authored line takes its place. Measured: 
 invented a statute above the real one at both sharpness settings, and every structural check
 passed while it happened, because an invented law is not in the registry.
 
+**It leaves through the REPLY path, not the recital port.** The first deployment used the port,
+inherited from CCB-S4-050's story, and production logged
+`Book scene: reading law 2/60 (ceiling.hard-limit) in group 4` twice with nothing arriving and
+no error anywhere. The rendered text was fine — 620 characters, reproduced exactly — so the
+message was never the fault. The port exists for beats a queue job sends minutes later holding
+a group id and nothing else; a scene is one message sent while the message it answers is still
+in hand, and taking the port cost it three things the reply path already had:
+
+| | on the port | on the reply path |
+| --- | --- | --- |
+| archived as her own message (CCB-S3-007) | no | yes |
+| name prefix and mention bookkeeping | no | yes |
+| a failure anybody hears about | no | yes |
+
+`engine.sendSceneText` sends it with `bypassLimit`, like the search announcement, because the
+scene's own allowance is taken before a word of it is written. So `false` from the send means
+the transport declined or failed rather than that a budget was spent, and it is reported as a
+fault: `log.error` plus `status.error`, and the caller falls back to the overview rather than
+going quiet. A blank scene and a law that will not render are checked the same way, even though
+neither can happen as the code stands, because an empty send is the one failure that looks
+exactly like success from inside.
+
 ### 43.1b Pages (`law-numbers.ts`)
 
 Every law she may name has a page number: its 1-based position among the nameable, enabled

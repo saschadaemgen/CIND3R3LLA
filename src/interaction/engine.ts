@@ -1222,6 +1222,28 @@ export class InteractionEngine {
     );
   }
 
+  /**
+   * Sends one Book scene as an ordinary reply (CCB-S5-005).
+   *
+   * ── WHY THE SCENE COMES BACK THROUGH HERE ──────────────────────────────────
+   *
+   * It went out through the recital port, and in production it logged that it was reading and
+   * then nothing arrived, with no error anywhere. The port is for beats a queue job sends
+   * minutes later, holding a group id and nothing else; a scene is one message sent while the
+   * message being answered is still in hand. Routing it here gives it what every other reply
+   * already has: the right bot, the name prefix and mention bookkeeping, the archive of her
+   * own messages (CCB-S3-007), and a send whose failure is reported.
+   *
+   * `bypassLimit`, like the search announcement, because the scene has its OWN allowance taken
+   * before a word of it is written. Without it, `false` would mean either "a budget was spent"
+   * or "the transport failed", and the caller could not tell a normal state from a fault.
+   */
+  async sendSceneText(msg: CapturedMessage, lang: string, text: string): Promise<boolean> {
+    return await this.replyWithText(msg, this.deps.settings(), lang, text, 'conversation', {
+      bypassLimit: true,
+    });
+  }
+
   /** One rule as a member will read it, through the same renderer the prompt stream uses. */
   renderRuleForMember(rule: PromptRule): string {
     const s = this.deps.settings();

@@ -153,20 +153,34 @@ function message(text: string, memberId = 'alice'): CapturedMessage {
   } as unknown as CapturedMessage;
 }
 
-/** The scene service, with every port faked, so the real path runs with nothing running. */
-function sceneHarness(opts: { speak?: boolean } = {}): {
+/**
+ * The scene service, with every port faked, so the real path runs with nothing running.
+ *
+ * `portSent` is the RECITAL PORT and must stay empty for a scene: the production failure was a
+ * scene sent down that path, logging that it was reading and arriving nowhere, unarchived and
+ * with nothing reporting it. A scene is a reply and leaves through `opts.send`.
+ */
+function sceneHarness(opts: { speak?: boolean; delivers?: boolean } = {}): {
   deps: Omit<RecitalDeps, 'db'>;
+  send: (text: string) => Promise<boolean>;
   sent: string[];
+  portSent: string[];
   briefs: string[];
   bounds: { maxChars: number; requiredLiterals: string[] }[];
 } {
   const sent: string[] = [];
+  const portSent: string[] = [];
   const briefs: string[] = [];
   const bounds: { maxChars: number; requiredLiterals: string[] }[] = [];
   return {
     sent,
+    portSent,
     briefs,
     bounds,
+    send: (text) => {
+      sent.push(text);
+      return Promise.resolve(opts.delivers !== false);
+    },
     deps: {
       rules: () => RULES,
       recital: () => normalizeInteraction({ ...DEFAULT_INTERACTION }).recital,
@@ -181,7 +195,7 @@ function sceneHarness(opts: { speak?: boolean } = {}): {
       },
       send: () => ({
         sendText: (_groupId, text) => {
-          sent.push(text);
+          portSent.push(text);
           return Promise.resolve();
         },
         sendImage: () => Promise.resolve(),
@@ -232,6 +246,7 @@ async function main(): Promise<void> {
     previousLawId: null,
     openingChars: sceneOpeningChars(5),
     closingChars: sceneClosingChars(5),
+    send: harness.send,
   });
   check('a scene was told', told);
   check('in ONE message, which is the whole shape of this briefing', harness.sent.length === 1, `${String(harness.sent.length)} message(s)`);
@@ -369,6 +384,7 @@ async function main(): Promise<void> {
     previousLawId: null,
     openingChars: 480,
     closingChars: 220,
+    send: fabricating.send,
   });
   check(
     'MUTATION: a model that invents a law gets the authored line instead, end to end',
@@ -388,6 +404,7 @@ async function main(): Promise<void> {
     previousLawId: null,
     openingChars: sceneOpeningChars(5),
     closingChars: sceneClosingChars(5),
+    send: spoken.send,
   });
   check(
     'with the model speaking, her words replace the authored lines and the law does not move',
@@ -422,6 +439,169 @@ async function main(): Promise<void> {
       sceneClosingChars(10) === SCENE_CLOSING_MAX_CHARS,
     `${String(sceneOpeningChars(1))} .. ${String(sceneOpeningChars(10))}`,
   );
+
+  /* ── 2b. It cannot fail quietly ─────────────────────────────────────────── */
+
+  /**
+   * ── THE PRODUCTION FAILURE THIS SECTION EXISTS FOR ─────────────────────────
+   *
+   * Twice, identically: `[INFO] Book scene: reading law 2/60 (ceiling.hard-limit) in group 4`,
+   * and nothing arrived. No send error, no reply in the archive, nothing in the admin. The
+   * rendered text was fine (620 characters, reproduced), so the message was never the problem:
+   * the scene was going out through the RECITAL PORT, which exists for beats a queue job sends
+   * minutes later, which nothing archives and whose failures nobody reports.
+   *
+   * A scene is a reply. It leaves through the reply path now, and every way it can not leave
+   * is loud.
+   */
+  console.log('\n   ...and it cannot fail quietly');
+
+  check(
+    'the scene leaves through the REPLY path, and the recital port is untouched',
+    harness.sent.length === 1 && harness.portSent.length === 0,
+    `reply ${String(harness.sent.length)}, port ${String(harness.portSent.length)}`,
+  );
+
+  const undelivered = sceneHarness({ delivers: false });
+  const stillTold = await tellBookScene(
+    { ...undelivered.deps, db },
+    message('show me the Book of Elii'),
+    'en',
+    {
+      previousLawId: null,
+      openingChars: sceneOpeningChars(5),
+      closingChars: sceneClosingChars(5),
+      send: undelivered.send,
+    },
+  );
+  check(
+    'MUTATION: a send that does not deliver is NOT reported as a scene told',
+    stillTold === false,
+    String(stillTold),
+  );
+  check(
+    'and the attempt really did render and reach the transport, so the check is not vacuous',
+    undelivered.sent.length === 1 && lawsIn(undelivered.sent[0] ?? '').length === 1,
+    `${String(undelivered.sent.length)} attempt(s)`,
+  );
+
+  const throwing = sceneHarness();
+  const threwTold = await tellBookScene(
+    { ...throwing.deps, db },
+    message('show me the Book of Elii'),
+    'en',
+    {
+      previousLawId: null,
+      openingChars: sceneOpeningChars(5),
+      closingChars: sceneClosingChars(5),
+      send: () => Promise.reject(new Error('the core said no')),
+    },
+  );
+  check('MUTATION: a send that THROWS is caught and reported, not propagated', threwTold === false);
+
+  /**
+   * The law the scene showed is remembered ONLY when it went out. Otherwise the next
+   * "tell me another" would turn from a page nobody was shown.
+   */
+  let noted: string | null = null;
+  await tellBookScene({ ...undelivered.deps, db }, message('read me your book'), 'en', {
+    previousLawId: null,
+    openingChars: sceneOpeningChars(5),
+    closingChars: sceneClosingChars(5),
+    send: () => Promise.resolve(false),
+    onLawShown: (id) => {
+      noted = id;
+    },
+  });
+  check('an undelivered scene records no law as shown', noted === null, String(noted));
+
+  /**
+   * ── AND THE WHOLE COMPOSITION, WHICH IS WHAT PRODUCTION BROKE ──────────────
+   *
+   * Every check above drives `tellBookScene` directly, and every check in section 4 stubs
+   * `tellBook` to a law id. Neither would have caught the defect, because the defect was in
+   * the JOIN: the scene rendered, the engine believed it, and the transport it had been handed
+   * was the wrong one. So this wires it the way `index.ts` does, engine included, and asserts
+   * the scene arrives at the engine's own outbound.
+   */
+  const delivered: string[] = [];
+  const composed = sceneHarness();
+  const wired: InteractionEngine = new InteractionEngine({
+    db,
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
+    rules: () => RULES,
+    personality: () => ({ ...DEFAULT_PERSONALITY }),
+    personalize: () => Promise.resolve(null),
+    tellBook: (msg, lang, previousLawId) =>
+      tellBookScene({ ...composed.deps, db }, msg, lang, {
+        previousLawId,
+        openingChars: sceneOpeningChars(5),
+        closingChars: sceneClosingChars(5),
+        send: (text) => wired.sendSceneText(msg, lang, text),
+      }).then((told) => (told ? 'ceiling.hard-limit' : null)),
+    send: (_msg, text) => {
+      delivered.push(text);
+      return Promise.resolve();
+    },
+  });
+  setActiveIntents(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
+  setIntentResolver({
+    name: 'always-unknown',
+    resolve: () => Promise.resolve({ intent: 'UNKNOWN', confidence: 0.1, slots: {}, lang: 'en' } as never),
+  });
+  await wired.handle(message('Cinderella, show me the Book of Elii', 'dave'));
+  check(
+    'END TO END: the scene reaches the outbound the engine archives through',
+    delivered.length === 1 && lawsIn(delivered[0] ?? '').length === 1,
+    delivered.length === 1 ? pageLine(delivered[0]) : `${String(delivered.length)} message(s)`,
+  );
+  check(
+    'exactly ONE message left, so the scene did not also get an ordinary reply after it',
+    delivered.length === 1,
+    String(delivered.length),
+  );
+  check(
+    'and nothing went down the recital port',
+    composed.portSent.length === 0,
+    String(composed.portSent.length),
+  );
+
+  /**
+   * MUTATION: the shape production actually shipped. The scene renders, the transport accepts
+   * it, `tellBookScene` reports success, and NOTHING reaches the engine's outbound. If the
+   * end-to-end check above cannot tell that apart from working, it is worth nothing.
+   */
+  const broken = sceneHarness();
+  delivered.length = 0;
+  const brokenEngine = new InteractionEngine({
+    db,
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
+    rules: () => RULES,
+    personality: () => ({ ...DEFAULT_PERSONALITY }),
+    personalize: () => Promise.resolve(null),
+    tellBook: (msg, lang, previousLawId) =>
+      tellBookScene({ ...broken.deps, db }, msg, lang, {
+        previousLawId,
+        openingChars: sceneOpeningChars(5),
+        closingChars: sceneClosingChars(5),
+        // The old wiring: out through the recital port, which nothing archives.
+        send: async (text) => {
+          await broken.deps.send()?.sendText(1, text);
+          return true;
+        },
+      }).then((told) => (told ? 'ceiling.hard-limit' : null)),
+    send: (_msg, text) => {
+      delivered.push(text);
+      return Promise.resolve();
+    },
+  });
+  await brokenEngine.handle(message('Cinderella, show me the Book of Elii', 'erin'));
+  check(
+    'MUTATION: sending down the recital port instead reaches the outbound with NOTHING',
+    delivered.length === 0 && broken.portSent.length === 1,
+    `outbound ${String(delivered.length)}, port ${String(broken.portSent.length)}`,
+  );
+  resetIntentResolver();
 
   /* ── 3. The numbering ───────────────────────────────────────────────────── */
 

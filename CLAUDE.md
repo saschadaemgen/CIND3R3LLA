@@ -429,6 +429,11 @@ not, and the record's deliberate limit from CCB-S4-050. **The one-law bound is a
 structurally rather than by inspection**: the counter is mutation-proven in both directions, the
 briefs are proven to contain no rule text over the whole registry, and a model that invents a law
 is driven end to end and shown to get the authored line instead.
+It also drives **the whole composition the entrypoint wires**, which is what the first deployment
+got wrong: the scene rendered, the engine believed it and the transport it had been handed was the
+recital port, so nothing arrived and nothing said so. A scene is a REPLY and leaves through the
+reply path. Mutation-proven by restoring the shipped defect, which reaches the engine's outbound
+with nothing, and every way a scene can fail to arrive is now an error plus a `status.error`.
 `npm run verify:book-scene-live` plays the whole conversation at two sharpness settings against a
 real model: the scene, another law, and a law by number. Read its output rather than its exit
 code, and read the `her framing:` lines: every defect this briefing fixed was found in a run that
