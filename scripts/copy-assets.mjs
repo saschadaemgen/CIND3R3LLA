@@ -50,13 +50,14 @@ copyFileSync(
   join(root, 'assets', 'admin-personality.js'),
   join(root, 'public', 'assets', 'admin-personality.js'),
 );
+// One uploader, two pages (CCB-S5-007): the recital's chapter images and the bot avatars.
 copyFileSync(
-  join(root, 'assets', 'admin-recital.js'),
-  join(root, 'public', 'assets', 'admin-recital.js'),
+  join(root, 'assets', 'admin-image-upload.js'),
+  join(root, 'public', 'assets', 'admin-image-upload.js'),
 );
 
 console.log(
   'copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, ' +
     'admin-setup-wizard.js, admin-access-control.js, admin-model-catalog.js, ' +
-    'admin-personality.js, admin-recital.js -> public/assets/',
+    'admin-personality.js, admin-image-upload.js -> public/assets/',
 );

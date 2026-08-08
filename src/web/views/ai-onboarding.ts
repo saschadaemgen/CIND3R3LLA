@@ -16,6 +16,7 @@ import {
   listBotOnboardingProfiles,
   recordContactAddress,
   resetBotOnboardingWorkflow,
+  setBotAvatarPath,
   updateBotOnboardingProfile,
   type BotOnboardingInput,
   type BotOnboardingProfile,
@@ -24,6 +25,13 @@ import {
   type PolicyActivationMode,
   type SdkGroupRole,
 } from '../../profiles/bot-onboarding.js';
+import {
+  ASSET_MAX_BYTES,
+  AssetError,
+  resolveAssetPath,
+  storeChapterImage,
+} from '../../media/assets.js';
+import { log } from '../../log.js';
 import {
   acceptContactRequest,
   createOrShowBotAddress,
@@ -1009,6 +1017,80 @@ function groupInvitationPanel(
   </section>`;
 }
 
+/**
+ * The face this bot wears (CCB-S5-007, D-161).
+ *
+ * ── WHAT THIS CONTROL IS, AND WHAT IT IS CAREFUL NOT TO CLAIM ────────────────
+ *
+ * `AVATAR_PATH` is one image in the environment, so before this the operator could dress the
+ * first bot and no other. The column holds a path per bot and NULL means the deployment
+ * default, so both states are normal and neither is styled as a problem: a bot with no upload
+ * is not misconfigured, it is wearing the shipped face.
+ *
+ * It writes a ROW. The SimpleX profile is dressed at boot by `startRuntimeHost`, and nothing
+ * here reaches into a running core, so the panel says "at next start" rather than "saved" and
+ * leaves it at that. The alternative, a page that reported the bot's face had changed while
+ * every member still saw the old one, is the "stores an intention" failure the contact address
+ * step was built to avoid, and it would be worse here because nothing would ever correct it.
+ *
+ * Unlike the create-address control this renders for every bot, hosted or not, in every
+ * workflow state. Uploading a face for a bot that has not been onboarded yet is a perfectly
+ * ordinary thing to do, and gating it on the runtime would make dressing a second bot depend
+ * on the runtime being up, which is the shape of defect this whole briefing exists to remove.
+ */
+function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
+  const own = profile.avatarPath !== null;
+
+  return html`<section class="setup-avatar" data-avatar-panel>
+    <header>
+      <span class="setup-eyebrow">Bot avatar</span>
+      ${own ? badge('own image', 'green') : badge('deployment default', 'slate')}
+    </header>
+    <p>
+      The picture members see beside this bot's messages. Every bot has its own, and a bot
+      with none wears the image the deployment ships with, which is the normal state for the
+      first one.
+    </p>
+
+    <div class="setup-avatar-current">
+      ${own
+        ? html`<img
+              src="/ai/onboarding/${profile.id}/avatar"
+              alt="Current avatar for ${profile.displayName}"
+              class="setup-avatar-image"
+            />
+            <form method="post" action="/ai/onboarding/${profile.id}/avatar/clear">
+              <input type="hidden" name="_csrf" value="${csrf}" />
+              <button type="submit" class="setup-button setup-button-quiet">
+                Use the deployment default
+              </button>
+            </form>`
+        : html`<span class="setup-avatar-status">
+            No image uploaded for this bot, so it wears the deployment default.
+          </span>`}
+    </div>
+
+    <form
+      method="post"
+      action="/ai/onboarding/${profile.id}/avatar"
+      data-image-upload
+      class="setup-avatar-form"
+    >
+      <input type="hidden" name="_csrf" value="${csrf}" />
+      <input type="hidden" name="imageData" value="" />
+      <input type="file" accept="image/*" />
+      <button type="submit" class="setup-button setup-button-secondary">Upload</button>
+      <span data-image-upload-status class="setup-avatar-status"></span>
+    </form>
+
+    <p class="setup-inline-note">
+      The file is re-encoded on the server and stored beside the other console images; the
+      database keeps the path and never the bytes. It is applied to the SimpleX profile the
+      next time the bot starts, so restart it to put the new face in front of members.
+    </p>
+  </section>`;
+}
+
 function profileListItem(profile: BotOnboardingProfile, selected: boolean): SafeHtml {
   const issue =
     profile.workflowState === 'error' ||
@@ -1094,6 +1176,7 @@ function profileDetails(
         </div>
       </section>
 
+      ${avatarPanel(profile, csrf)}
       ${contactAddressPanel(profile)}
       ${contactRequestPanel(requests, csrf)}
       ${groupInvitationPanel(invitations, profile.expectedGroupRole, csrf)}
@@ -1243,7 +1326,8 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         title: 'AI Bot Setup',
         active: 'ai:onboarding',
         csrfToken: csrf,
-        head: html`<script src="/assets/admin-setup-wizard.js" defer></script>`,
+        head: html`<script src="/assets/admin-setup-wizard.js" defer></script>
+          <script src="/assets/admin-image-upload.js" defer></script>`,
         body: html`
           <section class="setup-page">
             <header class="setup-page-header">
@@ -1430,6 +1514,102 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       return reply.redirect(`/ai/onboarding?saved=${encodeURIComponent(action)}${selected}`);
     } catch (error) {
       return reply.redirect(`/ai/onboarding?error=${encodeURIComponent(errorMessage(error))}`);
+    }
+  });
+
+  /* ── The bot avatar (CCB-S5-007, D-161) ──────────────────────────────────────
+   *
+   * THREE ROUTES OF ITS OWN, and not three more cases on the action switch above. The
+   * upload needs a body limit large enough for an 8 MB file base64'd, and that limit has to
+   * be on this route and no other: the recital's upload made the same call for the same
+   * reason, and a console-wide limit this size is a gift to anybody who finds an
+   * unauthenticated POST. The action switch handles small forms and stays small.
+   *
+   * The bytes arrive base64'd in an ordinary field rather than as multipart, and are stored
+   * by `storeChapterImage`, which decodes, re-encodes through sharp and names the file from
+   * its content hash. That is the part that makes an operator upload safe, it already exists,
+   * and it is reused whole rather than copied: only the filename prefix differs.
+   */
+
+  app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
+    '/ai/onboarding/:id/avatar',
+    {
+      // Base64 inflates by a third, so the body has to hold more than the file limit.
+      bodyLimit: Math.ceil(ASSET_MAX_BYTES * 1.4) + 4096,
+    },
+    async (req, reply) => {
+      const actor = req.session?.username ?? 'unknown';
+      const back = (query: string): string =>
+        `/ai/onboarding?${query}&profile=${encodeURIComponent(req.params.id)}`;
+      try {
+        const profileId = positiveInteger(req.params.id, 'Bot profile ID', 0);
+        const encoded = text((req.body as Record<string, unknown> | null)?.['imageData']);
+        if (!encoded) {
+          return reply.redirect(
+            back('error=' + encodeURIComponent('No file arrived. Choose one and try again.')),
+          );
+        }
+        // 'bot-avatar' rather than 'chapter', so the asset root says what each file is for
+        // and clearing one kind can never sweep up the other.
+        const stored = await storeChapterImage(
+          ctx.cfg.assetRoot,
+          Buffer.from(encoded, 'base64'),
+          'bot-avatar',
+        );
+        await setBotAvatarPath(ctx.db, profileId, stored.relativePath, actor);
+        return reply.redirect(back('saved=avatar'));
+      } catch (err) {
+        // An AssetError is the operator's problem to see and fix (not an image, too big);
+        // anything else is ours, and is logged as well as shown.
+        if (!(err instanceof AssetError)) {
+          log.error(`Bot avatar upload failed: ${errorMessage(err)}`);
+        }
+        return reply.redirect(back('error=' + encodeURIComponent(errorMessage(err))));
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>('/ai/onboarding/:id/avatar/clear', async (req, reply) => {
+    const actor = req.session?.username ?? 'unknown';
+    const back = (query: string): string =>
+      `/ai/onboarding?${query}&profile=${encodeURIComponent(req.params.id)}`;
+    try {
+      // The row is cleared; the file is left on disk, exactly as the recital's clear does it.
+      // Deleting it would be the one destructive operation on this page, and an operator who
+      // clears a face by accident would rather re-upload it than go and find it again.
+      await setBotAvatarPath(
+        ctx.db,
+        positiveInteger(req.params.id, 'Bot profile ID', 0),
+        null,
+        actor,
+      );
+      return reply.redirect(back('saved=avatar-cleared'));
+    } catch (err) {
+      return reply.redirect(back('error=' + encodeURIComponent(errorMessage(err))));
+    }
+  });
+
+  /** Serves a bot's avatar to the console, by BOT id and never by path. */
+  app.get<{ Params: { id: string } }>('/ai/onboarding/:id/avatar', async (req, reply) => {
+    const profileId = optionalPositiveInteger(req.params.id);
+    const profile = (await listBotOnboardingProfiles(ctx.db)).find((p) => p.id === profileId);
+    if (!profile?.avatarPath) return reply.code(404).send('No avatar for that bot.');
+    try {
+      // Addressed by bot id, resolved through the guard, and never taken from a query
+      // parameter: the same rule the media console follows (CCB-S3-013 §4).
+      return await reply
+        .type('image/jpeg')
+        .send(
+          (await import('node:fs')).createReadStream(
+            resolveAssetPath(ctx.cfg.assetRoot, profile.avatarPath),
+          ),
+        );
+    } catch (err) {
+      // Configured and unreadable is a fault, not an absence (CCB-S3-023). The boot path
+      // raises this to the dashboard; here it is enough that the console says so rather than
+      // rendering a broken image and leaving the operator to guess.
+      log.warn(`Bot avatar ${profile.avatarPath} could not be served: ${errorMessage(err)}`);
+      return reply.code(404).send('That image could not be read.');
     }
   });
 }

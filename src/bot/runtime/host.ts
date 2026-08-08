@@ -59,6 +59,7 @@ import { status } from '../../web/status.js';
 import { configureFilesFolder, ensureDirs, type StartBotOptions } from '../client.js';
 import { loadAvatarDataUri } from '../avatar.js';
 import { resolveAssetPath } from '../../media/assets.js';
+import { avatarFault, decideFaces } from './faces.js';
 import { FileReceiver } from '../files.js';
 import {
   bindSimplexUser,
@@ -299,24 +300,27 @@ export async function startRuntimeHost(
   //
   // Loaded per bot rather than once, and budgeted per bot, because `loadAvatarDataUri` is
   // where the SimpleX profile envelope is honoured (~15,610 bytes; the step-down lives in
-  // `buildAvatarDataUri`). A path that cannot be read logs and leaves that bot's stored
-  // profile alone rather than blanking it, which is the behaviour the single-image path
-  // already had.
-  for (const b of bots) {
-    const own = b.config.avatarPath;
-    const face = own === null ? image : await loadAvatarDataUri(resolveAssetPath(cfg.assetRoot, own));
-    if (own !== null && face === undefined) {
+  // `buildAvatarDataUri`). The decision itself is in `faces.ts`, which imports no SDK and is
+  // therefore answerable without a core; this loop is what it costs to act on it.
+  const faces = await decideFaces(
+    bots.map((b) => ({ bot: b, displayName: b.config.displayName, avatarPath: b.config.avatarPath })),
+    {
+      defaultImage: image,
+      resolve: (relative) => resolveAssetPath(cfg.assetRoot, relative),
+      load: loadAvatarDataUri,
+    },
+  );
+  for (const outcome of faces) {
+    const b = outcome.bot.bot;
+    if (outcome.source === 'fault') {
       // Configured and unreadable is a FAULT, not a choice (CCB-S3-023). Falling silently
       // back to the default would dress this bot as the deployment and say nothing.
       log.error('runtime: a bot has an avatar configured that could not be read', {
         bot: b.config.displayName,
-        avatarPath: own,
+        avatarPath: b.config.avatarPath,
         note: 'its stored profile is left alone; upload the image again',
       });
-      status.error(
-        `The avatar configured for "${b.config.displayName}" could not be read, so its ` +
-          `profile was left as it was. Upload the image again on the AI bot page.`,
-      );
+      status.error(outcome.fault ?? avatarFault(b.config.displayName));
       continue;
     }
     await applyProfileUpdate(
@@ -325,7 +329,7 @@ export async function startRuntimeHost(
       // The primary keeps the env display name it has always used; a second bot is named by
       // its own record, because there is only one `BOT_DISPLAY_NAME` in the environment.
       b.config.isPrimary ? cfg.botDisplayName : b.config.displayName,
-      face,
+      outcome.image,
       b.user,
     );
   }

@@ -90,10 +90,25 @@ export interface BotOnboardingProfile {
   /** The SimpleX user the address was created on, so the link can be checked. */
   contactAddressUserId: number | null;
   contactAddressCreatedAt: string | null;
+  /**
+   * This bot's own face, relative to the asset root, or null for the deployment default
+   * (CCB-S5-007, D-161, migration 049). Null is an answer rather than a gap: it means
+   * `AVATAR_PATH`, which is what every bot including the first one wears until somebody
+   * uploads one for it. Never the image bytes; the path, as everywhere else.
+   */
+  avatarPath: string | null;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * What the wizard form posts.
+ *
+ * `avatarPath` is omitted for the same reason `contactAddressLink` is: it is not a field on
+ * that form, it is written by its own route with a stored file in hand, and a save from the
+ * wizard must not be able to clear it by omission. That is the failure the personality
+ * columns already have a comment about, arrived at from a different direction.
+ */
 export type BotOnboardingInput = Omit<
   BotOnboardingProfile,
   | 'id'
@@ -103,6 +118,7 @@ export type BotOnboardingInput = Omit<
   | 'contactAddressLink'
   | 'contactAddressUserId'
   | 'contactAddressCreatedAt'
+  | 'avatarPath'
   | 'createdAt'
   | 'updatedAt'
 >;
@@ -297,6 +313,7 @@ function mapRow(row: {
   contact_address_link: string | null;
   contact_address_user_id: string | number | null;
   contact_address_created_at: string | null;
+  avatar_path: string | null;
   created_at: string;
   updated_at: string;
 }): BotOnboardingProfile {
@@ -343,6 +360,7 @@ function mapRow(row: {
     contactAddressUserId:
       row.contact_address_user_id === null ? null : numberOf(row.contact_address_user_id),
     contactAddressCreatedAt: row.contact_address_created_at,
+    avatarPath: row.avatar_path,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -388,6 +406,7 @@ const SELECT_COLUMNS = `
   contact_address_link,
   contact_address_user_id,
   contact_address_created_at,
+  avatar_path,
   created_at,
   updated_at
 `;
@@ -861,6 +880,71 @@ export async function recordContactAddress(
     linkRecorded: true,
     runtimeApplied: true,
   });
+}
+
+/**
+ * Record which image this bot wears, or clear it back to the deployment default.
+ *
+ * ── WHY `null` IS A VALUE AND NOT AN ABSENCE ─────────────────────────────────
+ *
+ * Clearing is a real operation with a real meaning: wear whatever `AVATAR_PATH` is. So the
+ * parameter is `string | null` and not optional, and the caller has to say which it means.
+ * An optional parameter would make "clear it" and "I forgot to pass it" the same call.
+ *
+ * ── AND WHY IT SAYS NOTHING ABOUT THE RUNNING BOT ────────────────────────────
+ *
+ * This writes a row. The SimpleX profile is dressed at boot, by `startRuntimeHost`, and
+ * nothing here reaches into a running core to change a live profile. That is deliberate and
+ * the page says so: an upload that claimed to have changed the bot's face while the members
+ * still saw the old one would be exactly the "stores an intention" failure the contact
+ * address was built to avoid. It takes a restart, and the operator is told that.
+ *
+ * The path is one `storeChapterImage` returned, which is a content hash and an extension. It
+ * is re-validated on every read by `resolveAssetPath` anyway; the guard here is against a
+ * path arriving from somewhere else entirely.
+ */
+export async function setBotAvatarPath(
+  db: Queryable,
+  id: number,
+  relativePath: string | null,
+  actor: string,
+): Promise<void> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
+
+  const cleaned = relativePath === null ? null : relativePath.trim();
+  if (cleaned !== null) {
+    if (!cleaned) throw new Error('Refusing to record an empty avatar path.');
+    // Absolute or escaping paths are refused HERE as well as at read time. The column has no
+    // CHECK, this is the only writer, and a stored `../../etc/...` would be a finding even if
+    // every reader happened to catch it.
+    if (cleaned.includes('\\') || cleaned.startsWith('/') || cleaned.split('/').includes('..')) {
+      throw new Error('Refusing to record an avatar path that is not inside the asset root.');
+    }
+  }
+
+  const result = await db.query(
+    `UPDATE cinderella_bot_profiles
+        SET avatar_path = $2,
+            updated_at = now()
+      WHERE id = $1`,
+    [id, cleaned],
+  );
+
+  if (result.rowCount !== 1) throw new Error('Bot onboarding profile not found.');
+
+  await writeAudit(db, actor, 'cinderella.bot-profile.avatar', `bot-profile:${id}`, {
+    avatarPath: cleaned,
+    cleared: cleaned === null,
+    // Named rather than implied: the write is the whole of it. The live SimpleX profile is
+    // unchanged until the bot is restarted.
+    runtimeApplied: false,
+  });
+
+  log.info(
+    cleaned === null
+      ? `Bot ${id} cleared its avatar; it falls back to the deployment default at next start.`
+      : `Bot ${id} now wears ${cleaned}; it is applied at next start.`,
+  );
 }
 
 export async function deleteBotOnboardingProfile(

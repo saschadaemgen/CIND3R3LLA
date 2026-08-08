@@ -416,6 +416,10 @@ section('D-105 scope review: the runtime files that must not import the SDK');
     'profiles.ts',
     'events.ts',
     'gate.ts',
+    // Added by walking this check against a new file rather than assuming a green run
+    // covered it (D-105, CCB-S5-007). `faces.ts` exists precisely so the avatar decision is
+    // answerable with no core; an SDK import there would quietly undo that.
+    'faces.ts',
   ];
   const offenders: string[] = [];
   for (const file of mustBeFree) {

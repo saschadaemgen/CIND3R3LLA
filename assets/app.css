@@ -2433,6 +2433,67 @@ input[type='radio'] {
   text-transform: uppercase;
 }
 
+/* The face this bot wears (CCB-S5-007, D-161). Neutral rather than green or amber: an
+   uploaded avatar and the deployment default are both normal states, and neither is a
+   warning. */
+.setup-avatar {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 16px;
+}
+
+.setup-avatar header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.setup-avatar p {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.setup-avatar-current {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+/* Round and small, because that is how SimpleX renders it. Showing a square 1280px
+   illustration would misrepresent what a member actually sees. */
+.setup-avatar-image {
+  width: 64px;
+  height: 64px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.setup-avatar-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.setup-avatar-form input[type='file'] {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.setup-avatar-status {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
 .setup-chip-row,
 .setup-detail-actions {
   display: flex;

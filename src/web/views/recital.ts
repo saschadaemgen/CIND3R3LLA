@@ -155,7 +155,7 @@ function chapterCard(
         <form
           method="post"
           action="/book/recital/chapter/${chapter.id}/image"
-          data-recital-upload
+          data-image-upload
           class="mt-3 flex flex-wrap items-center gap-2"
         >
           <input type="hidden" name="_csrf" value="${csrf}" />
@@ -167,7 +167,7 @@ function chapterCard(
           >
             Upload
           </button>
-          <span data-recital-status class="text-xs text-slate-500"></span>
+          <span data-image-upload-status class="text-xs text-slate-500"></span>
         </form>
       </div>
     `,
@@ -511,7 +511,7 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
             )}
           </div>
 
-          <script src="/assets/admin-recital.js" defer></script>
+          <script src="/assets/admin-image-upload.js" defer></script>
         `,
       });
     },

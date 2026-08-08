@@ -1,5 +1,5 @@
 /**
- * Chapter image upload for the Book of Elii's recital page (CCB-S4-047).
+ * Operator image upload for the console (CCB-S4-047, generalised under CCB-S5-007).
  *
  * ── WHY THE BYTES ARE BASE64 IN AN ORDINARY FORM FIELD ───────────────────────
  *
@@ -13,6 +13,15 @@
  * is refused.
  *
  * The size check here is a courtesy, not a control. The server enforces the real one.
+ *
+ * ── WHY IT IS NOT CALLED admin-recital.js ANY MORE ───────────────────────────
+ *
+ * It was, and it was written for the one page that had an upload. The bot avatar (CCB-S5-007)
+ * is the same problem again: read a file the operator chose, hand the bytes to a server route
+ * that re-encodes them. A second copy of this under a second name would be two files to fix
+ * the day a browser changes how `FileReader` reports an error. So the hook is
+ * `data-image-upload` rather than `data-recital-upload`, and the page decides where the form
+ * posts.
  */
 
 (function () {
@@ -23,7 +32,7 @@
   function wire(form) {
     var input = form.querySelector('input[type="file"]');
     var payload = form.querySelector('input[name="imageData"]');
-    var status = form.querySelector('[data-recital-status]');
+    var status = form.querySelector('[data-image-upload-status]');
     var submit = form.querySelector('button[type="submit"]');
     if (!input || !payload || !submit) return;
 
@@ -67,5 +76,5 @@
     });
   }
 
-  document.querySelectorAll('form[data-recital-upload]').forEach(wire);
+  document.querySelectorAll('form[data-image-upload]').forEach(wire);
 })();
