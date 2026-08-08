@@ -11,6 +11,34 @@ so a future implementer can read the original if they want the full story.
 
 ---
 
+## Audit, 2026-08-08 (CCB-S5-003)
+
+This document had not been touched since 27 July, across the most structural season the project has
+had. It was read against the code and it is **substantially still correct**: every clause in sections
+1 to 9 was checked and only the additions below were needed. What follows is the state it describes,
+stated once so a reader knows what they are holding.
+
+**This is a specification, not a description.** `ChatAdapter` has exactly **one implementation
+today, `FakeChatAdapter`**, and its only consumers are the demo routes and two harnesses
+(`verify:adapter-fake`, `verify:adapter-seam`). Production does not go through the interface: the bot
+drives the SDK directly inside `src/bot/`, and what it shares with the seam is `src/adapter/types.ts`,
+the **domain types**, which capture, parse, consent, moderation, erasure and onboarding all import.
+That is not drift. **D-078 shipped Phase A only and deferred B and C**, and Phase A was always the
+types plus the enforcing check. The interface and this contract run ahead of the code on purpose,
+which is what makes them worth keeping accurate.
+
+**What Season 4 and 5 added, and this document had no clause for:** the member's role as a first-class
+domain value (§1), one core hosting **many bot identities at once** (§9a, new), and the fact that an
+erasure issued as the wrong identity **succeeds and does nothing** (§7). The last of those cost a
+member's erasure being marked done with the content still on the host, and it is exactly the kind of
+silent consent bug section 0 warns about.
+
+**Deliberately left:** the SimpleX-shaped tags. Every one of them still describes SimpleX honestly and
+none has a second protocol to be resolved against yet. §9.1's known leak is unchanged and unresolved,
+by design.
+
+---
+
 ## 0. How to read this
 
 **MUST** clauses are behaviours Cinderella relies on. Violating one does not produce a compile error; it
@@ -39,6 +67,19 @@ freely. Cinderella stores them for rendering only.
 
 **[neutral] Group ids MUST be stable across a rename.** Capture is scoped to a numeric group id
 precisely so a group admin renaming the group does not stop capture.
+
+**[neutral] A member's role MUST be reported at its real granularity, and MUST NOT be flattened onto
+a neighbouring value.** (CCB-S4-032, added to this document 2026-08-08.)
+
+`MemberRole` was widened from five values to the full seven the moment something read it, because
+moderation computes exemptions from it and **an exemption computed from a lossy role is an exemption
+that can be wrong**. An implementation whose protocol has fewer roles MUST say which of these it
+cannot express, rather than mapping `relay` or `author` onto the nearest thing it has.
+
+**[neutral] Three roles are three facts and MUST NOT be collapsed** (CCB-S4-025, D-129): the role a
+bot was *invited* as, the role it *actually holds*, and the role the operator *expects*. A page or an
+interface that reports one number for all three lies about permissions, and the lie only surfaces when
+an action is refused.
 
 ---
 
@@ -164,6 +205,17 @@ deleted flag and keeps everything). Production held eleven items marked deleted,
 Cinderella to erase her copy, not to announce their decision to the group. An implementation whose only
 delete is a broadcast MUST report that it cannot satisfy this method, rather than broadcasting.
 
+**[neutral] An erasure issued as the wrong bot identity MUST fail, and MUST NOT succeed quietly.**
+(CCB-S5-001, D-155; added to this document 2026-08-08.)
+
+The SimpleX core scopes its delete by `user_id` and `apiDeleteChatItems` takes no user id. Issued as
+the wrong hosted profile it **deletes zero rows and raises nothing**, because deleting what does not
+exist for that user is not an error. A member's erasure is then marked done with the content still on
+the host: the worst possible shape for a consent bug, since every layer above reports success. The fix
+is a port that resolves the owning bot from the chat id and **throws when it cannot**, so the queue
+retries rather than the record lying. An implementation that scopes deletion by identity MUST make a
+mis-scoped delete distinguishable from a delete that found nothing.
+
 ---
 
 ## 8. Member contact
@@ -174,6 +226,34 @@ The contact-to-member link is structural and trustworthy where it exists: the co
 authenticated group connection, so no pairing-code protocol is needed. But it depends on the group's
 `directMessages` setting, which the operator or a group admin controls (CCB-S3-016/017, D-058). An
 implementation MUST make its availability discoverable rather than failing at send time.
+
+---
+
+## 8a. Bot identity, when one core hosts more than one
+
+_Added 2026-08-08 (CCB-S5-003). This whole area postdates the document: it arrives with D-096, D-125
+and D-155, and nothing here was decidable when the contract was written._
+
+**[SimpleX-shaped] An implementation MUST state whether one connection can host several bot
+identities, and if it can, every received event MUST carry which identity received it.**
+
+SimpleX has one core with many users, one active at a time, and Cinderella now hosts **every enabled
+bot on that one core**: an active-user scheduler serializes commands, and events are routed by the
+receiving `userId`. An implementation that gives each identity its own connection satisfies this
+trivially and should say so. One that multiplexes MUST report the receiver, because without it a
+message from group A is answered by whichever profile happened to be active.
+
+**[neutral] Anything addressed to a group MUST be resolvable to the identity that owns that group,
+and an unresolvable owner MUST raise rather than default.**
+
+This is the same lesson as the erasure clause in §7 and it generalises past deletion. Cinderella's
+`runtime.runForGroup` throws on an unknown owner precisely because "act as whoever is active" is a
+plausible-looking default that produces silent wrong-identity writes. Three such call sites were
+predicted; there were five.
+
+**[SimpleX-shaped] A command issued while a different identity is active MUST be serialized against
+the switch, not merely queued behind it.** The active-user switch is global state on a shared core,
+so an unscheduled call is not slow, it is *wrong*, and it is wrong only sometimes.
 
 ---
 
@@ -192,7 +272,7 @@ than in code comments because a second implementer needs to see them together, b
 | `migrations/019_formatted_text.sql:57,62` | `raw_json -> 'chatItem' -> 'formattedText'` | **Live, on the public front.** Builds `published_messages.formatted_text` |
 | `scripts/scan-support-scope.ts:36` | `raw_json -> 'chatInfo' -> 'groupChatScope'` | Live diagnostic, used by the CCB-S3-019 remediation |
 | `migrations/001_init.sql:36` | `raw_json` column itself | Stores the whole item |
-| `migrations/018_capture_events.sql:30` | `payload` "everything needed to re-apply the event" | **No production writer yet.** Shape is not fixed, so it can still be defined in domain terms |
+| `migrations/018_capture_events.sql:30` | `payload` "everything needed to re-apply the event" | **Still no production writer** (re-checked 2026-08-08: `capture/events/store.ts` is imported only by `replay.ts` and its harness, although the drain job *is* registered on the queue). Shape is not fixed, so it can still be defined in domain terms |
 
 **This is not a contract clause a second protocol can satisfy.** Saying "a compliant implementation must
 emit `AChatItem`-shaped JSON" would be a SimpleX requirement wearing a neutral name. A Matrix event has
@@ -227,6 +307,20 @@ destination, and a way to accept a file unencrypted so Cinderella can apply its 
 
 Moderation (deleting another member's message, removing a member, changing a role), reactions, and
 creating a contact from a member. The CCB-S3-016 audit found all of them available in the SDK and all
-are intended, but none has a caller today, and an interface method with no caller is a guess about a
-future implementation (CCB-S3-020 §3). They arrive with their first real caller, when their shape can be
-verified against live behaviour.
+are intended, but an interface method with no caller is a guess about a future implementation
+(CCB-S3-020 §3). They arrive with their first real caller, when their shape can be verified against
+live behaviour.
+
+**Corrected 2026-08-08 (CCB-S5-003): moderation now has callers, and they did not come through this
+interface.** `src/bot/enforcement.ts` wraps `apiSetMembersRole`, `apiBlockMembersForAll` and
+`apiRemoveMembers` behind a late-bound **port** (`EnforcementPort`), and `src/bot/recital-port.ts` and
+the core-delete port do the same for their own needs. So the rule above held in one sense (nothing was
+added to `ChatAdapter` speculatively) and was overtaken in another: **the shape that arrived with the
+first real caller was a narrow port, not a method on the wide interface.**
+
+That is worth recording as a finding rather than a tidy-up. A port names exactly what one caller
+needs, is trivially faked in a harness, and can be left unset so the capability is *absent* rather
+than *broken* — which is how enforcement ships **locked** (D-139) while its code is complete and
+reversible. If `ChatAdapter` ever gets a second implementation, the question to answer first is
+whether these ports fold into it or stay beside it. Reactions and creating a contact from a member
+still have no caller and stay out.
