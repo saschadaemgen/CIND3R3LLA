@@ -717,6 +717,42 @@ direct reply transport, and `applyConsentChange` is keyed by group `memberId` wi
 target from a contact identity (`src/consent/apply.ts`, `src/consent/commands.ts`). CCB-S3-017
 itself is not in this repo. The audit answers the design question; the build waits on section 3.
 
+### 8g. One core, several profiles: what the SDK does and does not attribute (CCB-S4-021, CCB-S5-001)
+
+_Added 2026-08-08 under CCB-S5-003. This document had no entry for hosting more than one profile,
+which is now the production shape._
+
+**The SDK's subscriber table is keyed by event tag alone, with no user dimension.** A handler
+registered as `chat.on('newChatItems', …)` receives **every hosted profile's** messages, not just the
+one it was wired for. This is the single most important wire fact about multi-profile hosting, and it
+fails in the quiet direction: with one profile hosted the handler is trivially correct, so nothing
+reveals the missing dimension until a second profile exists and starts answering the first one's
+groups. Cinderella therefore registers exactly **one** subscriber per tag and fans out by the
+receiving `userId` itself (`src/bot/runtime/events.ts`, `router.ts`), presenting the same
+`on(tag, handler)` shape to capture and the interaction layer so their code did not change.
+
+**The SDK swallows a subscriber's throw** into `console.log` and continues (`api.js`,
+`runEventsLoop`). On the capture path that means archiving can stop with nothing but a line on stdout
+to say so, which is the masking CCB-S3-023 forbids. The runtime keeps the SDK's one good property
+(every handler still runs when an earlier one threw) and re-throws the failures as one error that is
+counted, logged with context and pushed to the admin dashboard.
+
+**`apiSendMessages` accepts `[ChatType, number]` in place of a full `ChatInfo`** (CCB-S4-047, D-149).
+This matters for anything sent later than the message that triggered it: the SDK's `AChatItem` is a
+live object that survives neither a JSON queue payload nor a restart, but a **group id does**. A
+recital's beats two through eight are sent minutes later by a queue job carrying an id and an index,
+through `src/bot/recital-port.ts`, for exactly that reason.
+
+**`apiDeleteChatItems` takes no user id and the core scopes its DELETE by `user_id`** (CCB-S5-001,
+D-155). Issued while the wrong profile is active it removes nothing and **raises nothing**. There is
+no wire-level signal to distinguish that from a delete that legitimately found nothing, so the
+distinction has to be made before the call, by resolving the owning profile. See `security.md` §11b
+and `adapter-contract.md` §7.
+
+**`apiCreateUserAddress(userId)` does take a user id**, unlike most of the commands above; §8b-bis
+already records it. The inconsistency is the point: which commands are user-scoped by argument and
+which by the active-user switch cannot be inferred, and has to be checked per command.
+
 ## 9. The local AI subsystem adds no wire behaviour (D-068)
 
 Recorded because the commit subjects suggest otherwise. "Persistent SimpleX bot onboarding

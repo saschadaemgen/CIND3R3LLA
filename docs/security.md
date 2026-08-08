@@ -929,6 +929,18 @@ and the operator is told so rather than the destruction reporting success.
 erasing it is the opposite of the obligation. That is an explicit branch in `destroyMessage`, not a
 consequence of ordering, so a later refactor meets the reason where the decision is made.
 
+**The erasure must be issued as the bot that owns the group, and a wrong identity now raises rather
+than reporting success** (CCB-S5-001, D-155). This is the most dangerous shape a consent bug can take
+and it existed until Season 5. `apiDeleteChatItems` takes no user id and the core scopes its DELETE by
+`user_id`, so once more than one profile is hosted, an erasure issued as the wrong bot **deletes zero
+rows and raises nothing** - deleting what does not exist for that user is not an error. Every layer
+above would have reported a completed destruction over content still readable on the host. Group-
+addressed work now goes through `runtime.runForGroup`, which resolves the owning bot and **throws on an
+unknown owner** so the queue retries, instead of acting as whichever profile happened to be active.
+D-125 predicted three such unscheduled call sites into the core; there were **five**, and this was one
+of them. The general form of the lesson is in the adapter contract (§7, §8a): a mis-scoped delete must
+be distinguishable from a delete that found nothing.
+
 **What this means now that originals are encrypted.** CCB-S3-012 encrypted every original at rest, so
 after that change **the core's SQLite database became the only unencrypted copy of member content on
 this host**: message text, and the base64 link-preview images that ride inside link messages. It is
@@ -1011,6 +1023,36 @@ reporting is a legal process the operator performs.
 for the community. Hash matching detects known material only; a no-match result is not a statement that
 anything is safe, and the product says so where an operator will read it.
 
+## 11d. Backups: encrypted, and watched across a privilege boundary (CCB-S4-011 to 018)
+
+The oldest open item in the project was a backup script that had never run. What it became has two
+security properties worth stating, because both are structural rather than procedural.
+
+**Encryption with the key off-host, and no plaintext fallback** (D-121). Every archive is encrypted
+before it is finalised: AES-256-GCM, key derived with scrypt (N=32768, r=8, p=1), recorded in the run's
+own status file as `"encryption": "AES-256-GCM, scrypt N=32768 r=8 p=1 (backup-crypt v1)"` so the
+console can state it rather than infer it. The passphrase lives off the host. **There is no plaintext
+path**: if encryption cannot run, `deploy/backup.sh` exits non-zero and the staged `.part` is removed,
+so a misconfigured host produces *nothing* rather than an unencrypted archive. The preconditions are
+checked before the first encrypt for the same reason. This matters because the archives contain what
+§11b says survives an erasure: a plaintext dump is an erasure promise broken at rest.
+
+**Finalised archives are `root:cinderella-backup` 0640, and the directory is 0750** so the read-group
+can traverse. The admin console can therefore *list* backups without the application ever holding root.
+
+**The console watches across a boundary it never crosses** (D-120). The web process runs as the
+unprivileged `cinderella` user with `NoNewPrivileges=true` and an **empty `CapabilityBoundingSet`**
+(`deploy/cinderella.service`), so escalation is not merely disallowed by policy, it is impossible by
+construction: there is no `sudo` path to misconfigure. Run-now does not invoke anything. It **writes a
+marker**, and a root-side path unit (`cinderella-backup-request.path`) starts the same service the
+timer starts. The privileged side chooses what to do; the unprivileged side can only ask. Status and
+progress are files the run itself writes, carrying stage names and a state, never a secret.
+
+**What a restore undoes** (D-118). A restore reinstates content that was deleted after the dump was
+taken, which silently reverses honoured erasure requests. The runbook therefore requires the deletions
+to be replayed after a restore, and states the limit as a property rather than softening it: deletions
+made after the newest surviving dump cannot be replayed from the archive alone.
+
 ## 12. The local AI subsystem, reviewed against the code (D-068, CCB-S4-008)
 
 Four of the five questions this section previously listed as open are **answered below from
@@ -1064,6 +1106,16 @@ inside its own fence, never in the system prompt, with the marker stripped from 
 and the member-chosen display name. It can change no consent record, run no command and reach
 no moderation ladder. Destroyed, deleted, rejected and revoked content is excluded before it
 is ever read.
+
+**Search results are evidence, never instructions, and they can cause nothing** since CCB-S4-037
+(D-141, architecture §37). This is the control the two paragraphs either side of it assume, and it
+belongs stated in its own right. A provider's response is a stranger's text arriving inside her
+prompt, so it enters the **USER message inside a named fence** and never the system prompt, which is
+where the sentences she must obey live. Nothing in a result can move consent, run a command, reach a
+moderation ladder or change a setting: the capability paths are deterministic and take no input from
+the model's reading of a result. Five injections were planted in real result sets and refused,
+including a forged operator command to publish everything. The same fence design is what conversation
+memory reuses above, which is why the two are described in the same terms.
 
 **A lookup she would refuse never reaches a provider** since CCB-S4-042 (D-145, architecture
 §37.1). The pre-search gate runs before the query, so a refusable request makes no outbound

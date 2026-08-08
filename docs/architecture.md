@@ -3049,6 +3049,37 @@ cannot drift. **Nothing on the reply path imports it**: a regular expression ove
 would be a filter, and a filter that rewrites or suppresses a reply is the masking CCB-S3-023
 forbids. The fence is a rule, in the registry, where she can be quoted it.
 
+## 48. Backups (CCB-S4-011 to 018, D-118 / D-120 / D-121 / D-122 / D-123)
+
+_Added 2026-08-08 under CCB-S5-003. It arrives after the Season 5 sections because the subsystem was
+documented in [`deploy/BACKUP.md`](../deploy/BACKUP.md) and never given an architecture entry; the
+currency check found the gap. The operational detail stays in `deploy/BACKUP.md` (405 lines) and the
+security properties in [`security.md`](security.md) §11d; what follows is the shape and the boundary._
+
+**The trigger.** `cinderella-backup.timer`, daily at 03:30, `Persistent=true` so a host that was off
+catches up on boot. `deploy/backup.sh` writes **five archive kinds** - database, media, quarantine,
+messaging-core and env - and retains **14 generations of each** (`KEEP=14`). Every archive is staged
+as `.part` and renamed only once complete, so an interrupted run leaves no file that looks finished.
+
+**The privilege boundary is the architecture** (D-120). The web process is unprivileged with an empty
+`CapabilityBoundingSet`, so it cannot start a backup and there is no `sudo` path to get it wrong.
+**Run-now writes a marker file**; `cinderella-backup-request.path` watches for it on the root side and
+starts the same service the timer starts. The console therefore watches a privileged subsystem it can
+only ask, never drive. It reads two files the run itself writes: a status file per completed run and a
+progress file that exists exactly as long as the run does.
+
+**Progress is measured in bytes, and an unknowable total is shown as unknowable** (D-123). The five
+stage boundaries alone made the bar freeze for minutes inside the media stage, so a sampler runs
+beside the producing command and is stopped **before** the next stage boundary is announced.
+
+**Three race conditions were found in one mechanism** (D-122, D-123), each only visible by driving a
+real run. The last is an ordering rule worth carrying: **write the status before clearing the
+progress**, or a poll landing in the gap between them shows yesterday's run as today's result.
+
+**Encryption has no plaintext fallback** (D-121). See `security.md` §11d; the architectural point is
+that the preconditions are checked **before the first encrypt**, so a misconfigured host fails with
+nothing written rather than with an unencrypted archive in the retention set.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

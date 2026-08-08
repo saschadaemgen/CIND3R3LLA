@@ -754,7 +754,7 @@ every file rather than passing a weaker backup off as a good one.
 Suspect material on a personal computer is a materially different legal position from the same material
 under a documented custody process on a server. No restore or debugging procedure may pull it locally.
 
-## The profile generator — two components built, no runtime caller
+## The profile generator — all five components built, no runtime caller
 
 Offline tooling under `src/generator/`, built component by component against its own
 briefings. Architecture §31 has the detail; the state of it is:
@@ -1030,11 +1030,18 @@ Both arrived with the unbriefed AI block and failed from 2026-07-28. Full accoun
       the data layer should be symmetric, which is a small change and deliberately **not**
       made under CCB-S4-008's "nothing further" scope.
 
-## The multi-profile runtime — merged, not wired (CCB-S4-004, D-096; merged under CCB-S4-020)
+## The multi-profile runtime — merged, wired, and now hosting EVERY enabled bot (CCB-S4-004, D-096; merged under CCB-S4-020; wired under CCB-S4-021, D-125; plural under CCB-S5-001, D-155)
 
 Built on `feature/multi-profile-core-foundation` and merged to `main` on 2026-08-03 after
-its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls it**:
-`startBot()` is not wired, so the modules ship dormant. Architecture §32 has the detail.
+its review and the three pre-merge verifications of CCB-S4-019. Architecture §32 has the detail.
+
+**Superseded twice since this section was written.** It said "nothing calls it: `startBot()` is not
+wired, so the modules ship dormant". CCB-S4-021 wired one bot onto it (D-125), and CCB-S5-001 made
+`startRuntimeHost` host **every enabled bot** (D-155), removing `BOT_RUNTIME_HOSTING` and the
+pre-runtime `bot.run` boot path entirely. `startBot` survives only for `npm run connect`. The
+checkboxes below are the state of the *foundation* and remain accurate; the "not wired" framing is
+history. What CCB-S5-001 deliberately left is in
+[`../seasons/SEASON-5-HANDOVER.md`](../seasons/SEASON-5-HANDOVER.md).
 
 - [x] **Runtime, scheduler, router, state machine, benign-noise allowlist** —
       `src/bot/runtime/`. `npm run verify:multi-profile`, 80 checks.
@@ -1170,7 +1177,11 @@ its review and the three pre-merge verifications of CCB-S4-019. **Nothing calls 
       measurements, the 10 s / 120 s constants, `degraded`, and whether `fileId` is unique
       across users in one core database.
 
-## Carried into Season 4 (recorded under CCB-S3-028)
+## Carried into Season 4, and still open in Season 5 (recorded under CCB-S3-028)
+
+_Re-checked at Season 4's close under CCB-S5-003: none of these was delivered in Season 4, and they
+carry forward unchanged. They are listed separately from the Season 5 section above because their
+findings and corrections belong with the briefing that produced them._
 
 Findings that existed only in the planning chat. Verified against code first; several turned out to be
 wrong or already handled and are recorded here with the correction rather than the claim.
@@ -1240,6 +1251,78 @@ wrong or already handled and are recorded here with the correction rather than t
 
 **Operator-owned, still open since Season 1:** register a second passkey on the YubiKey; rotate the
 break-glass password; disable break-glass once the second passkey exists.
+
+## Carried into Season 5 (recorded under CCB-S5-003)
+
+The narrative is in [`../seasons/SEASON-5-HANDOVER.md`](../seasons/SEASON-5-HANDOVER.md) and the
+concept work in [`../seasons/concepts/`](../seasons/concepts/); this is the item list, and it is the
+authoritative one. Nothing here is new work invented at close-out: every line was already open at the
+end of Season 4.
+
+**The Avatar layer, in three pillars.**
+
+- [ ] **Arm the moderation.** Built, reversible and shipped **locked** (D-139). Not a build: setting
+      the `EnforcementPort` and turning `mode` off `observed`. It waited on a live group that was not
+      the operator's own, which CCB-S5-001 has now made ordinary. Needs an evening, a second profile,
+      and the five proofs listed in [`../seasons/concepts/avatar-layer.md`](../seasons/concepts/avatar-layer.md).
+- [ ] **The privileged moderation channel** — take over, steer, approve. **The authenticity question
+      must be settled first**: a member cannot tell her voice from the operator's wearing it, and the
+      archive would record it as hers either way. Not a UI question.
+- [ ] **The learning path** — RAG, long-term memory, and a correction path that turns "not like that"
+      into something stored. Governed by two existing rules: anything stored from a conversation is
+      untrusted text (D-147), and anything that shapes what she says next is a rule, so it must be
+      readable (D-144, D-146). Correction path first, retrieval last.
+
+**Platform.**
+
+- [ ] **A self-tuning request queue with honest feedback.** Measured: ~7 s per reply, **two** model
+      calls per addressed message, `LOCAL_AI_TIMEOUT_MS` capped at 60000 and defaulting to **15000**
+      (`src/config.ts:348`). So ~8 concurrent requests reach the ceiling and ~2 reach the default. A
+      member who will not be answered in budget must be told, in her voice, before the budget expires
+      — CCB-S3-023 applied to load.
+- [ ] **The channel bridge plugin** — map a SimpleX channel to one or more groups, mirror posts with
+      **origin attributed, never passed off as hers**, optionally onward to the activity stream and the
+      website blog. Open: one-way or reply-back; edits, deletions and media; how attribution renders in
+      each of the three surfaces.
+- [ ] **The gallery**, coordinated with the site repository, cheapest first: ranking with **no model**
+      (counting and sorting on the stable `senderMemberId`); then linked video from the metadata that
+      arrives with the link; then images through a vision model; then uploaded video. **Settle the
+      consent question at stage 1: do tags follow an unpublish?** Stages 3 and 4 need the queue above.
+- [ ] **The hardware page** with GPU metrics — needs a sidecar on the operator's own machine.
+- [ ] **The model reachability display.** Three Season 4 incidents cost hours for one reason: model
+      reachability is not visible in the console. Must distinguish *not configured* from *configured
+      but unreachable* from *reachable but slow*, since "reachable" was true in all three.
+
+**Smaller carried items.**
+
+- [ ] **Backup management** with download and delete, on top of CCB-S4-014 to 018. Delete crosses the
+      D-120 privilege boundary and needs the same marker-and-path-unit shape, not a new escalation.
+- [ ] **Automatic acceptance settings** for incoming contact requests (CCB-S4-023 built the manual step).
+- [ ] **The plugin live-switch and diagnostics.**
+- [ ] **The role-mismatch warning** — the page that must not collapse the three roles of D-129.
+- [ ] **Wizard mode** for onboarding.
+- [ ] **The AI Control inventory.**
+
+**Left by CCB-S5-001, specifically.**
+
+- [ ] **The onboarding console pages still act on the primary bot.** `selectedForRuntime` is now the
+      primary *selection* and nothing more, but `src/web/views/ai-onboarding.ts` still tells the
+      operator a non-primary bot "is not marked as the primary runtime bot, so the runtime is not
+      hosting" it. That was true before CCB-S5-001 and is false now. The pages need to act per bot, and
+      that sentence needs correcting either way.
+- [ ] **`AVATAR_PATH` is primary-only.** One image in the environment cannot dress several bots
+      (`src/bot/runtime/host.ts:291`); the host says so in a status note rather than giving every bot
+      the same face. A per-bot avatar layer is a later briefing.
+
+**Parked further out.**
+
+- [ ] **Rulebook profiles with export and import** (Season 7 or 8). **The import is a security problem
+      and it is named now rather than discovered later:** every fence in this project rests on
+      untrusted text being unable to cause anything, and an imported rulebook is foreign text whose
+      whole purpose is to become her laws. The constitution must not be importable (D-155 already
+      refuses per-bot constitutional deviation in three places; an import is a fourth way in), an
+      import is an edit and must write history (D-146), and `verify:prompt-identity` pins what *ships*
+      rather than what a deployment holds, so the Book's drift count would be the only signal.
 
 ## Carried out of the rule registry (CCB-S4-039, D-144)
 
