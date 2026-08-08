@@ -1377,3 +1377,60 @@ its exposure:
 
 The generated bio cache is written to a git-ignored directory and contains only that
 synthetic text.
+
+## 14. Availability: a serialized queue with an unbounded command (D-160)
+
+Not a confidentiality or integrity failure, and it belongs here anyway: the product stopped
+answering, and it stopped in a way that reported nothing to anybody.
+
+### 14.1 The mechanism
+
+`ActiveUserScheduler.run` chains every SimpleX command onto `this.tail`. That serialization is a
+security control in its own right: every command that does not take an explicit `userId` executes
+as whichever profile is active, so issuing two concurrently lets one execute as the wrong bot,
+and the core raises nothing because it was asked to do something legal (D-085, D-124).
+
+Nothing bounded the command itself. One call into the core that never settles therefore stopped
+every command behind it for the life of the process. The control that prevents silent
+cross-profile execution became, on a single hung command, silent total execution failure. There
+is no serialization in the SDK to fall back on: `sendChatCmd` is a bare pass-through to the
+native addon.
+
+### 14.2 Why nothing reported it
+
+This is the part with a lesson in it. Between the model returning a worded reply and the group
+receiving it there were three ways to stop, and none reached an operator:
+
+| exit | reported as |
+| --- | --- |
+| the command never answers | nothing at all, forever |
+| the reply limiter drops the reply | `log.debug` |
+| the send throws | `log.warn` |
+
+The scheduler's WAIT was instrumented and its COMMAND was not, which is the wrong way round: a
+slow queue is a throughput signal, and a command that never answers is a stopped product.
+
+Worse, the shape hid itself. `handler.ts` persists a member's message before running the
+interaction, so the archive kept filling with members' messages and none of hers, and from
+outside a bot that has stopped talking is indistinguishable from a bot that has decided not to.
+The evidence an operator would reach for first was the evidence that misled.
+
+### 14.3 What holds now
+
+A command is abandoned after 60 seconds and the queue behind it continues. Abandoning may leave
+the core to finish it later, so a message can be lost; that is the right trade against a
+permanently poisoned chain, one lost message against every message. The wait is still
+deliberately not a timeout, because cancelling a queued command would turn a slow system into a
+broken one.
+
+Every one of the three exits is now loud, and the two that are faults reach `status.error` and
+therefore the admin dashboard, per the standing rule in CCB-S3-023. Mutation-proven in
+`verify:multi-profile`: without the bound, the command queued behind a hung one reads
+STILL BLOCKED.
+
+### 14.4 The standing lesson
+
+**A control that serializes is a control that can stop everything.** Anything that funnels the
+whole product through one ordered path needs a bound on each step and a report when the bound is
+hit, or its failure mode is total and silent. The same question should be asked of any future
+queue, lock or gate added to a path a member is waiting on.

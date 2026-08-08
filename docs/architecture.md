@@ -3221,6 +3221,54 @@ two bots interleaved into one stream. Both now carry the bot, for the reason D-1
 the moderation counters: `groupId` distinguishes them only by the accident that the core's group
 ids differ per profile, and that accident expires when conversation ids are canonicalised.
 
+## 49. A bounded command, and the silent exits on the reply path (D-160)
+
+### 49.1 The scheduler
+
+`ActiveUserScheduler.run` chains every command onto `this.tail`, which is what makes the critical
+sections strictly sequential without a lock object (§32, D-085). Until this fix nothing bounded
+the command itself, so one call into the core that never settled stopped every command behind it
+for the life of the process.
+
+| | before | now |
+| --- | --- | --- |
+| wait for the lock | warns past `slowWaitMs` (5 s) | unchanged, still not a timeout |
+| the command itself | unbounded, unreported | abandoned at 60 s, `log.error` + `status.error` |
+
+Abandoning may leave the core to finish the command later, so a message can be lost. One lost
+message against every message is the trade, and it is stated in the code.
+
+### 49.2 The three ways a reply stops
+
+Between the model returning and the group receiving, and all three now loud:
+
+| exit | now |
+| --- | --- |
+| the scheduler's command never answers | `SchedulerTimeoutError`, error + admin |
+| the reply limiter drops it | `log.info` with the bounds it hit |
+| the send throws | `log.error` + `status.error` |
+
+The Diagnostics conversation log already discriminated these (`spoken`, `rate-limited`, no row at
+all) and nothing pointed an operator at it. See `docs/security.md` §14 for why the failure was
+invisible, and D-160 for the decision.
+
+### 49.3 The per-bot settings save (D-158, amended)
+
+The console was a second path into the override store and did not share its guarantees. Three
+defects, all fixed and mutation-proven in `verify:interaction-scope`:
+
+| defect | consequence |
+| --- | --- |
+| the override was read from the merged form data, before `normalizeInteraction` | a threshold stored as `"0.9"`, a nickname list as one raw string that `for (const nick of ...)` walked character by character, a wake word with the operator's spaces on it |
+| a blank retort field was refilled with the shipped list | "none" was unreachable: a second bot got HER twelve retorts, stored as its own |
+| `next` started from the SHARED record | saving one form on a page cleared the bot's deviation in another; Nicknames carries two per-bot keys and so does Voice |
+
+The save now starts from the settings being edited, read from the rows rather than the cache
+(`interaction.get(id)` answers with the shared record on a miss, which is right for a reply and a
+silent rebase for a save), normalizes before storing, and routes `retorts` through
+`retortsForBot`, which preserves an emptied language without touching the shared blank-restores-
+default behaviour that `verify:interaction` pins.
+
 ## Appendix: divergences (code wins)
 
 Each divergence below is also noted inline at the relevant section. In every case the **code is treated as ground truth** and the conflicting outline/comment is flagged as stale.

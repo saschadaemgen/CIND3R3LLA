@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 158 decisions</strong> — newest first. Highest allocated: <strong>D-159</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 159 decisions</strong> — newest first. Highest allocated: <strong>D-160</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-160 | A serialized queue needs a bounded command, and every silent exit on the reply path is reported | IMPLEMENTED |
 | D-159 | The Book question is a scene, the laws have pages, and the application prints them | IMPLEMENTED |
 | D-158 | Interaction settings split shared from per bot, and the inventory is data rather than a document | IMPLEMENTED |
 | D-157 | The decision log gets a generated index, and is not split | IMPLEMENTED |
@@ -188,6 +189,53 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-160 - A serialized queue needs a bounded command, and every silent exit on the reply path is reported
+
+**Status: IMPLEMENTED** (CCB-S5-006 regression fix). Production went silent: she worded replies
+and sent nothing, for every reply and not only the Book scene, with no error in the log, nothing
+on the admin dashboard, and none of her own messages in the archive while the operator's kept
+arriving.
+
+**THE STRUCTURE THAT FAILED.** `ActiveUserScheduler.run` chains every command onto `this.tail`,
+which is what makes the critical sections strictly sequential without a lock object. Nothing
+bounded the command itself. So ONE call into the core that never settles stops every command
+behind it for the life of the process. The serialization that exists to prevent silent
+cross-profile execution became, on one hung command, silent total execution failure.
+
+**WHY IT LOOKED LIKE A DECISION RATHER THAN A FAULT.** `handler.ts` persists a member's message
+BEFORE running the interaction, so the archive kept filling with the operator's messages and none
+of hers. From outside, a bot that has stopped talking and a bot that has decided not to talk are
+the same thing.
+
+**IT WENT UNDETECTED BECAUSE NOTHING ON THAT PATH REPORTED ANYTHING.** That is the part worth
+recording, more than the timeout. Between the model returning a worded reply and the group
+receiving it there were three ways to stop, and not one of them reached an operator:
+
+| exit | before | now |
+| --- | --- | --- |
+| the scheduler's command never answers | no timeout, no log, ever | abandoned after 60 s, `log.error` + `status.error` |
+| the reply limiter drops the reply | `log.debug`, which nobody runs at | `log.info` with the bounds it hit |
+| the send throws | `log.warn` | `log.error` + `status.error` |
+
+The scheduler's WAIT was already instrumented (`slowWaitMs` warns) and the command was not, which
+is the wrong way round: a slow queue is a throughput signal and a command that never answers is a
+stopped product.
+
+**THE TRADE, STATED.** Abandoning may leave the core to finish the command later, so a message
+can be lost. That is the right trade against a permanently poisoned chain: one lost message
+against every message. The wait is still deliberately NOT a timeout, because cancelling a queued
+command would turn a slow system into a broken one.
+
+**WHAT I DID NOT CONFIRM.** Without production output I cannot prove the hang was the cause rather
+than the limiter, and the fix does not depend on knowing: both are now loud, so the next
+occurrence names itself. The Diagnostics conversation log already discriminated all three
+(`spoken`, `rate-limited`, no row at all) and nobody had been pointed at it.
+
+Files: [`src/bot/runtime/scheduler.ts`](../src/bot/runtime/scheduler.ts),
+[`src/interaction/engine.ts`](../src/interaction/engine.ts),
+`npm run verify:multi-profile` (mutation-proven: without the bound, the command queued behind a
+hung one reads STILL BLOCKED). See also `docs/security.md` §14.
 
 ### D-159 - The Book question is a scene, the laws have pages, and the application prints them
 
@@ -391,6 +439,39 @@ waking on one message again, which is the state the deployment was in.
 detector appeared to wake nobody and the negative assertions all "passed" against a dead
 helper. The POSITIVE CONTROLS caught it, which is what they are for, and D-111's rule settled
 it in one read: look at what the code actually returns before concluding the code is wrong.
+
+**AMENDED, same day: the CONSOLE was a second path to the store, and it was writing values the
+store would never have produced.** Everything the original checks drove was the override store,
+which is sound. Driving the page instead found three defects, each the same shape as the one this
+entry exists for: a rule that held everywhere it was looked at and nowhere it was not.
+
+**Stored unnormalized.** The per-bot branch read out of the merged form data and returned before
+the shared save that normalizes, so the bot with the DEVIATION was the one running on unclamped
+values. Measured: a confidence threshold as the string `"0.9"`, a nickname list as one raw string
+that `for (const nick of s.nicknames.words)` then walked CHARACTER BY CHARACTER, and a wake word
+with the operator's spaces still on it. This file's first rule is that everything arriving from
+the admin form is untrusted and `normalizeInteraction` clamps it; the per-bot path was the one
+place it did not run.
+
+**"None" was not reachable through the page.** `normalizeInteraction` refills a blank retort list
+with the shipped one, deliberately, and `verify:interaction` pins it: for the SHARED record,
+clearing a field restores the default rather than muting her. For a BOT that rule is exactly
+inverted, because the shipped retorts are hers, in her register, about her name. Clearing the
+field gave a second bot her twelve lines and stored them as its own, so the state the briefing
+required to be reachable was the one state an operator could not reach. `retortsForBot` keeps an
+emptied language empty in every shape it arrives in, and leaves the shared behaviour untouched.
+
+**One form on a page wiped another's deviation.** `next` started from the SHARED record, and the
+loop writes an override for every per-bot key on the page, so each key the form did not submit
+compared equal to shared and CLEARED the bot's deviation. The Nicknames page carries the word list
+and the retorts; Voice carries the persona and the label. Saving the retorts form wiped the bot's
+nickname list. It now starts from the settings being edited, read from the rows rather than the
+cache, because `interaction.get(id)` answers with the shared record on a cache miss: right for a
+reply, and a silent rebase for a save.
+
+All three are mutation-proven in `verify:interaction-scope`, against the shapes that shipped. One
+verifier defect was corrected on the way, per D-111: the nickname field is comma separated, not
+newline, which the implementation had right and the first version of the check had wrong.
 
 ---
 ---
