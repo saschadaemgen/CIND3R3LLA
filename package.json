@@ -96,7 +96,9 @@
     "verify:rule-creation-live": "tsx scripts/verify-rule-creation-live.ts",
     "verify:reasoning": "tsx scripts/verify-reasoning.ts",
     "verify:multi-bot": "tsx scripts/verify-multi-bot.ts",
-    "verify:multi-bot-live": "tsx scripts/verify-multi-bot-live.ts"
+    "verify:multi-bot-live": "tsx scripts/verify-multi-bot-live.ts",
+    "verify:self-claims-live": "tsx scripts/verify-self-claims-live.ts",
+    "verify:self-claims": "tsx scripts/verify-self-claims.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",
