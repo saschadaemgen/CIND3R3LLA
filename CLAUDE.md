@@ -314,7 +314,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   failing**, four turns against `qwen3:32b`, with the law text surviving every time and the
   number landing on the wrong law. So these rules say what she does not do, and they are the
   same two sentences the scene's brief carries. Numbered 048 rather than 047 because CCB-S5-006
-  was allocating 047 in the same working tree at the same time; see D-159).
+  was allocating 047 in the same working tree at the same time; see D-159) ·
+  049 a face per bot (`avatar_path` on `cinderella_bot_profiles`: a path under the asset root, or
+  NULL. **NULL is an answer rather than a gap** - it means the deployment default, which is
+  `AVATAR_PATH` - so there is no special primary case anywhere and an existing deployment keeps
+  exactly the picture it has, because the primary has no upload and falls back to the file the
+  operator already set. The bytes are not here; the path is, as with the media tree and the
+  chapter images. A configured path that cannot be read is a FAULT that leaves that bot's profile
+  alone, never a quiet fallback to the deployment's face; see D-161).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -322,7 +329,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **049**, since 048 landed with the page of a law). Stated as a rule
+  (currently **050**, since 049 landed with the per-bot avatar). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -481,6 +488,17 @@ does nothing: a counter check passes if nothing is ever counted.
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
 check can assert it),
+`verify:onboarding-per-bot` and `verify:bot-avatar` (onboarding a second bot and giving it a
+face, CCB-S5-007: that every onboarding step acts as the bot it was GIVEN, with the other bot as
+a positive control on each one and an unhosted id raising rather than falling back to the
+primary; and that each bot wears its own image, with NULL meaning the deployment default, so
+there is no special primary case. The load-bearing assertion is that a configured avatar which
+cannot be read is a FAULT carrying NO image, which is the line that goes red the day somebody
+"fixes" it into a fallback to the deployment's face, and it is mutation-proven. Every guarantee
+has a positive control beside it, because "bot A is not wearing bot B's face" passes against an
+implementation that dresses nobody. The decision lives in `bot/runtime/faces.ts` precisely so it
+is answerable with no SimpleX core; the console section drives the real upload, clear and serve
+routes and then reads what it stored back out through `listBotsToHost`),
 `verify:recital` (the Book told, CCB-S4-047: the chapters and their order, both triggers with
 twelve negative controls, the bounds and what gives way when they bind, and above all that no
 withheld rule can be recited at any bound in either language, mutation-proven both ways. It also
@@ -617,7 +635,12 @@ code. See architecture §26, D-075/D-076.
 
 ## Parked (do not build now)
 
-Bot avatar (operator supplies image → `npm run avatar -- <img>`), public
-`/embed/<id>` widget render + Web-Component (later season; config model + admin
+Public `/embed/<id>` widget render + Web-Component (later season; config model + admin
 UI already exist), AI moderation / CSAM scanning (separate track — the
 `moderation_state` column is the hook), self-hosted relay/super-peer capture.
+
+**The bot avatar left this list under CCB-S5-007** and had arguably left it earlier: it was
+delivered in Season 1 and `docs/feature-backlog.md` has said so for some time while this line
+still read "do not build now". Each bot now carries its own image, uploaded from the AI Bot page
+and stored per bot (migration 049, D-161); `npm run avatar -- <img>` still stages the deployment
+default, which is what a bot with no upload of its own wears.

@@ -97,7 +97,9 @@ The SimpleX core's state is SQLite at `<simplexDbPrefix>_chat.db` / `<simplexDbP
 
 ## 5. Avatar propagation (SDK-native)
 
-The avatar is carried inside the profile passed to `bot.run` (`client.ts:77-107`, `avatar.ts`). `loadAvatarDataUri` downscales via `sharp` to a small square JPEG data URI kept under a 12,000-char budget (`MAX_DATA_URI_CHARS`), comfortably below the ~15,610-byte profile envelope. `updateProfile` is set to `image !== undefined` (`client.ts:103`) so the SDK applies/self-heals the full profile (image included) only when an image is loaded — and does **not** blank the avatar when the file is absent. `apiUpdateProfile` reaches direct CONTACTS only (the bot has none); existing GROUP members get the avatar (`XInfo`) only when the bot next sends a group message. `avatar.ts::flushAvatarToGroups` — called once from `index.ts::startCaptureWorker` (`index.ts:113`) — sends one minimal group message (`🕯️✨`, `FLUSH_MESSAGE`) per distinct avatar, gated by a SHA-256 marker in `settings` (`avatarGroupFlushMarker`, `FLUSH_MARKER_KEY`).
+The avatar is carried inside the profile passed to `bot.run` (`client.ts:77-107`, `avatar.ts`). `loadAvatarDataUri` downscales via `sharp` to a small square JPEG data URI kept under a 12,000-char budget (`MAX_DATA_URI_CHARS`), comfortably below the ~15,610-byte profile envelope. `updateProfile` is set to `image !== undefined` (`client.ts:103`) so the SDK applies/self-heals the full profile (image included) only when an image is loaded — and does **not** blank the avatar when the file is absent. `apiUpdateProfile` reaches direct CONTACTS only (the bot has none); existing GROUP members get the avatar (`XInfo`) only when the bot next sends a group message. `avatar.ts::flushAvatarToGroups` — called once from `index.ts::startCaptureWorker` (`index.ts:113`) — sends one minimal group message (`🕯️✨`, `FLUSH_MESSAGE`) per distinct avatar, gated by a SHA-256 marker in `settings`.
+
+> Note: this section describes the mechanism, which is unchanged, and `bot.run` is now reached only by `npm run connect` (D-155 removed the pre-runtime boot path). The deployment dresses its bots in `startRuntimeHost`, **one image per bot** since CCB-S5-007 — see §32.6. The flush marker has been **per bot** since CCB-S5-001: `flushMarkerKey(simplexUserId)`, not one deployment-wide `avatarGroupFlushMarker` key, because two bots sharing one avatar file would otherwise have left the second bot's members with no picture forever and nothing logged.
 
 > Note: the outline and the `AVATAR_PATH` docstring (`config.ts:35-39`) describe the older behaviour — "Re-applied to the SimpleX profile on every startup (bot.run blanks it otherwise)." The current code does the opposite by design and specifically guards against blanking (see the comment at `client.ts:95-102`); the `config.ts` comment is stale relative to the implementation.
 
@@ -1608,8 +1610,9 @@ not to be built against the adapter seam as it stands. `src/adapter/` is untouch
 | [`gate.ts`](../src/bot/runtime/gate.ts) | Nothing sends before readiness | no |
 | [`errors.ts`](../src/bot/runtime/errors.ts) | The two-class benign-noise allowlist | no |
 | [`types.ts`](../src/bot/runtime/types.ts) | Domain types and the narrow core contract | no |
+| [`faces.ts`](../src/bot/runtime/faces.ts) | Which face each bot wears, and which are faults (§32.6) | no |
 
-**Eight of ten files import no SDK**, which is what lets `verify:multi-profile` and
+**Nine of eleven files import no SDK**, which is what lets `verify:multi-profile` and
 `verify:runtime-host` drive the runtime and the whole wiring against in-process doubles
 with no Haskell core. `verify:runtime-host` asserts that property directly, because
 `verify:adapter-seam` cannot: it permits the SDK anywhere under `src/bot/`, which is all
@@ -1624,7 +1627,7 @@ thing deliberately.
 |---|---|
 | Resolve the user (active-user-else-create) | `adopt: 'activeUser'` in [`profiles.ts`](../src/bot/runtime/profiles.ts). **Never a display-name match**: group membership belongs to the SimpleX user, so matching by name would hand an operator who edited `BOT_DISPLAY_NAME` a new profile in no groups, on a boot that logged success |
 | Mark the profile as a bot | `botProfileFor`: `peerType = Bot`, `preferences.files` allowed. Without it the profile silently cannot receive media |
-| Update the stored profile (the avatar) | `applyProfileUpdate` in `host.ts`, gated on an avatar file actually loading, exactly as the old `updateProfile: image !== undefined` was |
+| Update the stored profile (the avatar) | `applyProfileUpdate` in `host.ts`, gated on an avatar file actually loading, exactly as the old `updateProfile: image !== undefined` was. **Per bot since CCB-S5-007**, decided by [`faces.ts`](../src/bot/runtime/faces.ts) (§32.6) |
 | `startChat()` | `MultiProfileRuntime.start()`, which then says `subscribing` rather than pretending to be ready |
 | Configure the files folder | `configureFilesFolder`, exported from `client.ts` and called by the host |
 | **CHANGED: nothing sends before readiness** | [`gate.ts`](../src/bot/runtime/gate.ts). Receiving attaches immediately, so a message arriving during the warm-up is still captured; only the answer waits |
@@ -1784,9 +1787,26 @@ to be described and never performed.
 columns under one CHECK). A bare contact string cannot be checked against anything; with
 the user id beside it, an operator can see whether it belongs to the bot the runtime is
 actually hosting. The page names the hosted profile before the action and the created-on
-id after it, and refuses entirely unless the record is the one marked
-`selected_for_runtime`, which is the operator's own statement of which record is the
-running bot.
+id after it.
+
+**Every step acts on the bot the operator selected (CCB-S5-007).** Until then each action took an
+**optional** `botProfileId` and `pick()` fell back to `host.primary` when it was absent, and the
+console passed it to none of them. So the database write was per bot and the SimpleX call was
+not: accepting a contact for bot B recorded it against B and accepted it as A, **on A's real
+profile**. Three of the four steps had no guard at all; the fourth, create-address, refused unless
+the record was the one marked `selected_for_runtime`, which masked the problem there and made
+onboarding a second bot impossible.
+
+The id is **required** now, so a step that does not name a bot does not compile, which is stronger
+than a runtime check and is what found all four call sites. The primary guard is gone: being the
+primary was never the question, being hosted is, and `requireReadyBot` answers that. The page
+reads `hostedIdentity(selected.id)` rather than the primary's, and the bot list says Onboarded or
+Not onboarded. Onboarding **state** was already per bot and does not merge: `workflow_state` and
+the contact-address columns are on `cinderella_bot_profiles`, and both the contact-request and
+group-invitation tables carry `bot_profile_id`. `npm run verify:onboarding-per-bot` drives each
+step for one of two hosted bots with the other as a positive control, proves an unhosted id raises
+rather than falling back, and scans the source so a later optional parameter cannot restore the
+defect quietly.
 
 **Measured live** (CCB-S4-022 Stage 2, real core, browser): first press created a real
 address on an `smp*.simplex.im` relay and the page moved to the Contact step showing the
@@ -1866,6 +1886,49 @@ Measured locally under real concurrency (four replies at once across two bots): 
 queued behind another, average wait 452 ms against average generate 1359 ms. **Nothing is tuned**
 - the briefing asked for measurement and stopped there, and raising the parallelism trades VRAM
 for concurrency on a host where that trade has gone wrong before.
+
+### 32.6 A face per bot (CCB-S5-007, D-161)
+
+`AVATAR_PATH` is one image in the environment. CCB-S5-001 applied it to the **primary only**,
+deliberately: writing one image onto every profile gives every bot the same face, which looks
+intentional and is not. So a second bot could have no picture, or the first one's.
+
+Migration 049 adds `cinderella_bot_profiles.avatar_path`: a path under the asset root, or **NULL
+meaning the deployment default**, which is that same `AVATAR_PATH`. NULL is an answer rather than
+a gap, so there is **no special primary case anywhere** and an existing deployment keeps exactly
+the picture it has: the primary has no upload and falls back to the file the operator already
+set. The bytes are not in the database; the path is, as with the media tree and the recital
+chapter images.
+
+[`faces.ts`](../src/bot/runtime/faces.ts) holds the decision and imports no SDK, so it is
+answerable with no core; `host.ts` keeps only the loop that acts on the answer. Four outcomes:
+
+| The bot's `avatar_path` | Outcome | What the boot does |
+|---|---|---|
+| NULL, and `AVATAR_PATH` loads | `default` | dresses it in the deployment image |
+| NULL, and no `AVATAR_PATH` | `default`, no image | dresses it in nothing. A **choice**, so it raises nothing |
+| a path that reads | `own` | dresses it in its own image, budgeted by `loadAvatarDataUri` |
+| a path that does not read, or escapes the asset root | `fault` | **leaves that bot's stored profile alone**, `log.error` + `status.error` naming the bot |
+
+**The fault is not a fallback**, and that is the load-bearing part. Falling back to the
+deployment default there would dress the bot as somebody else and say nothing, so the operator's
+evidence that their upload worked would be a picture that is not theirs (CCB-S3-023). One bad
+path costs one face and never the boot: an escaping path used to throw out of the loop, taking
+every other bot's face with it.
+
+**The console upload** lives on the AI Bot page, three routes of its own
+([`ai-onboarding.ts`](../src/web/views/ai-onboarding.ts)) rather than three more cases on the
+action switch, because the body limit for an 8 MB file base64'd has to be on that route and no
+other. The bytes go through `storeChapterImage` with a `bot-avatar` prefix: same `sharp`
+re-encode, same size limit, same content-hash filename, same honest error on a file that is not
+an image. Serving is **by bot id, never by path**. The upload writes a row and says so: the
+SimpleX profile is dressed at boot, so the page says "the next time the bot starts" and the audit
+records `runtimeApplied: false`.
+
+`npm run verify:bot-avatar` drives all of it, including end to end: what the console stored is
+read back through `listBotsToHost` and handed to `decideFaces`. Every guarantee has a positive
+control beside it, because "bot A is not wearing bot B's face" passes against an implementation
+that dresses nobody.
 
 ## 33. The personality layer (CCB-S4-029, D-133)
 

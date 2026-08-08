@@ -1355,6 +1355,17 @@ anything sharp cannot read, and name the file from its content hash so an attack
 filename cannot traverse or collide. Stored outside `MEDIA_ROOT`, which the config loader
 enforces, and served by chapter id rather than by path. The body limit is raised on that one
 route and nowhere else.
+
+**Bot avatars take the same path, deliberately (CCB-S5-007, D-161).** The upload on the AI Bot
+page reuses `storeChapterImage` with a `bot-avatar` filename prefix rather than getting a second
+implementation, so every sentence above holds for it unchanged: base64 in an ordinary field, the
+`sharp` re-encode, the content-hash name, the asset root, the body limit on that route and no
+other, and served by **bot id** rather than by path. The one addition is at the write:
+`setBotAvatarPath` refuses an absolute or dot-dot path before it reaches the column, so a stored
+value that escapes the asset root would be a finding even though every reader also guards. At
+read time an escaping or unreadable path is a **fault** that leaves the bot's profile alone and
+raises to the dashboard, never a silent fallback to the deployment image (§32.6 of the
+architecture); one bad path costs one face and never the boot.
 ## 13. The generator's model path sends no member data (D-104)
 
 **Separate from the runtime AI subsystem in §12, and much smaller in surface.** The profile

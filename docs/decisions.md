@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 159 decisions</strong> — newest first. Highest allocated: <strong>D-160</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 160 decisions</strong> — newest first. Highest allocated: <strong>D-161</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-161 | A face per bot, and null means the deployment default | IMPLEMENTED |
 | D-160 | A serialized queue needs a bounded command, and every silent exit on the reply path is reported | IMPLEMENTED |
 | D-159 | The Book question is a scene, the laws have pages, and the application prints them | IMPLEMENTED |
 | D-158 | Interaction settings split shared from per bot, and the inventory is data rather than a document | IMPLEMENTED |
@@ -190,6 +191,66 @@ This has gone wrong twice.
 ---
 ---
 
+### D-161 - A face per bot, and null means the deployment default
+
+**Status: IMPLEMENTED** (CCB-S5-007, migration 049). `AVATAR_PATH` is one image in the
+environment. CCB-S5-001 hosts every enabled bot and applied that one image to the **primary
+only**, deliberately and with a log line saying so: writing it onto every profile would have
+given every bot the same face, which looks intentional and is not, where a second bot with no
+picture at least looks unfinished. So a second bot could have no picture, or the first one's.
+Neither is what an operator wants when the point of a second bot is that it is a different
+character.
+
+**THE MODEL: ONE NULLABLE COLUMN, AND NULL IS AN ANSWER.** `cinderella_bot_profiles.avatar_path`
+holds a path under the asset root, or NULL meaning "use the shipped default", which is
+`AVATAR_PATH`. That makes the fallback the same mechanism for every bot including the first, so
+there is **no special primary case anywhere in the code**, and an existing deployment keeps
+exactly the picture it has: the primary has no upload, so it falls back to the file the operator
+already set. The bytes are not in the database; the path is, exactly as the media tree and the
+recital chapter images do it.
+
+**THE UPLOAD REUSES THE WHOLE EXISTING PATH.** `storeChapterImage` gained a filename prefix
+rather than getting a sibling. The `sharp` re-encode, the 8 MB limit, the content-hash filename
+and the honest error on a file that is not an image are the same problem for a bot avatar as for
+a chapter image; only the name differs. The browser-side reader was renamed from
+`admin-recital.js` to `admin-image-upload.js` for the same reason: one uploader, two pages, one
+place to fix the day a browser changes how `FileReader` reports an error.
+
+**A CONFIGURED AVATAR THAT CANNOT BE READ IS A FAULT, NOT A FALLBACK.** This is the line worth
+recording. The tempting treatment of a missing file is to fall back to the deployment default,
+and that would dress the bot as somebody else and say nothing: the operator's evidence that their
+upload worked would be a picture that is not theirs. So that bot's stored profile is left exactly
+as it was, and the fault reaches `log.error` **and** `status.error`, naming the bot, because "an
+avatar failed" is unactionable the moment there are two of them (CCB-S3-023). A deployment with
+no avatar at all is a **choice** and raises nothing; that distinction is the whole of the rule.
+`verify:bot-avatar` asserts the fault outcome carries no image, which is the assertion that goes
+red if anybody ever "fixes" it into a fallback, and the mutation was run.
+
+**THE DECISION MOVED OUT OF `host.ts` INTO `faces.ts`.** It shipped as a loop inside
+`startRuntimeHost`, which is correct code in a place nothing can drive: reaching it needs a real
+SimpleX core, so the only proof it was right was reading it. `faces.ts` imports no SDK and is
+answerable with no core; `host.ts` keeps only what it costs to act on the answer. Moving it fixed
+a real defect on the way: a stored path that escapes the asset root used to throw out of the boot
+loop, taking **every other bot's face with it**. It is the same fault as unreadable now, and one
+bad path costs one face. Added to the SDK-free list in `verify:runtime-host` by walking that
+standing check against a new file rather than assuming a green run covered it (D-105).
+
+**THE CONSOLE DOES NOT CLAIM THE RUNNING BOT CHANGED.** The upload writes a row. The SimpleX
+profile is dressed at boot, so the page says "the next time the bot starts" and the audit records
+`runtimeApplied: false`. A page reporting that the bot's face had changed while every member
+still saw the old one is the "stores an intention" failure the contact-address step was built to
+avoid, and it would be worse here because nothing would ever correct it.
+
+Files: [`migrations/049_per_bot_avatar.sql`](../migrations/049_per_bot_avatar.sql),
+[`src/bot/runtime/faces.ts`](../src/bot/runtime/faces.ts),
+[`src/bot/runtime/host.ts`](../src/bot/runtime/host.ts),
+[`src/profiles/bot-onboarding.ts`](../src/profiles/bot-onboarding.ts),
+[`src/profiles/hosted-bots.ts`](../src/profiles/hosted-bots.ts),
+[`src/media/assets.ts`](../src/media/assets.ts),
+[`src/web/views/ai-onboarding.ts`](../src/web/views/ai-onboarding.ts),
+`npm run verify:bot-avatar`. See also D-155 (hosting every bot) and D-149 (the chapter-image
+upload this reuses).
+
 ### D-160 - A serialized queue needs a bounded command, and every silent exit on the reply path is reported
 
 **Status: IMPLEMENTED** (CCB-S5-006 regression fix). Production went silent: she worded replies
@@ -231,6 +292,11 @@ command would turn a slow system into a broken one.
 than the limiter, and the fix does not depend on knowing: both are now loud, so the next
 occurrence names itself. The Diagnostics conversation log already discriminated all three
 (`spoken`, `rate-limited`, no row at all) and nobody had been pointed at it.
+
+**CONFIRMED IN PRODUCTION SINCE** (recorded under CCB-S5-007, 2026-08-08). `7be0cbe` is deployed
+and verified: she answers in the live group, and the Book scene and page-turning both work there.
+So the silence is over. Which of the three exits caused it is still not established, and now that
+each one reports itself the next occurrence will say.
 
 Files: [`src/bot/runtime/scheduler.ts`](../src/bot/runtime/scheduler.ts),
 [`src/interaction/engine.ts`](../src/interaction/engine.ts),
