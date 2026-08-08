@@ -141,6 +141,13 @@ export function capFollowUp(matched: readonly PromptRule[]): {
  * chapter has retuned the selector.
  *
  * When no chapter matches, this is exactly `rulesForQuestion` and nothing changes.
+ *
+ * ── AND WHY ONE LAW CAN BE EXCLUDED (CCB-S5-005) ─────────────────────────────
+ *
+ * The scene ends by inviting a question about another page, so "tell me another" is the
+ * commonest follow-up there is, and the selector had no idea a performance had just happened.
+ * `justRead` is that one fact. It is a REMOVAL and never a preference: if excluding it would
+ * leave nothing, it stays, because a law she has already read beats no law at all.
  */
 export function rulesForFollowUp(
   rules: PromptRuleSet,
@@ -148,7 +155,14 @@ export function rulesForFollowUp(
   question: string,
   lang: string,
   matched: readonly PromptRule[],
+  justRead: string | null = null,
 ): PromptRule[] {
+  const without = (candidates: readonly PromptRule[]): PromptRule[] => {
+    if (!justRead) return [...candidates];
+    const kept = candidates.filter((rule) => rule.id !== justRead);
+    return kept.length > 0 ? kept : [...candidates];
+  };
+
   const german = lang.toLowerCase().startsWith('de');
   const words = new Set(
     question
@@ -171,7 +185,7 @@ export function rulesForFollowUp(
     }
   }
   // One word in common is a coincidence ("what" is in half of them). Two is a subject.
-  if (!best || bestScore < 2) return [...matched];
+  if (!best || bestScore < 2) return without(matched);
 
   const inArea = oneOfEachVariant(
     rules.filter(
@@ -191,7 +205,7 @@ export function rulesForFollowUp(
         Number(b.tier === 'constitutional') - Number(a.tier === 'constitutional') ||
         a.ord - b.ord,
     );
-  return inArea.length > 0 ? inArea : [...matched];
+  return inArea.length > 0 ? without(inArea) : without(matched);
 }
 
 /* ── Recognising her own chapter names (CCB-S4-049) ───────────────────────── */
@@ -256,6 +270,61 @@ const CHAPTER_PHRASINGS: readonly RegExp[] = [
 /** Does this repeat one of her chapter names back at her? */
 export function asksChapterQuestion(text: string): boolean {
   return CHAPTER_PHRASINGS.some((pattern) => pattern.test(text));
+}
+
+/* ── Answering the SCENE's invitation (CCB-S5-005) ─────────────────────────── */
+
+/**
+ * A member taking up the scene's offer of another page.
+ *
+ * ── WHY THE SCENE'S WINDOW IS NARROWER THAN THE OVERVIEW'S ───────────────────
+ *
+ * CCB-S4-049's window promotes ANY otherwise-unclaimed message that arrives within three
+ * minutes of an overview, and that is right for an overview: it ends by naming six chapters
+ * and asking which one interests you, so the answer could be almost any sentence and there is
+ * no way to recognise it in advance.
+ *
+ * A scene ends differently. It says: ask me about one and I will open the page. That is a much
+ * narrower offer, and the briefing asks explicitly that an ordinary question shortly after a
+ * scene still gets ordinary conversation. Opening the broad window here would have meant
+ * "how are you?" ninety seconds after a performance coming back with two quoted statutes,
+ * every time, in the one place a member is most likely to keep talking.
+ *
+ * So a post-scene message is promoted only when it asks for MORE. The other three ways into
+ * the Book are unaffected and already cover most of what somebody would say: naming a rule
+ * word, asking for a page number, or repeating one of her chapter names all reach it with no
+ * window at all. What this adds is the bare answer to a bare invitation.
+ *
+ * The cost is a phrasing outside these, which falls to free conversation and costs one
+ * clarifying question. That is the trade the window has always made, and here it is made once
+ * rather than constantly.
+ */
+const ANOTHER_LAW: readonly RegExp[] = [
+  // The WHOLE message and nothing else: "another", "and another?", "more". Anchored, because
+  // a bare "more" inside a sentence is a quantity and this is a page turn.
+  /^\s*(and\s+|ok,?\s+|okay,?\s+)?(another|more|next)\s*[?.!]*\s*$/i,
+  /^\s*(und\s+)?(noch\s+eins|noch\s+eines|mehr|weiter)\s*[?.!]*\s*$/i,
+  /\b(another|other)\s+(one|law|rule|page)\b/i,
+  // "Cinderella, and another" reaches this with the address still on the front, so the
+  // anchored forms above cannot see it. This is the same request with a name in front of it.
+  /\b(and|then)\s+(another|one\s+more|the\s+next\s+one)\b/i,
+  /\b(tell|read|give|show)\s+(me\s+)?(another|more|one\s+more)\b/i,
+  /\b(what|anything|something)\s+else\b/i,
+  /\b(one|any|some)\s+more\b/i,
+  /\bnext\s+(one|law|rule|page)\b/i,
+  /\bgo\s+on\b/i,
+  /\bmore\s+of\s+(them|those|it)\b/i,
+  /\bkeep\s+(going|reading)\b/i,
+  // German
+  /\bnoch\s+(ein|eins|eine|einen|mehr|was)\b/i,
+  /\bwas\s+(steht|gibt\s+es|ist)\b[^?]{0,16}\bnoch\b/i,
+  /\bwas\s+noch\b/i,
+  /\bn[aä]chste[snr]?\s+(gesetz|regel|seite)\b/i,
+  /\b(mach|lies)\s+weiter\b/i,
+];
+
+export function asksForAnotherLaw(text: string): boolean {
+  return ANOTHER_LAW.some((pattern) => pattern.test(text));
 }
 
 /* ── Enacting a law: which chapter would claim it (CCB-S4-051) ─────────────── */

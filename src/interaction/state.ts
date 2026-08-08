@@ -80,11 +80,30 @@ interface MemberEntry {
   recitals: number[];
   /** When she last gave this member a rules OVERVIEW (CCB-S4-049). */
   lastOverviewAt: number | undefined;
+  /**
+   * When she last performed the Book SCENE for this member (CCB-S5-005).
+   *
+   * Separate from the overview's, and deliberately so: the two windows admit different
+   * messages. See `asksForAnotherLaw` for why a scene's invitation is the narrower offer.
+   */
+  lastSceneAt: number | undefined;
 }
 
 interface ChatEntry {
   /** Index of the last retort used here, so the next one differs. */
   lastRetort: number;
+  /**
+   * The last law the Book showed here, by page (CCB-S5-005).
+   *
+   * Written by the scene and by every page turn after it, so "tell me another" moves forward
+   * through the book instead of handing back the same page.
+   *
+   * Per CHAT rather than per member, because a scene is a performance in a room: two people
+   * asking one after another are in the same room and would both hear the same law. Losing it
+   * on a restart is fine and is the honest degradation, since the rotation starts at the
+   * ceiling, which is where it should start anyway.
+   */
+  lastLawShownId: string | undefined;
   replies: number[];
   priceCalls: number[];
   recitals: number[];
@@ -160,6 +179,7 @@ export class ConversationState {
         priceCalls: [],
         recitals: [],
         lastOverviewAt: undefined,
+        lastSceneAt: undefined,
       };
       this.members.set(key, entry);
     }
@@ -169,7 +189,13 @@ export class ConversationState {
   private chat(groupId: number): ChatEntry {
     let entry = this.chats.get(groupId);
     if (!entry) {
-      entry = { lastRetort: -1, replies: [], priceCalls: [], recitals: [] };
+      entry = {
+        lastRetort: -1,
+        lastLawShownId: undefined,
+        replies: [],
+        priceCalls: [],
+        recitals: [],
+      };
       this.chats.set(groupId, entry);
     }
     return entry;
@@ -360,6 +386,32 @@ export class ConversationState {
   inOverviewWindow(groupId: number, memberId: string, now: number): boolean {
     const at = this.member(groupId, memberId).lastOverviewAt;
     return at !== undefined && now - at <= OVERVIEW_WINDOW_MS;
+  }
+
+  /** Records that this member has just been shown the Book scene (CCB-S5-005). */
+  noteScene(groupId: number, memberId: string, now: number): void {
+    this.member(groupId, memberId).lastSceneAt = now;
+  }
+
+  /**
+   * Is this member still inside the window the scene opened?
+   *
+   * Same three minutes as the overview's, and the same read-only shape. What differs is what
+   * the caller is allowed to promote inside it: a scene's invitation is narrower than an
+   * overview's, so only a message asking for another page counts. See `asksForAnotherLaw`.
+   */
+  inSceneWindow(groupId: number, memberId: string, now: number): boolean {
+    const at = this.member(groupId, memberId).lastSceneAt;
+    return at !== undefined && now - at <= OVERVIEW_WINDOW_MS;
+  }
+
+  /** The last law shown in this chat, so the next one is a different page. */
+  lastLawShown(groupId: number): string | null {
+    return this.chat(groupId).lastLawShownId ?? null;
+  }
+
+  noteLawShown(groupId: number, lawId: string): void {
+    this.chat(groupId).lastLawShownId = lawId;
   }
 
   allowRecital(groupId: number, memberId: string, now: number): boolean {

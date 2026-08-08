@@ -56,6 +56,7 @@ import {
   type BotPersonality,
 } from '../../interaction/personality.js';
 import { invalidatePromptRules } from '../../interaction/prompt-rule-service.js';
+import { lawPages } from '../../interaction/law-numbers.js';
 import {
   clearOverrideRecorded,
   listAllOverrides,
@@ -323,10 +324,15 @@ function ruleCard(
   csrf: string,
   openId: string,
   view?: ScopeView,
+  pages?: ReadonlyMap<string, number>,
 ): SafeHtml {
   const rule = entry.rule;
   const open = openId === rule.id;
   const drifted = entry.shippedText !== undefined && entry.shippedText !== rule.text;
+  // THE PAGE NUMBER A MEMBER SEES (CCB-S5-005). The same computation the chat uses, so the
+  // operator and the member are looking at the same book. Absent on a withheld rule, because
+  // a withheld rule has no page number: see `law-numbers.ts` for why that is deliberate.
+  const page = pages?.get(rule.id);
 
   return html`<article
     id="rule-${rule.id}"
@@ -336,6 +342,13 @@ function ruleCard(
   >
     <div class="flex flex-wrap items-center gap-2">
       ${entry.position ? html`<span class="text-xs font-mono text-slate-400">#${String(entry.position)}</span>` : null}
+      ${page
+        ? html`<span
+            class="rounded bg-slate-900 px-1.5 py-0.5 text-xs font-mono font-semibold text-white"
+            title="The page number she quotes to a member: &quot;that is law ${String(page)}&quot;."
+            >law ${String(page)}</span
+          >`
+        : null}
       <code class="text-sm font-semibold text-slate-900">${rule.id}</code>
       ${tierBadge(rule.tier)} ${rule.critical ? badge('critical', 'red') : null}
       ${rule.enabled ? null : badge('disabled', 'amber')}
@@ -610,6 +623,7 @@ function sectionBlock(
   csrf: string,
   openId: string,
   view?: ScopeView,
+  pages?: ReadonlyMap<string, number>,
 ): SafeHtml {
   return html`<section class="mt-6">
     <h2 class="text-sm font-bold uppercase tracking-wide text-slate-500">
@@ -620,7 +634,7 @@ function sectionBlock(
     </h2>
     <p class="mt-1 text-sm text-slate-500">${section.note}</p>
     <div class="mt-3 flex flex-col gap-3">
-      ${section.entries.map((entry) => ruleCard(entry, csrf, openId, view))}
+      ${section.entries.map((entry) => ruleCard(entry, csrf, openId, view, pages))}
     </div>
   </section>`;
 }
@@ -692,6 +706,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
 
       const shown = sections.reduce((n, s) => n + s.entries.length, 0);
       const { view: scopeView } = await readScopes(rules);
+      const pages = lawPages(rules);
       reply.type('text/html');
 
       return page({
@@ -724,6 +739,14 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               ${String(drifted.length)} changed from what shipped ·
               ${String(rules.filter((r) => r.nameable).length)} she may name ·
               ${String(rules.filter((r) => !r.nameable).length)} withheld from members
+            </p>
+            <p class="mt-2 text-slate-400">
+              ${String(pages.size)} of them have a PAGE NUMBER, which is what she quotes when
+              somebody asks for "law 12" and what a member can ask her for. The number is the
+              law's position among the ones she may name, sorted by id, so editing text or
+              reordering the prompt never moves it. Adding, removing or withholding a law does.
+              A withheld law has no number, deliberately: numbering them all would let anybody
+              read a withheld law's subject off its neighbours.
             </p>
           </div>
 
@@ -759,7 +782,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             </p>
           </div>
 
-          ${sections.map((section) => sectionBlock(section, csrf, '', scopeView))}
+          ${sections.map((section) => sectionBlock(section, csrf, '', scopeView, pages))}
         `,
       });
     },
@@ -1077,7 +1100,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               </div>`
             : null}
           <p class="mb-4 text-sm"><a class="underline" href="/book">Back to the book</a></p>
-          ${ruleCard(entry, csrf, rule.id, scopeView)}
+          ${ruleCard(entry, csrf, rule.id, scopeView, lawPages(rules))}
           ${perBotPanel(rule, bots, ruleOverrides, csrf)}
           <div class="mt-4">${changeTable(history, csrf, false)}</div>
         `,

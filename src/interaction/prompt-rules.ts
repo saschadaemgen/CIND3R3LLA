@@ -90,6 +90,7 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-rule-overview',
   'has-more-in-area',
   'has-invocation-record',
+  'has-law-page',
 ] as const;
 export type PromptRuleCondition = (typeof PROMPT_RULE_CONDITIONS)[number];
 
@@ -175,6 +176,8 @@ export interface PromptRuleContext {
   hasMoreInArea: boolean;
   /** The record has something to say about the rules quoted (CCB-S4-050). */
   hasInvocationRecord: boolean;
+  /** This answer IS one page of the Book, printed by the application (CCB-S5-005). */
+  hasLawPage: boolean;
 }
 
 /** Nothing configured and nothing supplied. The command lanes' context, plus web results. */
@@ -196,6 +199,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasRuleOverview: false,
   hasMoreInArea: false,
   hasInvocationRecord: false,
+  hasLawPage: false,
 });
 
 export function conditionHolds(
@@ -265,6 +269,12 @@ export function conditionHolds(
       // Only ever with rules actually quoted: "there are more in that area" alongside
       // nothing quoted would be describing a remainder of nothing.
       return context.hasNameableRules && context.hasMoreInArea;
+    case 'has-law-page':
+      // Stands ALONE, unlike every other disclosure condition. A page answer hands her no
+      // rules to quote by design (see migration 048): the page is printed under her words, so
+      // conditioning this on `hasNameableRules` would switch it off in the one case it exists
+      // for.
+      return context.hasLawPage;
   }
 }
 

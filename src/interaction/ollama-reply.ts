@@ -219,6 +219,16 @@ export interface AiReplyRequest {
    * same mechanism rather than by a second one.
    */
   ruleInvocations?: string;
+  /**
+   * This answer IS one page of the Book (CCB-S5-005, D-159).
+   *
+   * Present means: the application is printing the law, whole and numbered, underneath
+   * whatever she says, so she writes a line handing over to it and quotes nothing. No rule
+   * text travels with it, deliberately: measured, a model handed a law and its page number
+   * puts the number on a different law, and a page number that points at the wrong page is
+   * worse than no page number.
+   */
+  lawPage?: boolean;
 }
 
 /**
@@ -404,6 +414,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     hasRuleOverview: request.ruleOverview !== undefined,
     hasMoreInArea: (request.moreInArea ?? 0) > 0,
     hasInvocationRecord: (request.ruleInvocations ?? '').length > 0,
+    hasLawPage: request.lawPage === true,
   };
 
   // Everything except the quoted block, so the quoted block can be rendered WITH it.

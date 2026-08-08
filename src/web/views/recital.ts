@@ -38,10 +38,6 @@ import {
   storeChapterImage,
 } from '../../media/assets.js';
 import { FOLLOW_UP_MAX_RULES } from '../../interaction/rule-overview.js';
-import {
-  BOOK_STORY_MAX_BEATS,
-  BOOK_STORY_MIN_BEATS,
-} from '../../interaction/book-story.js';
 import { listRecentRuleInvocations } from '../../db/rule-invocations.js';
 import {
   RECITAL_MAX_MESSAGES,
@@ -188,7 +184,7 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
       const s = ctx.interaction.get().recital;
       const plan = planRecital(chapters, rules, { lang: 'en', maxMessages: s.maxMessages });
       const orphans = unassignedRules(chapters, rules);
-      const story = ctx.interaction.get().bookStory;
+      const scene = ctx.interaction.get().bookScene;
       const record = ctx.interaction.get().invocationRecord;
       const invocations = record.enabled ? await listRecentRuleInvocations(ctx.db, 100) : [];
 
@@ -378,13 +374,13 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
           )}
 
           ${card(
-            'The Book, told as an artefact',
+            'The Book, told as a scene',
             html`
               <form method="post" action="/book/recital/story" class="grid gap-3">
                 <input type="hidden" name="_csrf" value="${csrf}" />
                 <label class="flex items-center gap-2 text-sm">
-                  <input type="checkbox" name="storyEnabled" ${story.enabled ? raw('checked') : ''} class="rounded" />
-                  <span>Tell the Book as a story when somebody asks for it by name</span>
+                  <input type="checkbox" name="storyEnabled" ${scene.enabled ? raw('checked') : ''} class="rounded" />
+                  <span>Play the scene when somebody asks for the Book by name</span>
                 </label>
                 <p class="text-xs text-slate-500">
                   <strong>When it triggers.</strong> Only a question that names the Book:
@@ -394,26 +390,20 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
                   content, and they are different questions.
                 </p>
                 <p class="text-xs text-slate-500">
-                  Switched off, a question naming the Book falls back to the overview, which is
-                  a complete answer.
+                  <strong>What she does.</strong> ONE message. Fire and light, a few lines about
+                  what the book means to her, one law read out exactly, and an invitation to ask
+                  about another. There is no length setting, deliberately: the answer this
+                  replaced could be dialled up to six messages, and its volume was the whole
+                  objection to it. The verbosity dial still moves her half of it underneath a
+                  fixed ceiling.
                 </p>
-                <label class="flex flex-col gap-1 text-sm">
-                  <span class="font-medium text-slate-700">Messages the story takes</span>
-                  <input
-                    name="storyBeats"
-                    type="number"
-                    min="${String(BOOK_STORY_MIN_BEATS)}"
-                    max="${String(BOOK_STORY_MAX_BEATS)}"
-                    value="${String(story.maxBeats)}"
-                    class="${INPUT_CLS} sm:w-40"
-                  />
-                  <span class="text-xs text-slate-500">
-                    Three by default: the ritual, the artefact, the record. It opens by saying
-                    she is about to read and taking a beat to set the mood, which is what makes
-                    it a ceremony rather than a lookup. A tighter bound keeps the ritual and the
-                    artefact; a longer one is a set piece.
-                  </span>
-                </label>
+                <p class="text-xs text-slate-500">
+                  <strong>Which law.</strong> The safety ceiling, rotating through its four
+                  sentences and never the same one twice running in a chat. The application
+                  hands the scene exactly one law, so a second one cannot appear. Switched off,
+                  a question naming the Book falls back to the overview, which is a complete
+                  answer.
+                </p>
                 <div>
                   <button
                     type="submit"
@@ -550,10 +540,7 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
     await ctx.interaction.save(
       {
         ...ctx.interaction.get(),
-        bookStory: {
-          enabled: 'storyEnabled' in req.body,
-          maxBeats: bodyString(req.body, 'storyBeats'),
-        },
+        bookScene: { enabled: 'storyEnabled' in req.body },
       },
       actor,
     );

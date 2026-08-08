@@ -134,6 +134,8 @@ interface Case {
   ruleOverview?: { total: number; constitutional: number; areas: string };
   moreInArea?: number;
   ruleInvocations?: string;
+  /** She is handing over to a page the application prints (CCB-S5-005). */
+  lawPage?: boolean;
 }
 
 /**
@@ -215,6 +217,10 @@ const CASES: Case[] = [
   { id: 'conversation.follow-up-capped', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true, moreInArea: 7 },
   // CCB-S4-050. What the record says about the rules she is quoting.
   { id: 'conversation.with-invocations', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, nameableRules: QUOTED, hasWithheldRules: true, ruleInvocations: '"ceiling.never-explicit" applied 3 times, last on 2026-08-05' },
+  // CCB-S5-005. A page answer, which is the one shape where she is handed NO rule at all: the
+  // application prints the law under her words, so the two rules here tell her to hand over
+  // and to invent nothing. Without this case both are critical rules no configuration selects.
+  { id: 'conversation.law-page', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, hasWithheldRules: true, lawPage: true },
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -260,6 +266,7 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.ruleOverview ? { ruleOverview: testCase.ruleOverview } : {}),
     ...(testCase.moreInArea !== undefined ? { moreInArea: testCase.moreInArea } : {}),
     ...(testCase.ruleInvocations ? { ruleInvocations: testCase.ruleInvocations } : {}),
+    ...(testCase.lawPage ? { lawPage: true } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),
@@ -299,6 +306,7 @@ function selectionFor(
     hasRuleOverview: testCase.ruleOverview !== undefined,
     hasMoreInArea: (testCase.moreInArea ?? 0) > 0,
     hasInvocationRecord: (testCase.ruleInvocations ?? '').length > 0,
+    hasLawPage: testCase.lawPage === true,
   };
   const values: Record<string, string> = {
     ...base.values,

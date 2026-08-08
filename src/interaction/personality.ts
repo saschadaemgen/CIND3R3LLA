@@ -845,6 +845,7 @@ export function dialledPromptInputs(
     hasRuleOverview: false,
     hasMoreInArea: false,
     hasInvocationRecord: false,
+    hasLawPage: false,
   };
 
   const values: Record<string, string> = {};

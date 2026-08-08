@@ -38,7 +38,7 @@ import {
 } from './recital.js';
 import { sendRecitalBeat, type RecitalPort } from './recital-runner.js';
 import { asksAboutRules, asksForRecital } from './disclosure.js';
-import { planBookStory } from './book-story.js';
+import { planBookScene, renderBookScene, type BookScene } from './book-scene.js';
 
 export interface RecitalDeps {
   db: Queryable;
@@ -79,12 +79,20 @@ export interface RecitalDeps {
   /** Books the next beat on the durable queue. */
   schedule: (groupId: number, lang: string, beatIndex: number, delayMs: number) => Promise<void>;
   /**
-   * Her words for one beat of the Book story, from a brief rather than a script.
+   * Her words for one half of the Book scene, from a brief rather than a script.
    *
-   * Absent means every beat reads as its authored line, which is the same degradation the
-   * recital already has and is a complete story, just a plainer one.
+   * Absent, or returning null, means that half reads as its authored line. Same degradation
+   * the recital has, and it is a complete scene, just a plainer one.
+   *
+   * `maxChars` is the scene's OWN bound rather than the conversation budget: see
+   * `book-scene.ts`. `requiredLiterals` carries the count, so a half that loses it is
+   * rejected and the authored line goes out with the right number in it.
    */
-  storyVoice?: (brief: string, lang: string) => Promise<string | null>;
+  sceneVoice?: (
+    brief: string,
+    lang: string,
+    opts: { maxChars: number; requiredLiterals: string[] },
+  ) => Promise<string | null>;
 }
 
 /** Loads the chapters and builds the plan for a group, or null when there is nothing to read. */
@@ -128,67 +136,97 @@ function portFor(deps: RecitalDeps, groupId: number, lang: string): RecitalPort 
 }
 
 /**
- * Tells the Book as an artefact (CCB-S4-050, D-152).
+ * Tells the Book as a SCENE (CCB-S5-005, D-159).
  *
- * ── WHY THIS REUSES THE RECITAL AND DOES NOT BECOME A THIRD PATH ─────────────
+ * ── WHY THIS NO LONGER GOES THROUGH THE RECITAL RUNNER ───────────────────────
  *
- * Everything a paced multi-message answer needs already exists: the runner that sends one beat
- * and books the next, the durable queue behind it, the degradation to an authored line, the
- * budget that stops it flooding. A third implementation of all that would be three places to
- * fix the next time one of them is wrong.
+ * CCB-S4-050 built the story on top of the runner, correctly, because a paced multi-message
+ * answer needs a durable chain and the runner already had one. A scene is ONE message, so
+ * there is no chain, no queue and no next beat to book; borrowing the runner for it would
+ * mean carrying a plan, a pacing setting and a scheduler for a performance that never uses
+ * any of them.
  *
- * What differs is the MATERIAL, and only the material. A recital reads laws; the story is
- * about the artefact and quotes nothing. So the beats carry no rules at all, which also means
- * the whole disclosure question does not arise here: there is nothing to leak because nothing
- * is selected.
+ * What it still shares is the part that mattered: her voice comes from a brief, the facts do
+ * not come from her, and a model failure reads as an authored line rather than as silence.
+ *
+ * ── AND WHY THE TWO HALVES ARE TWO CALLS ─────────────────────────────────────
+ *
+ * The law sits BETWEEN them, and the law is not hers to write. One call could not put a
+ * verbatim rule in the middle of its own paragraph without being handed the rule, and handing
+ * it over is exactly what the one-law bound is built to avoid. So she speaks, the application
+ * reads the law out, and she closes. Two short calls, one message, and no path by which a
+ * second law can appear.
+ *
+ * Returns whether a scene was told. `false` is not a failure: no host, no law she may show,
+ * or a member who has already had one this minute all mean the caller answers with the
+ * conversational overview, which is a complete answer in its own right.
  */
-export async function startBookStory(
+export async function tellBookScene(
   deps: RecitalDeps,
   msg: CapturedMessage,
   lang: string,
-  overview: { total: number; constitutional: number },
-  maxBeats: number,
+  opts: {
+    previousLawId: string | null;
+    openingChars: number;
+    closingChars: number;
+    onLawShown?: (lawId: string) => void;
+  },
 ): Promise<boolean> {
   const out = deps.send();
-  if (!out) return false;
-  if (!deps.reserve(msg.groupId, msg.senderMemberId)) return false;
+  if (!out) {
+    log.debug('Book scene: nothing is hosting, so the overview is given instead.');
+    return false;
+  }
 
   const german = lang.toLowerCase().startsWith('de');
-  const story = planBookStory({ ...overview, areas: [] }, { german, maxBeats });
-  if (story.length === 0) return false;
+  const scene = planBookScene(deps.rules(), {
+    german,
+    values: deps.renderableValues(),
+    previousLawId: opts.previousLawId,
+  });
+  if (!scene) {
+    log.debug('Book scene: no law she may show, so the overview is given instead.');
+    return false;
+  }
 
-  // The story's beats carry no rules, so the plan is a shell the runner can walk: the icon is
-  // the title, the brief goes to the model, and the authored line is what a failure reads as.
-  const plan: RecitalPlan = {
-    beats: story.map((beat) => ({
-      kind: 'chapter' as const,
-      chapterId: beat.id,
-      title: beat.icon,
-      rules: [],
-      omitted: 0,
-      imagePath: null,
-      fallback: beat.fallback,
-    })),
-    truncated: false,
-    omitted: 0,
-    withheld: 0,
+  // The member's allowance, taken before a word is spoken, exactly as a recital takes it.
+  if (!deps.reserve(msg.groupId, msg.senderMemberId)) {
+    log.debug('Book scene: this member has already had one this minute; the overview is given.');
+    return false;
+  }
+
+  const speak = async (
+    voice: BookScene['opening'],
+    maxChars: number,
+    requiredLiterals: string[],
+  ): Promise<string | null> => {
+    if (!deps.sceneVoice) return null;
+    try {
+      return await deps.sceneVoice(voice.brief, lang, { maxChars, requiredLiterals });
+    } catch (err) {
+      // The model may fail and may not stop this. The authored line takes its place.
+      log.warn(
+        `Book scene: the model failed (${
+          err instanceof Error ? err.message : String(err)
+        }); the authored line is read instead.`,
+      );
+      return null;
+    }
   };
 
-  const port: RecitalPort = {
-    transition: (_beat, index) => {
-      const brief = story[index]?.brief;
-      return brief && deps.storyVoice ? deps.storyVoice(brief, lang) : Promise.resolve(null);
-    },
-    renderRule: (rule) => deps.renderRule(rule),
-    send: async (text) => {
-      await out.sendText(msg.groupId, text);
-    },
-    // The closing belongs to the last beat's own brief, so nothing is appended.
-    scheduleNext: (nextIndex, delayMs) => deps.schedule(msg.groupId, lang, nextIndex, delayMs),
-  };
+  const opening = await speak(scene.opening, opts.openingChars, []);
+  const closing = await speak(scene.closing, opts.closingChars, [String(scene.lawTotal)]);
 
-  log.info(`Book story: telling ${String(plan.beats.length)} beats in group ${String(msg.groupId)}.`);
-  return await sendRecitalBeat(port, plan, 0, { german, pacingMs: deps.recital().pacingMs });
+  // THE LAW IS RENDERED HERE, by the application, from `scene.law`, which holds exactly one.
+  const text = renderBookScene(scene, { opening, closing }, deps.renderRule(scene.law));
+
+  log.info(
+    `Book scene: reading law ${String(scene.lawNumber)}/${String(scene.lawTotal)} ` +
+      `(${scene.law.id}) in group ${String(msg.groupId)}.`,
+  );
+  await out.sendText(msg.groupId, text);
+  opts.onLawShown?.(scene.law.id);
+  return true;
 }
 
 /**

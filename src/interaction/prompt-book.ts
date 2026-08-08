@@ -87,6 +87,7 @@ const EVERYTHING_IN_SCOPE: PromptRuleContext = {
   hasRuleOverview: true,
   hasMoreInArea: true,
   hasInvocationRecord: true,
+  hasLawPage: true,
 };
 
 /**
