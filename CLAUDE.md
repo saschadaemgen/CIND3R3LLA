@@ -325,7 +325,7 @@ provider), `verify:archive` (her own messages + the consent leak guard), plus
 matches the headings byte for byte, that every entry has a Status, and above all that **no decision
 number is allocated twice**, which has happened twice. Mutation-proven four ways. Regenerate with
 `npm run verify:decisions-index -- --update` after touching a decision heading or its Status),
-`verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: sixteen
+`verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: 24
 configurations covering every lane and every condition branch, compared against
 `scripts/fixtures/prompt-baseline.json`, which was captured from the code one commit BEFORE
 the rule registry moved the sentences into the database. It is not specific to that

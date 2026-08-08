@@ -9,11 +9,18 @@ plain language and confirming when she asks back (consent-first).
 HOW THE SIMPLEX CHAT CORE IS USED
 
   The `simplex-chat` npm package embeds the SimpleX Chat core IN-PROCESS as a
-  native Node addon (`binding.gyp`, `node-addon-api`); `bot.run` loads it
-  inside this application's own process. There is NO separate simplex-chat CLI
-  daemon, no WebSocket transport to one, and no exposed SimpleX port. Earlier
-  versions of this file described a CLI daemon; that was never how this
-  application worked and the statement is withdrawn.
+  native Node addon (`binding.gyp`, `node-addon-api`), loaded inside this
+  application's own process. There is NO separate simplex-chat CLI daemon, no
+  WebSocket transport to one, and no exposed SimpleX port. Earlier versions of
+  this file described a CLI daemon; that was never how this application worked
+  and the statement is withdrawn.
+
+  The multi-profile runtime (`src/bot/runtime/core.ts`) loads it directly via
+  `ChatApi.init()` + `startChat()`, so that one core can host every enabled bot
+  profile. The SDK's own `bot.run` helper is still used by `startBot`, which
+  now serves only `npm run connect`. Earlier versions of this file named
+  `bot.run` as the loader; that is no longer the boot path, and the in-process
+  linkage the licence conclusion rests on is unchanged either way.
 
   Because the core is linked into this process rather than executed as a
   separate program, this application is distributed under the AGPL-3.0-or-later

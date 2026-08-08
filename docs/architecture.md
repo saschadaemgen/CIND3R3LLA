@@ -2351,6 +2351,13 @@ branch: with and without an origin, a base character, a name and a clock; with n
 at all; both ends of the dials; every mode; and one case with web results attached. All
 sixteen are byte identical after the move.
 
+**The fixture has since grown to 24 cases** and will keep growing, because every briefing that
+adds a condition branch adds the case that pins it (conversation memory added the `has-history`
+pair, CCB-S5-002 the self-claim lanes). Sixteen is what the MOVE was proven across and is left
+standing as that record; 24 is what the check covers today, and the number to read is the one
+the run prints rather than one written down here. Corrected under CCB-S5-004, which found the
+figure stale in this section, in D-144 and in `CLAUDE.md`.
+
 `npm run verify:prompt-identity` compares against it and prints which lane and which line
 moved. A deliberate prompt change is expected to fail and is re-baselined with
 `-- --update`; the diff to the fixture is then the reviewable record of what she is now told,

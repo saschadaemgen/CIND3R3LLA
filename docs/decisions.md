@@ -1289,6 +1289,11 @@ is mutation-proven five ways: change one word of one rule, swap two rules' order
 text changed, disable a constitutional rule, and render with an empty registry, and each is
 caught. "We moved the rules and nothing changed" is otherwise unfalsifiable.
 
+_Sixteen is what this decision was proven across and stays as written. The fixture has since
+grown to **24 cases**, one per condition branch added by later briefings; the live number is
+whatever the run prints. Noted under CCB-S5-004, which found "sixteen" being quoted as the
+current figure in `CLAUDE.md` and in architecture §36.7._
+
 **TWO THINGS THE INVENTORY FOUND AND DID NOT FIX**, recorded because the registry is what
 makes them visible to an operator for the first time. The generic voice paragraph exists in
 two non-identical copies (`voice.command.restraint` says "theatrical, **submissive**,
