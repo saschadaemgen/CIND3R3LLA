@@ -3420,8 +3420,14 @@ export class InteractionEngine {
         s.replyLimitPerChat,
       )
     ) {
-      log.debug(
-        `Interaction: reply rate limit hit for member ${msg.senderMemberId} in group ${msg.groupId}; staying silent.`,
+      // INFO, not debug (CCB-S5-006 regression hunt). A reply the limiter dropped is
+      // invisible from the group and from the archive, and at debug it was invisible in the
+      // log too, so "she said nothing" had no explanation anywhere. The numbers are included
+      // because the first question is always whether the bound is the one the operator set.
+      log.info(
+        `Interaction: reply rate limit hit for member ${msg.senderMemberId} in group ` +
+          `${String(msg.groupId)} (${String(s.replyLimitPerMember)}/member, ` +
+          `${String(s.replyLimitPerChat)}/chat per minute); staying silent.`,
       );
       return false;
     }
@@ -3429,11 +3435,16 @@ export class InteractionEngine {
     try {
       await this.deps.send(msg, out.text, { quote: out.quote, ...meta });
     } catch (err) {
-      log.warn(
-        `Interaction: failed to reply to member ${msg.senderMemberId}: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+      // ERROR and status.error, not a warning (CCB-S5-006 regression hunt). A reply that was
+      // worded, formatted and then failed to leave is a fault on the capture path in the
+      // sense CCB-S3-023 means: the member asked, the application answered, and nobody got
+      // it. It reached only the log before, at a level an operator does not watch.
+      const detail = err instanceof Error ? err.message : String(err);
+      log.error(
+        `Interaction: failed to reply to member ${msg.senderMemberId} in group ` +
+          `${String(msg.groupId)}: ${detail}`,
       );
+      status.error(`A reply to group ${String(msg.groupId)} could not be sent: ${detail}`);
       return false;
     }
 

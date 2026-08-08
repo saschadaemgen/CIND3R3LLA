@@ -337,6 +337,65 @@ section('Personality reference (§9.1) and display-name sanitisation (§12)');
   );
 }
 
+/* ============ a command that never answers, and the tail behind it (CCB-S5-006) */
+
+section('A command that stops answering does not stop every command behind it');
+{
+  /**
+   * ── THE PRODUCTION SYMPTOM THIS IS FOR ─────────────────────────────────────
+   *
+   * She worded a reply and sent nothing, over and over, with no error in the log and
+   * nothing on the admin dashboard. `run` chains every command onto `this.tail`, so ONE
+   * call that never settles stops every command behind it for the life of the process,
+   * and there was no timeout anywhere on that path. From outside it is indistinguishable
+   * from a bot that has decided not to speak.
+   */
+  const hung = new FakeCore();
+  const scheduler = new ActiveUserScheduler(hung, { commandTimeoutMs: 60 });
+
+  const stuck = scheduler.run(1, 'never-answers', () => new Promise<void>(() => undefined));
+  let abandoned = '';
+  await stuck.catch((err: unknown) => {
+    abandoned = err instanceof Error ? err.name : String(err);
+  });
+  check(
+    'a command that never answers is abandoned rather than awaited forever',
+    abandoned === 'SchedulerTimeoutError',
+    abandoned || '(it never settled)',
+  );
+
+  // THE POINT: the queue behind it still runs. Without the bound this never resolves.
+  const after = await Promise.race([
+    scheduler.run(1, 'behind-it', () => Promise.resolve('sent')),
+    new Promise<string>((resolve) => setTimeout(() => resolve('STILL BLOCKED'), 2_000)),
+  ]);
+  check(
+    'and the command behind it still goes out, so one hang is not total silence',
+    after === 'sent',
+    after,
+  );
+  check(
+    'the abandonment is reported, because silence with no error is what took a day to find',
+    abandoned === 'SchedulerTimeoutError',
+  );
+
+  /**
+   * MUTATION: the shape that shipped. No bound, so the second command waits on the first
+   * one forever and the check above would read STILL BLOCKED.
+   */
+  const unbounded = new ActiveUserScheduler(new FakeCore(), { commandTimeoutMs: 3_600_000 });
+  void unbounded.run(1, 'never-answers', () => new Promise<void>(() => undefined)).catch(() => undefined);
+  const blocked = await Promise.race([
+    unbounded.run(1, 'behind-it', () => Promise.resolve('sent')),
+    new Promise<string>((resolve) => setTimeout(() => resolve('STILL BLOCKED'), 300)),
+  ]);
+  check(
+    'MUTATION: without the bound, everything behind a hung command is blocked',
+    blocked === 'STILL BLOCKED',
+    blocked,
+  );
+}
+
 /* ================================== the serialized scheduler (§6.5, §8, §13) */
 
 section('The serialized scheduler (§8) - THE test that must not be a tautology');

@@ -49,15 +49,55 @@ export interface SchedulerOptions {
    * turn a slow system into a broken one.
    */
   slowWaitMs?: number;
+  /**
+   * How long ONE command may run before it is abandoned.
+   *
+   * ── WHY THIS IS A TIMEOUT WHERE THE WAIT DELIBERATELY IS NOT ───────────────
+   *
+   * A slow QUEUE is a throughput signal and cancelling a queued command would turn a slow
+   * system into a broken one, which is why {@link SchedulerOptions.slowWaitMs} only warns.
+   * A command that never ANSWERS is the opposite, and the difference is the tail: `run`
+   * chains every command onto `this.tail`, so one call that never settles stops every
+   * command behind it, for the life of the process, with nothing timing out and nothing
+   * logged. That is not a slow bot, it is a bot that has stopped, and it looks from outside
+   * exactly like silence: the reply was worded, the send was issued, and nothing arrived.
+   *
+   * Abandoning may leave the core to finish the command later. That is the right trade
+   * against a permanently poisoned chain: one lost message against every message.
+   */
+  commandTimeoutMs?: number;
   /** Shared counter object, so the admin can show one set of runtime numbers. */
   counters?: RuntimeCounters;
+  /** Raised when a command is abandoned, so it reaches the admin and not only the log. */
+  onTimeout?: (label: string, ms: number) => void;
 }
 
 const DEFAULT_SLOW_WAIT_MS = 5_000;
 
+/**
+ * Generous, because the core legitimately takes seconds: a send on a settled core measured
+ * 153 ms and one issued into the warm-up took 10 s (D-085). This is not a latency budget, it
+ * is the line past which a command is not coming back.
+ */
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+
+/** Thrown when a command is abandoned so the chain can move on. */
+export class SchedulerTimeoutError extends Error {
+  constructor(label: string, ms: number) {
+    super(
+      `Runtime: the command "${label}" did not answer within ${String(ms)} ms and was ` +
+        `abandoned so the queue behind it could continue. The message it carried did not go ` +
+        `out.`,
+    );
+    this.name = 'SchedulerTimeoutError';
+  }
+}
+
 export class ActiveUserScheduler {
   private readonly core: ActiveUserCore;
   private readonly slowWaitMs: number;
+  private readonly commandTimeoutMs: number;
+  private readonly onTimeout: ((label: string, ms: number) => void) | undefined;
   private readonly counters: RuntimeCounters | undefined;
 
   /**
@@ -75,6 +115,8 @@ export class ActiveUserScheduler {
   constructor(core: ActiveUserCore, options: SchedulerOptions = {}) {
     this.core = core;
     this.slowWaitMs = options.slowWaitMs ?? DEFAULT_SLOW_WAIT_MS;
+    this.commandTimeoutMs = options.commandTimeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS;
+    this.onTimeout = options.onTimeout;
     this.counters = options.counters;
   }
 
@@ -174,6 +216,37 @@ export class ActiveUserScheduler {
     }
 
     if (this.counters) this.counters.commandsIssued++;
-    return await fn();
+    return await this.bounded(label, fn);
+  }
+
+  /**
+   * `fn`, or a rejection once {@link SchedulerOptions.commandTimeoutMs} has passed.
+   *
+   * The timer is cleared on every exit, so a normal command leaves nothing behind. The
+   * rejection is LOUD in both directions: it reaches the caller, which reports the reply it
+   * could not send, and it reaches `onTimeout`, which puts it on the admin dashboard. A
+   * command that stops answering used to produce neither.
+   */
+  private async bounded<T>(label: string, fn: () => Promise<T>): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        fn(),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            log.error('scheduler: a command did not answer and was abandoned', {
+              label,
+              timeoutMs: this.commandTimeoutMs,
+              depth: this.queued,
+              note: 'the queue behind it continues; the message it carried did not go out',
+            });
+            this.onTimeout?.(label, this.commandTimeoutMs);
+            reject(new SchedulerTimeoutError(label, this.commandTimeoutMs));
+          }, this.commandTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 }

@@ -37,6 +37,7 @@ import { api as chatApi } from 'simplex-chat';
 // workarounds below need.
 import { T, CC } from '@simplex-chat/types';
 import { log } from '../../log.js';
+import { status } from '../../web/status.js';
 import { ActiveUserScheduler } from './scheduler.js';
 import { EventRouter, type ProfileHandler } from './router.js';
 import { RuntimeStateMachine, type TransitionDetail } from './state.js';
@@ -304,7 +305,18 @@ export class MultiProfileRuntime {
           await chat.apiSetActiveUser(userId);
         },
       };
-      this.schedulerInstance = new ActiveUserScheduler(core, { counters: this.counters });
+      this.schedulerInstance = new ActiveUserScheduler(core, {
+        counters: this.counters,
+        // A command that stops answering poisons every command behind it. It reaches the
+        // admin as well as the log, because the symptom from outside is silence.
+        onTimeout: (label, ms) => {
+          status.error(
+            `A SimpleX command ("${label}") did not answer within ${String(ms)} ms and was ` +
+              `abandoned. Anything it was carrying did not go out. If this repeats, the core ` +
+              `is not answering and the bot needs a restart.`,
+          );
+        },
+      });
 
       // Enumerate BEFORE startChat, matching bot.run's ordering.
       await this.resolveProfiles(chat);
