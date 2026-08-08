@@ -36,6 +36,12 @@ export interface HostedBotConfig {
   simplexUserId: number | null;
   /** The console's default selection. Decides nothing about hosting. */
   isPrimary: boolean;
+  /**
+   * This bot's own avatar, relative to the asset root, or null for the deployment default
+   * (CCB-S5-007). Null is an answer rather than a gap: it means AVATAR_PATH, which is what
+   * every bot including the first one gets until somebody uploads a face for it.
+   */
+  avatarPath: string | null;
 }
 
 interface BotRow {
@@ -44,6 +50,7 @@ interface BotRow {
   display_name: string;
   simplex_user_id: string | null;
   selected_for_runtime: boolean;
+  avatar_path: string | null;
 }
 
 /**
@@ -60,7 +67,7 @@ interface BotRow {
  */
 export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> {
   const { rows } = await db.query<BotRow>(
-    `SELECT id, slug, display_name, simplex_user_id, selected_for_runtime
+    `SELECT id, slug, display_name, simplex_user_id, selected_for_runtime, avatar_path
        FROM cinderella_bot_profiles
       WHERE enabled = TRUE
       ORDER BY selected_for_runtime DESC, id`,
@@ -71,6 +78,7 @@ export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> 
     displayName: r.display_name,
     simplexUserId: r.simplex_user_id === null ? null : Number(r.simplex_user_id),
     isPrimary: r.selected_for_runtime,
+    avatarPath: r.avatar_path,
   }));
 }
 

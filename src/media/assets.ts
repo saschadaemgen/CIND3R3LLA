@@ -72,6 +72,13 @@ export function resolveAssetPath(assetRoot: string, relative: string): string {
 export async function storeChapterImage(
   assetRoot: string,
   upload: Buffer,
+  /**
+   * The filename prefix, so a second kind of asset reuses this whole path rather than
+   * getting its own (CCB-S5-007). The re-encode, the size limit, the honest error on a file
+   * that is not an image and the asset root are all the same problem for a bot avatar as for
+   * a chapter image; only the name differs.
+   */
+  prefix = 'chapter',
 ): Promise<{ relativePath: string; bytes: number; width: number; height: number }> {
   if (upload.length === 0) throw new AssetError('The uploaded file was empty.');
   if (upload.length > ASSET_MAX_BYTES) {
@@ -102,11 +109,11 @@ export async function storeChapterImage(
     );
   }
 
-  const name = `chapter-${createHash('sha256').update(encoded).digest('hex').slice(0, 16)}.jpg`;
+  const name = `${prefix}-${createHash('sha256').update(encoded).digest('hex').slice(0, 16)}.jpg`;
   const root = resolve(assetRoot);
   await mkdir(root, { recursive: true });
   await writeFile(join(root, name), encoded);
-  log.info(`Stored chapter image ${name} (${String(encoded.length)} bytes, ${String(width)}x${String(height)}).`);
+  log.info(`Stored ${prefix} image ${name} (${String(encoded.length)} bytes, ${String(width)}x${String(height)}).`);
   return { relativePath: name, bytes: encoded.length, width, height };
 }
 

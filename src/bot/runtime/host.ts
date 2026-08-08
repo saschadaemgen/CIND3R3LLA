@@ -58,6 +58,7 @@ import { log } from '../../log.js';
 import { status } from '../../web/status.js';
 import { configureFilesFolder, ensureDirs, type StartBotOptions } from '../client.js';
 import { loadAvatarDataUri } from '../avatar.js';
+import { resolveAssetPath } from '../../media/assets.js';
 import { FileReceiver } from '../files.js';
 import {
   bindSimplexUser,
@@ -286,20 +287,47 @@ export async function startRuntimeHost(
     Promise.resolve(undefined),
   );
 
-  // ── THE AVATAR IS THE PRIMARY'S, DELIBERATELY ────────────────────────────
+  // ── EVERY BOT WEARS ITS OWN FACE (CCB-S5-007, D-161) ─────────────────────
   //
-  // `AVATAR_PATH` is one image in the environment, and the per-bot avatar layer is
-  // explicitly not in this briefing. Writing that one image onto every hosted profile
-  // would give every bot the same face, which is a worse answer than leaving the others
-  // alone: a second bot with no picture is obviously unfinished, while a second bot
-  // wearing the first one's picture looks deliberate and is not.
-  await applyProfileUpdate(runtime, primary.simplexUserId, cfg.botDisplayName, image, primary.user);
-  if (bots.length > 1 && image !== undefined) {
-    log.info('runtime: the configured avatar was applied to the primary bot only', {
-      primary: primary.config.displayName,
-      others: bots.slice(1).map((b) => b.config.displayName).join(', '),
-      note: 'per-bot avatars are a later briefing; one AVATAR_PATH cannot dress several bots',
-    });
+  // Was: the one `AVATAR_PATH` image applied to the primary only, because one image cannot
+  // dress several bots and giving them all the same face looks deliberate when it is not.
+  //
+  // Now each bot has an OWN image or none, and none means the deployment default, which is
+  // that same `AVATAR_PATH`. So there is no special primary case: the first bot keeps
+  // exactly the picture it has because it has no upload and falls back, and a second bot
+  // gets its own the moment one is uploaded for it.
+  //
+  // Loaded per bot rather than once, and budgeted per bot, because `loadAvatarDataUri` is
+  // where the SimpleX profile envelope is honoured (~15,610 bytes; the step-down lives in
+  // `buildAvatarDataUri`). A path that cannot be read logs and leaves that bot's stored
+  // profile alone rather than blanking it, which is the behaviour the single-image path
+  // already had.
+  for (const b of bots) {
+    const own = b.config.avatarPath;
+    const face = own === null ? image : await loadAvatarDataUri(resolveAssetPath(cfg.assetRoot, own));
+    if (own !== null && face === undefined) {
+      // Configured and unreadable is a FAULT, not a choice (CCB-S3-023). Falling silently
+      // back to the default would dress this bot as the deployment and say nothing.
+      log.error('runtime: a bot has an avatar configured that could not be read', {
+        bot: b.config.displayName,
+        avatarPath: own,
+        note: 'its stored profile is left alone; upload the image again',
+      });
+      status.error(
+        `The avatar configured for "${b.config.displayName}" could not be read, so its ` +
+          `profile was left as it was. Upload the image again on the AI bot page.`,
+      );
+      continue;
+    }
+    await applyProfileUpdate(
+      runtime,
+      b.simplexUserId,
+      // The primary keeps the env display name it has always used; a second bot is named by
+      // its own record, because there is only one `BOT_DISPLAY_NAME` in the environment.
+      b.config.isPrimary ? cfg.botDisplayName : b.config.displayName,
+      face,
+      b.user,
+    );
   }
 
   await configureFilesFolder(chat, cfg.simplexFilesFolder);
