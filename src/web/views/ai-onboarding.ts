@@ -30,6 +30,7 @@ import {
   hostedIdentity,
   joinInvitedGroup,
   rejectContactRequest,
+  runtimeAdminAvailable,
   type HostedIdentity,
 } from '../../bot/runtime/admin-actions.js';
 import {
@@ -787,18 +788,25 @@ function createAddressControl(
 ): SafeHtml | null {
   if (profile.workflowState !== 'configured') return null;
 
-  if (!profile.selectedForRuntime) {
-    return html`<p class="setup-inline-note" data-tone="warning">
-      This AI bot is not marked as the primary runtime bot, so the runtime is not hosting
-      it and there is no identity to create an address on. Mark it in Edit setup first.
-    </p>`;
-  }
-
+  // NO PRIMARY GUARD (CCB-S5-007). Being the primary was never the question; being HOSTED
+  // is. The old guard existed because the action could not target a bot, and it made
+  // onboarding a second bot impossible.
+  // TWO DIFFERENT FACTS, two different sentences (CCB-S5-007). `hostedIdentity` answers null
+  // both when the runtime is not running at all and when it is running without THIS bot, and
+  // collapsing them told an operator with a stopped bot to go and enable a bot that was
+  // already enabled. `runtimeAdminAvailable` is the one that separates them.
   const note =
     hosted === null
       ? html`<p class="setup-inline-note" data-tone="warning">
-          The SimpleX runtime is not running in this process, so the address cannot be
-          created right now. Start the bot, then reload this page.
+          ${!runtimeAdminAvailable()
+            ? 'The SimpleX runtime is not running in this process, so the address cannot be ' +
+              'created right now. Start the bot, then reload this page.'
+            : profile.enabled
+              ? 'The runtime is running but is not hosting this bot, so there is no identity ' +
+                'to create an address on. A bot is picked up at start, so restart the bot ' +
+                'after enabling it, then reload this page.'
+              : 'This bot is paused, so the runtime is not hosting it and there is no ' +
+                'identity to create an address on. Enable it in Edit setup, then restart.'}
         </p>`
       : html`<p class="setup-inline-note">
           It will be created on the profile the runtime is hosting:
@@ -1021,9 +1029,21 @@ function profileListItem(profile: BotOnboardingProfile, selected: boolean): Safe
     </span>
     <span
       class="setup-list-status"
-      data-tone="${issue ? 'warning' : profile.enabled ? 'ready' : 'muted'}"
+      data-tone="${issue
+        ? 'warning'
+        : profile.contactAddressLink
+          ? 'ready'
+          : profile.enabled
+            ? 'muted'
+            : 'muted'}"
     >
-      ${issue ? 'Review' : profile.enabled ? 'Stored' : 'Paused'}
+      ${issue
+        ? 'Review'
+        : profile.contactAddressLink
+          ? 'Onboarded'
+          : profile.enabled
+            ? 'Not onboarded'
+            : 'Paused'}
     </span>
   </a>`;
 }
@@ -1208,7 +1228,10 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       // Read per request, never cached: the runtime may not have started when the
       // console did, and it may stop while the console stays up. A page that showed a
       // remembered identity would be describing a bot that is no longer there.
-      const hosted = hostedIdentity();
+      // FOR THE SELECTED BOT (CCB-S5-007). With no id this answers for the primary, so the
+      // page reported one bot's SimpleX identity while the operator configured another, and
+      // the four steps below have real side effects on a real profile.
+      const hosted = hostedIdentity(selected?.id);
       // Read for the selected bot only: the page shows one record at a time, and a
       // request belongs to the record it arrived for.
       const requests = selected ? await listContactRequests(ctx.db, selected.id) : [];
@@ -1342,7 +1365,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         case 'join-group': {
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           const groupId = positiveInteger(body['groupId'], 'Group ID', 0);
-          const joined = await joinInvitedGroup(groupId);
+          const joined = await joinInvitedGroup(groupId, profileId);
           await recordJoinedGroup(ctx.db, profileId, groupId, { role: joined.role }, actor);
           break;
         }
@@ -1354,7 +1377,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         case 'accept-contact': {
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           const contactRequestId = positiveInteger(body['contactRequestId'], 'Contact request ID', 0);
-          const contact = await acceptContactRequest(contactRequestId);
+          const contact = await acceptContactRequest(contactRequestId, profileId);
           await recordAcceptedContactRequest(ctx.db, profileId, contactRequestId, contact, actor);
           break;
         }
@@ -1362,7 +1385,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         case 'reject-contact': {
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           const contactRequestId = positiveInteger(body['contactRequestId'], 'Contact request ID', 0);
-          await rejectContactRequest(contactRequestId);
+          await rejectContactRequest(contactRequestId, profileId);
           await recordRejectedContactRequest(ctx.db, profileId, contactRequestId, actor);
           break;
         }
@@ -1376,16 +1399,12 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         // is no path that stores an intention.
         case 'create-address': {
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
-          const profiles = await listBotOnboardingProfiles(ctx.db);
-          const target = profiles.find((profile) => profile.id === profileId);
-          if (!target) throw new Error('Bot onboarding profile not found.');
-          if (!target.selectedForRuntime) {
-            throw new Error(
-              'This AI bot is not marked as the primary runtime bot, so the runtime is not ' +
-                'hosting it and no address can be created for it.',
-            );
-          }
-          const address = await createOrShowBotAddress();
+          // THE PRIMARY GUARD IS GONE (CCB-S5-007). It existed only because the action
+          // could not target a bot, so the only way to be sure the address was created on
+          // the right profile was to insist the right profile was the primary. That made
+          // onboarding a second bot impossible, which is the thing this briefing is for.
+          // `requireReadyBot` now answers the real question: is THIS bot hosted and ready.
+          const address = await createOrShowBotAddress(profileId);
           await recordContactAddress(
             ctx.db,
             profileId,

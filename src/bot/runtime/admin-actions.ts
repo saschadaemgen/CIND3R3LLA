@@ -71,7 +71,10 @@ export interface HostedIdentity {
  */
 export function hostedIdentity(botProfileId?: number): HostedIdentity | null {
   if (handle === null) return null;
-  const bot = pick(handle, botProfileId);
+  // READ-ONLY, so a default is honest here where it was not for the actions: this answers
+  // "who is running" for a page, and the primary is the console's default selection. Nothing
+  // reached through it has a side effect on a profile.
+  const bot = botProfileId === undefined ? handle.primary : pick(handle, botProfileId);
   if (bot === undefined) return null;
   return {
     simplexUserId: bot.simplexUserId,
@@ -97,8 +100,21 @@ function chatOf(): RuntimeHost['chat'] {
   return handle.chat;
 }
 
-function pick(host: RuntimeHost, botProfileId?: number): HostedBot | undefined {
-  if (botProfileId === undefined) return host.primary;
+/**
+ * The hosted bot with this id, or undefined.
+ *
+ * ── WHY THE ID IS REQUIRED (CCB-S5-007) ──────────────────────────────────────
+ *
+ * It used to be optional and fall back to `host.primary`, which is how the onboarding
+ * console came to run all four of its steps as the primary whatever bot the operator
+ * thought he was configuring. The database write was per bot and the SimpleX call was not:
+ * accepting a contact for bot B recorded it against B and accepted it as A.
+ *
+ * A default was the wrong shape for a question with real side effects on a real profile.
+ * Required, so a caller that does not name a bot does not compile, which is a stronger
+ * guarantee than any runtime check and one nobody can forget to write.
+ */
+function pick(host: RuntimeHost, botProfileId: number): HostedBot | undefined {
   return host.bots.find((b) => b.config.botProfileId === botProfileId);
 }
 
@@ -109,7 +125,7 @@ function pick(host: RuntimeHost, botProfileId?: number): HostedBot | undefined {
  */
 function requireReadyBot(
   what: string,
-  botProfileId?: number,
+  botProfileId: number,
 ): { bot: HostedBot; simplexUserId: number; displayName: string } {
   const host = handle;
   if (host === null) {
@@ -123,10 +139,8 @@ function requireReadyBot(
     // page the operator is looking at is exactly the confusion hosting several of them
     // introduces, and doing it silently would create an address on the wrong identity.
     throw new RuntimeActionUnavailableError(
-      botProfileId === undefined
-        ? 'The runtime is running but is hosting no profile, so there is no identity to act as.'
-        : `Bot ${String(botProfileId)} is not currently hosted, so nothing can be done as it. ` +
-            `Enable it and restart, or pick a bot that is running.`,
+      `Bot ${String(botProfileId)} is not currently hosted, so nothing can be done as it. ` +
+        `Enable it and restart, or pick a bot that is running.`,
     );
   }
   if (host.runtime.state !== 'ready') {
@@ -154,7 +168,7 @@ export interface BotAddress {
  * either, because an operator who sees an error reasonably concludes the first press
  * did not work.
  */
-export async function createOrShowBotAddress(botProfileId?: number): Promise<BotAddress> {
+export async function createOrShowBotAddress(botProfileId: number): Promise<BotAddress> {
   // Refused rather than queued while the core is still subscribing. Creating an address
   // is an interactive network command and the core settles about ten seconds after a
   // restart (D-125); holding an HTTP request open for that long would look like a hung
@@ -210,7 +224,7 @@ export interface AcceptedContact {
  */
 export async function acceptContactRequest(
   contactRequestId: number,
-  botProfileId?: number,
+  botProfileId: number,
 ): Promise<AcceptedContact> {
   const { bot, simplexUserId } = requireReadyBot('this request cannot be accepted', botProfileId);
   const contact = await bot.runScheduled(`contact:accept:${contactRequestId}`, () =>
@@ -244,7 +258,7 @@ export async function acceptContactRequest(
  */
 export async function rejectContactRequest(
   contactRequestId: number,
-  botProfileId?: number,
+  botProfileId: number,
 ): Promise<void> {
   const { bot, simplexUserId } = requireReadyBot('this request cannot be rejected', botProfileId);
   await bot.runScheduled(`contact:reject:${contactRequestId}`, () =>
@@ -275,7 +289,7 @@ export interface JoinedGroup {
  */
 export async function joinInvitedGroup(
   groupId: number,
-  botProfileId?: number,
+  botProfileId: number,
 ): Promise<JoinedGroup> {
   const { bot, simplexUserId } = requireReadyBot('this group cannot be joined', botProfileId);
   const info = await bot.runScheduled(`group:join:${groupId}`, () =>
