@@ -10,6 +10,10 @@
 
 import { writeAudit } from '../db/audit.js';
 import type { Queryable } from '../db/pool.js';
+import { setSettingOverride } from '../db/interaction-overrides.js';
+import { getSetting } from '../db/settings.js';
+import { log } from '../log.js';
+import { wakeWordForNewBot } from '../interaction/setting-scope.js';
 import type { MemberRole } from '../adapter/types.js';
 import {
   normalizePersonality,
@@ -214,6 +218,25 @@ function validateInput(input: BotOnboardingInput): BotOnboardingInput {
     // this would somehow miss.
     personality: normalizePersonality(input.personality),
   };
+}
+
+/**
+ * The shared wake word, read straight from the settings row.
+ *
+ * Deliberately not through `InteractionService`: this runs inside bot creation, which has
+ * no service instance to hand, and reaching for the process-wide one would tie creating a
+ * bot to a service that the harnesses and one-shot scripts do not start.
+ */
+async function sharedWakeWord(db: Queryable): Promise<string | null> {
+  try {
+    const stored = (await getSetting(db, 'interaction')) as { wakeWord?: unknown } | null;
+    const value = stored?.wakeWord;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+  } catch {
+    // A read that fails must not stop a bot being created. Null means "unknown", and the
+    // override is then written, which is the safe direction: its own name.
+    return null;
+  }
 }
 
 function dbError(error: unknown): Error {
@@ -474,6 +497,32 @@ export async function createBotOnboardingProfile(
     );
 
     const id = numberOf(result.rows[0]?.id ?? 0);
+
+    // ── ITS OWN NAME, NOT HERS (CCB-S5-006, D-158) ────────────────────────
+    //
+    // The wake word is shared by default, so a bot created without this answers to whatever
+    // the primary is called. That is the defect CCB-S5-006 exists to fix, and it would be
+    // reintroduced on every bot the operator creates.
+    //
+    // Written as a per-bot OVERRIDE rather than by copying the whole settings record: the
+    // bot inherits everything else, so a later edit to a shared value still reaches it.
+    // A display name that cannot serve as a wake word yields no row at all, and the
+    // operator sets one; no wake word is a bot nobody can address, which is visible.
+    const wake = wakeWordForNewBot(input.displayName);
+    // Only when it actually DIFFERS from the shared wake word. A bot whose display name is
+    // already the shared value needs no deviation, and storing one would show it in the
+    // console as differing from a default it matches, and would freeze it at today's value
+    // so a later shared edit stopped reaching it. Same rule the console's save path uses.
+    const sharedWake = await sharedWakeWord(db);
+    if (wake !== null && wake !== sharedWake) {
+      await setSettingOverride(db, id, 'wakeWord', wake);
+    } else if (wake === null) {
+      log.warn(
+        `Bot "${input.displayName}" was created with no wake word: its display name cannot ` +
+          `serve as one. Set one on the Addressing page before it is hosted, or it cannot ` +
+          `be addressed by name.`,
+      );
+    }
 
     await writeAudit(db, actor, 'cinderella.bot-profile.create', `bot-profile:${id}`, {
       slug: input.slug,

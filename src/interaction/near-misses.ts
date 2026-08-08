@@ -25,6 +25,18 @@ export type NearMissReason =
 export interface NearMiss {
   /** Epoch ms. */
   at: number;
+  /**
+   * Which bot ignored it (CCB-S5-006).
+   *
+   * Added for the same reason the moderation counters got one under CCB-S5-001: this is a
+   * module-level buffer shared by every hosted bot, so with two of them the Diagnostics
+   * page showed one interleaved stream. `groupId` distinguishes the entries by accident,
+   * because the core's group ids differ per profile, and that accident expires the day
+   * conversation ids are canonicalised. Null only where no bot can be named.
+   */
+  botProfileId: number | null;
+  /** For the page, so an operator reads a name rather than an id. */
+  botName: string | null;
   groupId: number;
   /** Display name — easier for an operator to act on than a member id. */
   who: string;

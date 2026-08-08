@@ -40,6 +40,9 @@ export type ConversationOutcome =
 export interface ConversationEvent {
   /** Epoch ms. */
   at: number;
+  /** Which bot handled it (CCB-S5-006). See `near-misses.ts` for why. */
+  botProfileId?: number | null;
+  botName?: string | null;
   groupId: number;
   outcome: ConversationOutcome;
   /** How long the model call took, whatever its outcome. */
