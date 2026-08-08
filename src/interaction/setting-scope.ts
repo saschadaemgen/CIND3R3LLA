@@ -485,6 +485,41 @@ export function describeSettingScopes(
 }
 
 /**
+ * The retorts to store for ONE BOT, honouring a language the operator emptied.
+ *
+ * ── WHY THIS IS THE ONE SETTING WITH A SPECIAL CASE ──────────────────────────
+ *
+ * `normalizeInteraction` refills a blank retort list with the shipped one, deliberately, and
+ * `verify:interaction` pins it: for the SHARED record, clearing a field restores the default
+ * rather than muting her. That rule is exactly wrong for a bot. The shipped retorts are HERS,
+ * in her register, about her name, so a second bot inheriting them speaks as her about a name
+ * that is not its own, and the briefing requires "none" to be a state an operator can reach
+ * rather than a fallback to hers.
+ *
+ * Through the console it was not reachable: an emptied textarea was refilled with her twelve
+ * lines and stored as this bot's own. So emptiness is preserved here, in every shape it
+ * arrives in: a blank string from the form, an already-empty list from a bot that has none,
+ * and an empty object meaning none at all in any language.
+ *
+ * Iterates the SUBMITTED keys rather than the normalized ones, because normalization always
+ * emits both shipped languages and would reintroduce her retorts for a bot that has none.
+ */
+export function retortsForBot(
+  submitted: unknown,
+  normalized: InteractionSettings,
+): Record<string, string[]> {
+  const raw = (submitted ?? {}) as Record<string, unknown>;
+  const out: Record<string, string[]> = {};
+  for (const [lang, given] of Object.entries(raw)) {
+    const emptied =
+      (typeof given === 'string' && given.trim() === '') ||
+      (Array.isArray(given) && given.length === 0);
+    out[lang] = emptied ? [] : (normalized.retorts[lang] ?? []);
+  }
+  return out;
+}
+
+/**
  * The wake word a NEW bot should start with.
  *
  * Its own display name, never the shared value. A second bot silently answering to the

@@ -17,6 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import {
   ADDRESSING_MODES,
   DEFAULT_INTERACTION,
+  normalizeInteraction,
   REPLY_LANGUAGE_MODES,
   REPLY_MODES,
   PERSONA_KEYS,
@@ -49,13 +50,16 @@ import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
 import {
   SETTING_SCOPES,
+  applySettingOverrides,
   describeSettingScopes,
   readPath,
+  retortsForBot,
   type SettingScopeView,
 } from '../../interaction/setting-scope.js';
 import {
   clearSettingOverride,
   listAllSettingOverrides,
+  listSettingOverridesForBot,
   setSettingOverride,
 } from '../../db/interaction-overrides.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
@@ -1122,7 +1126,20 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     const body = (req.body ?? {}) as Record<string, unknown>;
     const section = bodyString(body, 'section');
     const actor = req.session?.username ?? 'unknown';
-    const next = cloneSettings(interaction.get());
+    /**
+     * WHICH BOT IS BEING EDITED, decided BEFORE the merge rather than after it (CCB-S5-006).
+     *
+     * `next` has to start from the settings this save is editing. For the shared record that
+     * is the shared one; for a bot it is that bot's own effective settings, and the difference
+     * is not cosmetic. A page can carry two per-bot settings edited by two different forms:
+     * Nicknames has the word list and the retorts, Voice has the persona and the label. The
+     * loop below writes an override for every per-bot key on the page, so starting from the
+     * shared record made each unsubmitted one compare equal to shared and CLEAR the bot's
+     * deviation. Saving the retorts form wiped the bot's nickname list; saving the links form
+     * wiped its persona.
+     */
+    const requested = Number.parseInt(bodyString(body, 'botProfileId'), 10);
+    const targetBot = Number.isSafeInteger(requested) && requested > 0 ? requested : null;
 
     // Which section PAGE a save should return to (CCB-S3-015 Stage 1).
     const pageFor = (sec: string): string => {
@@ -1136,6 +1153,20 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     const back = (extra: string): string => `/interaction/${pageFor(section)}${extra}`;
 
     try {
+      // Read INSIDE the try, and read the rows rather than the cache. `interaction.get(id)`
+      // answers with the shared record on a cache miss, which is the right trade for a reply
+      // and the wrong one for a save: it would silently rebase this bot on shared values and
+      // clear every deviation the form did not carry. A read that fails throws to the handler
+      // below and the operator is told, instead of losing settings quietly.
+      const next = cloneSettings(
+        targetBot === null
+          ? interaction.get()
+          : applySettingOverrides(
+              interaction.get(),
+              await listSettingOverridesForBot(ctx.db, targetBot),
+            ),
+      );
+
       if (section === 'addressing') {
         next['naturalAddressing'] = 'naturalAddressing' in body;
         next['wakeWord'] = bodyString(body, 'wakeWord');
@@ -1262,15 +1293,32 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       // keys are written, as deviations, and a value equal to the shared one CLEARS the
       // deviation rather than storing a copy of it. Storing the copy would freeze that bot
       // at today's shared value and quietly stop later shared edits reaching it.
-      const targetBot = Number.parseInt(bodyString(body, 'botProfileId'), 10);
-      if (Number.isSafeInteger(targetBot) && targetBot > 0) {
+      if (targetBot !== null) {
         const shared = interaction.get();
+        /**
+         * NORMALIZED BEFORE IT IS STORED (CCB-S5-006).
+         *
+         * This file's first rule is that everything arriving from the admin form is untrusted
+         * and `normalizeInteraction` clamps it. The per-bot branch was skipping that entirely,
+         * because it read out of the merged form data and returned before the shared save that
+         * normalizes. Measured, it stored a confidence threshold as the string "0.9", a
+         * nickname list as one newline-joined string that `for (const nick of ...)` then walked
+         * CHARACTER BY CHARACTER, and a wake word with the operator's spaces still on it. The
+         * bot with the deviation was the one running on unclamped values, which is the wrong
+         * way round.
+         */
+        const normalized = normalizeInteraction(next);
         let written = 0;
         let cleared = 0;
         for (const placement of SETTING_SCOPES) {
           if (placement.scope !== 'per-bot') continue;
           if (placement.section !== pageFor(section)) continue;
-          const submitted = readPath(next as unknown as InteractionSettings, placement.key);
+          // Retorts are the one setting where blank is a VALUE rather than a request for the
+          // shipped default; see `retortsForBot`.
+          const submitted =
+            placement.key === 'retorts'
+              ? retortsForBot(next['retorts'], normalized)
+              : readPath(normalized, placement.key);
           if (JSON.stringify(submitted) === JSON.stringify(readPath(shared, placement.key))) {
             if (await clearSettingOverride(ctx.db, targetBot, placement.key)) cleared++;
           } else {

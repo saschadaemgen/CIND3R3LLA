@@ -34,9 +34,14 @@ import {
   describeSettingScopes,
   isPerBot,
   readPath,
+  retortsForBot,
   wakeWordForNewBot,
 } from '../src/interaction/setting-scope.js';
-import { normalizeInteraction, type InteractionSettings } from '../src/interaction/settings.js';
+import {
+  DEFAULT_INTERACTION,
+  normalizeInteraction,
+  type InteractionSettings,
+} from '../src/interaction/settings.js';
 import {
   createBotOnboardingProfile,
   type BotOnboardingInput,
@@ -359,6 +364,160 @@ async function main(): Promise<void> {
       Object.keys(reverted.retorts).length === Object.keys(shared.retorts).length,
     );
   }
+
+  /* ── 5. What the CONSOLE stores, which is not what the store accepts ─────── */
+
+  /**
+   * ── WHY THIS SECTION EXISTS ────────────────────────────────────────────────
+   *
+   * Everything above drives the override STORE directly, and the store is fine. The console
+   * is a second path to it, and it was writing values the store would never have produced:
+   * it read the merged form data and returned before the shared save that normalizes, so the
+   * bot with the deviation was the one running on unclamped values.
+   *
+   * These reproduce the console's own transformation rather than describing it: `next` is the
+   * merged object, and what goes into the override is what `readPath`/`retortsForBot` return
+   * from it.
+   */
+  console.log('\n5. What the console stores for one bot is normalized, like everything else');
+
+  const shipped = normalizeInteraction({ ...DEFAULT_INTERACTION });
+
+  /** The console's `next` after a form post: cloned settings with raw strings written in. */
+  const posted = (edits: Record<string, unknown>): InteractionSettings => {
+    const next = structuredClone(shipped) as unknown as Record<string, unknown>;
+    for (const [path, value] of Object.entries(edits)) {
+      const parts = path.split('.');
+      let cursor = next;
+      for (const part of parts.slice(0, -1)) cursor = cursor[part] as Record<string, unknown>;
+      cursor[parts[parts.length - 1] as string] = value;
+    }
+    return next as unknown as InteractionSettings;
+  };
+
+  const guards = normalizeInteraction(
+    posted({ confidenceThreshold: '0.9', 'addressing.maxInstructionLength': '250' }),
+  );
+  check(
+    'a threshold typed into the form is stored as a NUMBER',
+    typeof readPath(guards, 'confidenceThreshold') === 'number',
+    `${typeof readPath(guards, 'confidenceThreshold')} ${String(readPath(guards, 'confidenceThreshold'))}`,
+  );
+  check(
+    'and a bound as a number too',
+    typeof readPath(guards, 'addressing.maxInstructionLength') === 'number',
+  );
+  /**
+   * MUTATION: the shape that shipped. `for (const nick of s.nicknames.words)` walks a string
+   * character by character, so a bot whose word list was stored raw refused every message
+   * containing an "n", an "o", a "v" or an "a".
+   */
+  const rawWords = readPath(posted({ 'nicknames.words': 'nova, novi' }), 'nicknames.words');
+  check(
+    'MUTATION: stored raw, a nickname list is a STRING, and iterating it yields characters',
+    typeof rawWords === 'string' && [...(rawWords as string)][0] === 'n',
+  );
+  // The field is COMMA separated, which the first version of this check got wrong and the
+  // implementation got right: `parseList` is called without `lines` for the word list.
+  const words = readPath(normalizeInteraction(posted({ 'nicknames.words': 'nova, novi' })), 'nicknames.words');
+  check(
+    'normalized, it is the list it claims to be',
+    Array.isArray(words) && (words as string[]).length === 2,
+    JSON.stringify(words),
+  );
+  check(
+    'and a wake word arrives without the spaces the operator typed',
+    readPath(normalizeInteraction(posted({ wakeWord: '   Aurora   ' })), 'wakeWord') === 'Aurora',
+  );
+
+  /* ── "None" is reachable through the page, not only through the store ───── */
+
+  const cleared = posted({ 'retorts.en': '' });
+  const forBot = retortsForBot(
+    (cleared as unknown as Record<string, unknown>)['retorts'],
+    normalizeInteraction(cleared),
+  );
+  check(
+    'a language the operator emptied is stored EMPTY for that bot',
+    (forBot['en'] ?? []).length === 0,
+    `${String((forBot['en'] ?? []).length)} retort(s)`,
+  );
+  check(
+    'CONTROL: the other language is untouched, so the emptiness is the edit and not a wipe',
+    (forBot['de'] ?? []).length > 0,
+    `${String((forBot['de'] ?? []).length)} retort(s)`,
+  );
+  /**
+   * MUTATION: what the console did before. `normalizeInteraction` refills a blank list with
+   * the shipped one, deliberately and asserted for the SHARED record, so reading the override
+   * straight out of it gave a second bot HER twelve retorts, in her register, about her name.
+   */
+  check(
+    'MUTATION: read straight from the normalized object, "none" becomes HER retorts',
+    ((readPath(normalizeInteraction(cleared), 'retorts') as Record<string, string[]>)['en'] ?? [])
+      .length === 12,
+  );
+  check(
+    'and a bot with no retorts in any language keeps none through a save',
+    Object.keys(retortsForBot({}, shipped)).length === 0,
+  );
+  check(
+    'an already-empty list is not refilled either',
+    (retortsForBot({ en: [] }, shipped)['en'] ?? []).length === 0,
+  );
+
+  /* ── One form on a page does not wipe the other's deviation ─────────────── */
+
+  /**
+   * The Nicknames page carries two per-bot settings edited by two forms, and so does Voice.
+   * The console builds `next` from the settings being edited; when that was the SHARED record,
+   * every key the form did not submit compared equal to shared and cleared the bot's
+   * deviation. Saving the retorts form wiped the bot's nickname list.
+   */
+  const pages = new Map<string, string[]>();
+  for (const p of SETTING_SCOPES) {
+    if (p.scope !== 'per-bot') continue;
+    pages.set(p.section, [...(pages.get(p.section) ?? []), p.key]);
+  }
+  const exposed = [...pages].filter(([, keys]) => keys.length > 1);
+  check(
+    'the pages where this can happen are known, so the fix is not aimed at nothing',
+    exposed.length > 0,
+    exposed.map(([s, k]) => `${s}: ${k.join(' + ')}`).join('; '),
+  );
+
+  const botsRetorts = { en: ['mine'], de: ['meine'] };
+  const withDeviation = applySettingOverrides(shipped, [
+    { botProfileId: 9, key: 'retorts', value: botsRetorts },
+    { botProfileId: 9, key: 'nicknames.words', value: ['nova'] },
+  ]);
+  // Saving the NICKNAMES form, based on the bot's own settings: retorts are not submitted.
+  const savedFromBot = structuredClone(withDeviation) as unknown as Record<string, unknown>;
+  (savedFromBot['nicknames'] as Record<string, unknown>)['words'] = 'nova\nnovi';
+  const keptRetorts = retortsForBot(
+    savedFromBot['retorts'],
+    normalizeInteraction(savedFromBot as unknown as InteractionSettings),
+  );
+  check(
+    'saving one form on a page keeps the bot\'s deviation in the other',
+    JSON.stringify(keptRetorts) === JSON.stringify(botsRetorts),
+    JSON.stringify(keptRetorts['en']),
+  );
+  /**
+   * MUTATION: based on the SHARED record instead, which is what shipped. The unsubmitted
+   * retorts read back as the shared ones, compare equal to shared, and the deviation is gone.
+   */
+  const savedFromShared = structuredClone(shipped) as unknown as Record<string, unknown>;
+  (savedFromShared['nicknames'] as Record<string, unknown>)['words'] = 'nova\nnovi';
+  check(
+    'MUTATION: based on the shared record, the other deviation is silently cleared',
+    JSON.stringify(
+      retortsForBot(
+        savedFromShared['retorts'],
+        normalizeInteraction(savedFromShared as unknown as InteractionSettings),
+      ),
+    ) === JSON.stringify(readPath(shipped, 'retorts')),
+  );
 
   console.log(
     failures === 0
