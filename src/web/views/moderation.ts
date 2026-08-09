@@ -52,6 +52,7 @@ import {
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader } from './ui.js';
+import { resolveSelectedBot } from '../selected-bot.js';
 
 const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
 
@@ -162,12 +163,32 @@ function derivedRungIndex(rules: ModerationRules): number {
  * The sentence names the three things that become possible, in the plainest words
  * available, because "enforce" is a word that hides what it does.
  */
+/**
+ * ── THE SCOPE OF ARMING, WHICH NEEDED A JUDGEMENT (CCB-S5-017, D-170) ────────
+ *
+ * There are TWO things here and they have different scopes, which is why the briefing
+ * flagged it. `moderation_mode` is a column on `cinderella_bot_profiles`, so which mode a
+ * bot is in is PER BOT and correctly so: once arming is possible at all, one bot may enforce
+ * in a strict group while another only observes. `ARMING_UNLOCKED` is a code constant, so
+ * whether arming is possible AT ALL is a property of the BUILD, not of a bot and not even of
+ * a deployment's settings. The switcher cannot vary it and no operator can set it.
+ *
+ * So the mode stays per bot and the page says the gate is deployment-wide, which is the
+ * D-155 shape: a control that cannot be per bot says so, with the reason, instead of being
+ * offered and then refusing.
+ */
 function modeCard(rules: ModerationRules, csrf: string, botId: number): SafeHtml {
   const armed = rules.mode === 'enforce';
 
   return card(
     armed ? 'Mode: enforcing' : 'Mode: observing',
-    html`<p class="text-sm text-slate-600">
+    html`<p class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <strong>Per bot.</strong> The mode and both ladders below belong to the bot selected in
+        the sidebar; another bot keeps its own. Whether enforcement can be armed at all is
+        <strong>not</strong> per bot: it is a build-time constant for the whole deployment, so
+        switching bots does not change it.
+      </p>
+      <p class="text-sm text-slate-600">
         ${armed
           ? html`Enforcement is <strong>live</strong>. When a rung fires, it happens: a mute
               changes the member's role to observer, a block hides their messages from
@@ -505,8 +526,11 @@ function rulesBody(
   profiles: BotOnboardingProfile[],
   rules: ModerationRules,
   csrf: string,
+  botId: number | null,
 ): SafeHtml {
-  const bot = profiles[0];
+  // The SELECTED bot, not `profiles[0]` (CCB-S5-017). That was the primary, always, and it
+  // is what made every save on this page land on one bot whatever the operator was looking at.
+  const bot = profiles.find((p) => p.id === botId);
   if (!bot) {
     return card(
       'No bot profile yet',
@@ -546,11 +570,18 @@ function rulesBody(
  * these rows by filtering on `expires_at > now`, which was right while nothing could
  * expire and is exactly wrong now.
  */
-function activeBody(active: ActiveSanctionRow[], csrf: string): SafeHtml {
+function activeBody(
+  active: ActiveSanctionRow[],
+  csrf: string,
+  botName: string | null,
+): SafeHtml {
   const overdue = active.filter((row) => row.overdue).length;
 
   return card(
-    'Members currently under a sanction',
+    // The bot is NAMED (CCB-S5-017). This list read across every bot with no column saying
+    // whose, so an operator could not tell which bot had sanctioned whom. It is one bot's
+    // now, and the title says which rather than leaving it to be inferred.
+    `Members currently under a sanction by ${botName ?? 'this bot'}`,
     active.length === 0
       ? html`<p class="text-sm text-slate-600">
             <strong>Nobody.</strong> Either enforcement has not applied anything, or
@@ -649,8 +680,17 @@ function activeBody(active: ActiveSanctionRow[], csrf: string): SafeHtml {
  * failures too and carry their reason in the same column, prefixed so they read as
  * policy rather than as fault.
  */
-function logBody(sanctions: ActiveSanctionRow[], violations: ViolationRow[]): SafeHtml {
+function logBody(
+  sanctions: ActiveSanctionRow[],
+  violations: ViolationRow[],
+  botName: string | null,
+): SafeHtml {
   return html`
+    <div class="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+      Showing what <strong>${botName ?? 'this bot'}</strong> counted and decided. Each bot keeps
+      its own violations and its own sanctions, so another bot's records are on its own page:
+      switch bots in the sidebar to see them.
+    </div>
     <div class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
       Two different questions, two columns. <strong>Outcome</strong> is what happened to the
       member: <em>observed</em> means nothing was attempted, <em>enforced</em> means it was
@@ -820,7 +860,10 @@ function ladderFrom(
 }
 
 export function registerModeration(app: FastifyInstance, ctx: ViewContext): void {
-  app.get<{ Params: { section?: string }; Querystring: { saved?: string; error?: string } }>(
+  app.get<{
+    Params: { section?: string };
+    Querystring: { saved?: string; error?: string; bot?: string };
+  }>(
     '/moderation/:section',
     async (req, reply) => {
       const slug = req.params.section ?? 'rules';
@@ -844,21 +887,42 @@ export function registerModeration(app: FastifyInstance, ctx: ViewContext): void
             </div>`
           : null;
 
+      // ── UNDER THE SWITCHER, THROUGH THE SHARED RESOLVER (CCB-S5-017) ──
+      //
+      // These pages took no bot at all. The Rules page read `profiles[0]`, which is the
+      // PRIMARY because `listBotOnboardingProfiles` orders it first, so it always showed
+      // and always saved the primary's ladders whatever the operator had selected. The Log
+      // and Active pages read across every bot with no column saying whose.
+      //
+      // The same resolver every other settings page uses, rather than a fifth answer to one
+      // question: the URL when it names a bot, otherwise the session's standing choice,
+      // otherwise the first bot.
+      const profiles = await listBotOnboardingProfiles(ctx.db);
+      const selection = resolveSelectedBot(
+        profiles,
+        typeof req.query.bot === 'string' ? req.query.bot : undefined,
+        req.session?.selectedBotProfileId ?? null,
+      );
+      const botId = selection.selectedId;
+
       let body: SafeHtml;
       if (slug === 'rules') {
-        const profiles = await listBotOnboardingProfiles(ctx.db);
-        // The rules of the record the page is editing, which is the runtime one first
-        // because `listBotOnboardingProfiles` orders it that way.
-        const rules = profiles[0]
-          ? ((await botModerationRules(ctx.db, profiles[0].id)) ?? DEFAULT_MODERATION_RULES)
-          : DEFAULT_MODERATION_RULES;
-        body = rulesBody(profiles, rules, csrf);
+        const rules =
+          botId === null
+            ? DEFAULT_MODERATION_RULES
+            : ((await botModerationRules(ctx.db, botId)) ?? DEFAULT_MODERATION_RULES);
+        body = rulesBody(profiles, rules, csrf, botId);
       } else if (slug === 'active') {
-        body = activeBody(await listActiveSanctionsDetailed(ctx.db, new Date()), csrf);
+        body = activeBody(
+          botId === null ? [] : await listActiveSanctionsDetailed(ctx.db, new Date(), botId),
+          csrf,
+          selection.selectedName,
+        );
       } else {
         body = logBody(
-          await listSanctionsDetailed(ctx.db, new Date(), 100),
-          await listViolations(ctx.db, 100),
+          botId === null ? [] : await listSanctionsDetailed(ctx.db, new Date(), botId, 100),
+          botId === null ? [] : await listViolations(ctx.db, botId, 100),
+          selection.selectedName,
         );
       }
 
@@ -866,6 +930,7 @@ export function registerModeration(app: FastifyInstance, ctx: ViewContext): void
         title: `Moderation ${meta.title}`,
         active: `moderation:${slug}`,
         csrfToken: csrf,
+        botSwitcher: { ...selection, returnTo: `/moderation/${slug}` },
         body: html`${pageHeader(`Moderation ${meta.title}`, meta.desc)} ${submenu(slug)}
         ${notice} ${body}`,
       });

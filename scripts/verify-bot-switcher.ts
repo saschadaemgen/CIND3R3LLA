@@ -351,6 +351,77 @@ async function main(): Promise<void> {
     }
   }
 
+  /* ── 4 ─────────────────────────────────────────────────────────────────── */
+
+  section('4. Moderation, the last page family, under the same switcher');
+
+  {
+    // ── WHY THIS IS THE MOST CONSEQUENTIAL OF THE FAMILY (CCB-S5-017) ─────
+    //
+    // The Rules page read `profiles[0]`, which is the PRIMARY, so it showed and SAVED the
+    // primary's ladders whatever the operator had selected. The thing being edited decides
+    // whether a member is warned, muted or removed, so a ladder edited against the wrong
+    // bot is a sanction configured for somebody who will never trigger it and a bot left
+    // running on values nobody chose.
+    for (const url of ['/moderation/rules', '/moderation/active', '/moderation/log']) {
+      check(`${url} carries the switcher`, (await get(url)).includes('data-bot-switcher'));
+    }
+    check(
+      'the Rules page states the scope: the ladders are per bot',
+      (await get('/moderation/rules')).includes('The mode and both ladders below belong to the bot selected'),
+    );
+    check(
+      '  and that arming is NOT per bot, because it is a build-time constant',
+      // Matched on a fragment carrying no markup: the sentence has a <strong> inside it,
+      // and matching across tags is the D-111 verifier defect in another costume.
+      (await get('/moderation/rules')).includes('switching bots does not change it'),
+    );
+    check(
+      'the Log names the bot whose records it is showing',
+      (await get('/moderation/log')).includes('Showing what'),
+    );
+
+    // Select bot A, save a ladder, and prove bot B is untouched. This is the check the
+    // briefing asks for by name, on the page where getting it wrong costs a member.
+    const rulesPage = await get('/moderation/rules');
+    await app.inject({
+      method: 'POST',
+      url: '/console/select-bot',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `botProfileId=${String(botA)}&returnTo=%2Fmoderation%2Frules&_csrf=${encodeURIComponent(csrfOf(rulesPage))}`,
+    });
+    const onA = await get('/moderation/rules');
+    check('switching reaches the Moderation pages too', onA.includes('CIND3R3LLA'));
+
+    await app.inject({
+      method: 'POST',
+      url: '/moderation/rules',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      // The real field names, read off `ladderFrom` rather than guessed: a payload the
+      // parser ignores would leave the value unchanged and the check would read as a
+      // scoping failure when it was a fixture failure.
+      payload:
+        `bot=${String(botA)}&section=verbal&verbalWindowSeconds=2520` +
+        `&verbal.0.threshold=2&verbal.0.sharpnessBonus=1&_csrf=${encodeURIComponent(csrfOf(onA))}`,
+    });
+
+    const { rows: windows } = await db.query<{ id: string; w: number }>(
+      `SELECT id, moderation_verbal_window_secs AS w FROM cinderella_bot_profiles ORDER BY id`,
+    );
+    const windowOf = (id: number): number | undefined =>
+      windows.find((r) => Number(r.id) === id)?.w;
+    check(
+      'a ladder saved for the selected bot reaches THAT bot',
+      windowOf(botA) === 2520,
+      `bot A window ${String(windowOf(botA))}s`,
+    );
+    check(
+      '  MUTATION: and the other bot keeps the ladder it had, which is what a member depends on',
+      windowOf(botB) === 600,
+      `bot B window ${String(windowOf(botB))}s`,
+    );
+  }
+
   check(
     'the bot list still has both bots, so nothing in this was destructive',
     (await listBotOnboardingProfiles(db)).length === 2,

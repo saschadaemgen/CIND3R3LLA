@@ -840,7 +840,12 @@ async function main(): Promise<void> {
 
   await db.query(`DELETE FROM cinderella_violations`);
   await db.query(`DELETE FROM cinderella_sanctions`);
+  // ATTRIBUTED, since CCB-S5-017. These rows used to be written with no bot at all, which
+  // was invisible while the Log read across every bot; now the page shows one bot's records
+  // and an unattributed row belongs to nobody. Recording them against the bot the page will
+  // select is what the engine does in production, so this fixture now matches it.
   await recordViolation(db, {
+    botProfileId: botId,
     groupId: GROUP,
     memberId: ALICE,
     memberDisplayName: 'Alice',
@@ -848,6 +853,7 @@ async function main(): Promise<void> {
     type: 'nickname',
   });
   await recordSanction(db, {
+    botProfileId: botId,
     groupId: GROUP,
     memberId: ALICE,
     memberDisplayName: 'Alice',
@@ -1048,6 +1054,9 @@ async function main(): Promise<void> {
   };
 
   const req = (over: Partial<ApplyRequest> = {}): ApplyRequest => ({
+    // Attributed since CCB-S5-017: the Active page shows ONE bot's sanctions now, so a row
+    // written against no bot belongs to nobody and would be invisible everywhere.
+    botProfileId: botId,
     groupId: GROUP,
     memberId: 'bob-member-id',
     memberDisplayName: 'Bob',
@@ -1168,7 +1177,7 @@ async function main(): Promise<void> {
   );
   check(
     'the Active page stays truthful: nobody is shown as muted',
-    (await listActiveSanctionsDetailed(db, muteAt)).length === 0,
+    (await listActiveSanctionsDetailed(db, muteAt, botId)).length === 0,
   );
 
   // The schema half. Even a hand-written row cannot claim an enforcement with no evidence.
@@ -1208,7 +1217,7 @@ async function main(): Promise<void> {
   check('so the port was called exactly once across both runs', calls.length === 1);
   check(
     'an expired mute leaves the Active page',
-    (await listActiveSanctionsDetailed(db, muteAt)).length === 0,
+    (await listActiveSanctionsDetailed(db, muteAt, botId)).length === 0,
   );
 
   /* 7f. UNDO, including undo after expiry. */
@@ -1244,13 +1253,13 @@ async function main(): Promise<void> {
   await db.query(`DELETE FROM cinderella_sanctions`);
   await applySanction(db, spyPort, req({ durationSeconds: 60 }), muteAt);
   const wayLater = new Date(muteAt.getTime() + 3_600_000);
-  const activeLater = await listActiveSanctionsDetailed(db, wayLater);
+  const activeLater = await listActiveSanctionsDetailed(db, wayLater, botId);
   check('a mute past its expiry is STILL on the Active page', activeLater.length === 1);
   check('and it is flagged overdue', activeLater[0]?.overdue === true);
   check('the sweep finds it', (await listOverdueSanctions(db, wayLater)).length === 1);
   check(
     'and it is not overdue before it is due',
-    (await listActiveSanctionsDetailed(db, muteAt))[0]?.overdue === false,
+    (await listActiveSanctionsDetailed(db, muteAt, botId))[0]?.overdue === false,
   );
 
   /* ── 8. THE ENGINE, ARMED (CCB-S4-035) ──────────────────────────────────── */
@@ -1302,6 +1311,10 @@ async function main(): Promise<void> {
   const makeArmedEngine = (): InteractionEngine =>
     new InteractionEngine({
       db,
+      // Named since CCB-S5-017. Production always names one; this harness did not, so every
+      // row it drove through the engine was written against no bot, which was invisible
+      // while the Active page read across all of them.
+      botProfileId: botId,
       settings: () =>
         normalizeInteraction({ nicknames: { enabled: true, words: 'Cindy', spamLimit: 1000 } }),
       personality: () => ({ ...DEFAULT_PERSONALITY, sharpness: 5 }),
@@ -1370,7 +1383,7 @@ async function main(): Promise<void> {
       armedCalls[0].groupMemberId === 91,
   );
   check('and books its own expiry, so the mute is not permanent', booked.length === 1);
-  const armedRows = await listActiveSanctionsDetailed(db, new Date());
+  const armedRows = await listActiveSanctionsDetailed(db, new Date(), botId);
   check('the Active page shows exactly one held member', armedRows.length === 1);
   check('carrying the role to give back', armedRows[0]?.previousRole === 'member');
 

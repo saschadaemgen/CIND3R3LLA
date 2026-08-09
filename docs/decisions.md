@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 168 decisions</strong> — newest first. Highest allocated: <strong>D-169</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 169 decisions</strong> — newest first. Highest allocated: <strong>D-170</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-170 | The ladders are per bot and arming is per build, which are two different scopes on one card | IMPLEMENTED |
 | D-169 | One switcher in the sidebar, remembered in the session, replacing the primary's console role | IMPLEMENTED |
 | D-168 | A face is applied on demand, and the panel gives the operator the control instead of the sentence | IMPLEMENTED |
 | D-167 | Scheduling from inside a scheduled command is refused, because it always deadlocks | IMPLEMENTED |
@@ -197,6 +198,56 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-170 - The ladders are per bot and arming is per build, which are two different scopes on one card
+
+**Status: IMPLEMENTED** (CCB-S5-017, no migration). The Moderation pages were the last family
+outside the switcher, and the third instance of one fault: the Interaction page rendered shared
+values under a bot's name, onboarding acted on the primary whatever was selected, and these
+pages had **no control at all**. The Rules page read `profiles[0]`, which is the primary because
+`listBotOnboardingProfiles` orders it first, so it showed and **saved** the primary's ladders
+whatever the operator had selected.
+
+It is the most consequential of the three, because the thing being edited decides whether a
+member is warned, muted or removed. A ladder edited against the wrong bot is a sanction
+configured for somebody who will never trigger it, and a bot left running on values nobody
+chose.
+
+**THE SCOPE SPLIT, which is the judgement worth recording.** Everything the Rules page edits is
+already per bot in storage: migration 029 put the verbal ladder and window, the enforcement
+ladder and window, the exempt roles, `verbalExemptsStaff`, `announce` and `moderation_mode` on
+`cinderella_bot_profiles`. The page simply never asked which bot.
+
+The interesting one is arming, and it is **two things with two scopes on one card**:
+
+- **Which mode a bot is in** is `moderation_mode`, a per-bot column, and correctly so. Once
+  arming is possible, one bot may enforce in a strict group while another only observes.
+- **Whether arming is possible at all** is `ARMING_UNLOCKED`, a constant in
+  `src/moderation/rules.ts`. That is a property of the BUILD. Not of a bot, not even of a
+  deployment's settings: no operator can set it and the switcher cannot vary it.
+
+So the mode stays per bot and the card states the gate is deployment-wide, which is the D-155
+shape rather than a control that is offered and then refuses.
+
+**THE DATA WAS NEVER MERGED; THE READING WAS.** Migration 044 put `bot_profile_id` on
+`cinderella_violations` and `cinderella_sanctions`, both inserts write it, and the counting
+query leads with it. But `listViolations`, `listSanctionsDetailed` and
+`listActiveSanctionsDetailed` took no bot at all, so the Log showed every bot's violations in
+one undifferentiated list and the Active page every bot's sanctions, with no column saying
+whose. That is a **third variant** worth telling apart from the other two: not the accidental
+isolation CCB-S5-001 found in the counters, and not the genuine storage merge CCB-S5-006 found
+in the diagnostics buffers. Correctly stored, correctly counted, merged only where an operator
+looks. The bot parameter is **required** rather than optional, so no call site could keep
+reading across all bots by omission.
+
+**A SECOND BOT RUNS ON THE SHIPPED DEFAULTS, not on nothing.** Every moderation column in 029 is
+`NOT NULL DEFAULT`, so a bot created afterwards has both ladders, the windows and the exemptions
+from the moment it exists. This is NOT the silent-empty-state fault the retorts had, and the
+dependency the briefing names is already closed from the other end: the nickname path feeds the
+verbal ladder, and since CCB-S5-009 a new bot gets retorts of its own rather than inheriting or
+having none.
+
 ---
 
 ### D-169 - One switcher in the sidebar, remembered in the session, replacing the primary's console role

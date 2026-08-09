@@ -321,18 +321,41 @@ function toActive(row: ActiveDbRow, now: Date): ActiveSanctionRow {
  * button that has nothing to lift, and would bury the one or two members who are actually
  * held. A warning belongs to the Log, where it already is.
  */
+/**
+ * ── THE CONSOLE'S READS ARE PER BOT SINCE CCB-S5-017 ─────────────────────────
+ *
+ * The rows were always per bot: migration 044 put `bot_profile_id` on both tables, both
+ * inserts write it, and the counting query leads with it. What merged was the READING. These
+ * three listings took no bot at all, so the Log showed every bot's violations in one
+ * undifferentiated list and the Active page every bot's sanctions, with no column saying whose.
+ *
+ * That is a third variant of one family and worth telling apart from the other two: not the
+ * accidental isolation CCB-S5-001 found in the counters, and not the genuine storage merge
+ * CCB-S5-006 found in the diagnostics buffers. Correctly stored, correctly counted, merged
+ * only where an operator looks.
+ *
+ * The filter is REQUIRED rather than optional. An optional one would have left every existing
+ * call site reading across all bots, silently, which is the state being fixed.
+ *
+ * Rows with a NULL `bot_profile_id` are not shown. Only a deployment that ran 044 with no
+ * primary at all can hold any, and attributing them to whichever bot is being viewed would be
+ * an invention; they remain in the table and in `verify:moderation`'s reach.
+ */
 export async function listActiveSanctionsDetailed(
   db: Queryable,
   now: Date,
+  botProfileId: number,
 ): Promise<ActiveSanctionRow[]> {
   const { rows } = await db.query<ActiveDbRow>(
     `SELECT ${ACTIVE_COLUMNS} FROM cinderella_sanctions
-      WHERE mode = 'enforced'
+      WHERE bot_profile_id = $1
+        AND mode = 'enforced'
         AND enforced_at IS NOT NULL
         AND action <> 'warn'
         AND undone_at IS NULL
         AND expired_at IS NULL
       ORDER BY decided_at DESC`,
+    [botProfileId],
   );
   return rows.map((row) => toActive(row, now));
 }
@@ -347,12 +370,14 @@ export async function listActiveSanctionsDetailed(
 export async function listSanctionsDetailed(
   db: Queryable,
   now: Date,
+  botProfileId: number,
   limit = 100,
 ): Promise<ActiveSanctionRow[]> {
   const { rows } = await db.query<ActiveDbRow>(
     `SELECT ${ACTIVE_COLUMNS} FROM cinderella_sanctions
-      ORDER BY decided_at DESC, id DESC LIMIT $1`,
-    [limit],
+      WHERE bot_profile_id = $1
+      ORDER BY decided_at DESC, id DESC LIMIT $2`,
+    [botProfileId, limit],
   );
   return rows.map((row) => toActive(row, now));
 }
@@ -509,7 +534,11 @@ export async function listActiveSanctions(db: Queryable, now: Date): Promise<San
   return rows.map(toSanction);
 }
 
-export async function listViolations(db: Queryable, limit = 100): Promise<ViolationRow[]> {
+export async function listViolations(
+  db: Queryable,
+  botProfileId: number,
+  limit = 100,
+): Promise<ViolationRow[]> {
   const { rows } = await db.query<{
     id: string;
     group_id: string;
@@ -520,8 +549,10 @@ export async function listViolations(db: Queryable, limit = 100): Promise<Violat
     at: string;
   }>(
     `SELECT id, group_id, member_id, member_display_name, member_role, type, at
-       FROM cinderella_violations ORDER BY at DESC, id DESC LIMIT $1`,
-    [limit],
+       FROM cinderella_violations
+      WHERE bot_profile_id = $1
+      ORDER BY at DESC, id DESC LIMIT $2`,
+    [botProfileId, limit],
   );
   return rows.map((row) => ({
     id: row.id,
