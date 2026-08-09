@@ -1658,9 +1658,17 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
     async (req, reply) => {
       const profiles = await listBotOnboardingProfiles(ctx.db);
       const csrf = req.session?.csrfToken ?? '';
+      // `?profile=` is this page's own name for the same idea, kept because every existing
+      // link and every redirect on this page uses it. Falling back to the SESSION rather
+      // than to the first bot is the CCB-S5-011 change: an operator who switched bots in
+      // the sidebar and then opened AI Bot Setup lands on the bot he was working on.
       const requestedProfileId = optionalPositiveInteger(req.query.profile);
+      const sessionBot = req.session?.selectedBotProfileId ?? null;
       const selected =
-        profiles.find((profile) => profile.id === requestedProfileId) ?? profiles[0] ?? null;
+        profiles.find((profile) => profile.id === requestedProfileId) ??
+        profiles.find((profile) => profile.id === sessionBot) ??
+        profiles[0] ??
+        null;
       const createDialogId = 'setup-create';
       // Read per request, never cached: the runtime may not have started when the
       // console did, and it may stop while the console stays up. A page that showed a
@@ -1691,6 +1699,16 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         title: 'AI Bot Setup',
         active: 'ai:onboarding',
         csrfToken: csrf,
+        // The switcher here mirrors the list beside it rather than replacing it: this page
+        // is where bots are CREATED and deleted, so the list is doing a second job the
+        // sidebar cannot. Both drive the same selection.
+        botSwitcher: {
+          bots: profiles.map((p) => ({ id: p.id, displayName: p.displayName })),
+          selectedId: selected?.id ?? null,
+          selectedName: selected?.displayName ?? null,
+          fromUrl: requestedProfileId !== undefined && requestedProfileId !== sessionBot,
+          returnTo: '/ai/onboarding',
+        },
         head: html`<script src="/assets/admin-setup-wizard.js" defer></script>
           <script src="/assets/admin-image-upload.js" defer></script>`,
         body: html`

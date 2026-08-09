@@ -52,6 +52,7 @@ import { html, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card } from './ui.js';
 import { renderAiPage, type AiPageQuery } from './ai.js';
+import { resolveSelectedBot } from '../selected-bot.js';
 
 interface PersonalityQuery extends AiPageQuery {
   /** Which bot profile is being edited. Defaults to the runtime one. */
@@ -377,6 +378,11 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
     // in the database it is looking at. The console previews the prompt; a preview built
     // from a cache the harness never registered would be a preview of nothing.
     const rules = await listPromptRules(ctx.db);
+    const selection = resolveSelectedBot(
+      profiles,
+      req.query.bot,
+      req.session?.selectedBotProfileId ?? null,
+    );
     reply.type('text/html');
 
     return renderAiPage(
@@ -392,7 +398,7 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
       // disagree (CCB-S4-030, CCB-S4-031).
       body(
         profiles,
-        req.query.bot,
+        selection.selectedId === null ? undefined : String(selection.selectedId),
         req.session?.csrfToken ?? '',
         // The live reply model, so the preview is the prompt (CCB-S4-042). A preview that
         // omitted it would be a second description of the prompt rather than the prompt.
@@ -400,6 +406,13 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
         rules,
       ),
       html`<script src="/assets/admin-personality.js" defer></script>`,
+      // ── THE SIDEBAR SWITCHER, REPLACING THIS PAGE'S OWN (CCB-S5-011) ──
+      //
+      // This page had a dropdown of its own, in a card, which is one of the four separate
+      // controls the operator was reading as four consoles. It resolves through the same
+      // function every settings page uses now, so a switch made here holds on the
+      // Interaction page and the Book, and the session remembers it.
+      { ...selection, returnTo: '/ai/personality' },
     );
   });
 

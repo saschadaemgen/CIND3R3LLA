@@ -30,6 +30,7 @@ interface SessionRow {
   created_at: string;
   last_seen_at: string;
   last_step_up_at: string | null;
+  selected_bot_profile_id: string | null;
 }
 
 export interface SessionData {
@@ -39,6 +40,8 @@ export interface SessionData {
   createdAt: number;
   lastSeenAt: number;
   lastStepUpAt: number;
+  /** The bot this operator is editing, or null when they have not chosen (CCB-S5-011). */
+  selectedBotProfileId: number | null;
 }
 
 function toData(r: SessionRow): SessionData {
@@ -49,6 +52,8 @@ function toData(r: SessionRow): SessionData {
     createdAt: new Date(r.created_at).getTime(),
     lastSeenAt: new Date(r.last_seen_at).getTime(),
     lastStepUpAt: r.last_step_up_at ? new Date(r.last_step_up_at).getTime() : 0,
+    selectedBotProfileId:
+      r.selected_bot_profile_id === null ? null : Number(r.selected_bot_profile_id),
   };
 }
 
@@ -98,6 +103,20 @@ export class SessionStore {
     await this.db.query(`UPDATE admin_sessions SET last_step_up_at = now() WHERE id = $1`, [id]);
   }
 
+  /**
+   * Remember which bot this operator is editing (CCB-S5-011).
+   *
+   * Null clears it, which every reader treats as "the first bot". No validation that the id
+   * exists: the foreign key refuses an unknown one and sets it to null if that bot is later
+   * deleted, so the two states this can be in are both meaningful and neither is stale.
+   */
+  async selectBot(id: string, botProfileId: number | null): Promise<void> {
+    await this.db.query(`UPDATE admin_sessions SET selected_bot_profile_id = $2 WHERE id = $1`, [
+      id,
+      botProfileId,
+    ]);
+  }
+
   async destroy(id: string): Promise<void> {
     await this.db.query(`DELETE FROM admin_sessions WHERE id = $1`, [id]);
   }
@@ -133,6 +152,8 @@ export interface AuthedSession {
   csrfToken: string;
   authMethod: AuthMethod;
   lastStepUpAt: number;
+  /** The bot this operator is editing, or null when they have not chosen (CCB-S5-011). */
+  selectedBotProfileId: number | null;
 }
 
 export async function readSession(
@@ -151,6 +172,7 @@ export async function readSession(
     csrfToken: session.csrfToken,
     authMethod: session.authMethod,
     lastStepUpAt: session.lastStepUpAt,
+    selectedBotProfileId: session.selectedBotProfileId,
   };
 }
 

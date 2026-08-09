@@ -66,6 +66,25 @@ export interface PageOptions {
   chrome?: boolean;
   csrfToken?: string;
   stepUpRequired?: boolean;
+  /**
+   * The bot this page edits, when it edits one (CCB-S5-011).
+   *
+   * Omitted by pages that are deployment-wide. That omission is the point: a page with no
+   * switcher above it is saying it does not belong to one bot, which is information an
+   * operator needs as much as the switcher itself.
+   */
+  botSwitcher?: BotSwitcher;
+}
+
+/** What the sidebar needs to render the bot switcher. */
+export interface BotSwitcher {
+  bots: { id: number; displayName: string }[];
+  selectedId: number | null;
+  selectedName: string | null;
+  /** The URL named the bot, so this page is not showing the remembered selection. */
+  fromUrl: boolean;
+  /** Where to send the operator back to after switching. */
+  returnTo: string;
 }
 
 export interface NavItem {
@@ -428,6 +447,59 @@ export function reportBarHtml(count: number): string {
   </a>`.value;
 }
 
+/**
+ * The bot switcher, in the sidebar, on every page that edits a bot (CCB-S5-011, D-169).
+ *
+ * ── ONE CONTROL, ONE PLACE ───────────────────────────────────────────────────
+ *
+ * It renders here and nowhere else, which is the whole change: an operator should never have
+ * to ask which bot a form belongs to, and four page-level pickers meant he asked on every
+ * page. Above the section navigation rather than below it, because it governs everything
+ * below it and reading order should say so.
+ *
+ * ── A FORM, NOT A LINK LIST, AND NOT JAVASCRIPT ──────────────────────────────
+ *
+ * A POST that writes the session and redirects back. Links carrying `?bot=` would be a
+ * one-off view rather than a choice that holds, which is a different thing and is what `?bot=`
+ * still means. An auto-submitting `<select>` would make the control depend on JavaScript for
+ * its only function, and this console has already shipped one control that looked live and
+ * was inert (D-162); a submit button cannot be that.
+ *
+ * With one bot it renders as a plain statement instead of a control. Offering a choice
+ * between one option is noise, but saying whose settings these are never is.
+ */
+function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): SafeHtml {
+  if (!sw || sw.bots.length === 0) return html``;
+
+  return html`<div class="admin-sidebar-bot" data-bot-switcher>
+    <span class="admin-sidebar-kicker">Editing bot</span>
+    ${sw.bots.length === 1
+      ? html`<strong class="admin-sidebar-bot-one">${sw.selectedName ?? 'none'}</strong>`
+      : html`<form method="post" action="/console/select-bot" class="admin-sidebar-bot-form">
+          <input type="hidden" name="_csrf" value="${csrfToken}" />
+          <input type="hidden" name="returnTo" value="${sw.returnTo}" />
+          <label class="sr-only" for="bot-switcher">Bot these settings apply to</label>
+          <select id="bot-switcher" name="botProfileId" class="admin-sidebar-bot-select">
+            ${sw.bots.map(
+              (b) =>
+                html`<option value="${String(b.id)}" ${b.id === sw.selectedId ? raw('selected') : ''}>
+                  ${b.displayName}
+                </option>`,
+            )}
+          </select>
+          <button type="submit" class="admin-sidebar-bot-go">Switch</button>
+        </form>`}
+    ${sw.fromUrl
+      ? html`<span class="admin-sidebar-bot-note"
+          >From this link, not your usual selection.</span
+        >`
+      : null}
+    <span class="admin-sidebar-bot-note">
+      Settings below apply to this bot. Shared settings say so where they appear.
+    </span>
+  </div>`;
+}
+
 function fixedFooter(): SafeHtml {
   return html`<footer class="admin-footer" data-admin-footer>
     <div class="admin-footer-version">
@@ -497,6 +569,8 @@ export function page(options: PageOptions): string {
       </header>`
     : html``;
 
+  const switcher = renderBotSwitcher(options.botSwitcher, csrfToken);
+
   const contextualSidebar =
     chrome && activeRoot?.children && activeRoot.children.length > 0
       ? html`<aside data-context-sidebar data-section="${activeRoot.key}" class="admin-sidebar">
@@ -507,6 +581,7 @@ export function page(options: PageOptions): string {
               <strong>${activeRoot.label}</strong>
             </div>
           </div>
+          ${switcher}
           <nav class="admin-sidebar-nav">
             ${activeRoot.children.map((item) => sidebarNavigationItem(item, options.active, 0))}
           </nav>

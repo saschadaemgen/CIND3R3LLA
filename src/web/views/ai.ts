@@ -19,7 +19,7 @@ import {
   type AiModelRoutingSnapshot,
   type AiRuntimeSnapshot,
 } from '../../interaction/ai-runtime.js';
-import { html, page, raw, type SafeHtml } from '../html.js';
+import { html, page, raw, type BotSwitcher, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader, stat } from './ui.js';
 import { meanMs, modelQueue, type BotModelStats } from '../../interaction/model-queue.js';
@@ -185,12 +185,21 @@ export function renderAiPage(
   snapshot: AiRuntimeSnapshot,
   body: SafeHtml,
   head?: SafeHtml,
+  /**
+   * The bot this page edits, when it edits one (CCB-S5-011).
+   *
+   * Optional and last, because most AI pages are deployment-wide. A page that passes
+   * nothing renders no switcher, which is the honest statement that it does not belong to
+   * one bot rather than an omission.
+   */
+  botSwitcher?: BotSwitcher,
 ): string {
   return page({
     title,
     active,
     csrfToken: csrf,
     ...(head ? { head } : {}),
+    ...(botSwitcher ? { botSwitcher } : {}),
     body: html`
       ${pageHeader(title, description)} ${notice(query)} ${statusBadges(snapshot)} ${body}
     `,

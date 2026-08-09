@@ -70,6 +70,7 @@ import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
 import { currentBotPersonality } from '../../profiles/bot-personality.js';
 import { botIdentity } from '../../interaction/settings.js';
 import { MAX_HISTORY_LIMITS } from '../../interaction/history.js';
+import { resolveSelectedBot } from '../selected-bot.js';
 
 const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
 
@@ -614,8 +615,18 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       // bookmark resolves to, so nothing changes for an operator with one bot.
       const botProfiles = await listBotOnboardingProfiles(ctx.db);
       const bots = botProfiles.map((b) => ({ id: b.id, displayName: b.displayName }));
-      const requestedBot = Number.parseInt(req.query.bot ?? '', 10);
-      const selectedBotId = bots.some((b) => b.id === requestedBot) ? requestedBot : null;
+      // ── ONE RESOLVER, NOT THIS PAGE'S OWN (CCB-S5-011) ────────────────
+      //
+      // This read `?bot=` and nothing else, so a selection made here did not survive a
+      // move to the Personality page and back. `resolveSelectedBot` is the same answer
+      // every settings page now gives: the URL when it names a bot, otherwise the
+      // session's standing choice, otherwise the first bot.
+      const selection = resolveSelectedBot(
+        botProfiles,
+        req.query.bot,
+        req.session?.selectedBotProfileId ?? null,
+      );
+      const selectedBotId = selection.selectedId;
       const settingOverrides = await listAllSettingOverrides(ctx.db);
       const settingScopes = describeSettingScopes(settingOverrides, bots.length);
 
@@ -1138,7 +1149,14 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       `;
 
       reply.type('text/html');
-      return page({ title: `Interaction — ${meta.title}`, active: `interaction:${slug}`, csrfToken: csrf, body });
+      return page({
+        title: `Interaction — ${meta.title}`,
+        active: `interaction:${slug}`,
+        csrfToken: csrf,
+        // Every section of this page edits one bot, so every section carries the switcher.
+        botSwitcher: { ...selection, returnTo: `/interaction/${slug}` },
+        body,
+      });
     },
   );
 

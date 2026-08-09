@@ -22,8 +22,10 @@ import { registerHolds } from './holds.js';
 import { registerAdminMedia } from './admin-media.js';
 import { registerScreening } from './screening.js';
 import { registerBackup } from './backup.js';
+import { registerSelectBot } from './select-bot.js';
 
 export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void {
+  registerSelectBot(app, ctx);
   registerDashboard(app, ctx);
   registerMessages(app, ctx);
   registerConsent(app, ctx);

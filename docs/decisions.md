@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 167 decisions</strong> — newest first. Highest allocated: <strong>D-168</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 168 decisions</strong> — newest first. Highest allocated: <strong>D-169</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-169 | One switcher in the sidebar, remembered in the session, replacing the primary's console role | IMPLEMENTED |
 | D-168 | A face is applied on demand, and the panel gives the operator the control instead of the sentence | IMPLEMENTED |
 | D-167 | Scheduling from inside a scheduled command is refused, because it always deadlocks | IMPLEMENTED |
 | D-166 | A wake word with a space in it is refused, and the refusal is temporary | IMPLEMENTED |
@@ -196,6 +197,55 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-169 - One switcher in the sidebar, remembered in the session, replacing the primary's console role
+
+**Status: IMPLEMENTED** (CCB-S5-011, migration 050). Four page families each invented their own
+`?bot=` control: pills inside a card on Interaction, a dropdown on Personality, a sentence on
+the Book, a master-detail list on AI Bot Setup. So the operator re-stated which bot he meant on
+every page, could not tell at a glance which bot a form belonged to, and nothing remembered the
+answer. His words were that it felt like four consoles, and he was right.
+
+**ONE CONTROL, IN `contextualSidebar`, ABOVE THE SECTION NAVIGATION.** One insertion point
+covers every section, which is what made "one place" cheap. Above rather than below because it
+governs everything under it and reading order should say so. A page that edits no bot passes
+nothing and renders no switcher: **the absence is information**, and a deployment-wide page
+sitting under a control implying otherwise would be the same lie in the other direction.
+
+**THE SELECTION LIVES ON THE SESSION** (`admin_sessions.selected_bot_profile_id`, migration
+050). Not `settings`, which is global and would have two operators fighting over one value that
+outlives them both; not a new preferences table for one nullable id. It is a property of this
+operator's session and `admin_sessions` is exactly that: created at sign-in, pruned on idle and
+absolute lifetime, destroyed on sign-out. `ON DELETE SET NULL` because an operator can delete
+the bot a session is pointing at, and a dangling id is the only way this column can hurt
+anybody.
+
+**`?bot=` STILL WINS AND DOES NOT WRITE.** A link to a bot's page stays shareable and stays a
+one-off: following one shows you that bot without silently re-pointing the rest of your
+session. The switcher is the only writer. The two are different things and the console now says
+which it is showing, because an operator who followed a link should not read the difference as
+the console changing its mind.
+
+**A FORM, NOT A LINK LIST, AND NOT JAVASCRIPT.** An auto-submitting `<select>` would make the
+control depend on JavaScript for its only function, and this console has already shipped one
+control that looked live and was inert (D-162). A submit button cannot be that. With one bot it
+renders as a statement rather than a control: a choice between one option is noise, but saying
+whose settings these are never is.
+
+**WHAT THIS DOES TO THE PRIMARY.** Nothing, deliberately: the flag, the column and the index are
+untouched, and removal is its own briefing. But the Book's preview was the last console reader
+of `selectedForRuntime` as a *default*, and it now resolves through the switcher, so **the
+primary's console role is gone even though the primary is not**. Combined with D-165, which
+removed its last functional consumer, what remains is one display-name branch in `host.ts` and a
+column nothing reads for its meaning. The case for retiring it is now as strong as it will get
+before somebody does it.
+
+**Moderation is named and not done.** `moderation.ts` takes no bot parameter at all while
+`botModerationRules(db, botId)` is per bot, so those pages edit a bot's ladders without saying
+whose. That is the same defect family, it needs its own pass rather than a switcher bolted over
+a page that does not yet know which bot it is editing, and it is the next thing here.
+
 ---
 
 ### D-168 - A face is applied on demand, and the panel gives the operator the control instead of the sentence

@@ -72,6 +72,7 @@ import {
   type RuleOverride,
   type RuleScope,
 } from '../../interaction/rule-scope.js';
+import { resolveSelectedBot } from '../selected-bot.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { currentReplyModel } from '../../interaction/ai-runtime.js';
 import { botIdentity } from '../../interaction/settings.js';
@@ -1311,11 +1312,16 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     // and presented the result as "what she is told", when a bot that had reworded a law
     // was being told something else. An unlabelled prompt is worse than no prompt.
     const profiles = await listBotOnboardingProfiles(ctx.db);
-    const requested = Number.parseInt(req.query.bot ?? '', 10);
-    const selected =
-      profiles.find((p) => p.id === requested) ??
-      profiles.find((p) => p.selectedForRuntime) ??
-      profiles[0];
+    // Through the shared resolver since CCB-S5-011, so this page opens on the bot the
+    // operator is editing everywhere else. It used to fall back to the PRIMARY, which is
+    // the console role the switcher replaces: the primary flag is untouched, but nothing
+    // here reads it any more.
+    const selection = resolveSelectedBot(
+      profiles,
+      req.query.bot,
+      req.session?.selectedBotProfileId ?? null,
+    );
+    const selected = profiles.find((p) => p.id === selection.selectedId);
     const overrides = selected ? await listOverridesForBot(ctx.db, selected.id) : [];
     const rules = applyOverrides(shared, overrides);
     const personality = currentBotPersonality(selected?.id);
@@ -1355,6 +1361,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       title: 'The Assembled Word',
       active: 'book:assembled',
       csrfToken: csrf,
+      botSwitcher: { ...selection, returnTo: '/book/assembled' },
       body: html`
         ${pageHeader('The Assembled Word', 'What each kind of reply is told, in the order it is told.')}
         <div class="mb-4 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
