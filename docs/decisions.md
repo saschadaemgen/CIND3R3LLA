@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 162 decisions</strong> — newest first. Highest allocated: <strong>D-163</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 163 decisions</strong> — newest first. Highest allocated: <strong>D-164</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-164 | A wizard that hides steps must never let native validation refuse in silence | IMPLEMENTED |
 | D-163 | A new bot is given plain retorts, because a retort is content and the voice is applied at reply time | IMPLEMENTED |
 | D-162 | A renamed meaning needs a renamed control, and a disabled button has to look disabled | IMPLEMENTED |
 | D-161 | A face per bot, and null means the deployment default | IMPLEMENTED |
@@ -191,6 +192,52 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-164 - A wizard that hides steps must never let native validation refuse in silence
+
+**Status: IMPLEMENTED** (CCB-S5-010, no migration). The operator could not create a bot at all.
+Pressing Finish did nothing, silently, six times. The only trace was a browser console message
+no operator has open: `An invalid form control with name='slug' is not focusable.`
+
+**THE MECHANISM, WHICH IS GENERAL AND NOT ABOUT THE SLUG.** All three required fields live on
+step one, and `showStep` sets `hidden` on the steps it is not showing. An operator who left step
+one without typing an internal key and then pressed Finish hit a wall the browser is unable to
+describe: native validation blocks the submit, tries to focus the offending control, finds it
+inside a `hidden` subtree, and **gives up**. No bubble, no message, no request. The form was
+correct, the server was correct, every check was green, and the button did nothing.
+
+This is **D-162's shape from the other side**. D-162 was a control that looked live and was
+dead. This is a control that is live, is required, and cannot be reached in order to be
+complained about. Both are invisible to every harness in this repository for the same reason:
+they are properties of the rendered, running page.
+
+**THE FIX IS THE WIZARD, NOT THE FIELD.** `revealAndReport` finds the first invalid control,
+puts its step on screen, and only then calls `reportValidity`, which can now focus it and show
+the browser's own message. Wired to **Next**, so a problem surfaces on the step where it lives
+and on the screen it belongs to, and to **Finish**, for every route to submission that did not
+pass a Next. Fixing only the slug would have left the next required field to rediscover it.
+
+**AND THE SLUG IS DERIVED, WHICH IS THE SECOND HALF.** The briefing asked whether it was meant
+to be derived and had stopped being. It was not: `git log -S` shows it as a typed required field
+since the commit that introduced onboarding. It is derived now, from the display name, through
+the same dirty-flag mechanism the wake word got in D-163, so the empty case is not normally
+reached at all. `Marlow Desk` becomes `marlow-desk`. The operator can still overtype it.
+
+**A THIRD DEFECT FOUND IN THE SAME CONSOLE OUTPUT, AND WORTH ITS OWN PARAGRAPH.** The slug's
+`pattern` read `[a-z0-9][a-z0-9-]{1,62}`. Browsers compile `pattern` in regex **`v` mode**, where
+an unescaped `-` inside a character class is a syntax error. So it **never compiled**: it threw
+on every validation attempt and the constraint was silently dropped. Measured rather than
+reasoned about, in a real browser: with the shipped pattern, an input holding `NOT a slug!!`
+reported itself **valid**. The client-side format check had never once run in the field's entire
+life, and nobody noticed because the server's `profileSlug` was doing the actual work.
+
+The lesson generalises past this attribute: **a validation rule that fails to compile fails
+open, and silently.** So `verify:bot-creation-form` sweeps every `pattern` the console serves on
+every page and compiles each one in `v` mode, rather than pinning the one that was wrong. Its
+mutation runs on every invocation: it asserts the shipped pattern does *not* compile, which is
+the record of why it never ran.
+
 ---
 
 ### D-163 - A new bot is given plain retorts, because a retort is content and the voice is applied at reply time

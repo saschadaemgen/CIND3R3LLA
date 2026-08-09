@@ -1866,6 +1866,21 @@ the page the operator lands on after creating, rather than four pages. `verify:n
 covers all of it and is mutation-proven, including that creation cannot produce a bot without a
 usable wake word.
 
+**The create form could not be completed at all (CCB-S5-010, D-164).** Three faults on one
+form, found by an operator pressing a button six times. All three required fields live on step
+one and the wizard sets `hidden` on the steps it is not showing, so pressing Finish from a later
+step made native validation block the submit, try to focus the empty internal key, find it in a
+hidden subtree and **give up**: no bubble, no message, no request, and one console line nobody
+has open. `revealAndReport` in `admin-setup-wizard.js` now finds the first invalid control, puts
+its step on screen and only then calls `reportValidity`, wired to Next (so a problem surfaces
+where it lives) and to Finish (for every route that did not pass a Next). The slug is derived
+from the display name through the same dirty-flag mechanism as the wake word, so the empty case
+is not normally reached; it was never derived before, contrary to what the shape of the form
+suggested. And the slug's `pattern` had never compiled: browsers use regex `v` mode, where the
+unescaped `-` in `[a-z0-9-]` is a syntax error, so the constraint was dropped and an input
+holding `NOT a slug!!` reported itself valid. `verify:bot-creation-form` compiles every pattern
+the console serves rather than pinning the one that was wrong.
+
 ### 32.3 One graph per bot (CCB-S5-001, D-155)
 
 `startRuntimeHost` returns a `HostedBot` per enabled bot, and `buildBotGraph` in

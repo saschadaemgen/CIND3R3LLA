@@ -71,6 +71,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   follows as the regression guard it is rather than as the evidence it is not. The same applies
   to copy: a label is only correct against what the code does *today*, which is the other half
   of this defect and the reason `selected_for_runtime` lied for seven briefings.
+- **A validation rule that fails to compile fails OPEN, and silently** (standing rule, D-164).
+  The slug's `pattern` attribute contained an unescaped `-` in a character class. Browsers
+  compile `pattern` in regex `v` mode, where that is a syntax error, so it threw on every
+  validation and the constraint was dropped: an input holding `NOT a slug!!` reported itself
+  VALID for the field's entire life, and nothing said so because the server was catching what
+  the browser let through. Anything that compiles a rule at runtime, from any source, has this
+  shape. `verify:bot-creation-form` sweeps every pattern the console serves; the same question
+  should be asked of any future rule text that a browser or an engine compiles.
 - **When the implementation and a verifier disagree, inspect the rendered output and the
   current source before changing behaviour** (standing rule, D-111, from the local AI
   protocol). Several failures in that work were **verifier defects, not implementation
@@ -502,6 +510,14 @@ does nothing: a counter check passes if nothing is ever counted.
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
 check can assert it),
+`verify:bot-creation-form` (the create form can be completed, CCB-S5-010: every `pattern` the
+console serves compiles in regex `v` mode, which is the mode browsers use and the one the slug
+pattern silently failed for its whole life, plus proof it CONSTRAINS rather than merely
+compiles; and that the wizard's reveal-and-report is still wired to both Next and Finish, so a
+required field on a hidden step can never refuse in silence again. **It cannot see the wall it
+was written for**: `hidden` is set at runtime, the shipped markup does not carry it, and a
+static sweep reports the form as perfectly reachable, which it did. The browser found that one;
+this is the guard),
 `verify:new-bot-identity` (a new bot knows its own name, CCB-S5-009: one definition of a usable
 wake word shared by creation and the settings page, creation refusing without one and refusing a
 duplicate BY NAME, a new bot getting its own retorts with the assertion that not one of them is

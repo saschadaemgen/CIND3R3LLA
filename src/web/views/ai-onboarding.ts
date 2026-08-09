@@ -198,6 +198,27 @@ function parseCommands(value: unknown): unknown[] {
   return parsed;
 }
 
+/**
+ * The slug's format, as the browser must receive it (CCB-S5-010).
+ *
+ * ── THE HYPHEN HAS TO BE ESCAPED, AND IT WAS NOT ─────────────────────────────
+ *
+ * This was written inline as `[a-z0-9][a-z0-9-]{1,62}` and had been since the field was
+ * added. Browsers compile `pattern` in regex **`v` mode**, where an unescaped `-` inside a
+ * character class is a syntax error, so the pattern NEVER COMPILED: it threw on every
+ * validation attempt and the constraint was silently dropped. Measured in the console rather
+ * than reasoned about, because that is the only way this was ever going to surface: with the
+ * old pattern, an input holding `NOT a slug!!` reported itself **valid**. The client-side
+ * format check has therefore never once run, and the server's `profileSlug` has been the only
+ * thing keeping a bad key out. It did its job, which is why nobody noticed.
+ *
+ * A constant rather than an inline string so `verify:bot-creation-form` can compile it in
+ * both `u` and `v` mode and fail if it ever stops being valid in either. Written with `\\-`
+ * in the source so a single backslash reaches the HTML: inside a template literal `\-` is a
+ * NonEscapeCharacter and cooks away to a bare `-`, which would put the defect straight back.
+ */
+export const SLUG_PATTERN = '[a-z0-9][a-z0-9\\-]{1,62}';
+
 function defaults(): BotCreationInput {
   return {
     slug: '',
@@ -553,13 +574,15 @@ function wizardDialog(
                 required
                 minlength="2"
                 maxlength="63"
-                pattern="[a-z0-9][a-z0-9-]{1,62}"
+                pattern="${SLUG_PATTERN}"
                 autocomplete="off"
                 data-review-source="slug"
+                data-derive="slug"
               />
               <small
                 >Technical identifier used to link this bot profile to saved settings and audit
-                records.</small
+                records. It starts from the bot name and you can change it; lower case letters,
+                numbers and hyphens.</small
               >
             </label>
           </div>
