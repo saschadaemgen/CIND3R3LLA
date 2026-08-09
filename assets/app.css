@@ -2526,6 +2526,33 @@ input[type='radio'] {
   line-height: 1.55;
 }
 
+/* The four identity facts (CCB-S5-009). A grid rather than a list, because the operator is
+   scanning for the one that is wrong, not reading four sentences. */
+.setup-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin: 0 0 10px;
+}
+
+.setup-identity-grid dt {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 4px;
+}
+
+.setup-identity-grid dd {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+}
+
 /* The primary is handed over, so the panel holds one control and the sentence that says
    what it does not do (CCB-S5-008). */
 .setup-primary form {

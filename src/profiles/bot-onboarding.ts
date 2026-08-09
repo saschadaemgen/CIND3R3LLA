@@ -13,7 +13,13 @@ import type { Queryable } from '../db/pool.js';
 import { setSettingOverride } from '../db/interaction-overrides.js';
 import { getSetting } from '../db/settings.js';
 import { log } from '../log.js';
-import { wakeWordForNewBot } from '../interaction/setting-scope.js';
+import { wakeWordTakenBy, type WakeWordHolder } from '../interaction/setting-scope.js';
+import {
+  DEFAULT_INTERACTION,
+  NEW_BOT_RETORTS,
+  WAKE_WORD_MAX_CHARS,
+  normalizeWakeWord,
+} from '../interaction/settings.js';
 import type { MemberRole } from '../adapter/types.js';
 import {
   normalizePersonality,
@@ -137,6 +143,22 @@ export type BotOnboardingInput = Omit<
   | 'updatedAt'
 >;
 
+/**
+ * What CREATING a bot posts: everything a save posts, plus the one fact only creation
+ * decides (CCB-S5-009).
+ *
+ * `wakeWord` is here and not on {@link BotOnboardingInput} because it is not a column on
+ * `cinderella_bot_profiles`: it is a per-bot deviation from the shared interaction settings,
+ * written through `setSettingOverride`. Putting it on the shared input type would have meant
+ * the edit dialog posting a field it does not show, which is the failure the personality
+ * columns and the primary flag have each already caused on this exact form.
+ *
+ * REQUIRED, not optional. An optional wake word is a bot that silently answers to the
+ * primary's name, which is the whole defect, and `verify:new-bot-identity` proves creation
+ * refuses without a usable one.
+ */
+export type BotCreationInput = BotOnboardingInput & { wakeWord: string };
+
 const COMMAND_MODES = new Set<CommandRegistryMode>(['disabled', 'cinderella_defaults', 'custom']);
 
 const GROUP_INVITATION_MODES = new Set<GroupInvitationMode>([
@@ -251,20 +273,117 @@ function validateInput(input: BotOnboardingInput): BotOnboardingInput {
 }
 
 /**
- * The shared wake word, read straight from the settings row.
+ * Every wake word currently in use, with the bot answering to it.
+ *
+ * The SHARED value is in the list under the bots that have not deviated, because a bot on
+ * the shared value is answering to it: it is not free just because no override row names it.
+ *
+ * With no bots at all the list is EMPTY, and that is deliberate rather than an oversight. The
+ * shared value is not held by anybody until a bot is on it, so the first bot an operator
+ * creates may take it, which is the ordinary case: it then needs no override and inherits any
+ * later edit to the shared value. Treating the default as reserved would refuse the most
+ * normal creation there is.
+ */
+async function wakeWordHolders(db: Queryable): Promise<{ holder: WakeWordHolder; word: string }[]> {
+  const shared = (await sharedWakeWord(db)) ?? '';
+  const { rows: bots } = await db.query<{ id: string; display_name: string }>(
+    `SELECT id, display_name FROM cinderella_bot_profiles ORDER BY id`,
+  );
+  const { rows: overrides } = await db.query<{ bot_profile_id: string; value: unknown }>(
+    `SELECT bot_profile_id, value
+       FROM cinderella_interaction_overrides
+      WHERE setting_key = 'wakeWord'`,
+  );
+  const deviations = new Map(
+    overrides.map((o) => [Number(o.bot_profile_id), typeof o.value === 'string' ? o.value : '']),
+  );
+
+  return bots.map((b) => {
+    const id = Number(b.id);
+    const own = deviations.get(id);
+    return {
+      holder: {
+        botProfileId: id,
+        displayName: b.display_name,
+        shared: own === undefined,
+      },
+      word: own ?? shared,
+    };
+  });
+}
+
+/**
+ * Validate the one field creation adds, and refuse a name already spoken for.
+ *
+ * ── WHY REFUSING RATHER THAN WARNING ────────────────────────────────────────
+ *
+ * The briefing allowed either, provided the operator is told. Two bots waking on one word in
+ * one group is not a configuration with a downside, it is two bots answering the same
+ * sentence at the same time and a member with no way to reach either one specifically. There
+ * is no message that makes that acceptable, so it is refused, by name, with the bot that
+ * holds the word stated. Changing an existing bot's wake word remains possible on the
+ * Addressing page, which is where an operator who genuinely wants to swap two names goes.
+ */
+async function validateCreation(db: Queryable, wakeWord: unknown, displayName: string): Promise<string> {
+  const cleaned = normalizeWakeWord(wakeWord);
+  if (cleaned === null) {
+    throw new Error(
+      `"${displayName}" needs a wake word of at least 2 characters: it is what members ` +
+        `call it and what wakes it. Up to ${WAKE_WORD_MAX_CHARS} characters.`,
+    );
+  }
+
+  const holders = await wakeWordHolders(db);
+  const taken = wakeWordTakenBy(
+    cleaned,
+    holders.map((h) => h.holder),
+    (holder) => holders.find((h) => h.holder === holder)?.word ?? '',
+  );
+  if (taken) {
+    throw new Error(
+      `"${cleaned}" is already the wake word of ${taken.displayName}` +
+        (taken.shared ? ', which is on the shared default' : '') +
+        `. Two bots waking on one word in one group both answer the same sentence, and a ` +
+        `member cannot reach either on purpose. Choose another, or rename ` +
+        `${taken.displayName} first on the Addressing page.`,
+    );
+  }
+
+  return cleaned;
+}
+
+/**
+ * The shared wake word: the stored one, or the shipped default when nothing is stored.
  *
  * Deliberately not through `InteractionService`: this runs inside bot creation, which has
  * no service instance to hand, and reaching for the process-wide one would tie creating a
  * bot to a service that the harnesses and one-shot scripts do not start.
+ *
+ * ── WHY THE DEFAULT AND NOT NULL (CCB-S5-009) ────────────────────────────────
+ *
+ * It returned null when no settings row existed, and null meant "unknown" to both callers.
+ * That was harmless while the only caller compared for equality; it stopped being harmless
+ * the moment the duplicate check started asking what each bot answers to. A deployment that
+ * has never opened the settings page has no row, so every bot on the shared value would have
+ * read as answering to the empty string, and a second bot could have been created on a wake
+ * word the first one was already using without anything noticing.
+ *
+ * There is no such thing as no shared wake word: `normalizeInteraction` refuses to produce
+ * an empty one, so the effective value with no row is the shipped default and saying so is
+ * simply true. A read that FAILS is different and still returns null, because guessing after
+ * an error is how a fault becomes a wrong answer.
  */
 async function sharedWakeWord(db: Queryable): Promise<string | null> {
   try {
     const stored = (await getSetting(db, 'interaction')) as { wakeWord?: unknown } | null;
     const value = stored?.wakeWord;
-    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : DEFAULT_INTERACTION.wakeWord;
   } catch {
-    // A read that fails must not stop a bot being created. Null means "unknown", and the
-    // override is then written, which is the safe direction: its own name.
+    // A read that fails must not stop a bot being created, and must not claim to know the
+    // shared value either. Null here makes the caller write the bot its own override, which
+    // is the safe direction: its own name rather than a guess at somebody else's.
     return null;
   }
 }
@@ -466,10 +585,13 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
  */
 export async function createBotOnboardingProfile(
   db: Queryable,
-  rawInput: BotOnboardingInput,
+  rawInput: BotCreationInput,
   actor: string,
 ): Promise<number> {
   const input = validateInput(rawInput);
+  // BEFORE the insert, so a refused wake word leaves no half-made bot behind. The duplicate
+  // check reads other bots, which is why it cannot run after this one exists.
+  const wakeWord = await validateCreation(db, rawInput.wakeWord, input.displayName);
 
   try {
     const result = await db.query<{ id: string; selected_for_runtime: boolean }>(
@@ -552,31 +674,44 @@ export async function createBotOnboardingProfile(
     // What the database decided, not what anybody asked for. Audited below as the fact it is.
     const becamePrimary = result.rows[0]?.selected_for_runtime === true;
 
-    // ── ITS OWN NAME, NOT HERS (CCB-S5-006, D-158) ────────────────────────
+    // ── ITS OWN NAME, ASKED FOR RATHER THAN DERIVED (CCB-S5-006, CCB-S5-009) ──
     //
     // The wake word is shared by default, so a bot created without this answers to whatever
-    // the primary is called. That is the defect CCB-S5-006 exists to fix, and it would be
-    // reintroduced on every bot the operator creates.
+    // the primary is called. CCB-S5-006 fixed that by deriving one from the display name.
+    // CCB-S5-009 made it a field on the form instead, because deriving it silently meant the
+    // operator finished the wizard not knowing what the bot answered to, and the derivation
+    // is wrong often enough to matter: SANCH3Z should answer to Sanchez.
+    //
+    // `input.wakeWord` has already been through `normalizeWakeWord` and the duplicate check
+    // in {@link validateCreation}, which is where the operator-facing refusals live. By here
+    // it is a usable word or the creation never happened.
     //
     // Written as a per-bot OVERRIDE rather than by copying the whole settings record: the
     // bot inherits everything else, so a later edit to a shared value still reaches it.
-    // A display name that cannot serve as a wake word yields no row at all, and the
-    // operator sets one; no wake word is a bot nobody can address, which is visible.
-    const wake = wakeWordForNewBot(input.displayName);
-    // Only when it actually DIFFERS from the shared wake word. A bot whose display name is
+    const sharedWake = await sharedWakeWord(db);
+    // Only when it actually DIFFERS from the shared wake word. A bot whose wake word is
     // already the shared value needs no deviation, and storing one would show it in the
     // console as differing from a default it matches, and would freeze it at today's value
     // so a later shared edit stopped reaching it. Same rule the console's save path uses.
-    const sharedWake = await sharedWakeWord(db);
-    if (wake !== null && wake !== sharedWake) {
-      await setSettingOverride(db, id, 'wakeWord', wake);
-    } else if (wake === null) {
-      log.warn(
-        `Bot "${input.displayName}" was created with no wake word: its display name cannot ` +
-          `serve as one. Set one on the Addressing page before it is hosted, or it cannot ` +
-          `be addressed by name.`,
-      );
+    if (wakeWord !== sharedWake) {
+      await setSettingOverride(db, id, 'wakeWord', wakeWord);
     }
+
+    // ── AND ITS OWN RETORTS (CCB-S5-009, D-163) ───────────────────────────
+    //
+    // Absence means inherit, so a bot created without this answers a nickname with HER twelve
+    // retorts: the pumpkin, the fairy godmother, the glass slipper, Cindy by name. Nine of
+    // the twelve are her mythology rather than a template, so substituting `{wake}` does not
+    // rescue them. The alternative, leaving the list empty, silently turns the nickname path
+    // off and takes the verbal moderation ladder with it.
+    //
+    // So a new bot gets the plain starter set as its OWN editable text, written here once and
+    // owned by the application afterwards. Voice is not stored: `handleNickname` re-voices
+    // whichever line it picks through this bot's personality and the ladder's sharpness.
+    await setSettingOverride(db, id, 'retorts', {
+      en: [...(NEW_BOT_RETORTS['en'] ?? [])],
+      de: [...(NEW_BOT_RETORTS['de'] ?? [])],
+    });
 
     await writeAudit(db, actor, 'cinderella.bot-profile.create', `bot-profile:${id}`, {
       slug: input.slug,
@@ -584,6 +719,11 @@ export async function createBotOnboardingProfile(
       // Recorded because it happened, not because it was requested: creating a bot cannot
       // ask for this since CCB-S5-008. True only for the bot that found the seat empty.
       becamePrimary,
+      // The name it answers to, recorded because it is the fact CCB-S5-009 exists to make
+      // visible, and because an audit that cannot answer "what did this bot start as called"
+      // is missing the one thing an operator asks after the fact.
+      wakeWord,
+      retortsSeeded: (NEW_BOT_RETORTS['en'] ?? []).length,
       autoAcceptContacts: input.autoAcceptContacts,
       groupInvitationMode: input.groupInvitationMode,
       expectedGroupRole: input.expectedGroupRole,

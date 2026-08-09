@@ -151,6 +151,7 @@ function onboardingDefaults(): BotOnboardingInput {
   return {
     slug: 'cinderella',
     displayName: 'Cinderella',
+    wakeWord: 'Cinderella',
     enabled: true,
     createAddress: true,
     updateAddress: true,

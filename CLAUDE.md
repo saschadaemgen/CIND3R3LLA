@@ -502,6 +502,20 @@ does nothing: a counter check passes if nothing is ever counted.
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
 check can assert it),
+`verify:new-bot-identity` (a new bot knows its own name, CCB-S5-009: one definition of a usable
+wake word shared by creation and the settings page, creation refusing without one and refusing a
+duplicate BY NAME, a new bot getting its own retorts with the assertion that not one of them is
+hers and none names her world, the three retort states (own / inherited / none) told apart
+because silence looks identical in all three, and the real engine driven twice: once to show the
+new bot answering with ITS name, once with an emptied list to show the moderation ladder's
+warning still arriving rather than being discarded. Mutation-proven by removing the wake-word
+requirement, which turns seven checks red),
+`verify:searchable` (every tracked text file is searchable, CCB-S5-009: a single NUL byte makes
+grep and ripgrep classify a file as binary and SKIP it, silently, so every content search in the
+repository goes blind to it. Two harnesses carried one, written as a `?? '<NUL>'` sentinel that
+should have been the escape, and a stale import in one of them survived a repository-wide grep
+because of it. The third was written by the commit that reported the first two. Stricter than
+the tools it protects, because they decide on the first block and this reads the whole file),
 `verify:primary-bot` (creating a bot, and which one is the primary, CCB-S5-008: that creating a
 bot never touches the flag, that the FIRST one takes it because nothing else holds it and every
 one after does not, that a save cannot move it in either direction, that `setPrimaryBot` moves it

@@ -116,6 +116,9 @@ async function main(): Promise<void> {
     {
       slug: 'cinderella',
       displayName: 'CIND3R3LLA',
+      // Asked for at creation since CCB-S5-009. This one takes the shared default, which is
+      // the ordinary case for a first bot and writes no override.
+      wakeWord: 'Cinderella',
       enabled: true,
       createAddress: true,
       updateAddress: true,
@@ -172,6 +175,7 @@ async function main(): Promise<void> {
     {
       slug: 'support-desk',
       displayName: 'SupportDesk',
+      wakeWord: 'SupportDesk',
       enabled: true,
       createAddress: true,
       updateAddress: true,

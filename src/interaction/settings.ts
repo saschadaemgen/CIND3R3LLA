@@ -714,6 +714,53 @@ const RETORTS_DE = [
   '💎 Es heißt *{wake}*. Den gläsernen Schuh gibt es auch nicht in kurz.',
 ];
 
+/**
+ * What a NEW bot starts with (CCB-S5-009, D-163).
+ *
+ * ── WHY A NEW BOT NEEDS ITS OWN AND CANNOT HAVE HERS ─────────────────────────
+ *
+ * Read the twelve above. Three of them substitute `{wake}`; the other nine are her
+ * mythology, not a template: Cindy by name, the pumpkin, the fairy godmother, midnight, the
+ * ashes, the glass slipper. A bot called SANCH3Z inheriting that set tells a member that the
+ * glass slipper does not come in a shortened size. That is not a flat retort, it is a
+ * different character wearing her costume, and until this briefing it was what every new bot
+ * actually did, because creation wrote no retort override and absence means inherit.
+ *
+ * ── WHY THESE ARE PLAIN, WHICH IS THE POINT AND NOT A COMPROMISE ─────────────
+ *
+ * A retort is CONTENT, not voice. `handleNickname` hands it to `personalizedBody` with the
+ * bot's own personality and the ladder's sharpness bonus, so what a member reads is already
+ * this bot's voice at this bot's dial setting. Writing character into the stored text would
+ * be doing the voice layer's job a second time, worse, in a place the operator then has to
+ * edit to undo.
+ *
+ * So these say the one thing a retort has to say, that this is not my name, and leave the
+ * saying of it to the bot. They are ordinary editable text from the moment they are written:
+ * the application owns them afterwards, and the Nicknames page is where they are changed.
+ *
+ * Six rather than twelve. `pickRetort` excludes only the immediately previous index, so six
+ * rotates without repeating, and a starter set that looks authored invites being kept when
+ * it should invite being replaced.
+ */
+export const NEW_BOT_RETORTS: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  en: Object.freeze([
+    '🕯️ It is *{wake}*. Say it in full and I will answer.',
+    '📎 Close, but that is not my name. I answer to *{wake}*.',
+    '🗂️ I have one name and it is *{wake}*. Shortening it does not get you a faster answer.',
+    '⌛ Wrong name. Try *{wake}* and we can get on with it.',
+    '🔤 *{wake}*. All of it, please.',
+    '📌 I did not answer because that is not what I am called. It is *{wake}*.',
+  ]),
+  de: Object.freeze([
+    '🕯️ Ich heiße *{wake}*. Sag es ganz, dann antworte ich.',
+    '📎 Fast, aber so heiße ich nicht. Ich höre auf *{wake}*.',
+    '🗂️ Ich habe genau einen Namen: *{wake}*. Abkürzen macht die Antwort nicht schneller.',
+    '⌛ Falscher Name. Versuch *{wake}*, dann geht es weiter.',
+    '🔤 *{wake}*. Bitte ganz.',
+    '📌 Ich habe nicht geantwortet, weil ich nicht so heiße. Ich heiße *{wake}*.',
+  ]),
+});
+
 export const DEFAULT_INTERACTION: InteractionSettings = {
   addressing: {
     mode: 'relaxed',
@@ -889,6 +936,32 @@ function str(v: unknown, d: string, maxLen: number): string {
   return typeof v === 'string' ? v.slice(0, maxLen) : d;
 }
 
+/** The longest a wake word may be. Shared by the settings page and bot creation. */
+export const WAKE_WORD_MAX_CHARS = 40;
+
+/**
+ * ONE definition of what a usable wake word is (CCB-S5-009).
+ *
+ * There were two. `normalizeInteraction` truncated to 40 and trimmed; `wakeWordForNewBot`
+ * trimmed and REJECTED anything over 40, which is a different rule with a live consequence:
+ * a bot whose display name ran long got no wake-word override at all and therefore inherited
+ * the shared one, so it answered to "Cinderella". That is precisely the defect CCB-S5-006
+ * exists to prevent, still reachable through the door CCB-S5-006 built.
+ *
+ * So both callers come here. Truncation rather than rejection, because the settings page has
+ * always truncated and an operator who pastes something long wants the front of it, not a
+ * refusal. Returns null only when nothing usable survives, which the caller must handle as a
+ * real state rather than as a value.
+ */
+export function normalizeWakeWord(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  // Collapse inner runs too. CCB-S5-006 found values stored raw with surrounding spaces; a
+  // wake word with a double space inside it fails to match for a reason nobody can see on
+  // the page, because the page renders both spellings identically.
+  const cleaned = raw.trim().replace(/\s+/g, ' ').slice(0, WAKE_WORD_MAX_CHARS).trim();
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
 /**
  * A word list from either a real array or the admin form's free text. Both a
  * comma-separated line (greetings, nicknames) and a newline-separated block
@@ -1042,8 +1115,11 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
     : d.replyMode;
 
   // The wake word is the whole addressing model — an empty one would either
-  // match nothing or match everything, so it never becomes empty.
-  const wakeWord = str(o['wakeWord'], d.wakeWord, 40).trim() || d.wakeWord;
+  // match nothing or match everything, so it never becomes empty. Through
+  // `normalizeWakeWord` since CCB-S5-009, which is the same function bot creation
+  // uses: two implementations of "what is a usable wake word" is how a long
+  // display name came to produce no wake word at all.
+  const wakeWord = normalizeWakeWord(o['wakeWord']) ?? d.wakeWord;
 
 
   const defaultLanguage = str(o['defaultLanguage'], d.defaultLanguage, 5).trim().toLowerCase();

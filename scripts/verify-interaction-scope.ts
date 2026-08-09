@@ -54,6 +54,7 @@ function botInput(slug: string, displayName: string): BotOnboardingInput {
   return {
     slug,
     displayName,
+    wakeWord: displayName,
     enabled: true,
     createAddress: true,
     updateAddress: true,

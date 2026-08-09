@@ -67,6 +67,8 @@ function botInput(slug: string, displayName: string): BotOnboardingInput {
   return {
     slug,
     displayName,
+    // Its own name, asked for at creation since CCB-S5-009.
+    wakeWord: displayName,
     enabled: true,
     createAddress: true,
     updateAddress: true,

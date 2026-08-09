@@ -108,6 +108,33 @@
     });
   });
 
+  /**
+   * The wake word follows the bot name until the operator takes it over (CCB-S5-009).
+   *
+   * The derivation used to happen on the server, invisibly, and an operator finished the
+   * wizard without knowing what the bot answered to. Doing it here keeps the same default and
+   * makes it a value on a field somebody can see and overtype, which is the whole change.
+   *
+   * `dirty` is set by the operator EDITING the field, never by this code writing to it, so
+   * typing "Sanchez" and then correcting the bot name does not silently undo the correction.
+   * The server normalizes and validates whatever arrives regardless; this is convenience, and
+   * a field left untouched still posts a real value rather than relying on a fallback.
+   */
+  document.querySelectorAll('[data-setup-form]').forEach((form) => {
+    const name = form.querySelector('[data-wake-source]');
+    const wake = form.querySelector('[data-wake-word]');
+    if (!name || !wake) return;
+
+    let dirty = wake.value.trim() !== '';
+    wake.addEventListener('input', () => {
+      dirty = true;
+    });
+    name.addEventListener('input', () => {
+      if (dirty) return;
+      wake.value = name.value.trim().replace(/\s+/g, ' ').slice(0, 40);
+    });
+  });
+
   const search = document.querySelector('[data-setup-search]');
   const items = Array.from(document.querySelectorAll('[data-setup-list-item]'));
   const empty = document.querySelector('[data-setup-list-empty]');

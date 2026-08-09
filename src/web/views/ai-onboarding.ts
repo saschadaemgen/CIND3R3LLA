@@ -19,6 +19,7 @@ import {
   setBotAvatarPath,
   setPrimaryBot,
   updateBotOnboardingProfile,
+  type BotCreationInput,
   type BotOnboardingInput,
   type BotOnboardingProfile,
   type CommandRegistryMode,
@@ -58,6 +59,9 @@ import {
   DEFAULT_PERSONALITY,
   normalizePersonality,
 } from '../../interaction/personality.js';
+import { WAKE_WORD_MAX_CHARS } from '../../interaction/settings.js';
+import { botIdentity, type BotIdentityFacts } from '../../profiles/bot-identity.js';
+import { listSettingOverridesForBot } from '../../db/interaction-overrides.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, fmtDate, stat } from './ui.js';
@@ -194,10 +198,13 @@ function parseCommands(value: unknown): unknown[] {
   return parsed;
 }
 
-function defaults(): BotOnboardingInput {
+function defaults(): BotCreationInput {
   return {
     slug: '',
     displayName: '',
+    // Empty, and filled in the browser from the bot name as it is typed. Seeding it here
+    // would mean rendering a wake word for a bot with no name yet (CCB-S5-009).
+    wakeWord: '',
     enabled: true,
     createAddress: true,
     updateAddress: true,
@@ -227,10 +234,14 @@ function defaults(): BotOnboardingInput {
   };
 }
 
-function formInput(body: Record<string, unknown>): BotOnboardingInput {
+function formInput(body: Record<string, unknown>): BotCreationInput {
   return {
     slug: text(body['slug']),
     displayName: text(body['displayName']),
+    // Present on the create form only. The edit dialog posts nothing here and the update
+    // path ignores it, which is why `BotCreationInput` and not `BotOnboardingInput` carries
+    // it: the type says which of the two forms owns the field.
+    wakeWord: text(body['wakeWord']),
     enabled: checked(body['enabled']),
     createAddress: checked(body['createAddress']),
     updateAddress: checked(body['updateAddress']),
@@ -418,7 +429,10 @@ function journey(profile: BotOnboardingProfile): SafeHtml {
 function wizardDialog(
   profile: BotOnboardingProfile | null,
   csrf: string,
-  input: BotOnboardingInput,
+  // The create form's shape, with the wake word optional so the EDIT dialog can pass a
+  // stored profile: that dialog does not render the field, because it does not save
+  // overrides and a field that looks saved and is not is the recurring defect on this form.
+  input: BotOnboardingInput & { wakeWord?: string },
   id: string,
 ): SafeHtml {
   const action = profile ? 'update-profile' : 'create-profile';
@@ -493,9 +507,44 @@ function wizardDialog(
                 maxlength="80"
                 autocomplete="off"
                 data-review-source="displayName"
+                data-wake-source
               />
               <small>This name is shown to members in SimpleX.</small>
             </label>
+            ${
+              // ── THE WAKE WORD, ASKED FOR (CCB-S5-009) ─────────────────────────
+              //
+              // Only when creating. It is a per-bot interaction override, not a column on
+              // this record, and the edit dialog does not save overrides: a field here on
+              // edit would look like it saved and would not. The Addressing page is the
+              // edit path, and the note below points at it.
+              //
+              // Pre-filled from the bot name by `admin-setup-wizard.js` as the operator
+              // types, and only until they touch this field. The derivation stays the
+              // default and stops being the decision: SANCH3Z should answer to Sanchez, and
+              // nothing in the code can know that.
+              profile
+                ? null
+                : html`<label class="setup-field">
+                    <span>Wake word</span>
+                    <input
+                      name="wakeWord"
+                      value="${input.wakeWord ?? ''}"
+                      required
+                      minlength="2"
+                      maxlength="${String(WAKE_WORD_MAX_CHARS)}"
+                      autocomplete="off"
+                      data-wake-word
+                      data-review-source="wakeWord"
+                    />
+                    <small
+                      >This is what members call it, and it is what wakes it. It starts as the
+                      bot name and you can change it: a bot shown as SANCH3Z probably answers
+                      better to Sanchez. Two bots cannot share one, because both would answer
+                      the same sentence. Change it later on the Addressing page.</small
+                    >
+                  </label>`
+            }
             <label class="setup-field">
               <span>Internal key</span>
               <input
@@ -1051,6 +1100,99 @@ function savedMessage(action: string): string {
 }
 
 /**
+ * What the operator has just made, in one place (CCB-S5-009 Part 3).
+ *
+ * ── WHY THIS PANEL EXISTS AT ALL ─────────────────────────────────────────────
+ *
+ * Creating a bot left it in a state the operator could not read. The name it answers to was
+ * derived invisibly and lived on the Addressing page; whether it had retorts of its own lived
+ * on the Nicknames page; whether it had a face was two panels down; whether it had been
+ * onboarded was a chip. Four pages to answer "what did I just make". The briefing asked
+ * whether the detail page could carry it rather than whether a dashboard should be built, and
+ * it can: this sits directly under the header, above the step the operator is being sent to
+ * next, and adds one section rather than one page.
+ *
+ * ── THE RETORT STATE IS THE ONE THAT HAS TO BE HONEST ────────────────────────
+ *
+ * Three states and they are not interchangeable, which is why the badge names which one it
+ * is rather than counting. OWN means text written for this bot, editable, working. INHERITED
+ * means it is answering nicknames in the primary's voice about the primary's name, which is
+ * the pre-CCB-S5-009 state and reads as normal until a member sees it. NONE means the
+ * nickname path answers nothing at all. An operator who pokes a bot with a nickname and gets
+ * silence has to be able to tell "off", "empty" and "misconfigured" apart, and until this
+ * panel the failure was identical in all three.
+ */
+function identityPanel(profile: BotOnboardingProfile, identity: BotIdentityFacts): SafeHtml {
+  const retortBadge =
+    identity.retortSource === 'own'
+      ? badge(`${String(identity.retortCount)} of its own`, 'green')
+      : identity.retortSource === 'inherited'
+        ? badge('inherited, not its own', 'amber')
+        : badge('none', 'amber');
+
+  return html`<section class="setup-primary" data-identity-panel>
+    <header>
+      <span class="setup-eyebrow">Identity</span>
+      ${identity.onboarded ? badge('onboarded', 'green') : badge('not onboarded', 'slate')}
+    </header>
+    <dl class="setup-identity-grid">
+      <div>
+        <dt>Answers to</dt>
+        <dd>
+          <strong>${identity.wakeWord}</strong>
+          ${identity.wakeWordIsOwn
+            ? badge('its own', 'green')
+            : badge('the shared default', 'amber')}
+        </dd>
+      </div>
+      <div>
+        <dt>Nickname retorts</dt>
+        <dd>${retortBadge}</dd>
+      </div>
+      <div>
+        <dt>Face</dt>
+        <dd>
+          ${identity.hasFace ? badge('its own image', 'green') : badge('deployment default', 'slate')}
+        </dd>
+      </div>
+      <div>
+        <dt>Onboarded</dt>
+        <dd>
+          ${identity.onboarded
+            ? badge('contact address created', 'green')
+            : badge('no contact address yet', 'slate')}
+        </dd>
+      </div>
+    </dl>
+    ${identity.wakeWordIsOwn
+      ? null
+      : html`<p class="setup-inline-note" data-tone="warning">
+          This bot has no wake word of its own, so it answers to the deployment default and
+          cannot be told apart from any other bot on it. Set one on the
+          <a href="/interaction/addressing?bot=${String(profile.id)}">Addressing page</a>.
+        </p>`}
+    ${identity.retortSource === 'own'
+      ? null
+      : html`<p class="setup-inline-note" data-tone="warning">
+          ${identity.retortSource === 'inherited'
+            ? html`Its nickname retorts are inherited rather than its own, so it answers to a
+                nickname in another bot's voice, about another bot's name.`
+            : html`It has no nickname retorts, so a member who calls it by a nickname gets no
+                reaction at all.`}
+          Write some on the
+          <a href="/interaction/nicknames?bot=${String(profile.id)}">Nicknames page</a>.
+        </p>`}
+    <p class="setup-inline-note">
+      The nickname path is also what feeds verbal moderation: a nickname is what the violation
+      counter counts and what the verbal escalation ladder sharpens. A bot with no retorts of
+      its own still counts, and its warnings are sent on their own, but the snub that normally
+      carries them is missing. Set the retorts before you tune the ladders on the
+      <a href="/moderation/rules">Moderation page</a>.
+    </p>
+  </section>`;
+}
+
+/**
  * Which bot is the primary, and one honest line about what that now decides (CCB-S5-008).
  *
  * ── THE LABEL SURVIVED A CHANGE OF MEANING, WHICH IS THE DEFECT ──────────────
@@ -1235,6 +1377,7 @@ function profileDetails(
   hosted: HostedIdentity | null,
   requests: readonly BotContactRequest[],
   invitations: readonly BotGroupInvitation[],
+  identity: BotIdentityFacts,
 ): SafeHtml {
   const action = nextAction(profile);
   const dialogId = `setup-edit-${profile.id}`;
@@ -1256,7 +1399,7 @@ function profileDetails(
         </button>
       </header>
 
-      ${journey(profile)}
+      ${identityPanel(profile, identity)} ${journey(profile)}
 
       <div class="setup-status-grid">
         ${stat('Stored state', profile.workflowState)}
@@ -1419,6 +1562,17 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
       // request belongs to the record it arrived for.
       const requests = selected ? await listContactRequests(ctx.db, selected.id) : [];
       const invitations = selected ? await listGroupInvitations(ctx.db, selected.id) : [];
+      // Read from the ROWS rather than from the interaction cache, for the same reason the
+      // settings save does: the cache answers with the shared record on a miss, which would
+      // report a bot as inheriting when it has deviations the console just wrote.
+      const identity = selected
+        ? botIdentity({
+            avatarPath: selected.avatarPath,
+            contactAddressLink: selected.contactAddressLink,
+            overrides: await listSettingOverridesForBot(ctx.db, selected.id),
+            shared: ctx.interaction.get(),
+          })
+        : null;
 
       reply.type('text/html');
 
@@ -1509,7 +1663,9 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                       </p>
                     </aside>
                     <div class="setup-detail-panel">
-                      ${selected ? profileDetails(selected, csrf, hosted, requests, invitations) : null}
+                      ${selected && identity
+                        ? profileDetails(selected, csrf, hosted, requests, invitations, identity)
+                        : null}
                     </div>
                   </div>`
             }

@@ -34,7 +34,7 @@
  * "what is this setting" would have N answers with no way to tell which was the default.
  */
 
-import type { InteractionSettings } from './settings.js';
+import { normalizeWakeWord, type InteractionSettings } from './settings.js';
 
 /** Where a setting lives. */
 export type SettingScope =
@@ -520,19 +520,57 @@ export function retortsForBot(
 }
 
 /**
- * The wake word a NEW bot should start with.
+ * The wake word to SUGGEST for a new bot, from its display name.
  *
  * Its own display name, never the shared value. A second bot silently answering to the
- * first one's name is the defect this briefing exists to fix, and inheriting the shared
+ * first one's name is the defect CCB-S5-006 exists to fix, and inheriting the shared
  * `wakeWord` would reproduce it on every bot the operator creates.
  *
- * Returns null when the display name cannot serve as a wake word, in which case the caller
- * writes no override and the operator sets one. Deliberately NOT falling back to the shared
- * value: no wake word is a bot nobody can address, which is visible; the wrong wake word is
- * a bot that answers to somebody else's name, which is not.
+ * ── A SUGGESTION SINCE CCB-S5-009, NOT A DECISION ────────────────────────────
+ *
+ * This used to be the whole answer, applied invisibly at creation. Two things were wrong
+ * with that and the operator hit both. The wake word is the single most important fact
+ * about a bot and it was the one fact the creation form never mentioned, so an operator
+ * finished the wizard not knowing what he had made. And the derivation is often wrong:
+ * a bot displayed as `SANCH3Z` should answer to `Sanchez`, and there is no way for this
+ * function to know that. It is now the PRE-FILLED DEFAULT on a field the operator can see
+ * and change at the moment it matters.
+ *
+ * Normalization is `normalizeWakeWord`'s, deliberately not a second copy: this returned
+ * null for a display name over 40 characters where the settings page truncated, so a bot
+ * with a long name got no override and answered to hers.
+ *
+ * Returns null when nothing usable can be derived, which the console renders as an empty
+ * required field rather than as a bot with no name.
  */
 export function wakeWordForNewBot(displayName: string): string | null {
-  const trimmed = displayName.trim();
-  if (trimmed.length < 2 || trimmed.length > 40) return null;
-  return trimmed;
+  return normalizeWakeWord(displayName);
+}
+
+/**
+ * Whether a wake word is already spoken for, and by whom.
+ *
+ * Two bots in one group waking on one word is a real configuration and an operator should
+ * be told at the moment they create it, not discover it when both answer. Compared
+ * case-insensitively because `detectAddress` matches that way: accepting `sanchez` beside
+ * `Sanchez` would be a collision the check declared clear.
+ *
+ * The SHARED value counts as taken. A bot that has not deviated is answering to it, so it
+ * is not free just because no override row names it.
+ */
+export interface WakeWordHolder {
+  botProfileId: number | null;
+  displayName: string;
+  /** True when the holder is on the shared value rather than a deviation of its own. */
+  shared: boolean;
+}
+
+export function wakeWordTakenBy(
+  candidate: string,
+  holders: readonly WakeWordHolder[],
+  wakeWordOf: (holder: WakeWordHolder) => string,
+): WakeWordHolder | undefined {
+  const want = candidate.trim().toLowerCase();
+  if (!want) return undefined;
+  return holders.find((h) => wakeWordOf(h).trim().toLowerCase() === want);
 }

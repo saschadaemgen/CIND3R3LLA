@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 161 decisions</strong> — newest first. Highest allocated: <strong>D-162</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 162 decisions</strong> — newest first. Highest allocated: <strong>D-163</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-163 | A new bot is given plain retorts, because a retort is content and the voice is applied at reply time | IMPLEMENTED |
 | D-162 | A renamed meaning needs a renamed control, and a disabled button has to look disabled | IMPLEMENTED |
 | D-161 | A face per bot, and null means the deployment default | IMPLEMENTED |
 | D-160 | A serialized queue needs a bounded command, and every silent exit on the reply path is reported | IMPLEMENTED |
@@ -190,6 +191,65 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-163 - A new bot is given plain retorts, because a retort is content and the voice is applied at reply time
+
+**Status: IMPLEMENTED** (CCB-S5-009, no migration). The operator went to create his second bot
+and stopped. Two facts about a bot's identity were set invisibly at creation, and this entry
+records the second one because it sets a precedent for **anything per bot that is voice rather
+than configuration**.
+
+**THE CHOICE, AND WHAT WAS REJECTED.** A new bot needs nickname retorts. Three options were on
+the table and the briefing said none was obviously right.
+
+*Rejected: nothing, with the feature honestly off.* Truthful and cheap, and it leaves the
+verbal moderation ladder with nothing to say. The nickname path is what feeds the violation
+counter and the verbal escalation, so a bot with no retorts is a bot that counts silently. An
+operator would have to notice.
+
+*Rejected: generated once at creation from the bot's personality and origin.* The most
+attractive option and the one that fits the product's shape, and it fails on three counts. The
+text is **member-facing**, so it is subject to the em-dash rule, the ceiling and the
+invented-facts fence, and it would ship without anyone having read it. Creation would depend on
+Ollama being up, so a bot created while the model was down would get nothing, silently, which
+is the exact failure this briefing exists to remove. And it is slow inside a form POST.
+
+*Chosen: a plain, name-agnostic starter set, written once, stored per bot at creation as
+ordinary editable text.*
+
+**THE REASON IS NOT "SAFE AND A LITTLE FLAT", AND THAT MATTERS.** The briefing's own framing of
+this option was that it works out of the box at the cost of being flat. Reading the code says
+otherwise: **a retort is content, not voice.** `handleNickname` hands the picked line to
+`personalizedBody` with this bot's personality and the ladder's sharpness bonus, so what a
+member actually reads is already this bot's voice at this bot's dial setting. Writing character
+into the stored text would be doing the voice layer's job a second time, worse, in a place the
+operator then has to edit to undo. The plainness is the correct shape, not a compromise.
+
+**THE PRECEDENT.** For anything per bot: if the reply path already applies the bot's voice to
+it, store the CONTENT plainly and let the voice layer own the tone. Generate text at creation
+only where nothing downstream can voice it, and then only if the deployment can survive the
+generator being absent.
+
+**WHY INHERITING WAS NEVER AN OPTION**, stated because "inherit the shipped ones" is what the
+code actually did until now and it reads as harmless. Three of her twelve retorts substitute
+`{wake}`; the other nine are her mythology rather than a template. A bot called SANCH3Z
+inheriting that set tells a member that the glass slipper does not come in a shortened size.
+`verify:new-bot-identity` asserts both that none of the starter lines is one of hers and that
+none of them names her world, so a paraphrase cannot arrive later either.
+
+**AND THE SILENT LADDER, FIXED ON THE WAY.** The whole nickname send sat inside `if (retort)`.
+A bot whose retorts an operator had emptied counted the violation, escalated, BUILT the warning
+that tells the member they are being counted, and discarded it with the retort it had nothing
+to attach to. Silence to the member, a climbing counter in the console, nothing anywhere saying
+the two had come apart: a degraded function running quietly, which CCB-S3-023 forbids in as many
+words. The warning is protected text and needs no retort to carry it, so it now goes on its own.
+
+**The console names which of the three states a bot is in** (own / inherited / none), because an
+operator who pokes a bot with a nickname and gets silence could not previously tell "off" from
+"empty" from "misconfigured": the failure was identical in all three. `botIdentity` in
+`src/profiles/bot-identity.ts` is the pure model, for the same reason `faces.ts` is one.
+
 ---
 
 ### D-162 - A renamed meaning needs a renamed control, and a disabled button has to look disabled

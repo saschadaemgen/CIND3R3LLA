@@ -249,6 +249,7 @@ async function main(): Promise<void> {
       {
         slug,
         displayName,
+        wakeWord: displayName,
         enabled: true,
         createAddress: true,
         updateAddress: true,

@@ -63,6 +63,7 @@ function defaults(): BotOnboardingInput {
   return {
     slug: 'cinderella',
     displayName: 'Cinderella',
+    wakeWord: 'Cinderella',
     enabled: true,
     createAddress: true,
     updateAddress: true,
@@ -221,6 +222,8 @@ async function main(): Promise<void> {
       ...defaults(),
       slug: 'cinderella-lab',
       displayName: 'Cinderella Lab',
+      // Its own, because two bots cannot share one since CCB-S5-009.
+      wakeWord: 'Cinderella Lab',
     },
     'verify-bot-onboarding',
   );

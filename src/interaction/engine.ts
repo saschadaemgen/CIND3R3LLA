@@ -2647,6 +2647,42 @@ export class InteractionEngine {
     const list = this.retorts(s, lang);
     const index = this.state.pickRetort(msg.groupId, list.length, this.random);
     const retort = index >= 0 ? list[index] : undefined;
+
+    // ── AN EMPTY LIST MUST NOT SWALLOW THE LADDER (CCB-S5-009, CCB-S3-023) ────
+    //
+    // The whole send used to sit inside `if (retort)`. A bot whose retorts an operator had
+    // emptied therefore counted the violation, escalated the ladder, BUILT the warning that
+    // tells the member they are being counted, and then discarded it with the retort it had
+    // no room to attach to. Silence to the member, a climbing counter in the console, and
+    // nothing anywhere saying the two had come apart: a degraded function running quietly,
+    // which is the one thing the standing rule forbids.
+    //
+    // The warning is protected text and needs no retort to carry it, so it goes on its own.
+    // Emptying the retorts is a real choice and stays one; losing the ladder was never part
+    // of that choice.
+    if (!retort && (ladders.warning || ladders.announcement)) {
+      const alone = [ladders.warning, ladders.announcement]
+        .filter((part): part is string => part !== null && part !== '')
+        .join('\n');
+      log.info(
+        `Interaction: no retort configured for this bot, sending the moderation warning ` +
+          `alone (member ${msg.senderMemberId}, chat ${msg.groupId}).`,
+      );
+      await this.sendReply(
+        msg,
+        s,
+        { text: alone, quote: false },
+        { openWindow: false },
+        {
+          category: 'nickname',
+          lang,
+          mentions: [],
+          replyTo: { groupId: msg.groupId, itemId: msg.itemId },
+        },
+      );
+      return true;
+    }
+
     if (retort) {
       // Retorts name her, and her name is whatever the operator configured. They
       // never went through placeholder substitution, so a renamed bot insisted on

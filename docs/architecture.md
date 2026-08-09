@@ -1836,6 +1836,36 @@ unchanged and correct. `npm run verify:primary-bot` covers all of it, including 
 field name arriving anyway from a stale page is **ignored rather than honoured**.
 
 
+**A new bot arrives knowing its own name (CCB-S5-009, D-163).** Two identity facts were set
+invisibly at creation and the operator stopped on both.
+
+The **wake word** is now a field on the create form, pre-filled from the display name by
+`admin-setup-wizard.js` as the operator types and overtyped the moment they touch it, so the
+derivation stays the default and stops being the decision (a bot shown as SANCH3Z should answer
+to Sanchez, and nothing in code can know that). It is REQUIRED: `BotCreationInput` carries it,
+creation refuses without a usable one, and no half-made bot is left behind because the check
+runs before the INSERT. Normalization is `normalizeWakeWord` in `interaction/settings.ts`, used
+by **both** the settings page and creation. That fixed a live defect: the two used to disagree
+about long names, creation REJECTING over 40 characters and therefore writing no override at
+all, so a bot with a long display name inherited the shared wake word and answered to
+"Cinderella" - the exact defect CCB-S5-006 exists to prevent, through the door CCB-S5-006 built.
+A wake word already in use is refused **by name**, matched case-insensitively because
+`detectAddress` matches that way; the shared value counts as taken by whichever bots are on it,
+but is free while no bot is, so a first bot may take it and inherit later edits.
+
+The **retorts** are seeded per bot at creation from `NEW_BOT_RETORTS`. Absence means inherit,
+and inheriting meant a new bot answering nicknames with her mythology; see D-163 for why plain
+starter text is the right shape rather than a compromise. `handleNickname` no longer swallows
+the moderation ladder when a list is empty: the warning is protected text and is sent on its
+own, which closes a CCB-S3-023 violation where a degraded function ran silently.
+
+`src/profiles/bot-identity.ts` is the pure model behind the console's Identity panel: the name
+it answers to and whether that is its own, the retort count and which of the three states
+(own / inherited / none) it is in, whether it has a face, whether it is onboarded. Four facts on
+the page the operator lands on after creating, rather than four pages. `verify:new-bot-identity`
+covers all of it and is mutation-proven, including that creation cannot produce a bot without a
+usable wake word.
+
 ### 32.3 One graph per bot (CCB-S5-001, D-155)
 
 `startRuntimeHost` returns a `HostedBot` per enabled bot, and `buildBotGraph` in
