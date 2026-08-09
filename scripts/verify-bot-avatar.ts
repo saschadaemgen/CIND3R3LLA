@@ -240,14 +240,16 @@ async function main(): Promise<void> {
 
   section('4. The column: null is a value, and one bot\'s face is not another\'s');
 
-  const makeBot = async (slug: string, displayName: string, primary: boolean): Promise<number> =>
+  // No primary argument since CCB-S5-008: creating a bot cannot decide that. The first one
+  // created takes the flag because nothing else holds it, which is what the order below relies
+  // on and what `verify:bot-onboarding` asserts directly.
+  const makeBot = async (slug: string, displayName: string): Promise<number> =>
     createBotOnboardingProfile(
       db,
       {
         slug,
         displayName,
         enabled: true,
-        selectedForRuntime: primary,
         createAddress: true,
         updateAddress: true,
         updateProfile: true,
@@ -274,8 +276,8 @@ async function main(): Promise<void> {
       OPERATOR,
     );
 
-  const first = await makeBot('cinderella', 'CIND3R3LLA', true);
-  const second = await makeBot('aurora', 'Aurora', false);
+  const first = await makeBot('cinderella', 'CIND3R3LLA');
+  const second = await makeBot('aurora', 'Aurora');
   {
     const before = await listBotOnboardingProfiles(db);
     check(
@@ -428,6 +430,41 @@ async function main(): Promise<void> {
     'the panel posts to the SELECTED bot, not to whichever the page listed first',
     page.includes(`/ai/onboarding/${String(second)}/avatar"`),
   );
+
+  /* ── THE CONTROL HAS TO BE USABLE, NOT ONLY CORRECT (CCB-S5-008) ───────────
+   *
+   * Everything below this point passed while the panel was unusable. The operator reported
+   * that clicking Upload produced no dialogue, no error and no request, and all three were
+   * true: the chooser was a bare `<input type="file">` styled at 11px in a muted colour, so
+   * the thing that looked pressable was the Upload button; `admin-image-upload.js` disables
+   * Upload until a file is chosen; and the console had no `:disabled` rule at all, so a
+   * disabled button rendered at full accent brightness with `cursor: pointer` and swallowed
+   * every click in silence.
+   *
+   * These two checks cannot see a rendered pixel, and they are not pretending to. They pin
+   * the two things that were missing, either of which alone brings the defect back: a chooser
+   * shaped like a control, and a stylesheet in which a dead button looks dead. */
+  check(
+    'the chooser is a control and not a caption: it is a button-shaped label',
+    page.includes('setup-file-button') && page.includes('Choose an image'),
+  );
+  check(
+    '  and the panel says what the state is rather than leaving the line empty',
+    page.includes('No image chosen yet'),
+  );
+  {
+    // Read from the SOURCE stylesheet rather than the built one, so the check does not
+    // silently pass on a stale `public/assets/app.css` from an earlier build.
+    const css = readFileSync(join(process.cwd(), 'assets', 'app.css'), 'utf8');
+    check(
+      'a disabled .setup-button is visibly disabled, because JavaScript disables this one',
+      /\.setup-button:disabled[^{]*\{[^}]*opacity/.test(css),
+    );
+    check(
+      '  and does not keep the pointer cursor, which is the other half of looking dead',
+      /\.setup-button:disabled[^{]*\{[^}]*cursor:\s*not-allowed/.test(css),
+    );
+  }
 
   const form = (payload: string): Parameters<typeof app.inject>[0] => ({
     method: 'POST',

@@ -238,9 +238,11 @@ export async function recordContactConnected(
 /**
  * Attach the onboarding listeners to the runtime's event flow.
  *
- * `resolveProfileId` is a lookup rather than a fixed id because the operator can change
- * which record is the runtime's between boots, and a listener holding a stale id would
- * quietly file requests against the wrong bot.
+ * `resolveProfileId` is a lookup rather than a fixed id. It used to read the primary flag,
+ * which was right while one bot ran; since CCB-S5-001 the caller resolves the bot whose own
+ * event stream this is, so null means that bot has no configuration record rather than that
+ * nobody holds the primary. The lookup shape is kept because the record can change under a
+ * listener and a stale id would quietly file requests against the wrong bot.
  */
 export function registerContactRequestListener(
   events: ChatEventSource,
@@ -263,13 +265,17 @@ export function registerContactRequestListener(
 
     const botProfileId = await resolveProfileId();
     if (botProfileId === null) {
-      log.warn('onboarding: contact request arrived with no runtime bot record to file it against', {
+      log.warn('onboarding: contact request arrived with no bot record to file it against', {
         contactRequestId,
       });
+      // Reworded under CCB-S5-008. It used to say "no AI bot is marked as the primary runtime
+      // bot. Mark one", which named the wizard toggle that no longer exists and a decision
+      // that never governed this: the caller resolves the bot that RECEIVED the request, so
+      // null here means that bot has no configuration record, not that nobody is the primary.
       status.error(
-        `A SimpleX contact request arrived (request ${contactRequestId}) but no AI bot is ` +
-          `marked as the primary runtime bot, so it could not be recorded. Mark one and ask ` +
-          `the sender to try again.`,
+        `A SimpleX contact request arrived (request ${contactRequestId}) but the bot that ` +
+          `received it has no configuration record, so it could not be recorded. Check the ` +
+          `AI Bot Setup page and ask the sender to try again.`,
       );
       return;
     }

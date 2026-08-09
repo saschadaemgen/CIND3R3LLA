@@ -65,7 +65,7 @@ import type { CapturedMessage } from '../src/capture/parse.js';
 import {
   createBotOnboardingProfile,
   listBotOnboardingProfiles,
-  runtimeBotPersonality,
+  primaryBotPersonality,
   updateBotOnboardingProfile,
   updateBotPersonality,
   type BotOnboardingInput,
@@ -183,7 +183,6 @@ function onboardingDefaults(): BotOnboardingInput {
     slug: 'cinderella',
     displayName: 'Cinderella',
     enabled: true,
-    selectedForRuntime: true,
     createAddress: true,
     updateAddress: true,
     updateProfile: true,
@@ -332,7 +331,7 @@ async function main(): Promise<void> {
     );
     check(
       `${axis} at 10 carries the 10 calibrated reference`,
-      high.includes(AXIS_DEFINITIONS[axis].references[2]?.reply ?? ' '),
+      high.includes(AXIS_DEFINITIONS[axis].references[2]?.reply ?? '\u0000'),
     );
     check(`${axis} at 1 differs from the mid baseline`, low !== baseline);
   }
@@ -1116,7 +1115,6 @@ async function main(): Promise<void> {
       ...onboardingDefaults(),
       slug: 'cinderella-lab',
       displayName: 'Cinderella Lab',
-      selectedForRuntime: false,
       personality: { ...DEFAULT_PERSONALITY, baseCharacter: 'Set at creation.' },
     },
     'verify-personality',
@@ -1215,12 +1213,12 @@ async function main(): Promise<void> {
   );
 
   await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
-  const runtime = await runtimeBotPersonality(db);
-  check('the runtime bot personality is the selected one', runtime?.sharpness === 9);
-  check('the runtime read carries her history', runtime?.origin === ORIGIN_FIXTURE);
+  const runtime = await primaryBotPersonality(db);
+  check('the primary bot personality is the one configured', runtime?.sharpness === 9);
+  check('the primary read carries her history', runtime?.origin === ORIGIN_FIXTURE);
 
   await db.query(`UPDATE cinderella_bot_profiles SET selected_for_runtime = FALSE`);
-  check('no runtime bot yields null rather than invented defaults', (await runtimeBotPersonality(db)) === null);
+  check('no primary yields null rather than invented defaults', (await primaryBotPersonality(db)) === null);
   await db.query(`UPDATE cinderella_bot_profiles SET selected_for_runtime = TRUE WHERE id = $1`, [botId]);
 
   /* ── 7. The live cache the reply path reads ─────────────────────────────── */

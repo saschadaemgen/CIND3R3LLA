@@ -50,7 +50,7 @@ import {
   listViolations,
   recordSanction,
   recordViolation,
-  runtimeModerationRules,
+  primaryModerationRules,
   updateModerationRules,
   ARM_CONFIRMATION,
   findSanction,
@@ -152,7 +152,6 @@ function onboardingDefaults(): BotOnboardingInput {
     slug: 'cinderella',
     displayName: 'Cinderella',
     enabled: true,
-    selectedForRuntime: true,
     createAddress: true,
     updateAddress: true,
     updateProfile: true,
@@ -466,7 +465,7 @@ async function main(): Promise<void> {
   const shipped = await botModerationRules(db, botId);
   check('a new bot ships with the default ladders', shipped?.verbal[3]?.sharpnessBonus === 4);
   check('and ships observing', shipped?.mode === 'observe');
-  check('the runtime bot resolves', (await runtimeModerationRules(db))?.mode === 'observe');
+  check('the primary bot resolves', (await primaryModerationRules(db))?.mode === 'observe');
 
   const saved = await updateModerationRules(
     db,

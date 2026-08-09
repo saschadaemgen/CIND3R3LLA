@@ -64,7 +64,6 @@ function defaults(): BotOnboardingInput {
     slug: 'cinderella',
     displayName: 'Cinderella',
     enabled: true,
-    selectedForRuntime: true,
     createAddress: true,
     updateAddress: true,
     updateProfile: true,
@@ -222,7 +221,6 @@ async function main(): Promise<void> {
       ...defaults(),
       slug: 'cinderella-lab',
       displayName: 'Cinderella Lab',
-      selectedForRuntime: false,
     },
     'verify-bot-onboarding',
   );

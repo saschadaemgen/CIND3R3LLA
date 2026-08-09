@@ -1813,6 +1813,28 @@ address on an `smp*.simplex.im` relay and the page moved to the Contact step sho
 link and "waiting for a contact request"; second press took the `apiGetUserAddress` path,
 returned the identical link, kept the original timestamp and raised nothing.
 
+**Creating a bot is not a decision about the primary (CCB-S5-008, D-162).** `selected_for_runtime`
+means the primary and nothing more (D-155), and until this briefing the create/edit wizard still
+carried it as a toggle called "Primary runtime bot", defaulted **on**. Creating a second bot
+therefore required answering a hosting question that no longer exists, in the affirmative, on a
+bot that must not hold the flag, and the unique index from 019 then refused the creation. The
+operator reported that he could not follow the workflow, and the workflow was what was wrong.
+
+`BotOnboardingInput` no longer carries the field, so nothing in `src/` can ask for it, and the
+value is decided in the INSERT: `NOT EXISTS (SELECT 1 ... WHERE selected_for_runtime = TRUE)`.
+The first bot is the primary because there is nothing else to be it; every one after is not; the
+statement can never violate the index because it only writes TRUE into an empty seat; and
+deleting the primary leaves a seat the next creation takes, rather than a deployment with no
+default and no way to get one. `updateBotOnboardingProfile` no longer writes the column either,
+for the same reason it does not write the personality columns: the dialog does not show it.
+
+Moving it is `setPrimaryBot`, its own action and its own button, **clear-then-set inside a
+transaction**: the partial unique index is checked per row, so the obvious single
+`SET selected_for_runtime = (id = $1)` fails whenever Postgres reaches the new primary first, and
+without the transaction a failed move would leave no primary at all. The index itself is
+unchanged and correct. `npm run verify:primary-bot` covers all of it, including that the old
+field name arriving anyway from a stale page is **ignored rather than honoured**.
+
 
 ### 32.3 One graph per bot (CCB-S5-001, D-155)
 
@@ -1976,7 +1998,10 @@ console and there is no code path that omits it.
 that is where every other per-bot setting already lives; the `settings` table is global
 and has no bot dimension. Defaults are `NOT NULL DEFAULT 5` with a `CHECK (BETWEEN 1 AND
 10)`; `base_character` is nullable so "not configured" survives a save that clears it.
-The runtime resolves the live row through `selected_for_runtime`.
+The reply path resolves the row by the bot that received the message (`botPersonalityById`);
+`primaryBotPersonality` answers the console's default and nothing else. It was called
+`runtimeBotPersonality` and read as "the bot the runtime hosts", which stopped being true under
+D-155 and was renamed in CCB-S5-008 along with `runtimeModerationRules`.
 
 **Two write paths, deliberately.** `updateBotPersonality` is the Personality page's; the
 whole-profile `updateBotOnboardingProfile` **does not touch the five columns at all**.

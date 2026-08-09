@@ -70,9 +70,11 @@ function text(value: unknown): string {
 /**
  * The profile the page is editing.
  *
- * Defaults to the runtime bot rather than to the first row, because that is the one
- * whose personality is actually reaching members. `listBotOnboardingProfiles` already
- * orders `selected_for_runtime` first, so the default falls out of the query.
+ * Defaults to the PRIMARY, which is only a default: `listBotOnboardingProfiles` orders the
+ * primary first, so it falls out of the query. The reason used to be written here as "that
+ * is the one whose personality is actually reaching members", which stopped being true under
+ * D-155 and was corrected in CCB-S5-008. Every enabled bot's personality reaches members;
+ * this picks which one the page opens on when the operator has not said.
  */
 function selectedProfile(
   profiles: BotOnboardingProfile[],
@@ -95,13 +97,14 @@ function whichBotCard(
         <span class="text-lg font-semibold text-slate-900">${active.displayName}</span>
         <code class="text-xs text-slate-500">${active.slug}</code>
         ${active.selectedForRuntime
-          ? badge('primary runtime bot', 'green')
-          : badge('not the runtime bot', 'amber')}
+          ? badge('the primary bot', 'green')
+          : badge('not the primary', 'slate')}
       </div>
       <p class="mt-2 text-sm text-slate-600">
+        Saving here changes how this bot sounds on its next reply, with no restart.
         ${active.selectedForRuntime
-          ? 'This is the profile the conversation prompt is built from. Saving here changes how she sounds on her next reply, with no restart.'
-          : 'This profile is stored but is not the one the runtime hosts, so saving here changes nothing a member hears until it becomes the primary runtime bot.'}
+          ? 'It is also the primary, which decides only which bot this console opens on.'
+          : 'It is not the primary, which changes nothing about that: it is hosted, it answers members, and this is its voice.'}
       </p>
       ${profiles.length > 1
         ? html`<form method="get" action="/ai/personality" class="mt-4 flex flex-wrap items-end gap-2">
@@ -117,7 +120,7 @@ function whichBotCard(
                       value="${String(profile.id)}"
                       ${profile.id === active.id ? raw('selected') : ''}
                     >
-                      ${profile.displayName}${profile.selectedForRuntime ? ' (runtime)' : ''}
+                      ${profile.displayName}${profile.selectedForRuntime ? ' (primary)' : ''}
                     </option>`,
                 )}
               </select>

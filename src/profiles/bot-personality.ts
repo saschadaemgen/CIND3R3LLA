@@ -33,7 +33,7 @@
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import type { BotPersonality } from '../interaction/personality.js';
-import { botPersonalityById, runtimeBotPersonality } from './bot-onboarding.js';
+import { botPersonalityById, primaryBotPersonality } from './bot-onboarding.js';
 
 /**
  * ── PER BOT SINCE CCB-S5-001 ─────────────────────────────────────────────────
@@ -65,7 +65,7 @@ export class BotPersonalityService {
   }
 
   /**
-   * The current personality, or null when no bot profile is selected for the runtime.
+   * The current personality, or null when no bot has one configured.
    *
    * Synchronous by design: this is called from the reply path. Before the first load
    * completes it returns null, which the prompt builder reads as "not configured" and
@@ -95,7 +95,7 @@ export class BotPersonalityService {
 
   async refresh(): Promise<void> {
     try {
-      this.primary = await runtimeBotPersonality(this.db);
+      this.primary = await primaryBotPersonality(this.db);
       this.loaded = true;
     } catch (error) {
       log.warn(

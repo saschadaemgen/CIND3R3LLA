@@ -55,7 +55,6 @@ function botInput(slug: string, displayName: string): BotOnboardingInput {
     slug,
     displayName,
     enabled: true,
-    selectedForRuntime: false,
     createAddress: true,
     updateAddress: true,
     updateProfile: true,

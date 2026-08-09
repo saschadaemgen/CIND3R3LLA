@@ -423,7 +423,7 @@ async function main(): Promise<void> {
   check('a beat whose model threw STILL SENDS', broken.sent.length === 1);
   const chapterOne = plan.beats[1];
   check('carrying the authored line instead of her voice',
-    broken.sent[0]?.text.includes(chapterOne?.fallback ?? ' ') === true,
+    broken.sent[0]?.text.includes(chapterOne?.fallback ?? '\u0000') === true,
     broken.sent[0]?.text.slice(0, 80));
   check('and every rule the working beat had, word for word',
     (chapterOne?.rules ?? []).every((r) => broken.sent[0]?.text.includes(r.text.replace(/\{\{name\}\}/g, 'CIND3R3LLA')) === true));
@@ -456,7 +456,7 @@ async function main(): Promise<void> {
     rules: (plan.beats[1]?.rules ?? []).map((r) => r.text.replace(/\{\{name\}\}/g, 'CIND3R3LLA')),
     german: false,
   });
-  check('the chapter title is there', rendered.includes(plan.beats[1]?.title ?? ' '));
+  check('the chapter title is there', rendered.includes(plan.beats[1]?.title ?? '\u0000'));
   check('her framing is there', rendered.includes('Sit down.'));
   check('every rule is set apart from her prose', (plan.beats[1]?.rules ?? []).every((r) =>
     rendered.includes(`> ${r.text.replace(/\{\{name\}\}/g, 'CIND3R3LLA')}`)));

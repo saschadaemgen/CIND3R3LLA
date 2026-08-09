@@ -16,7 +16,7 @@
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import type { ModerationRules } from './rules.js';
-import { botModerationRules, runtimeModerationRules } from './store.js';
+import { botModerationRules, primaryModerationRules } from './store.js';
 
 /**
  * ── PER BOT SINCE CCB-S5-001 ─────────────────────────────────────────────────
@@ -93,11 +93,11 @@ export class ModerationService {
 
   async refresh(): Promise<void> {
     try {
-      this.value = await runtimeModerationRules(this.db);
+      this.value = await primaryModerationRules(this.db);
       this.loaded = true;
     } catch (error) {
       log.warn(
-        `Moderation: reading the runtime bot rules failed, keeping the last known ` +
+        `Moderation: reading the primary bot's rules failed, keeping the last known ` +
           `ladders (${error instanceof Error ? error.message : String(error)}).`,
       );
     }

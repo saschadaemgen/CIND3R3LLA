@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 160 decisions</strong> — newest first. Highest allocated: <strong>D-161</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 161 decisions</strong> — newest first. Highest allocated: <strong>D-162</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-162 | A renamed meaning needs a renamed control, and a disabled button has to look disabled | IMPLEMENTED |
 | D-161 | A face per bot, and null means the deployment default | IMPLEMENTED |
 | D-160 | A serialized queue needs a bounded command, and every silent exit on the reply path is reported | IMPLEMENTED |
 | D-159 | The Book question is a scene, the laws have pages, and the application prints them | IMPLEMENTED |
@@ -189,6 +190,74 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-162 - A renamed meaning needs a renamed control, and a disabled button has to look disabled
+
+**Status: IMPLEMENTED** (CCB-S5-008, no migration). Two defects on one page, both found by
+clicking rather than by reading, and both of a kind this repository has now met more than once.
+
+**THE FIRST: A LABEL THAT SURVIVED A CHANGE OF MEANING.** `selected_for_runtime` meant "this bot
+runs". D-155 made every enabled bot run, the column came to mean "this bot is the primary", and
+migration 044 wrote that down in a `COMMENT` while **nothing renamed the control**. So the wizard
+still showed a toggle called "Primary runtime bot / Select this bot as the desired runtime
+profile", still defaulted it **on**, and creating a second bot therefore meant answering a
+question about hosting that no longer exists, in the affirmative, on a bot that must not hold the
+flag, at which point the unique index from 019 refused the whole creation. The operator's report
+was that he did not understand the workflow, and that is the finding: **the constraint was right
+and the workflow was wrong.**
+
+The fix is the workflow. Creating a bot no longer touches the flag at all: `BotOnboardingInput`
+does not carry it, so nothing in `src/` can ask, and the value is decided in SQL as
+`NOT EXISTS (SELECT 1 ... WHERE selected_for_runtime = TRUE)` - the first bot is the primary
+because there is nothing else to be it, every one after is not, and it can never violate the
+index because it only writes TRUE into an empty seat. Written as "no primary exists" rather than
+"no bot exists" so deleting the primary and creating another recovers, instead of leaving a
+deployment with no default and no way to get one. Saving a bot cannot move it either, for the
+same reason it cannot write the personality columns: **the dialog does not show it.** Changing it
+is its own action, `setPrimaryBot`, one button on the detail card, clear-then-set in a
+transaction because the partial unique index is checked per row and the obvious single UPDATE
+fails whenever Postgres reaches the new primary first.
+
+The **index stays exactly as it is.** There is one primary. What was wrong was never the
+constraint.
+
+**Renamed where an operator can see it**, with one line saying what it actually decides: the
+console's default selection and the paths not yet threaded per bot, and **nothing about
+hosting**. The panel says that last part explicitly, because it is the part an operator cannot
+see and would otherwise infer from the old name. The same rename reached the Personality page,
+which was worse than the checkbox: it told the operator that saving a non-primary bot's character
+"changes nothing a member hears", which has been false since D-155 and would stop somebody
+bothering. `runtimeBotPersonality` and `runtimeModerationRules` were renamed to
+`primaryBotPersonality` and `primaryModerationRules` for the same reason one layer down.
+
+**THE SECOND: A CONTROL THAT EXISTED AND DID NOTHING.** The avatar upload button produced no
+dialogue, no error and no request, and all three were accurate. The chooser was a bare
+`<input type="file">` styled at 11px in a muted colour, which reads as a caption, so the thing
+that looked pressable was Upload; `admin-image-upload.js` disables Upload until a file is chosen;
+and **the console had no `:disabled` rule at all**, so a disabled `.setup-button` rendered at full
+accent brightness, kept `cursor: pointer`, and swallowed every click in silence. Markup, wiring,
+route, server error handling and `verify:bot-avatar` were all correct and green. The recital page
+never had the defect only because its Upload button carries Tailwind's `disabled:opacity-40` by
+hand, which is exactly the accident that hid it: the uploader was generalised to a second page
+and the one piece of styling that made its dead state visible did not come with it.
+
+So the `:disabled` rule went on the **base class**, not on that button, because the next script
+to disable something would otherwise inherit the same silence; the chooser is now a button-shaped
+`<label>`; and the status line says "No image chosen yet" instead of being empty. `verify:bot-avatar`
+pins both halves, mutation-proven by breaking the selector.
+
+**WHAT THIS PAIR SAYS ABOUT THE CHECKS.** Both defects lived in the space every harness in this
+repository shares: they drive routes and read markup, and neither can see that a rendered control
+is invisible, unreachable or inert. The new checks are honest about being **regression guards
+rather than the discovery method** - the discovery method was a browser. That is the same lesson
+as D-105 (a standing check does not cover a tree that did not exist when it was written) arriving
+from the rendering side rather than the file-tree side.
+
+`verify:primary-bot` is new and covers the first defect end to end, including that the old field
+is **ignored rather than honoured** when it arrives anyway from a stale page or a replayed
+request, which is what makes the removal real rather than cosmetic.
+
 ---
 
 ### D-161 - A face per bot, and null means the deployment default

@@ -36,6 +36,11 @@
     var submit = form.querySelector('button[type="submit"]');
     if (!input || !payload || !submit) return;
 
+    // The resting line the page rendered, kept so clearing the chooser restores it instead
+    // of blanking it (CCB-S5-008). An empty status line beside a disabled button is how the
+    // panel came to explain nothing at all about why nothing happened.
+    var idle = status ? status.textContent : '';
+
     submit.disabled = true;
 
     input.addEventListener('change', function () {
@@ -43,7 +48,7 @@
       payload.value = '';
       submit.disabled = true;
       if (!file) {
-        if (status) status.textContent = '';
+        if (status) status.textContent = idle;
         return;
       }
       if (file.size > MAX_BYTES) {

@@ -243,10 +243,13 @@ export function registerGroupInvitationListener(
       log.warn('onboarding: group invitation arrived with no runtime bot record to file it against', {
         groupId,
       });
+      // Reworded under CCB-S5-008, same correction as the contact-request listener: the
+      // caller resolves the bot that RECEIVED the invitation, so null means that bot has no
+      // configuration record rather than that nobody is the primary.
       status.error(
-        `A SimpleX group invitation arrived (group ${groupId}) but no AI bot is marked as ` +
-          `the primary runtime bot, so it could not be recorded. Mark one and ask the ` +
-          `inviter to try again.`,
+        `A SimpleX group invitation arrived (group ${groupId}) but the bot that received it ` +
+          `has no configuration record, so it could not be recorded. Check the AI Bot Setup ` +
+          `page and ask the inviter to try again.`,
       );
       return;
     }

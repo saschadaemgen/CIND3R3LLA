@@ -60,6 +60,17 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   exposure to every directory added after it. So when a source tree is added, walk the
   standing checks and decide **per check** whether it now applies, rather than assuming the
   green run means covered.
+- **A control that a check can drive is not a control an operator can use** (standing rule,
+  D-162). Every harness here drives routes and reads markup, and none of them can see that a
+  rendered control is invisible, unreachable or inert. The avatar Upload button had correct
+  markup, correct client wiring, a correct route, honest server errors and a green
+  `verify:bot-avatar`, and it did nothing when clicked, because the console had no `:disabled`
+  styling and the button was disabled: it rendered at full brightness with `cursor: pointer` and
+  swallowed the click in silence. The operator found it in one click. So when a briefing adds or
+  moves an operator control, **open it in a browser and press it**, and treat the check that
+  follows as the regression guard it is rather than as the evidence it is not. The same applies
+  to copy: a label is only correct against what the code does *today*, which is the other half
+  of this defect and the reason `selected_for_runtime` lied for seven briefings.
 - **When the implementation and a verifier disagree, inspect the rendered output and the
   current source before changing behaviour** (standing rule, D-111, from the local AI
   protocol). Several failures in that work were **verifier defects, not implementation
@@ -293,7 +304,10 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   on the moderation counters, made explicit while the backfill is still provably right:
   they were isolated only by the accident that the core's group ids differ per profile, and
   conversation canonicalisation would collapse that. `selected_for_runtime` becomes THE
-  PRIMARY, the console's default selection and nothing more) ·
+  PRIMARY, the console's default selection and nothing more. **Nothing renamed the control for
+  another seven briefings**, so the wizard went on asking the operator to "select for the
+  runtime" and refusing the second bot that answered yes; CCB-S5-008 took the flag out of
+  creation entirely and gave moving it its own action, D-162) ·
   045 standard laws per bot (`cinderella_prompt_rule_overrides`, NULL meaning inherit in both
   value columns so on, off and reworded are ONE mechanism. **The `bot` tier 035 reserved for
   this is the wrong mechanism and stays unused**: a tier is a property of a row and cannot
@@ -488,6 +502,16 @@ does nothing: a counter check passes if nothing is ever counted.
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
 check can assert it),
+`verify:primary-bot` (creating a bot, and which one is the primary, CCB-S5-008: that creating a
+bot never touches the flag, that the FIRST one takes it because nothing else holds it and every
+one after does not, that a save cannot move it in either direction, that `setPrimaryBot` moves it
+and ROLLS BACK on an unknown id rather than leaving a deployment with no primary, and that the
+console's create form no longer carries the control at all. The load-bearing check is that the
+removed field arriving anyway, from a stale page or a replayed request, is **ignored rather than
+honoured**, which is what makes the removal real rather than cosmetic. Mutation-proven twice.
+**It is a regression guard and not the discovery method**: this defect and the one below were
+both found by clicking in a browser, and no harness here can see that a rendered control is
+invisible or inert),
 `verify:onboarding-per-bot` and `verify:bot-avatar` (onboarding a second bot and giving it a
 face, CCB-S5-007: that every onboarding step acts as the bot it was GIVEN, with the other bot as
 a positive control on each one and an unhosted id raising rather than falling back to the

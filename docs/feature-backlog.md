@@ -1308,14 +1308,18 @@ end of Season 4.
 
 **Left by CCB-S5-001, specifically.**
 
-- [ ] **The onboarding console pages still act on the primary bot.** `selectedForRuntime` is now the
-      primary *selection* and nothing more, but `src/web/views/ai-onboarding.ts` still tells the
-      operator a non-primary bot "is not marked as the primary runtime bot, so the runtime is not
-      hosting" it. That was true before CCB-S5-001 and is false now. The pages need to act per bot, and
-      that sentence needs correcting either way.
-- [ ] **`AVATAR_PATH` is primary-only.** One image in the environment cannot dress several bots
-      (`src/bot/runtime/host.ts:291`); the host says so in a status note rather than giving every bot
-      the same face. A per-bot avatar layer is a later briefing.
+- [x] **The onboarding console pages still act on the primary bot.** Done in two parts. CCB-S5-007
+      made every onboarding step act on the bot it was given and removed the primary guard from
+      create-address. CCB-S5-008 finished the copy: the wizard's "Primary runtime bot" toggle is gone
+      (creating a bot no longer touches the flag), the detail card carries a Primary bot panel that
+      states what it does and does not decide, and the Personality page no longer tells the operator
+      that saving a non-primary bot's character "changes nothing a member hears", which had been
+      false since D-155. The two `status.error` lines telling the operator to "mark one as the
+      primary runtime bot" were reworded too: they fire when the bot that received an event has no
+      configuration record, which was never a question about the primary.
+- [x] **`AVATAR_PATH` is primary-only.** Done in CCB-S5-007 (migration 049, D-161): each bot carries
+      its own `avatar_path` and NULL means the deployment default. Ticked here in CCB-S5-008, which
+      found the line still open while the feature had shipped.
 
 **Parked further out.**
 

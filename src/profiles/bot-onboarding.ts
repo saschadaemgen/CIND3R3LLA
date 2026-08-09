@@ -108,10 +108,24 @@ export interface BotOnboardingProfile {
  * that form, it is written by its own route with a stored file in hand, and a save from the
  * wizard must not be able to clear it by omission. That is the failure the personality
  * columns already have a comment about, arrived at from a different direction.
+ *
+ * ── AND `selectedForRuntime` IS OMITTED BECAUSE CREATING A BOT IS NOT THAT DECISION ──
+ *
+ * It used to be on the form, and the form is where the workflow broke (CCB-S5-008). The flag
+ * changed meaning under D-155 without changing its name: it used to mean "this bot runs", it
+ * now means "this bot is the primary", and every enabled bot runs either way. A wizard field
+ * called "select for the runtime" therefore asked the operator to make hosting decision that
+ * does not exist, on a form where the honest answer for the second bot is always no, and
+ * defaulted it to yes so that creating a second bot failed on the unique index.
+ *
+ * Taking it off the type rather than off the form is deliberate: the compiler then finds every
+ * caller that still believes creating a bot decides this, which is how the harnesses and the
+ * preview seed were found. {@link setPrimaryBot} is the one path that moves it.
  */
 export type BotOnboardingInput = Omit<
   BotOnboardingProfile,
   | 'id'
+  | 'selectedForRuntime'
   | 'workflowState'
   | 'sdkVersion'
   | 'sdkTypesVersion'
@@ -262,8 +276,13 @@ function dbError(error: unknown): Error {
     return new Error('A bot onboarding profile with this slug already exists.');
   }
 
+  // Reworded with the flag (CCB-S5-008). The index is right and stays; the old sentence
+  // described a choice the operator no longer makes and named a thing the flag no longer
+  // means. It should now be unreachable from creating or saving a bot, because neither
+  // writes the column any more, and reachable only from two operators racing
+  // {@link setPrimaryBot}. Kept because "should be unreachable" is not "is".
   if (message.includes('cinderella_one_runtime_bot_profile_idx')) {
-    return new Error('Only one bot profile can be selected for the runtime.');
+    return new Error('There is already a primary bot. Only one bot can be the primary.');
   }
 
   return error instanceof Error ? error : new Error(message);
@@ -431,6 +450,19 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
  * ship every new bot with an empty history and nothing would announce it, so
  * `verify:personality` creates a bot against the real schema and fails if the origin does
  * not come back. The Personality page is the edit path, and the only one.
+ *
+ * ── AND THE PRIMARY FLAG IS DECIDED HERE RATHER THAN ASKED FOR (CCB-S5-008) ──
+ *
+ * A new bot is simply a bot. The first one is the primary because there is nothing else to
+ * be it; every one after is not. That is not a decision worth a form field, it is an
+ * observation about how many rows exist, so it is made in SQL where the answer cannot be
+ * stale between the read and the write.
+ *
+ * Written as "no primary exists" rather than "no bot exists" so it also answers the case an
+ * operator can actually reach: delete the primary, and the next bot created takes the empty
+ * seat instead of leaving the console with no default selection and no way to get one back
+ * except {@link setPrimaryBot}. It can therefore never violate the unique index on its own,
+ * because it only ever writes TRUE when nothing else holds it.
  */
 export async function createBotOnboardingProfile(
   db: Queryable,
@@ -440,7 +472,7 @@ export async function createBotOnboardingProfile(
   const input = validateInput(rawInput);
 
   try {
-    const result = await db.query<{ id: string }>(
+    const result = await db.query<{ id: string; selected_for_runtime: boolean }>(
       `INSERT INTO cinderella_bot_profiles (
          slug,
          display_name,
@@ -475,16 +507,17 @@ export async function createBotOnboardingProfile(
          axis_permissiveness
        )
        VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''), $10, $11, $12,
-         $13::jsonb, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-         NULLIF($26, ''), $27, $28, $29, $30, $31
+         $1, $2, $3,
+         NOT EXISTS (SELECT 1 FROM cinderella_bot_profiles WHERE selected_for_runtime = TRUE),
+         $4, $5, $6, $7, NULLIF($8, ''), $9, $10, $11,
+         $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
+         NULLIF($25, ''), $26, $27, $28, $29, $30
        )
-       RETURNING id`,
+       RETURNING id, selected_for_runtime`,
       [
         input.slug,
         input.displayName,
         input.enabled,
-        input.selectedForRuntime,
         input.createAddress,
         input.updateAddress,
         input.updateProfile,
@@ -516,6 +549,8 @@ export async function createBotOnboardingProfile(
     );
 
     const id = numberOf(result.rows[0]?.id ?? 0);
+    // What the database decided, not what anybody asked for. Audited below as the fact it is.
+    const becamePrimary = result.rows[0]?.selected_for_runtime === true;
 
     // ── ITS OWN NAME, NOT HERS (CCB-S5-006, D-158) ────────────────────────
     //
@@ -546,7 +581,9 @@ export async function createBotOnboardingProfile(
     await writeAudit(db, actor, 'cinderella.bot-profile.create', `bot-profile:${id}`, {
       slug: input.slug,
       displayName: input.displayName,
-      selectedForRuntime: input.selectedForRuntime,
+      // Recorded because it happened, not because it was requested: creating a bot cannot
+      // ask for this since CCB-S5-008. True only for the bot that found the seat empty.
+      becamePrimary,
       autoAcceptContacts: input.autoAcceptContacts,
       groupInvitationMode: input.groupInvitationMode,
       expectedGroupRole: input.expectedGroupRole,
@@ -580,6 +617,12 @@ export async function createBotOnboardingProfile(
  * reset an operator's dials to the middle without saying so. {@link updateBotPersonality}
  * is the edit path, and the Personality page is where the values are visible while they
  * are being changed.
+ *
+ * IT NO LONGER WRITES `selected_for_runtime` EITHER, for the same reason one step further
+ * on (CCB-S5-008): the dialog does not show it, so a save from the dialog must not be able
+ * to move it. It used to, which meant editing any setting on the primary re-asserted the
+ * flag and editing any setting on a second bot silently posted FALSE for it. Changing which
+ * bot is the primary is {@link setPrimaryBot} and nothing else.
  */
 export async function updateBotOnboardingProfile(
   db: Queryable,
@@ -597,28 +640,27 @@ export async function updateBotOnboardingProfile(
           SET slug = $2,
               display_name = $3,
               enabled = $4,
-              selected_for_runtime = $5,
-              create_address = $6,
-              update_address = $7,
-              update_profile = $8,
-              auto_accept_contacts = $9,
-              welcome_message = NULLIF($10, ''),
-              business_address = $11,
-              allow_files = $12,
-              command_registry_mode = $13,
-              custom_commands = $14::jsonb,
-              use_bot_profile = $15,
-              log_contacts = $16,
-              log_network = $17,
-              group_invitation_mode = $18,
-              expected_group_role = $19,
-              role_verification_required = $20,
-              policy_activation_mode = $21,
-              remote_commands_enabled = $22,
-              persistent_changes_enabled = $23,
-              contact_request_retention_hours = $24,
-              group_invitation_retention_hours = $25,
-              max_pending_contact_requests = $26,
+              create_address = $5,
+              update_address = $6,
+              update_profile = $7,
+              auto_accept_contacts = $8,
+              welcome_message = NULLIF($9, ''),
+              business_address = $10,
+              allow_files = $11,
+              command_registry_mode = $12,
+              custom_commands = $13::jsonb,
+              use_bot_profile = $14,
+              log_contacts = $15,
+              log_network = $16,
+              group_invitation_mode = $17,
+              expected_group_role = $18,
+              role_verification_required = $19,
+              policy_activation_mode = $20,
+              remote_commands_enabled = $21,
+              persistent_changes_enabled = $22,
+              contact_request_retention_hours = $23,
+              group_invitation_retention_hours = $24,
+              max_pending_contact_requests = $25,
               updated_at = now()
         WHERE id = $1`,
       [
@@ -626,7 +668,6 @@ export async function updateBotOnboardingProfile(
         input.slug,
         input.displayName,
         input.enabled,
-        input.selectedForRuntime,
         input.createAddress,
         input.updateAddress,
         input.updateProfile,
@@ -656,7 +697,6 @@ export async function updateBotOnboardingProfile(
     await writeAudit(db, actor, 'cinderella.bot-profile.update', `bot-profile:${id}`, {
       slug: input.slug,
       displayName: input.displayName,
-      selectedForRuntime: input.selectedForRuntime,
       autoAcceptContacts: input.autoAcceptContacts,
       groupInvitationMode: input.groupInvitationMode,
       expectedGroupRole: input.expectedGroupRole,
@@ -665,6 +705,76 @@ export async function updateBotOnboardingProfile(
   } catch (error) {
     throw dbError(error);
   }
+}
+
+/**
+ * Make one bot the primary (CCB-S5-008).
+ *
+ * ── ITS OWN ACTION, WHICH IS THE WHOLE POINT ─────────────────────────────────
+ *
+ * The flag used to move as a side effect of creating or saving a bot, from a wizard field
+ * that named a decision nobody makes. So there was no way to say "this one is the primary
+ * now" without opening an unrelated dialog and re-saving twenty settings, and no way to
+ * create a second bot without first answering a question about the first one. One button,
+ * one statement pair, one audit row.
+ *
+ * ── AND WHY IT IS TWO STATEMENTS IN A TRANSACTION ────────────────────────────
+ *
+ * The partial unique index from 019 is checked as each row is written, not at the end of
+ * the statement, so the obvious single UPDATE (`SET selected_for_runtime = (id = $1)`) fails
+ * whenever Postgres happens to reach the new primary before the old one. Clearing first and
+ * setting second is ordered and therefore never transiently holds two, and the transaction
+ * is what stops a failure between them leaving the deployment with no primary at all.
+ *
+ * BEGIN/COMMIT on the handle we were given rather than `withTransaction`, which reaches for
+ * the global pool: this runs under PGlite in the harness and the real pool in production,
+ * and both speak plain SQL. Same reason `db/prompt-rules.ts` does it that way.
+ */
+export async function setPrimaryBot(db: Queryable, id: number, actor: string): Promise<void> {
+  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
+
+  await db.query('BEGIN');
+  try {
+    const { rows: before } = await db.query<{ id: string; display_name: string }>(
+      `SELECT id, display_name FROM cinderella_bot_profiles WHERE selected_for_runtime = TRUE`,
+    );
+    const previous = before[0] ?? null;
+
+    await db.query(
+      `UPDATE cinderella_bot_profiles
+          SET selected_for_runtime = FALSE, updated_at = now()
+        WHERE selected_for_runtime = TRUE AND id <> $1`,
+      [id],
+    );
+
+    const result = await db.query(
+      `UPDATE cinderella_bot_profiles
+          SET selected_for_runtime = TRUE, updated_at = now()
+        WHERE id = $1`,
+      [id],
+    );
+
+    // Not found means the id is wrong, and the clear above has already run. Throwing rolls
+    // it back, so a mistyped id cannot cost the deployment the primary it had.
+    if (result.rowCount !== 1) throw new Error('Bot onboarding profile not found.');
+
+    await writeAudit(db, actor, 'cinderella.bot-profile.make-primary', `bot-profile:${id}`, {
+      previousPrimaryId: previous ? numberOf(previous.id) : null,
+      previousPrimaryName: previous?.display_name ?? null,
+      // Named explicitly because the flag's old name says otherwise: this changes which bot
+      // the console offers first and which one the not-yet-per-bot paths read. It starts and
+      // stops nothing. Every enabled bot was hosted before this and still is.
+      hostingChanged: false,
+      runtimeApplied: false,
+    });
+
+    await db.query('COMMIT');
+  } catch (error) {
+    await db.query('ROLLBACK');
+    throw dbError(error);
+  }
+
+  log.info(`Bot ${id} is now the primary; hosting is unchanged and every enabled bot still runs.`);
 }
 
 /**
@@ -736,23 +846,28 @@ export async function updateBotPersonality(
 }
 
 /**
- * The personality of the bot the runtime is hosting, or null when there is no runtime
- * bot at all.
+ * The PRIMARY bot's personality, or null when no bot holds the flag.
  *
- * NULL IS A REAL ANSWER AND NOT A DEFAULT. An operator who has created no bot profile,
- * or selected none for the runtime, has configured no personality, and handing back
- * mid-value dials would be inventing one. The prompt builder distinguishes the two:
- * null gets the original voice paragraph plus the safety ceiling, a real row gets the
- * dials. See `conversationVoice` in src/interaction/personality.ts.
+ * Called `runtimeBotPersonality` until CCB-S5-008, which was a name that stopped being true
+ * under D-155 and said so to nobody: it reads as "the personality of the bot the runtime
+ * hosts", and the runtime hosts every enabled bot. What it actually answers is the console's
+ * default, for pages that must show one bot before the operator has picked one. The reply
+ * path names a bot and uses {@link botPersonalityById}; it never comes here.
+ *
+ * NULL IS A REAL ANSWER AND NOT A DEFAULT. An operator who has created no bot profile has
+ * configured no personality, and handing back mid-value dials would be inventing one. The
+ * prompt builder distinguishes the two: null gets the original voice paragraph plus the
+ * safety ceiling, a real row gets the dials. See `conversationVoice` in
+ * src/interaction/personality.ts.
  */
-export async function runtimeBotPersonality(db: Queryable): Promise<BotPersonality | null> {
+export async function primaryBotPersonality(db: Queryable): Promise<BotPersonality | null> {
   return await readBotPersonality(db, `WHERE selected_for_runtime = TRUE`, []);
 }
 
 /**
  * The personality of ONE bot (CCB-S5-001).
  *
- * The per-bot form of {@link runtimeBotPersonality}, needed because every enabled bot is
+ * The per-bot form of {@link primaryBotPersonality}, needed because every enabled bot is
  * hosted now and the engine that answers a member has to read the character of the bot
  * that received the message rather than of whichever row carries the primary flag.
  * Same null semantics: absence is an answer, not a default.

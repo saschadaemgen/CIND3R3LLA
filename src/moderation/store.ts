@@ -569,14 +569,20 @@ function toRules(row: RulesDbRow): ModerationRules {
 }
 
 /**
- * The rules of the bot the runtime is hosting, or null when no bot is selected.
+ * The PRIMARY bot's ladders, or null when no bot holds the flag.
+ *
+ * Called `runtimeModerationRules` until CCB-S5-008, alongside `runtimeBotPersonality`, and
+ * wrong in the same way: it reads as "the rules of the bot the runtime hosts" and the
+ * runtime hosts every enabled bot. It answers the console's default. The engine names a bot
+ * and uses {@link botModerationRules}; a bot moderating on the primary's ladders is the
+ * defect CCB-S5-001 removed.
  *
  * Null is a real answer and not a default, exactly as with the personality (D-133): an
- * operator who has selected no runtime bot has configured no rules, and handing back a
- * ladder nobody chose would invent one. The caller decides what absence means, and for
- * the engine it means the ladders do not run at all.
+ * operator who has configured no bot has configured no rules, and handing back a ladder
+ * nobody chose would invent one. The caller decides what absence means, and for the engine
+ * it means the ladders do not run at all.
  */
-export async function runtimeModerationRules(db: Queryable): Promise<ModerationRules | null> {
+export async function primaryModerationRules(db: Queryable): Promise<ModerationRules | null> {
   const { rows } = await db.query<RulesDbRow>(
     `SELECT ${RULES_COLUMNS} FROM cinderella_bot_profiles
       WHERE selected_for_runtime = TRUE LIMIT 1`,

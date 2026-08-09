@@ -1950,6 +1950,70 @@ input[type='radio'] {
   background: rgba(229, 100, 110, 0.12);
 }
 
+/* A CONTROL THAT CANNOT BE USED HAS TO LOOK LIKE ONE (CCB-S5-008).
+ *
+ * There was no :disabled rule anywhere in this file, so a disabled .setup-button rendered
+ * at full accent brightness with cursor: pointer, indistinguishable from a live one. The
+ * avatar uploader disables its Upload button from JavaScript until a file is chosen, which
+ * meant the brightest, most button-shaped thing in that panel silently swallowed every
+ * click: no dialogue, no error, no request. The markup was right, the wiring was right, the
+ * server was right, every check was green, and the control was dead to look at.
+ *
+ * It belongs on the base class rather than on that one button, because the next script to
+ * disable something would have inherited the same silence. The recital page never had this
+ * defect only because its button carries Tailwind's `disabled:opacity-40` by hand. */
+.setup-button:disabled,
+.setup-button[disabled],
+.setup-button[aria-disabled='true'] {
+  opacity: 0.38;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Declared after the hover rules so it wins on order at equal specificity: a dead control
+   must not light up under the pointer, which is the other half of looking dead. */
+.setup-button:disabled:hover,
+.setup-button[disabled]:hover {
+  border-color: inherit;
+  background: inherit;
+  color: inherit;
+}
+
+.setup-button:disabled:active,
+.setup-button[disabled]:active {
+  transform: none;
+}
+
+/* The file chooser, made to look like the control it is (CCB-S5-008).
+ *
+ * A bare <input type="file"> at 11px in a muted colour reads as a caption next to a
+ * button, so the operator clicks the button. The real control is now a label shaped like
+ * every other button on the page, with the input inside it.
+ *
+ * VISUALLY hidden and not display:none: the input still has to be reachable by keyboard
+ * and still has to be found by `form.querySelector('input[type="file"]')`, which is how
+ * admin-image-upload.js reads the bytes. */
+.setup-file-button {
+  cursor: pointer;
+}
+
+.setup-file-button:focus-within {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 2px;
+}
+
+.setup-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
 .setup-create-button {
   flex: none;
   min-width: 160px;
@@ -2436,7 +2500,8 @@ input[type='radio'] {
 /* The face this bot wears (CCB-S5-007, D-161). Neutral rather than green or amber: an
    uploaded avatar and the deployment default are both normal states, and neither is a
    warning. */
-.setup-avatar {
+.setup-avatar,
+.setup-primary {
   margin-top: 16px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -2444,7 +2509,8 @@ input[type='radio'] {
   padding: 16px;
 }
 
-.setup-avatar header {
+.setup-avatar header,
+.setup-primary header {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -2452,11 +2518,21 @@ input[type='radio'] {
   margin-bottom: 8px;
 }
 
-.setup-avatar p {
+.setup-avatar p,
+.setup-primary p {
   margin: 0 0 10px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.55;
+}
+
+/* The primary is handed over, so the panel holds one control and the sentence that says
+   what it does not do (CCB-S5-008). */
+.setup-primary form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
 }
 
 .setup-avatar-current {

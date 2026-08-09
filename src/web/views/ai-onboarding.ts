@@ -17,6 +17,7 @@ import {
   recordContactAddress,
   resetBotOnboardingWorkflow,
   setBotAvatarPath,
+  setPrimaryBot,
   updateBotOnboardingProfile,
   type BotOnboardingInput,
   type BotOnboardingProfile,
@@ -198,7 +199,6 @@ function defaults(): BotOnboardingInput {
     slug: '',
     displayName: '',
     enabled: true,
-    selectedForRuntime: true,
     createAddress: true,
     updateAddress: true,
     updateProfile: true,
@@ -232,7 +232,6 @@ function formInput(body: Record<string, unknown>): BotOnboardingInput {
     slug: text(body['slug']),
     displayName: text(body['displayName']),
     enabled: checked(body['enabled']),
-    selectedForRuntime: checked(body['selectedForRuntime']),
     createAddress: checked(body['createAddress']),
     updateAddress: checked(body['updateAddress']),
     updateProfile: checked(body['updateProfile']),
@@ -547,13 +546,16 @@ ${input.personality.baseCharacter}</textarea
                 </label>`
           }
           <div class="setup-toggle-grid">
-            ${toggle('enabled', 'Enabled', 'Allows this setup to be used later.', input.enabled)}
-            ${toggle(
-              'selectedForRuntime',
-              'Primary runtime bot',
-              'Select this bot as the desired runtime profile.',
-              input.selectedForRuntime,
-            )}
+            ${
+              // THE PRIMARY TOGGLE IS GONE FROM THIS FORM (CCB-S5-008). It asked the operator
+              // to decide something that creating a bot does not decide, under a name that
+              // stopped being true under D-155, and it defaulted to on: so creating a second
+              // bot meant ticking a box labelled "select for the runtime" on a bot that must
+              // not take it, and being refused by the unique index for doing as it said.
+              // A new bot is simply a bot. Which one is the primary is its own action on the
+              // detail card, and hosting is not affected by either.
+              toggle('enabled', 'Enabled', 'Allows this setup to be used later.', input.enabled)
+            }
           </div>
         </section>
 
@@ -1018,6 +1020,83 @@ function groupInvitationPanel(
 }
 
 /**
+ * What actually happened, instead of "AI bot configuration saved" for all of it.
+ *
+ * Added with the make-primary action (CCB-S5-008), because that action's whole difficulty is
+ * that operators reasonably expect it to start or stop something, and a success banner reading
+ * "configuration saved" answers none of that. The mapping is from a fixed set to fixed strings:
+ * the query parameter chooses a sentence and is never rendered, so a hand-edited URL cannot put
+ * text on the page.
+ */
+function savedMessage(action: string): string {
+  switch (action) {
+    case 'make-primary':
+      return (
+        'That bot is now the primary. Nothing was started, stopped or restarted: every ' +
+        'enabled bot was already running and still is.'
+      );
+    case 'create-profile':
+      return 'AI bot created.';
+    case 'delete-profile':
+      return 'AI bot deleted.';
+    case 'avatar':
+      return 'The image is stored. Restart that bot to put the new face in front of members.';
+    case 'avatar-cleared':
+      return 'That bot is back to the deployment default image. Restart it to apply.';
+    case 'create-address':
+      return 'The contact address was created on the runtime.';
+    default:
+      return 'AI bot configuration saved.';
+  }
+}
+
+/**
+ * Which bot is the primary, and one honest line about what that now decides (CCB-S5-008).
+ *
+ * ── THE LABEL SURVIVED A CHANGE OF MEANING, WHICH IS THE DEFECT ──────────────
+ *
+ * `selected_for_runtime` used to mean "this bot runs". Under D-155 every enabled bot runs and
+ * the column came to mean "this bot is the primary", and nothing renamed it. The operator was
+ * left with a wizard toggle called "select for the runtime" that had to be ticked to create a
+ * bot which explicitly must not be primary, and which the unique index then refused. That is
+ * not a workflow anybody can follow, and the operator said so.
+ *
+ * So the flag is named for what it is and the panel states the smallest true thing about it.
+ * Above all it says what it does NOT decide, because that is the part an operator cannot see
+ * and would otherwise infer from the old name: a bot that is not the primary is hosted,
+ * answers members, and captures, exactly like the one that is.
+ */
+function primaryPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
+  return html`<section class="setup-primary" data-primary-panel>
+    <header>
+      <span class="setup-eyebrow">Primary bot</span>
+      ${profile.selectedForRuntime ? badge('the primary', 'green') : badge('not the primary', 'slate')}
+    </header>
+    <p>
+      The primary is the bot this console opens on, and the one the few paths that are not yet
+      per bot read. It decides nothing about hosting: every enabled bot runs, answers members
+      and captures, whether it is the primary or not. Exactly one bot holds it.
+    </p>
+    ${profile.selectedForRuntime
+      ? html`<p class="setup-inline-note">
+          This bot holds it. It is never switched off, only handed over: open another bot and
+          make that one the primary.
+        </p>`
+      : html`<form method="post" action="/ai/onboarding">
+          <input type="hidden" name="_csrf" value="${csrf}" />
+          <input type="hidden" name="action" value="make-primary" />
+          <input type="hidden" name="profileId" value="${profile.id}" />
+          <button type="submit" class="setup-button setup-button-secondary">
+            Make this the primary
+          </button>
+          <span class="setup-inline-note">
+            Moves it off whichever bot holds it now. Nothing starts, stops or restarts.
+          </span>
+        </form>`}
+  </section>`;
+}
+
+/**
  * The face this bot wears (CCB-S5-007, D-161).
  *
  * ── WHAT THIS CONTROL IS, AND WHAT IT IS CAREFUL NOT TO CLAIM ────────────────
@@ -1037,6 +1116,21 @@ function groupInvitationPanel(
  * workflow state. Uploading a face for a bot that has not been onboarded yet is a perfectly
  * ordinary thing to do, and gating it on the runtime would make dressing a second bot depend
  * on the runtime being up, which is the shape of defect this whole briefing exists to remove.
+ *
+ * ── AND WHY THE CHOOSER IS A LABEL AND NOT A BARE FILE INPUT (CCB-S5-008) ────
+ *
+ * It was a bare `<input type="file">` beside an Upload button, and the operator reported that
+ * clicking Upload produced no dialogue, no error and no request. All three were true. The file
+ * input rendered at 11px in a muted colour and read as a caption rather than a control, so the
+ * thing that looked pressable was Upload; `admin-image-upload.js` disables Upload until a file
+ * is chosen; and the console had no `:disabled` styling at all, so a disabled button was
+ * indistinguishable from a live one, kept `cursor: pointer`, and swallowed every click in
+ * silence. Markup, wiring, route and checks were all correct and the control was dead.
+ *
+ * So the chooser is now shaped like every other button on the page and carries the accent,
+ * Upload is quiet until there is something to upload, and the status line says what the state
+ * is rather than being empty. The `:disabled` rule that makes an inert control look inert went
+ * on the base class in app.css, because this cannot be the last script to disable a button.
  */
 function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
   const own = profile.avatarPath !== null;
@@ -1078,9 +1172,14 @@ function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
     >
       <input type="hidden" name="_csrf" value="${csrf}" />
       <input type="hidden" name="imageData" value="" />
-      <input type="file" accept="image/*" />
-      <button type="submit" class="setup-button setup-button-secondary">Upload</button>
-      <span data-image-upload-status class="setup-avatar-status"></span>
+      <label class="setup-button setup-button-secondary setup-file-button">
+        <span>Choose an image</span>
+        <input type="file" accept="image/*" class="setup-file-input" />
+      </label>
+      <button type="submit" class="setup-button setup-button-quiet">Upload</button>
+      <span data-image-upload-status class="setup-avatar-status">
+        No image chosen yet. Choose one, then upload it.
+      </span>
     </form>
 
     <p class="setup-inline-note">
@@ -1176,6 +1275,7 @@ function profileDetails(
         </div>
       </section>
 
+      ${primaryPanel(profile, csrf)}
       ${avatarPanel(profile, csrf)}
       ${contactAddressPanel(profile)}
       ${contactRequestPanel(requests, csrf)}
@@ -1183,7 +1283,7 @@ function profileDetails(
 
       <div class="setup-chip-row">
         ${badge(profile.enabled ? 'enabled' : 'paused', profile.enabled ? 'green' : 'amber')}
-        ${badge(profile.selectedForRuntime ? 'primary runtime' : 'not primary', 'blue')}
+        ${badge(profile.selectedForRuntime ? 'primary bot' : 'not the primary', 'blue')}
         ${badge('settings stored', 'green')}
         ${profile.contactAddressLink
           ? badge('contact address created on the runtime', 'green')
@@ -1351,7 +1451,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
             ${
               req.query.saved
                 ? html`<div class="setup-alert" data-tone="success">
-                    AI bot configuration saved.
+                    ${savedMessage(req.query.saved)}
                   </div>`
                 : null
             }
@@ -1440,6 +1540,15 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         case 'reset-workflow':
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           await resetBotOnboardingWorkflow(ctx.db, profileId, actor);
+          break;
+
+        // Its own action (CCB-S5-008), which is the correction. It used to be a field on the
+        // create and edit form, so moving the primary meant re-saving every setting of an
+        // unrelated dialog, and creating a bot meant answering it. Nothing is started or
+        // stopped here: every enabled bot was hosted before this ran and still is.
+        case 'make-primary':
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          await setPrimaryBot(ctx.db, profileId, actor);
           break;
 
         // Step three (CCB-S4-025). Same order again: the SDK call first, the database
