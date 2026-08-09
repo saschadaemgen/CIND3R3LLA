@@ -510,6 +510,14 @@ does nothing: a counter check passes if nothing is ever counted.
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
 check can assert it),
+`verify:scheduler-reentry` (a command may not schedule another from inside itself,
+CCB-S5-015: re-entry refused IMMEDIATELY rather than after the 60 s command timeout, the error
+naming both commands, the alarm distinct from the timeout alarm, and a nested call for a
+DIFFERENT bot refused too because there is one queue. Section 2 is the load-bearing half: a
+guard that refused everything would pass every re-entry assertion, so ordinary sequential and
+concurrent scheduling is proven untouched and the async store is proven not to outlive its
+command. Section 3 drives the REAL avatar flush and its mutation restores the shipped wrapper,
+which is also what exposed a catch too wide to tell a defect from an unreachable group),
 `verify:bot-creation-form` (the create form can be completed, CCB-S5-010: every `pattern` the
 console serves compiles in regex `v` mode, which is the mode browsers use and the one the slug
 pattern silently failed for its whole life, plus proof it CONSTRAINS rather than merely

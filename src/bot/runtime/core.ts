@@ -312,8 +312,21 @@ export class MultiProfileRuntime {
         onTimeout: (label, ms) => {
           status.error(
             `A SimpleX command ("${label}") did not answer within ${String(ms)} ms and was ` +
-              `abandoned. Anything it was carrying did not go out. If this repeats, the core ` +
+              `abandoned. Whether it reached the core is unknown. If this repeats, the core ` +
               `is not answering and the bot needs a restart.`,
+          );
+        },
+        // A DIFFERENT FAULT, so a different line (CCB-S5-015). A timeout may be the
+        // network; a re-entrant schedule is a defect in this repository that will recur on
+        // every single boot until somebody changes the code. Saying "restart the bot" for
+        // it, as the timeout line does, would send the operator to do the one thing that
+        // cannot help.
+        onReentry: (outer, inner) => {
+          status.error(
+            `A SimpleX command ("${inner}") was issued from inside another ("${outer}"), ` +
+              `which the scheduler refuses because it would deadlock. Whatever that command ` +
+              `was doing did not happen. This is a defect in the bot rather than a fault on ` +
+              `the host, and restarting will not clear it.`,
           );
         },
       });

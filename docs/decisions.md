@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 165 decisions</strong> — newest first. Highest allocated: <strong>D-166</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 166 decisions</strong> — newest first. Highest allocated: <strong>D-167</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-167 | Scheduling from inside a scheduled command is refused, because it always deadlocks | IMPLEMENTED |
 | D-166 | A wake word with a space in it is refused, and the refusal is temporary | IMPLEMENTED |
 | D-165 | The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer | IMPLEMENTED |
 | D-164 | A wizard that hides steps must never let native validation refuse in silence | IMPLEMENTED |
@@ -194,6 +195,54 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-167 - Scheduling from inside a scheduled command is refused, because it always deadlocks
+
+**Status: IMPLEMENTED** (CCB-S5-015, no migration). The avatar flush was wrapped in
+`bot.runScheduled` and calls `sendToGroup`, which schedules. `ActiveUserScheduler.run` chains
+every command onto ONE tail regardless of user, so the inner call waited for the section that
+was waiting for it.
+
+**MEASURED BEFORE THE FIX, because the shape of the failure is the argument.** Driven against
+the real scheduler, the outer command blocked for the full `commandTimeoutMs` (60 s in
+production, per bot, serialized by the boot loop), was abandoned, **and the inner send then ran
+anyway** the moment the timeout released the tail. The error it left behind read *"The message
+it carried did not go out"*, which was false. So the one diagnostic available to an operator
+was a lie, and the symptom was an avatar that changed late or never.
+
+**THE TIMEOUT IS A BACKSTOP, NOT A DIAGNOSIS.** It is why the process survives; it is not why
+anybody would find this. A re-entrant schedule is not a slow core, it is a defect in this
+repository that will recur identically on every boot until the code changes, and telling the
+operator to restart, which is what the timeout's dashboard line does, sends him to do the one
+thing that cannot help. So it is refused at the point of the call, with `SchedulerReentryError`
+naming both commands, plus its own `onReentry` alarm distinct from `onTimeout`.
+
+**`AsyncLocalStorage`, not a flag.** The critical section awaits, so a boolean set on entry
+would be wrong the moment two commands interleave, which is the ordinary case. The store is
+established around the COMMAND rather than around the queueing, so a caller *waiting* for the
+lock is never mistaken for one *holding* it. That distinction is the whole correctness of the
+guard and section 2 of the check exists to pin it: a guard that refused everything would pass
+every re-entry assertion.
+
+**THE WRAPPER WAS NEVER NEEDED.** Every SDK call inside the flush already names its bot:
+`apiListGroups` takes the user id explicitly, and `sendGroupText` schedules itself. The fix is
+one deletion.
+
+**AND A CATCH THAT WAS TOO WIDE, found by the mutation.** `flushAvatarToGroups` catches
+per-group send failures so one unreachable group does not stop the others, which is right. It
+was catching everything, so the re-entry refusal was downgraded to a per-group warning and the
+flush reported success having sent nothing: the mutation restored the old wrapper and the check
+passed anyway. A `SchedulerReentryError` is re-thrown now and a group failure is still skipped
+(CCB-S3-023: a caught error must not become a value that reads as a legitimate result).
+
+**THE SWEEP.** Every callback passed into the scheduler was enumerated and read: five in
+`admin-actions.ts`, three in `enforcement.ts`, the flush, and the runtime's own internal sends.
+All but the flush pass a raw SDK call and nest nothing. The recital's transport reaches
+`sendGroupTextAsOwner`, which schedules, but is invoked from a queue job rather than from
+inside a section. **One instance, and it is fixed** - and the guard now makes the next one
+loud at the line that causes it rather than sixty seconds later in a log nobody reads.
+
 ---
 
 ### D-166 - A wake word with a space in it is refused, and the refusal is temporary

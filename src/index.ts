@@ -573,13 +573,23 @@ async function startCaptureWorker(
         );
 
         for (const bot of host.bots) {
-          await bot.runScheduled('avatar-flush', () =>
-            flushAvatarToGroups(host.chat, getPool(), {
-              user: bot.user,
-              displayName: bot.config.displayName,
-              sendToGroup: (groupId, text) => bot.sendGroupText(groupId, text),
-            }),
-          );
+          // ── NOT WRAPPED IN runScheduled (CCB-S5-015, D-167) ─────────────
+          //
+          // It was, and that was a deadlock. `flushAvatarToGroups` calls `sendToGroup`,
+          // which schedules; scheduling from inside a critical section waits for the
+          // section that is waiting for it, so every flush blocked for the full 60 s
+          // command timeout, logged that its message had not gone out, and then sent it
+          // anyway the moment the tail unblocked. Per bot, serialized by this loop.
+          //
+          // The wrapper was never needed: every SDK call inside already names its bot.
+          // `apiListGroups` takes the user id explicitly and `sendGroupText` schedules
+          // itself. The scheduler refuses re-entry outright now, so this cannot silently
+          // come back.
+          await flushAvatarToGroups(host.chat, getPool(), {
+            user: bot.user,
+            displayName: bot.config.displayName,
+            sendToGroup: (groupId, text) => bot.sendGroupText(groupId, text),
+          });
         }
       })
       .catch((err: unknown) => {

@@ -29,6 +29,7 @@ import type { T } from '@simplex-chat/types';
 import { log } from '../log.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import type { Queryable } from '../db/pool.js';
+import { SchedulerReentryError } from './runtime/scheduler.js';
 
 type Chat = api.ChatApi;
 
@@ -171,6 +172,18 @@ export async function flushAvatarToGroups(chat: Chat, db: Queryable, bot: Avatar
       await bot.sendToGroup(g.groupId, FLUSH_MESSAGE);
       sent++;
     } catch (err) {
+      // ── ONE UNREACHABLE GROUP IS NOT THE SAME AS A DEFECT (CCB-S5-015) ────
+      //
+      // The per-group catch exists so a group this bot cannot post to does not stop the
+      // others, and that is right. It was catching everything, though, which meant the
+      // scheduler's re-entry refusal, a defect that will recur on every boot until the
+      // code changes, was downgraded to a warning per group and the flush then reported
+      // success having sent nothing. Found by the mutation in `verify:scheduler-reentry`,
+      // which restored the old wrapper and watched the check pass anyway.
+      //
+      // So a defect is re-thrown and a group failure is still skipped (CCB-S3-023: a
+      // caught error must not become a value that reads as a legitimate result).
+      if (err instanceof SchedulerReentryError) throw err;
       log.warn(
         `Could not flush ${bot.displayName}'s profile to group ${g.localDisplayName}: ${
           err instanceof Error ? err.message : String(err)

@@ -47,6 +47,7 @@
     "verify:new-bot-identity": "tsx scripts/verify-new-bot-identity.ts",
     "verify:bot-creation-form": "tsx scripts/verify-bot-creation-form.ts",
     "verify:adoption": "tsx scripts/verify-adoption.ts",
+    "verify:scheduler-reentry": "tsx scripts/verify-scheduler-reentry.ts",
     "verify:runtime-policy": "tsx scripts/verify-runtime-policy.ts",
     "verify:ai-replies": "tsx scripts/verify-ai-replies.ts",
     "verify:ai-live": "tsx scripts/verify-local-ai.ts",
