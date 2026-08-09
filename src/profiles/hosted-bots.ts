@@ -83,16 +83,68 @@ export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> 
 }
 
 /**
+ * Whether ANY configured bot is already bound to a SimpleX profile.
+ *
+ * Over the whole table, deliberately, and not over the enabled set {@link listBotsToHost}
+ * returns. A bound bot that the operator has paused still owns its SimpleX identity: its
+ * groups, its members and its history are on that profile whether the runtime is hosting it
+ * this boot or not. Asking only about enabled bots would let an operator pause the one bound
+ * bot, boot, and have an unbound bot adopt the paused one's identity, which is the exact
+ * takeover this function exists to make impossible.
+ */
+export async function anyBotIsBound(db: Queryable): Promise<boolean> {
+  const { rows } = await db.query<{ bound: string }>(
+    `SELECT count(*)::text AS bound
+       FROM cinderella_bot_profiles
+      WHERE simplex_user_id IS NOT NULL`,
+  );
+  return Number(rows[0]?.bound ?? 0) > 0;
+}
+
+/**
  * Turn the configurations into runtime specs.
  *
- * The one subtlety is which bot may adopt: exactly the first UNBOUND one, and only when
- * it is the primary or there is no primary. Everything else creates. Handing two specs
- * `adopt: 'activeUser'` would resolve both to one profile, which `resolveProfileSpecs`
- * now refuses outright, but producing the refusable input and then relying on the refusal
- * is not a design.
+ * ── WHO MAY ADOPT, AND THE DEFECT THIS CORRECTS (CCB-S5-012, D-165) ─────────
+ *
+ * Adoption means taking over the SimpleX profile the core already has: its identity, its
+ * groups, its members. It is the one operation here that cannot be undone from the console,
+ * so the rule has to be narrow, and it was not.
+ *
+ * The rule was "the first unbound bot adopts", implemented as a bare `adoptionSpent` flag.
+ * The doc above it claimed something narrower - "only when it is the primary or there is no
+ * primary" - and the code never checked that, so the comment described a guarantee that was
+ * not there. On a deployment with one bound bot and one new one, which is what an operator
+ * has the moment he creates a second bot, the new bot took `adopt: 'activeUser'` and resolved
+ * onto the FIRST bot's profile. The CCB-S5-001 duplicate guard then refused the whole boot.
+ * Loud rather than silent, and nothing was stranded, but the runtime would not start and the
+ * error named a remedy the console cannot perform.
+ *
+ * ── THE RULE NOW ─────────────────────────────────────────────────────────────
+ *
+ * Adopt the existing active user **only when nothing is bound yet**. That is the one moment
+ * adoption is meaningful: a deployment whose profile predates this table, where the active
+ * user IS the bot everybody knows. Once any bot holds a `simplex_user_id`, the active user
+ * belongs to somebody, and every unbound bot creates its own profile instead.
+ *
+ * Note what this rule does NOT mention: the primary. The old comment reached for it because
+ * "which bot is the special one" felt like the question, and it is not. The question is
+ * whether the existing identity is spoken for, which the data answers directly. This was the
+ * flag's last functional consumer, and correcting the rule removed it rather than preserving
+ * it (see D-165).
+ *
+ * `anyBound` is a parameter rather than a lookup so this stays pure and answerable with no
+ * database, which is how `verify:adoption` drives every case including the ones production
+ * cannot reach.
  */
-export function toRuntimeSpecs(bots: readonly HostedBotConfig[]): RuntimeProfileSpec[] {
-  let adoptionSpent = false;
+export function toRuntimeSpecs(
+  bots: readonly HostedBotConfig[],
+  anyBound: boolean,
+): RuntimeProfileSpec[] {
+  // Spent before the walk begins when something is already bound: there is no adoption to
+  // hand out. Two specs carrying `adopt: 'activeUser'` would resolve to one profile, which
+  // `resolveProfileSpecs` refuses outright, but producing the refusable input and relying on
+  // the refusal is not a design.
+  let adoptionSpent = anyBound;
   return bots.map((bot) => {
     if (bot.simplexUserId !== null) {
       return { simplexUserId: bot.simplexUserId, displayName: bot.displayName };

@@ -63,6 +63,7 @@ import { avatarFault, decideFaces } from './faces.js';
 import { FileReceiver } from '../files.js';
 import {
   bindSimplexUser,
+  anyBotIsBound,
   listBotsToHost,
   toRuntimeSpecs,
   type HostedBotConfig,
@@ -137,6 +138,9 @@ export async function startRuntimeHost(
   await ensureDirs(cfg);
 
   const configured = await listBotsToHost(db);
+  // Over the WHOLE table, not over `configured`, which is the enabled set: a paused bot
+  // still owns its SimpleX identity, and an unbound bot must not adopt it (CCB-S5-012).
+  const anyBound = await anyBotIsBound(db);
   if (configured.length === 0) {
     throw new Error(
       'Runtime host: no bot is enabled, so there is nothing to host. Enable at least one ' +
@@ -169,7 +173,7 @@ export async function startRuntimeHost(
 
   const runtime = new MultiProfileRuntime({
     dbPrefix: cfg.simplexDbPrefix,
-    profiles: toRuntimeSpecs(configured),
+    profiles: toRuntimeSpecs(configured, anyBound),
     profileFor: (displayName) => botProfileFor(displayName, image),
     onError: (message) => status.error(message),
     handlerFor: (profile) => {

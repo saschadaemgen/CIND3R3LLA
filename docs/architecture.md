@@ -1881,6 +1881,17 @@ unescaped `-` in `[a-z0-9-]` is a syntax error, so the constraint was dropped an
 holding `NOT a slug!!` reported itself valid. `verify:bot-creation-form` compiles every pattern
 the console serves rather than pinning the one that was wrong.
 
+**Who may adopt the existing SimpleX identity (CCB-S5-012, D-165).** Adoption takes over the
+profile the core already has, with its groups and members, and cannot be undone from the
+console. The rule was "the first unbound bot adopts" while the comment above it claimed "only
+the primary", which the code never checked. Production had one bound bot and one new one, so
+the new bot resolved onto the first bot's profile and the CCB-S5-001 duplicate guard refused
+the entire boot. The rule is now **adopt only when nothing is bound at all**, asked of the
+WHOLE table rather than the enabled set, because a paused bot still owns its identity. It names
+no primary: whether the existing identity is spoken for is a question the data answers, and
+this was the flag's last functional consumer. `verify:adoption` covers it, including the
+paused-bot case and a mutation reproducing the failed boot.
+
 ### 32.3 One graph per bot (CCB-S5-001, D-155)
 
 `startRuntimeHost` returns a `HostedBot` per enabled bot, and `buildBotGraph` in

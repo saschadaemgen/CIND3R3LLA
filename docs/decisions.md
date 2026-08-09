@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 163 decisions</strong> — newest first. Highest allocated: <strong>D-164</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 164 decisions</strong> — newest first. Highest allocated: <strong>D-165</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-165 | The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer | IMPLEMENTED |
 | D-164 | A wizard that hides steps must never let native validation refuse in silence | IMPLEMENTED |
 | D-163 | A new bot is given plain retorts, because a retort is content and the voice is applied at reply time | IMPLEMENTED |
 | D-162 | A renamed meaning needs a renamed control, and a disabled button has to look disabled | IMPLEMENTED |
@@ -192,6 +193,54 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-165 - The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer
+
+**Status: IMPLEMENTED** (CCB-S5-012, no migration). Adoption means taking over the profile the
+SimpleX core already has: its identity, its groups, its members. It is the one operation on the
+boot path that cannot be undone from the console, so its rule has to be narrow, and it was not.
+
+**THE DEFECT.** The rule was "the first UNBOUND bot adopts the active user", implemented as a
+bare `adoptionSpent` flag. The comment directly above it claimed something narrower, *"only when
+it is the primary or there is no primary"*, and **the code never checked that**. A comment
+describing a guarantee that does not exist is worse than no comment: it is what stops the next
+reader looking.
+
+Production had exactly the shape that breaks it, and it was found by asking for the rows rather
+than reasoning about them: bot 10 bound to SimpleX user 1, bot 14 newly created and unbound. On
+the next boot bot 14 was the first unbound bot, took `adopt: 'activeUser'`, and resolved onto bot
+10's profile. The CCB-S5-001 duplicate guard then refused the **whole boot**. Nothing was
+stranded, which is that guard earning its place, but the runtime would not start and the error
+named a remedy the console cannot perform: the instruction-without-a-tool shape again.
+
+**THE RULE NOW: adopt only when nothing is bound at all.** That is the single moment adoption is
+meaningful, a deployment whose profile predates this table and whose active user IS the bot
+everybody knows. Once any bot holds a `simplex_user_id`, the existing identity belongs to
+somebody and every unbound bot creates its own profile.
+
+**AND IT ASKS THE WHOLE TABLE, NOT THE HOSTED SET.** `listBotsToHost` returns the ENABLED bots,
+so "is anything bound" asked of that list would let an operator pause the one bound bot, boot,
+and have an unbound bot adopt the paused one's groups and members. A paused bot still owns its
+profile. `anyBotIsBound` therefore counts over every row, and `toRuntimeSpecs` takes the answer
+as a parameter so it stays pure and every case is drivable with no database.
+
+**WHAT THE RULE DELIBERATELY DOES NOT MENTION.** The primary. The old comment reached for it
+because "which bot is the special one" feels like the question, and it is not: the question is
+whether the existing identity is spoken for, and the data answers that directly. This was the
+flag's **last functional consumer** on any path. Correcting the rule removed it rather than
+preserving it, so the case for retiring `selected_for_runtime` (D-162, and the two-step removal
+the operator accepted) is now stronger than the inventory that proposed it: what remains is one
+display-name branch and a console default.
+
+**WHEN THE DUPLICATE GUARD CAN STILL FIRE**, since the point of this change is to make it
+unnecessary rather than merely accurate. It can no longer fire from ordinary use: two bots can
+only resolve to one profile if two rows carry the same `simplex_user_id`, which the partial
+unique index from 044 refuses, or if the core's active user happens to equal a bound bot's
+profile while nothing is bound in the table, which requires a hand-edited database. Both are
+operator-reachable only with SQL, and the guard's message is the right one for that case. It
+stays as a backstop, which is what it always was.
+
 ---
 
 ### D-164 - A wizard that hides steps must never let native validation refuse in silence

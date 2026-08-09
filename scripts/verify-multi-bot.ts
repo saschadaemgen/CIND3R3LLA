@@ -144,7 +144,11 @@ async function main(): Promise<void> {
       { botProfileId: sharp, slug: 'sharp-bot', displayName: 'SharpBot', simplexUserId: null, isPrimary: true },
       { botProfileId: warm, slug: 'warm-bot', displayName: 'WarmBot', simplexUserId: null, isPrimary: false },
     ];
-    const specs = toRuntimeSpecs(bots);
+    //  since CCB-S5-012: false here, which is this section's premise (two fresh
+    // bots, nothing bound), and the case  owns in full.
+    // `anyBound` since CCB-S5-012. False here, which is this section's own premise: two
+    // fresh bots with nothing bound. Every other combination is `verify:adoption`'s.
+    const specs = toRuntimeSpecs(bots, false);
     check(
       'exactly one unbound bot adopts the active user; the rest create',
       specs[0]?.adopt === 'activeUser' && specs[1]?.adopt === 'create',
