@@ -52,6 +52,24 @@ export interface AvatarBot {
   sendToGroup: (groupId: number, text: string) => Promise<unknown>;
 }
 
+/**
+ * What a flush actually did (CCB-S5-016).
+ *
+ * It returned void, which was enough while the only caller was boot and the only reader was
+ * the log. The console applies a face on demand now and has to TELL the operator what
+ * happened, and the three outcomes are genuinely different: it reached N groups, it was
+ * already current so nothing needed sending, or the profile carries no image at all. Reporting
+ * "done" for the third would be the half-measure this whole thread has been about.
+ */
+export interface FlushResult {
+  /** Groups the flush message reached. Zero with `alreadyFlushed` is success. */
+  sent: number;
+  /** The marker already matched: this image has been flushed and members have it. */
+  alreadyFlushed: boolean;
+  /** False when the profile carries no image, so there was nothing to flush. */
+  hadImage: boolean;
+}
+
 /** Keep the data URI well under the ~15,610-byte profile envelope. */
 const MAX_DATA_URI_CHARS = 12000;
 const SIZES = [192, 160, 128];
@@ -146,17 +164,21 @@ const FLUSH_MESSAGE = '🕯️✨';
  * flushed the profile and won't re-piggyback; normal command replies keep it
  * current thereafter.
  */
-export async function flushAvatarToGroups(chat: Chat, db: Queryable, bot: AvatarBot): Promise<void> {
+export async function flushAvatarToGroups(
+  chat: Chat,
+  db: Queryable,
+  bot: AvatarBot,
+): Promise<FlushResult> {
   const user = bot.user;
   const image = util.fromLocalProfile(user.profile).image;
-  if (!image) return; // nothing to flush
+  if (!image) return { sent: 0, alreadyFlushed: false, hadImage: false };
 
   const marker = createHash('sha256').update(image).digest('hex').slice(0, 16);
   const key = flushMarkerKey(user.userId);
   const stored = await getSetting(db, key);
   if (stored === marker) {
     log.debug(`Avatar already flushed to ${bot.displayName}'s groups; no group send needed.`);
-    return;
+    return { sent: 0, alreadyFlushed: true, hadImage: true };
   }
 
   // Attempt every group; a non-connected group just errors and is skipped (the
@@ -198,4 +220,5 @@ export async function flushAvatarToGroups(chat: Chat, db: Queryable, bot: Avatar
         'message — members receive the XInfo profile update on this send.',
     );
   }
+  return { sent, alreadyFlushed: false, hadImage: true };
 }

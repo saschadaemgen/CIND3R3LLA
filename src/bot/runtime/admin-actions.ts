@@ -32,7 +32,10 @@
 
 import { util } from 'simplex-chat';
 import { log } from '../../log.js';
-import type { HostedBot, RuntimeHost } from './host.js';
+import type { T } from '@simplex-chat/types';
+import type { Queryable } from '../../db/pool.js';
+import { applyProfileUpdate, type HostedBot, type RuntimeHost } from './host.js';
+import { flushAvatarToGroups } from '../avatar.js';
 
 /** The live runtime, when one is running. Absent in harnesses and scripts. */
 let handle: RuntimeHost | null = null;
@@ -126,7 +129,7 @@ function pick(host: RuntimeHost, botProfileId: number): HostedBot | undefined {
 function requireReadyBot(
   what: string,
   botProfileId: number,
-): { bot: HostedBot; simplexUserId: number; displayName: string } {
+): { host: RuntimeHost; bot: HostedBot; simplexUserId: number; displayName: string } {
   const host = handle;
   if (host === null) {
     throw new RuntimeActionUnavailableError(
@@ -149,7 +152,10 @@ function requireReadyBot(
         `seconds after a restart; try again once the bot is live.`,
     );
   }
-  return { bot, simplexUserId: bot.simplexUserId, displayName: bot.config.displayName };
+  // The HOST is returned too since CCB-S5-016: applying a face needs the runtime and the
+  // chat handle, and re-reading the module-level `handle` afterwards would be a second
+  // read of something this function has already proven non-null.
+  return { host, bot, simplexUserId: bot.simplexUserId, displayName: bot.config.displayName };
 }
 
 export interface BotAddress {
@@ -310,5 +316,96 @@ export async function joinInvitedGroup(
     groupId: info.groupId,
     groupName: info.groupProfile?.displayName ?? info.localDisplayName ?? 'unknown group',
     role,
+  };
+}
+
+
+/** What applying a face actually did, so the console reports rather than assumes. */
+export interface AppliedFace {
+  displayName: string;
+  simplexUserId: number;
+  /** False when the stored profile already matched. A success, not a no-op. */
+  profileWritten: boolean;
+  /** Groups the flush reached. Zero with `alreadyCurrent` means members already have it. */
+  groupsFlushed: number;
+  /** The image had already been flushed, so no group message was needed. */
+  alreadyCurrent: boolean;
+}
+
+/**
+ * Put a bot's face on its live SimpleX profile, now (CCB-S5-016, D-168).
+ *
+ * ── WHY THIS EXISTS ──────────────────────────────────────────────────────────
+ *
+ * Uploading an avatar wrote a row and told the operator to restart the bot, and the console
+ * offered no way to restart anything: an instruction without a tool, which cost a live avatar
+ * once already. Nothing here needed inventing. It is the boot path's two steps, called from
+ * the console instead of from `startRuntimeHost`.
+ *
+ * ── WHY BOTH STEPS ──────────────────────────────────────────────────────────
+ *
+ * `apiUpdateProfile` reaches direct CONTACTS only. A group member sees a member-profile
+ * update when the bot next sends a GROUP message, because the core piggybacks `XInfo` onto
+ * it. Writing the profile without flushing changes nothing anybody can see, which is exactly
+ * the half-measure being replaced.
+ *
+ * ── THE STALE SNAPSHOT, WHICH IS THE TRAP ───────────────────────────────────
+ *
+ * `bot.user` is the `T.User` the core reported AT BOOT. `flushAvatarToGroups` derives its
+ * marker from `user.profile.image`, so handing it the boot snapshot after changing the profile
+ * computes the marker of the OLD image. After any normal boot that image has already been
+ * flushed, so the marker would match, the flush would return early, and the new face would
+ * reach nobody while this function reported success.
+ *
+ * So the flush is given a user carrying the image just written. `applyProfileUpdate` still
+ * diffs against the boot snapshot and may therefore write when the profile already matches;
+ * that is the conservative direction and is left alone deliberately. A redundant write costs
+ * one command. A skipped one costs the entire point.
+ */
+export async function applyBotFaceNow(
+  db: Queryable,
+  botProfileId: number,
+  image: string | undefined,
+): Promise<AppliedFace> {
+  const { host, bot, simplexUserId, displayName } = requireReadyBot(
+    'its face cannot be applied to the running bot',
+    botProfileId,
+  );
+
+  // THE ONE THING THAT GENUINELY CANNOT BE DONE LIVE, named rather than silently skipped.
+  // With no image anywhere there is nothing to write, and writing an image-less profile makes
+  // the SDK deep-diff it against the stored one and WIPE the avatar, then propagate the blank
+  // to the group. `applyProfileUpdate` refuses for that reason; refusing here first means the
+  // operator gets a sentence rather than a button that appears to work.
+  if (image === undefined) {
+    throw new RuntimeActionUnavailableError(
+      `${displayName} has no image to apply: it has no upload of its own, and the deployment ` +
+        `has no default avatar either. Upload one for this bot, or set AVATAR_PATH.`,
+    );
+  }
+
+  const before = (bot.user.profile as unknown as T.Profile).image;
+  await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user);
+
+  const flushed = await flushAvatarToGroups(host.chat, db, {
+    // The image just written, NOT the boot snapshot. See above; this is the whole trap.
+    user: { ...bot.user, profile: { ...bot.user.profile, image } },
+    displayName,
+    sendToGroup: (groupId, text) => bot.sendGroupText(groupId, text),
+  });
+
+  log.info('runtime: applied a bot face on demand', {
+    simplexUserId,
+    displayName,
+    profileWritten: before !== image,
+    groupsFlushed: flushed.sent,
+  });
+
+  return {
+    displayName,
+    simplexUserId,
+    profileWritten: before !== image,
+    groupsFlushed: flushed.sent,
+    alreadyCurrent: flushed.alreadyFlushed,
   };
 }

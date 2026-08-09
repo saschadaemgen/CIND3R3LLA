@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 166 decisions</strong> — newest first. Highest allocated: <strong>D-167</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 167 decisions</strong> — newest first. Highest allocated: <strong>D-168</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-168 | A face is applied on demand, and the panel gives the operator the control instead of the sentence | IMPLEMENTED |
 | D-167 | Scheduling from inside a scheduled command is refused, because it always deadlocks | IMPLEMENTED |
 | D-166 | A wake word with a space in it is refused, and the refusal is temporary | IMPLEMENTED |
 | D-165 | The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer | IMPLEMENTED |
@@ -195,6 +196,55 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-168 - A face is applied on demand, and the panel gives the operator the control instead of the sentence
+
+**Status: IMPLEMENTED** (CCB-S5-016, no migration). Uploading an avatar wrote a row and told
+the operator to restart the bot. The console offered no way to restart anything: an
+instruction without a tool, which is the shape D-162 named, and it cost a live avatar once
+before anybody treated it as more than an annoyance.
+
+**NOTHING NEEDED INVENTING.** `applyBotFaceNow` is the boot path's two steps called from the
+console: `applyProfileUpdate` writes the profile, then `flushAvatarToGroups` sends one short
+group message. Both are needed and the second is the one that is easy to drop:
+`apiUpdateProfile` reaches direct CONTACTS only, and a group member sees a member-profile
+update when the bot next sends a GROUP message, because the core piggybacks `XInfo` onto it.
+Writing the profile without flushing changes nothing anybody can see, which is the same
+half-measure wearing different clothes.
+
+**THE TRAP, AND IT IS THE WHOLE REASON THIS IS NOT A THREE-LINE FUNCTION.** `bot.user` is the
+`T.User` the core reported AT BOOT. `flushAvatarToGroups` derives its marker from
+`user.profile.image`, so handing it the boot snapshot after changing the profile computes the
+marker of the OLD image. After any normal boot that image has already been flushed, so the
+marker matches, the flush returns early, and **the new face reaches nobody while the console
+reports success**. The flush is therefore given a user carrying the image just written.
+
+`applyProfileUpdate` still diffs against the boot snapshot and may write when the profile
+already matches. Left alone deliberately: a redundant write costs one command, a skipped one
+costs the entire point.
+
+**WHAT GENUINELY CANNOT BE DONE LIVE, named rather than skipped.** A bot with no upload and a
+deployment with no `AVATAR_PATH` has no image to apply, and writing an image-less profile makes
+the SDK deep-diff it against the stored one and WIPE the avatar, then propagate the blank to
+the group. That case is refused with a sentence rather than being a button that appears to
+work.
+
+**THE FOUR OUTCOMES ARE FOUR MESSAGES**, because collapsing them is how the original sentence
+came to be wrong. Applied and flushed; already current, so members have it; stored but the
+runtime is down; and the configured file cannot be read, which is a FAULT that dresses nobody
+(D-161) and outranks the runtime check. An upload with the runtime down still SAVES, because
+the row is the operator's decision and is correct either way; pressing Apply with the runtime
+down is an ERROR, because it did nothing at all. `verify:bot-avatar` pins that asymmetry as a
+pair so the two cannot later be collapsed into one banner.
+
+**`flushAvatarToGroups` returns a result now.** It returned void, which was enough while its
+only caller was boot and its only reader was the log. A console that has to tell an operator
+what happened needs to distinguish reached-N-groups from already-current from nothing-to-flush.
+
+**AND THE CLEAR PATH APPLIES TOO**, so returning a bot to the deployment default is not a
+half-measure either.
+
 ---
 
 ### D-167 - Scheduling from inside a scheduled command is refused, because it always deadlocks

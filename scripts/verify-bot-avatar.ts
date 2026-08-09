@@ -424,8 +424,17 @@ async function main(): Promise<void> {
     page.includes('wears the deployment default'),
   );
   check(
-    'it does not claim the running bot changed, because it did not',
-    page.includes('next time the bot starts'),
+    // WAS: "it does not claim the running bot changed, because it did not", pinned on the
+    // phrase "next time the bot starts". That was honest under CCB-S5-007, where the upload
+    // only wrote a row. It applies live now (CCB-S5-016), so the old wording would be the
+    // false claim and this asserts the new pair instead: applied now, and stored for the
+    // next start when there is nothing running to apply it to.
+    'the panel states both outcomes: applied now, or applied at next start if nothing is running',
+    // Whitespace-collapsed. The template wraps this sentence across lines, and an exact
+    // substring match on rendered HTML is the verifier defect D-111 names by name; it was
+    // written that way here first time round and caught by its own red run.
+    page.replace(/\s+/g, ' ').includes('applies it to the running bot straight away') &&
+      page.replace(/\s+/g, ' ').includes('applied when it next starts'),
   );
   check(
     'the panel posts to the SELECTED bot, not to whichever the page listed first',
@@ -613,6 +622,74 @@ async function main(): Promise<void> {
       gone.find((o) => o.bot.displayName === 'Aurora')?.source === 'fault' &&
         gone.find((o) => o.bot.displayName === 'Aurora')?.image === undefined,
       gone.find((o) => o.bot.displayName === 'Aurora')?.source ?? '',
+    );
+  }
+
+  /* ── 6 ─────────────────────────────────────────────────────────────────── */
+
+  section('6. Applying a face on demand, with no runtime to apply it to');
+
+  // ── WHAT THIS CAN AND CANNOT REACH (CCB-S5-016) ─────────────────────────
+  //
+  // Applying live needs a running SimpleX core, which no offline harness has. So this pins
+  // the half that is answerable here and says plainly which half is not: the routes exist,
+  // the control is on the page, and a runtime that is DOWN produces the honest outcome
+  // rather than a success banner. The live half was driven in a browser against a real
+  // core and is recorded in the register.
+  check(
+    'the panel offers a control to apply the face, not a sentence telling the operator to restart',
+    page.includes('value="apply-face"') && page.includes('Apply to the running bot'),
+  );
+  check(
+    '  and the old instruction, which named an action the console could not perform, is gone',
+    !page.includes('restart it to put the new face in front of members'),
+  );
+  {
+    // UPLOAD FIRST, which re-establishes a readable path: section 5 deleted this bot's file
+    // to drive the fault branch, and a fault outranks the runtime check by design. Getting
+    // that ordering wrong is what this comment is here to stop somebody repeating.
+    const uploaded = await app.inject({
+      ...form(`imageData=${encodeURIComponent(png.toString('base64'))}`),
+      url: `/ai/onboarding/${String(second)}/avatar`,
+    });
+    const where = decodeURIComponent(String(uploaded.headers['location'] ?? ''));
+    check(
+      'an upload with no runtime still SAVES rather than erroring, because the row is correct',
+      where.includes('saved=avatar'),
+      where.slice(0, 80),
+    );
+    check(
+      '  and the stored path is what the row now holds',
+      (await listBotOnboardingProfiles(db)).find((p) => p.id === second)?.avatarPath !== null,
+    );
+
+    // Now the button, on a bot whose configured face IS readable, with no runtime to apply
+    // it to. This is the runtime-down path exactly.
+    const pressed = await app.inject({
+      ...form(`action=apply-face&profileId=${String(second)}`),
+      url: '/ai/onboarding',
+    });
+    const pushedTo = decodeURIComponent(String(pressed.headers['location'] ?? ''));
+    check(
+      'pressing Apply with no runtime is an ERROR rather than a success banner',
+      pushedTo.includes('error='),
+      pushedTo.slice(0, 100),
+    );
+    check(
+      '  and it says the runtime is not running rather than blaming the image',
+      pushedTo.includes('not running'),
+      pushedTo.slice(0, 100),
+    );
+    check(
+      '  CONTROL: an UNREADABLE face is a different error, so the two are not collapsed',
+      await (async () => {
+        await setBotAvatarPath(db, second, 'bot-avatar-does-not-exist.jpg', OPERATOR);
+        const r = await app.inject({
+          ...form(`action=apply-face&profileId=${String(second)}`),
+          url: '/ai/onboarding',
+        });
+        return decodeURIComponent(String(r.headers['location'] ?? '')).includes('could not be read');
+      })(),
     );
   }
 

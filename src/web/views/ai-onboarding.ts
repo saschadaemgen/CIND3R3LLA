@@ -34,6 +34,8 @@ import {
   storeChapterImage,
 } from '../../media/assets.js';
 import { log } from '../../log.js';
+import { decideFaces } from '../../bot/runtime/faces.js';
+import { loadAvatarDataUri } from '../../bot/avatar.js';
 import {
   acceptContactRequest,
   createOrShowBotAddress,
@@ -41,6 +43,8 @@ import {
   joinInvitedGroup,
   rejectContactRequest,
   runtimeAdminAvailable,
+  applyBotFaceNow,
+  RuntimeActionUnavailableError,
   type HostedIdentity,
 } from '../../bot/runtime/admin-actions.js';
 import {
@@ -1094,6 +1098,51 @@ function groupInvitationPanel(
 }
 
 /**
+ * Apply a bot's configured face to the running bot, reporting which of four things happened.
+ *
+ * ── WHY IT RESOLVES THE IMAGE THE WAY BOOT DOES ──────────────────────────────
+ *
+ * Through `decideFaces`, the same pure function `startRuntimeHost` uses, rather than a second
+ * reading of the same columns. That is what keeps "the face this bot wears" one answer: null
+ * means the deployment default, an unreadable configured path is a FAULT that dresses nobody
+ * (D-161), and both of those stay true here without being restated.
+ *
+ * ── AND WHY A RUNTIME THAT IS DOWN IS NOT AN ERROR ───────────────────────────
+ *
+ * The row is already written by the time this runs, and it is correct: it is the operator's
+ * decision about what the bot wears. A stopped runtime means the live apply did not happen,
+ * not that the upload failed, so it returns a different banner rather than throwing. Anything
+ * else, including a fault reading the file, is a real error the operator has to see.
+ */
+async function applyFaceIfRunning(ctx: ViewContext, profileId: number): Promise<string> {
+  const profile = (await listBotOnboardingProfiles(ctx.db)).find((p) => p.id === profileId);
+  if (!profile) return 'avatar';
+
+  const [outcome] = await decideFaces([{ displayName: profile.displayName, avatarPath: profile.avatarPath }], {
+    defaultImage: await loadAvatarDataUri(ctx.cfg.avatarPath),
+    resolve: (relative) => resolveAssetPath(ctx.cfg.assetRoot, relative),
+    load: loadAvatarDataUri,
+  });
+  if (outcome?.source === 'fault') {
+    // Configured and unreadable dresses nobody, here as at boot. Raised rather than
+    // quietly falling back to the deployment's face, which would put somebody else's
+    // picture on this bot and call it success.
+    throw new Error(outcome.fault ?? 'That bot has an avatar configured that cannot be read.');
+  }
+
+  try {
+    const applied = await applyBotFaceNow(ctx.db, profileId, outcome?.image);
+    return applied.alreadyCurrent ? 'avatar-already' : 'avatar-live';
+  } catch (err) {
+    if (err instanceof RuntimeActionUnavailableError) {
+      log.info(`Bot ${profileId}: face stored but not applied live: ${errorMessage(err)}`);
+      return 'avatar';
+    }
+    throw err;
+  }
+}
+
+/**
  * What actually happened, instead of "AI bot configuration saved" for all of it.
  *
  * Added with the make-primary action (CCB-S5-008), because that action's whole difficulty is
@@ -1114,9 +1163,19 @@ function savedMessage(action: string): string {
     case 'delete-profile':
       return 'AI bot deleted.';
     case 'avatar':
-      return 'The image is stored. Restart that bot to put the new face in front of members.';
+      return (
+        'The image is stored, but the bot is not running, so it is not wearing it yet. It ' +
+        'is applied when the bot next starts, or press "Apply to the running bot" once it is up.'
+      );
+    case 'avatar-live':
+      return (
+        'Done. The bot is wearing it now and its groups have been told, so members see the ' +
+        'new picture without a restart.'
+      );
+    case 'avatar-already':
+      return 'That is already the picture the bot is wearing, and its members already have it.';
     case 'avatar-cleared':
-      return 'That bot is back to the deployment default image. Restart it to apply.';
+      return 'That bot is back to the deployment default image.';
     case 'create-address':
       return 'The contact address was created on the runtime.';
     default:
@@ -1349,10 +1408,37 @@ function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
       </span>
     </form>
 
+    ${
+      // ── THE BUTTON, NOT THE SENTENCE (CCB-S5-016) ────────────────────────
+      //
+      // This panel used to end with "restart the bot to put the new face in front of
+      // members", and the console offered no way to restart anything. An instruction
+      // without a tool, and it cost a live avatar once. Uploading applies live now, and
+      // this control exists for the cases upload cannot cover: the runtime was down when
+      // the upload happened, or the face was cleared, or the operator simply wants to
+      // push the current one again.
+      //
+      // Rendered for every bot rather than only for one with an upload, because a bot on
+      // the deployment default has a face too and "apply what this bot should be wearing"
+      // is the same operation either way.
+      html`<form method="post" action="/ai/onboarding" class="setup-avatar-apply">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <input type="hidden" name="action" value="apply-face" />
+        <input type="hidden" name="profileId" value="${profile.id}" />
+        <button type="submit" class="setup-button setup-button-secondary">
+          Apply to the running bot
+        </button>
+        <span class="setup-inline-note">
+          Writes the profile and sends one short message to each of its groups, which is how
+          members receive a new picture. No restart.
+        </span>
+      </form>`
+    }
+
     <p class="setup-inline-note">
       The file is re-encoded on the server and stored beside the other console images; the
-      database keeps the path and never the bytes. It is applied to the SimpleX profile the
-      next time the bot starts, so restart it to put the new face in front of members.
+      database keeps the path and never the bytes. Uploading applies it to the running bot
+      straight away; if the bot is not running, it is stored and applied when it next starts.
     </p>
   </section>`;
 }
@@ -1732,6 +1818,26 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           await setPrimaryBot(ctx.db, profileId, actor);
           break;
 
+        // The button that replaces "restart the bot" (CCB-S5-016). It applies whatever the
+        // bot is CONFIGURED to wear, which for a bot with no upload is the deployment
+        // default: "apply this bot's face" is one operation either way.
+        case 'apply-face': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const applied = await applyFaceIfRunning(ctx, profileId);
+          // Pressed deliberately, so a runtime that is down is an ERROR here where it is
+          // only a milder banner after an upload: the upload still stored something useful,
+          // this did nothing at all.
+          if (applied === 'avatar') {
+            throw new Error(
+              'The SimpleX runtime is not running, so nothing was applied. Start the bot ' +
+                'and press this again.',
+            );
+          }
+          return reply.redirect(
+            `/ai/onboarding?saved=${applied}&profile=${encodeURIComponent(String(profileId))}`,
+          );
+        }
+
         // Step three (CCB-S4-025). Same order again: the SDK call first, the database
         // write with its result in hand. The role recorded is the one the core reports
         // for the membership, not the one the invitation offered and not the one the
@@ -1847,7 +1953,15 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           'bot-avatar',
         );
         await setBotAvatarPath(ctx.db, profileId, stored.relativePath, actor);
-        return reply.redirect(back('saved=avatar'));
+        // ── APPLIED LIVE, AND THE ROW IS WRITTEN EITHER WAY (CCB-S5-016) ──
+        //
+        // The order matters and is the opposite of the create-address rule. There the SDK
+        // call comes first because the workflow state must not advance on an intention;
+        // here the ROW is the operator's decision about what this bot wears, and it is
+        // correct whether or not the runtime happens to be up. So it is stored first, then
+        // applied, and a runtime that is down costs the live apply rather than the upload.
+        const applied = await applyFaceIfRunning(ctx, profileId);
+        return reply.redirect(back(`saved=${applied}`));
       } catch (err) {
         // An AssetError is the operator's problem to see and fix (not an image, too big);
         // anything else is ours, and is logged as well as shown.
@@ -1873,7 +1987,10 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         null,
         actor,
       );
-      return reply.redirect(back('saved=avatar-cleared'));
+      // Applied live as well, so clearing is not a half-measure either: the bot goes back
+      // to the deployment default in front of members rather than at some future restart.
+      const applied = await applyFaceIfRunning(ctx, positiveInteger(req.params.id, 'Bot profile ID', 0));
+      return reply.redirect(back(applied === 'avatar' ? 'saved=avatar-cleared' : `saved=${applied}`));
     } catch (err) {
       return reply.redirect(back('error=' + encodeURIComponent(errorMessage(err))));
     }
