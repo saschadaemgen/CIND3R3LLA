@@ -618,9 +618,31 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       const settingOverrides = await listAllSettingOverrides(ctx.db);
       const settingScopes = describeSettingScopes(settingOverrides, bots.length);
 
-      // The values shown are the SELECTED bot's, so the wake word on the page is the one
-      // that bot actually answers to rather than the shared default it may not use.
-      const s = selectedBotId === null ? interaction.get() : interaction.get(selectedBotId);
+      // ── THE ROWS, NOT THE CACHE (CCB-S5-011) ─────────────────────────────
+      //
+      // This read `interaction.get(selectedBotId)`, and `get` answers with the SHARED record
+      // on a cache miss. That is deliberate and correct for the reply path, where a bot
+      // briefly reading what it inherits is a smaller wrong than reading nothing, and the
+      // window is one query. It is exactly wrong for this page: `kickRefreshFor` is
+      // fire-and-forget, so the FIRST request for any bot renders before the refresh lands
+      // and shows the shared values under that bot's name. For a bot the operator just
+      // created that is every time he looks, which is how selecting the new bot showed the
+      // first bot's nicknames.
+      //
+      // It also fed the save. The form posts what it rendered, so an operator who opened a
+      // new bot and pressed Save on any section would have written the SHARED values in as
+      // that bot's own deviations, silently, and been unable to tell afterwards.
+      //
+      // The save path already read the rows and already carried this reasoning in a comment
+      // next to it. The two halves of one page disagreeing about where the truth lives is
+      // the defect; they agree now.
+      const s =
+        selectedBotId === null
+          ? interaction.get()
+          : applySettingOverrides(
+              interaction.get(),
+              await listSettingOverridesForBot(ctx.db, selectedBotId),
+            );
 
       const notice = req.query.tested
         ? html`<div

@@ -492,6 +492,67 @@ async function main(): Promise<void> {
   check('a bot on the shared default says so rather than showing it as its own', onFirst.includes('the shared default'));
   check('  and points at where to fix it', onFirst.includes('/interaction/addressing?bot='));
 
+  /* ── 7 ─────────────────────────────────────────────────────────────────── */
+
+  section('7. The Interaction page shows the SELECTED bot, on a cold cache');
+
+  // ── WHY A COLD CACHE IS THE WHOLE TEST (CCB-S5-011) ────────────────────
+  //
+  // The page read `interaction.get(botId)`, which answers with the SHARED record on a cache
+  // miss and kicks a fire-and-forget refresh. Correct for the reply path, where the window is
+  // one query. Fatal here: the FIRST request for any bot renders before the refresh lands, so
+  // a newly created bot showed the shared values under its own name, which is every time an
+  // operator looks at a bot he just made.
+  //
+  // The service below is built fresh and never asked about a bot, so its per-bot cache is
+  // empty, which is the exact state that failed. Asking it first would test the fixed path
+  // through the broken one and pass either way.
+  const cold = await InteractionService.load(db);
+  const pageOf = async (query: string): Promise<string> =>
+    (await app.inject({ method: 'GET', url: `/interaction/addressing${query}`, headers: { cookie } }))
+      .body;
+
+  check(
+    'control: the shared page shows the shared wake word',
+    /name="wakeWord"[^>]*value="Cinderella"/.test(await pageOf('')),
+  );
+  check(
+    'a bot with its own wake word shows ITS word, not the shared one',
+    /name="wakeWord"[^>]*value="Sanchez"/.test(await pageOf(`?bot=${String(second)}`)),
+  );
+  check(
+    '  and the bot that is on the shared value still shows that, so the switch discriminates',
+    /name="wakeWord"[^>]*value="Cinderella"/.test(await pageOf(`?bot=${String(first)}`)),
+  );
+  check(
+    'the service cache really was cold, so the check above proved the read and not the cache',
+    cold.get(second).wakeWord === 'Cinderella',
+    `a cold get() answers "${cold.get(second).wakeWord}", which is why the page cannot use it`,
+  );
+
+  // THE SEVERE HALF. A save compares what was posted against the shared value and CLEARS the
+  // deviation when they match. So a page that rendered shared values under a bot's name did
+  // not merely mislead: pressing Save on it would have erased that bot's own wake word and
+  // retorts and put it back on hers, silently, under a "Saved." banner.
+  {
+    const page = await pageOf(`?bot=${String(second)}`);
+    const csrfTok = /name="_csrf" value="([^"]+)"/.exec(page)?.[1] ?? '';
+    await app.inject({
+      method: 'POST',
+      url: '/interaction',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      payload:
+        `section=addressing&botProfileId=${String(second)}&wakeWord=Sanchez&greetings=hey` +
+        `&naturalAddressing=on&_csrf=${encodeURIComponent(csrfTok)}`,
+    });
+    const after = (await listSettingOverridesForBot(db, second)).find((o) => o.key === 'wakeWord');
+    check(
+      'saving the page as rendered keeps the deviation instead of erasing it',
+      after?.value === 'Sanchez',
+      String(after?.value ?? 'CLEARED'),
+    );
+  }
+
   await app.close();
   await pg.close();
 

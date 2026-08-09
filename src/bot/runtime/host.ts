@@ -380,8 +380,14 @@ export async function startRuntimeHost(
  * length: with no avatar loaded, letting the SDK reconcile would deep-diff an
  * image-less profile against the stored one and WIPE the avatar, then propagate the
  * blank to the group. So no avatar means no write, exactly as before.
+ *
+ * EXPORTED SINCE CCB-S5-011, because the console applies a face on demand now and this is
+ * the write. It was private, and being private was the only thing standing between an
+ * upload and the bot actually wearing it: the mechanism was whole, it simply had one caller
+ * and that caller was boot. Returning whether it wrote lets the console say what happened
+ * rather than guess.
  */
-async function applyProfileUpdate(
+export async function applyProfileUpdate(
   runtime: MultiProfileRuntime,
   simplexUserId: number,
   displayName: string,
