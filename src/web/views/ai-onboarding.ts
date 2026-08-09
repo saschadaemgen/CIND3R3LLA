@@ -559,10 +559,12 @@ function wizardDialog(
                       data-review-source="wakeWord"
                     />
                     <small
-                      >This is what members call it, and it is what wakes it. It starts as the
-                      bot name and you can change it: a bot shown as SANCH3Z probably answers
-                      better to Sanchez. Two bots cannot share one, because both would answer
-                      the same sentence. Change it later on the Addressing page.</small
+                      >This is what members call it, and it is what wakes it.
+                      <strong>One word</strong>, because a wake word is matched one word at a
+                      time: a two word name would never be heard. It starts from the first word
+                      of the bot name and you can change it, so a bot shown as SANCH3Z probably
+                      answers better to Sanchez. Two bots cannot share one, because both would
+                      answer the same sentence. Change it later on the Addressing page.</small
                     >
                   </label>`
             }

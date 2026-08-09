@@ -544,7 +544,12 @@ export function retortsForBot(
  * required field rather than as a bot with no name.
  */
 export function wakeWordForNewBot(displayName: string): string | null {
-  return normalizeWakeWord(displayName);
+  // THE FIRST TOKEN, not the whole name (CCB-S5-013). A two-word display name is ordinary,
+  // and deriving the whole thing produced a wake word `detectAddress` can never match: "Rick
+  // Sanchez" was inert from the moment it was written. There is no right answer between the
+  // first word and the surname, which is exactly why this is a SUGGESTION on a field the
+  // operator can see and overtype rather than a decision.
+  return normalizeWakeWord(displayName.trim().split(/\s+/)[0] ?? '');
 }
 
 /**

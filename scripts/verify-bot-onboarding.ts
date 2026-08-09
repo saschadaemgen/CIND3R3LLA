@@ -222,8 +222,8 @@ async function main(): Promise<void> {
       ...defaults(),
       slug: 'cinderella-lab',
       displayName: 'Cinderella Lab',
-      // Its own, because two bots cannot share one since CCB-S5-009.
-      wakeWord: 'Cinderella Lab',
+      // Its own, and ONE word: a wake word with a space in it is inert (CCB-S5-013).
+      wakeWord: 'Lab',
     },
     'verify-bot-onboarding',
   );

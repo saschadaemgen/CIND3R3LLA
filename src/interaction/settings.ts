@@ -954,12 +954,57 @@ export const WAKE_WORD_MAX_CHARS = 40;
  * real state rather than as a value.
  */
 export function normalizeWakeWord(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null;
-  // Collapse inner runs too. CCB-S5-006 found values stored raw with surrounding spaces; a
-  // wake word with a double space inside it fails to match for a reason nobody can see on
-  // the page, because the page renders both spellings identically.
-  const cleaned = raw.trim().replace(/\s+/g, ' ').slice(0, WAKE_WORD_MAX_CHARS).trim();
-  return cleaned.length >= 2 ? cleaned : null;
+  return wakeWordProblem(raw) === null
+    ? (raw as string).trim().slice(0, WAKE_WORD_MAX_CHARS)
+    : null;
+}
+
+/**
+ * Why this wake word cannot be stored, in a sentence an operator can act on, or null.
+ *
+ * ── THE WHITESPACE REFUSAL IS TEMPORARY (CCB-S5-013, D-166) ──────────────────
+ *
+ * `detectAddress` matches ONE token: it compares `tokens[skip].norm` against the whole
+ * folded wake word, so a value containing a space can never match anything. There is no
+ * path through `matchesWakeWord` that survives one, and the length gate rejects it before
+ * Levenshtein is even reached. A multi-word wake word is therefore INERT: the bot cannot be
+ * addressed by name at all, and nothing anywhere said so.
+ *
+ * That is how "Rick Sanchez" reached production. CCB-S5-009 derived the wake word from the
+ * display name, two-word display names are ordinary, and the normalizer this replaces
+ * actively PRESERVED the space: it collapsed runs of whitespace to a single space, which
+ * keeps a multi-word value alive rather than rejecting it. Its comment blamed double spaces.
+ * The cause is any space, and the normalizer was tidying toward the defect.
+ *
+ * ── AND IT IS NOT A CONSIDERED LIMIT ─────────────────────────────────────────
+ *
+ * Bots are named in two words as a matter of course, and telling an operator to rename his
+ * bot is not a fix. **CCB-S5-014 makes the detector match multi-token wake words** and lifts
+ * this refusal. It is its own briefing because the anchoring, the prefix-character
+ * accounting, nickname matching and `{wake}` substitution all move with it, which is a
+ * feature and not a validator change. Until then a refusal beats storing something inert:
+ * a bot nobody can address is invisible, and this at least says so at the moment of typing.
+ *
+ * Read as a reason rather than a boolean so creation and the settings page print the same
+ * sentence instead of inventing two.
+ */
+export function wakeWordProblem(raw: unknown): string | null {
+  if (typeof raw !== 'string' || raw.trim() === '') {
+    return 'A wake word is required: it is what members call the bot and what wakes it.';
+  }
+  const trimmed = raw.trim();
+  if (/\s/.test(trimmed)) {
+    return (
+      `"${trimmed}" contains a space, and a wake word is matched one word at a time, so a ` +
+      `bot with this name could not be addressed at all. Use a single word, for example ` +
+      `"${trimmed.split(/\s+/)[0] ?? ''}". Multi-word names are planned and this limit lifts ` +
+      `with them.`
+    );
+  }
+  if (trimmed.length < 2) {
+    return 'A wake word needs at least 2 characters, or it would match almost anything.';
+  }
+  return null;
 }
 
 /**

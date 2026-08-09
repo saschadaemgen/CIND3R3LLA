@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 164 decisions</strong> — newest first. Highest allocated: <strong>D-165</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 165 decisions</strong> — newest first. Highest allocated: <strong>D-166</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-166 | A wake word with a space in it is refused, and the refusal is temporary | IMPLEMENTED |
 | D-165 | The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer | IMPLEMENTED |
 | D-164 | A wizard that hides steps must never let native validation refuse in silence | IMPLEMENTED |
 | D-163 | A new bot is given plain retorts, because a retort is content and the voice is applied at reply time | IMPLEMENTED |
@@ -193,6 +194,50 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-166 - A wake word with a space in it is refused, and the refusal is temporary
+
+**Status: IMPLEMENTED** (CCB-S5-013, no migration). **The refusal is lifted by CCB-S5-014**,
+which makes the detector match multi-token wake words. It is recorded here as temporary so
+nobody later reads it as a considered limit: bots are named in two words as a matter of course,
+and telling an operator to rename his bot is not a fix.
+
+**THE DEFECT.** `detectAddress` matches ONE token. It takes `tokens[skip].norm`, a single word,
+and compares it against the whole folded wake word. For "Rick Sanchez" that is `"rick"` against
+`"rick sanchez"`: the exact test fails, the prefix guard fails, and the length gate rejects it
+before Levenshtein is reached, because `maxDistanceFor(12)` is at most 2 and the difference is
+8. There is no path through `matchesWakeWord` that a space survives. A multi-word wake word is
+**inert**: that bot cannot be addressed by name at all, and nothing said so.
+
+It reached production because CCB-S5-009 derived the wake word from the display name, and
+two-word display names are ordinary. So Rick Sanchez was created with a name he could never
+answer to, and his per-bot overrides were otherwise perfect, which is what made it look like a
+storage problem when it was a matching problem.
+
+**AND THE NORMALIZER I ADDED TIDIED TOWARD IT.** `normalizeWakeWord` collapsed runs of
+whitespace to a single space and carried a comment saying a double space "fails to match for a
+reason nobody can see on the page". Right instinct, wrong cause, and the wrong direction: the
+problem is any space, so collapsing two into one preserved the defect while appearing to fix a
+neighbouring one. That is worth recording plainly. A normalizer's job is to produce a value the
+rest of the system can use, and this one produced a value nothing downstream could match.
+
+**WHAT IS REFUSED, AND WHERE.** `wakeWordProblem` returns the reason rather than a boolean, so
+bot creation and the Addressing page print the same sentence instead of inventing two. The
+Addressing page checks it **before** `normalizeInteraction`, deliberately: that function must
+always yield a usable wake word, so an unusable one falls back to the shipped default, and
+saving "Rick Sanchez" would otherwise have silently renamed the bot to Cinderella under a
+"Saved." banner. Refusing beats masking.
+
+The creation derivation now takes the **first token** of the display name. There is no right
+answer between the first word and the surname, which is exactly why it is a suggestion on a
+field the operator can see and overtype rather than a decision made for him.
+
+**Proven against the real detector**, not by inspection: `verify:new-bot-identity` drives
+`detectAddress` with the value that reached production and asserts it never wakes on any of
+`Rick Sanchez`, `Rick` or `Sanchez`, with the operator's manual `Sanchez` as the control that
+does.
+
 ---
 
 ### D-165 - The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer

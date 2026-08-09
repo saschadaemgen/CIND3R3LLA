@@ -51,8 +51,11 @@ import {
   WAKE_WORD_MAX_CHARS,
   normalizeInteraction,
   normalizeWakeWord,
+  wakeWordProblem,
+  type InteractionSettings,
 } from '../src/interaction/settings.js';
 import { applySettingOverrides } from '../src/interaction/setting-scope.js';
+import { detectAddress } from '../src/interaction/addressing.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { DEFAULT_MODERATION_RULES } from '../src/moderation/rules.js';
 import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
@@ -164,7 +167,50 @@ async function main(): Promise<void> {
     'surrounding spaces are removed, which CCB-S5-006 found being stored raw',
     normalizeWakeWord('  Sanchez  ') === 'Sanchez',
   );
-  check('and an inner run collapses, because two spaces render as one', normalizeWakeWord('San  chez') === 'San chez');
+  // WAS: "an inner run collapses, because two spaces render as one", asserting that
+  // `San  chez` became `San chez`. That check encoded the defect. CCB-S5-009 wrote it while
+  // fixing surrounding spaces, reasoned that the visible symptom was a DOUBLE space, and
+  // normalised toward a value the detector can never match instead of away from it. An inner
+  // space of any width is refused now, so the collapse has nothing left to do.
+  check('an inner space is refused rather than tidied', normalizeWakeWord('San  chez') === null);
+  // ── THE INERT VALUE (CCB-S5-013, D-166) ────────────────────────────────
+  //
+  // `detectAddress` matches ONE token against the whole folded wake word, so a value with a
+  // space in it can never match: "Rick Sanchez" reached production and that bot could not be
+  // addressed by name at all. The derivation added in CCB-S5-009 produced it from a two-word
+  // display name, and the normalizer PRESERVED the space while its comment blamed double
+  // spaces. Asserted against the real detector rather than by inspection, so this stays true
+  // if either side moves.
+  check(
+    'a multi-word wake word is refused, because the detector matches one token',
+    normalizeWakeWord('Rick Sanchez') === null,
+  );
+  check(
+    '  and the refusal says why and suggests the first word',
+    (wakeWordProblem('Rick Sanchez') ?? '').includes('one word at a time') &&
+      (wakeWordProblem('Rick Sanchez') ?? '').includes('"Rick"'),
+    wakeWordProblem('Rick Sanchez') ?? '',
+  );
+  check(
+    '  and names the limit as temporary rather than as a considered rule',
+    (wakeWordProblem('Rick Sanchez') ?? '').includes('lifts'),
+  );
+  {
+    // The proof the refusal is not superstition: drive the REAL detector with the value that
+    // reached production, and with the operator's manual workaround beside it as the control.
+    const withWake = (wake: string) => normalizeInteraction({ wakeWord: wake });
+    const inert = { ...withWake('Cinderella'), wakeWord: 'Rick Sanchez' } as InteractionSettings;
+    check(
+      'PROOF: the detector never wakes on the multi-word value, however it is addressed',
+      ['Rick Sanchez what is the time', 'Rick what is the time', 'Sanchez what is the time'].every(
+        (t) => detectAddress(t, inert).kind !== 'wake',
+      ),
+    );
+    check(
+      '  CONTROL: and the single word the operator set by hand does wake it',
+      detectAddress('Sanchez what is the time', withWake('Sanchez')).kind === 'wake',
+    );
+  }
   check('one character is not a wake word', normalizeWakeWord('x') === null);
   check('nor is whitespace', normalizeWakeWord('   ') === null);
   check('nor is a non-string', normalizeWakeWord(undefined) === null);
@@ -191,7 +237,7 @@ async function main(): Promise<void> {
   check('a bot cannot be created without a usable wake word', blank !== null, blank ?? '');
   check(
     '  and the refusal says what a wake word is FOR, not just that it is invalid',
-    (blank ?? '').includes('what members call it'),
+    (blank ?? '').includes('what members call the bot'),
   );
   check('and no bot was created by the attempt', (await listBotOnboardingProfiles(db)).length === 0);
 

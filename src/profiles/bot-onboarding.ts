@@ -19,6 +19,7 @@ import {
   NEW_BOT_RETORTS,
   WAKE_WORD_MAX_CHARS,
   normalizeWakeWord,
+  wakeWordProblem,
 } from '../interaction/settings.js';
 import type { MemberRole } from '../adapter/types.js';
 import {
@@ -325,6 +326,10 @@ async function wakeWordHolders(db: Queryable): Promise<{ holder: WakeWordHolder;
  * Addressing page, which is where an operator who genuinely wants to swap two names goes.
  */
 async function validateCreation(db: Queryable, wakeWord: unknown, displayName: string): Promise<string> {
+  // The REASON, not a boolean, so the operator is told which rule the value broke rather
+  // than being handed one sentence covering three different problems (CCB-S5-013).
+  const problem = wakeWordProblem(wakeWord);
+  if (problem !== null) throw new Error(`${displayName}: ${problem}`);
   const cleaned = normalizeWakeWord(wakeWord);
   if (cleaned === null) {
     throw new Error(

@@ -18,6 +18,7 @@ import {
   ADDRESSING_MODES,
   DEFAULT_INTERACTION,
   normalizeInteraction,
+  wakeWordProblem,
   REPLY_LANGUAGE_MODES,
   REPLY_MODES,
   PERSONA_KEYS,
@@ -1190,6 +1191,14 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       );
 
       if (section === 'addressing') {
+        // REFUSED HERE, not left to the normalizer (CCB-S5-013). `normalizeInteraction`
+        // must always produce a usable wake word, so an unusable one falls back to the
+        // shipped default: saving "Rick Sanchez" would have silently renamed the bot to
+        // Cinderella under a "Saved." banner, which is the masking this repo forbids. The
+        // reason comes from `wakeWordProblem`, so this page and bot creation print the
+        // same sentence rather than inventing two.
+        const problem = wakeWordProblem(bodyString(body, 'wakeWord'));
+        if (problem !== null) throw new Error(problem);
         next['naturalAddressing'] = 'naturalAddressing' in body;
         next['wakeWord'] = bodyString(body, 'wakeWord');
         next['greetings'] = bodyString(body, 'greetings');
