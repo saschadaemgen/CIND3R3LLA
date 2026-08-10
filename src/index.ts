@@ -25,6 +25,7 @@ import {
 import { log, setLogLevel } from './log.js';
 import { startRuntimeHost, type HostedBot, type RuntimeHost } from './bot/runtime/host.js';
 import { setRuntimeAdminHandle } from './bot/runtime/admin-actions.js';
+import { describeChatError } from './bot/runtime/chat-error.js';
 import { registerContactRequestListener } from './profiles/contact-requests.js';
 import { registerGroupInvitationListener } from './profiles/group-invitations.js';
 import { setCoreDeletePort } from './bot/core-delete.js';
@@ -145,10 +146,11 @@ async function reportGroups(host: RuntimeHost, cfg: Config): Promise<void> {
         );
       }
     } catch (err) {
+      // The real error, not the SDK's pointer to it (CCB-S5-018). This is the second of two
+      // places that read the groups per bot and the second that printed "see chatError
+      // property" at an operator.
       log.warn(
-        `Could not list groups for "${bot.config.displayName}": ${
-          err instanceof Error ? err.message : String(err)
-        }`,
+        `Could not list groups for "${bot.config.displayName}": ${describeChatError(err)}`,
       );
     }
   }
@@ -491,6 +493,36 @@ async function startCaptureWorker(
         interaction.refreshFor(id),
       ]);
       graphs.push(buildBotGraph(bot, { cfg, interaction, plugins, prices, webSearch, host }));
+
+      // ── WHAT THIS BOT WILL ACTUALLY WAKE ON (CCB-S5-018) ─────────────────
+      //
+      // Stated at boot, per bot, because "he does not answer to his name" was reported
+      // repeatedly and there was no way to tell from outside WHICH name the running engine
+      // had. The wake word travels through a settings row, a per-bot override, a cache and
+      // a refresh, and a failure at any of those reads identically from the group: silence.
+      //
+      // Read back through the same `interaction.get(id)` the engine's `settings` getter
+      // uses, not from the database, so this line is the value the reply path will see
+      // rather than the value it ought to see. A line that agreed with the row and
+      // disagreed with the engine would be worse than none.
+      const effective = interaction.get(id);
+      log.info('bot: hosted and listening', {
+        bot: bot.config.displayName,
+        simplexUserId: bot.simplexUserId,
+        wakeWord: effective.wakeWord,
+        nicknames: effective.nicknames.words.length,
+        addressingMode: effective.addressing.mode,
+      });
+      if (effective.wakeWord === interaction.get().wakeWord && host.bots.length > 1) {
+        // Not necessarily wrong: a bot may legitimately be on the shared value. It is
+        // worth saying out loud with more than one bot, because two bots on one wake word
+        // is the CCB-S5-006 defect and it is invisible from the group.
+        log.warn(
+          `Bot "${bot.config.displayName}" answers to the SHARED wake word ` +
+            `"${effective.wakeWord}". If it should have its own, set it on the Addressing ` +
+            `page; two bots on one wake word both answer the same sentence.`,
+        );
+      }
     }
 
     // The recital job holds a group id and nothing else, so it finds the engine of the bot

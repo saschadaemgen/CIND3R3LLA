@@ -48,7 +48,7 @@ import {
 import { invalidateBotPersonality } from '../../profiles/bot-personality.js';
 import { listPromptRules } from '../../db/prompt-rules.js';
 import { ceilingRuleTexts, type PromptRuleSet } from '../../interaction/prompt-rules.js';
-import { html, raw, type SafeHtml } from '../html.js';
+import { html, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card } from './ui.js';
 import { renderAiPage, type AiPageQuery } from './ai.js';
@@ -107,33 +107,19 @@ function whichBotCard(
           ? 'It is also the primary, which decides only which bot this console opens on.'
           : 'It is not the primary, which changes nothing about that: it is hosted, it answers members, and this is its voice.'}
       </p>
-      ${profiles.length > 1
-        ? html`<form method="get" action="/ai/personality" class="mt-4 flex flex-wrap items-end gap-2">
-            <label class="flex flex-col gap-1 text-sm">
-              <span class="font-medium text-slate-700">Edit a different bot</span>
-              <select
-                name="bot"
-                class="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm sm:w-72"
-              >
-                ${profiles.map(
-                  (profile) =>
-                    html`<option
-                      value="${String(profile.id)}"
-                      ${profile.id === active.id ? raw('selected') : ''}
-                    >
-                      ${profile.displayName}${profile.selectedForRuntime ? ' (primary)' : ''}
-                    </option>`,
-                )}
-              </select>
-            </label>
-            <button
-              type="submit"
-              class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Open
-            </button>
-          </form>`
-        : null}
+      ${
+        // ── THE PICKER IS GONE (CCB-S5-018) ────────────────────────────────
+        //
+        // This card carried a dropdown of its own, so after CCB-S5-011 the operator had two
+        // controls doing one job: one in the sidebar and one in the content, on the only
+        // page with both. One control, one place, was the point of that briefing, and a
+        // second one is worse than the four separate ones it replaced because the two can
+        // disagree on screen.
+        //
+        // The card stays, without the control. It says things the sidebar does not: the
+        // slug, whether this bot is the primary, and that a save here needs no restart.
+        null
+      }
       <input type="hidden" name="_csrf" value="${csrf}" />
     `,
   );

@@ -51,6 +51,7 @@ import {
 
 export { botProfileFor, type RuntimeProfile, type RuntimeProfileSpec };
 import { GroupOwnership, UnknownGroupOwnerError, type OwnedGroup } from './ownership.js';
+import { describeChatError } from './chat-error.js';
 import {
   emptyCounters,
   type ActiveUserCore,
@@ -518,7 +519,11 @@ export class MultiProfileRuntime {
           })),
         );
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        // THE ACTUAL ERROR, not the pointer to it (CCB-S5-018). This read `err.message`,
+        // which for the SDK's `ChatCommandError` is the literal string "Chat command error
+        // (see chatError property)" - an instruction to inspect a property, printed on a
+        // dashboard that cannot inspect properties.
+        const message = describeChatError(err);
         log.error('runtime: could not list groups for a hosted profile', {
           simplexUserId: profile.simplexUserId,
           displayName: profile.displayName,
