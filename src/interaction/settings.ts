@@ -954,15 +954,20 @@ export const WAKE_WORD_MAX_CHARS = 40;
  * real state rather than as a value.
  */
 export function normalizeWakeWord(raw: unknown): string | null {
-  return wakeWordProblem(raw) === null
-    ? (raw as string).trim().slice(0, WAKE_WORD_MAX_CHARS)
-    : null;
+  if (wakeWordProblem(raw) !== null) return null;
+  // Inner runs collapse to one space (CCB-S5-014). CCB-S5-009 did this and was right for the
+  // wrong reason: it argued that a double space "renders identically" while the real problem
+  // was that ANY space made the value inert, so collapsing preserved a broken value and looked
+  // like a fix. Multi-token names work now, so collapsing is simply correct: `San  chez` and
+  // `San chez` are the same two tokens to `detectAddress`, and storing the ragged one would
+  // show an operator two spellings of one name.
+  return (raw as string).trim().replace(/\s+/g, ' ').slice(0, WAKE_WORD_MAX_CHARS).trim();
 }
 
 /**
  * Why this wake word cannot be stored, in a sentence an operator can act on, or null.
  *
- * ── THE WHITESPACE REFUSAL IS TEMPORARY (CCB-S5-013, D-166) ──────────────────
+ * ── THE WHITESPACE REFUSAL WAS TEMPORARY AND IS LIFTED (CCB-S5-014, D-172) ───
  *
  * `detectAddress` matches ONE token: it compares `tokens[skip].norm` against the whole
  * folded wake word, so a value containing a space can never match anything. There is no
@@ -993,14 +998,11 @@ export function wakeWordProblem(raw: unknown): string | null {
     return 'A wake word is required: it is what members call the bot and what wakes it.';
   }
   const trimmed = raw.trim();
-  if (/\s/.test(trimmed)) {
-    return (
-      `"${trimmed}" contains a space, and a wake word is matched one word at a time, so a ` +
-      `bot with this name could not be addressed at all. Use a single word, for example ` +
-      `"${trimmed.split(/\s+/)[0] ?? ''}". Multi-word names are planned and this limit lifts ` +
-      `with them.`
-    );
-  }
+  // THE WHITESPACE REFUSAL IS GONE (CCB-S5-014, D-172). It lived here because
+  // `detectAddress` matched ONE token, so a name with a space in it was inert. The detector
+  // matches a token SEQUENCE now, so "Rick Sanchez" works and refusing it would be the same
+  // defect inverted: a validator turning away values the detector has learned to match, which
+  // is far harder to diagnose than one that never matched.
   if (trimmed.length < 2) {
     return 'A wake word needs at least 2 characters, or it would match almost anything.';
   }

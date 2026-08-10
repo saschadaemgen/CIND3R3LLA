@@ -3,8 +3,12 @@
 **CIND3R3LLA is the central AI / identity of this system** — the top-level
 product, not just a bot. The name is stylised: **CIND3R3LLA**, everywhere it is
 displayed, including her wake word. Members may also address her with the plain
-spelling `Cinderella`, which is a DECLARED alias (`DEFAULT_WAKE_ALIASES`, D-088)
-rather than a fuzzy-match accident, because addressing her is the consent path.
+spelling `Cinderella`, which the detector accepts as a small typo away from the
+stylised form rather than as a declared alias. **This line used to cite
+`DEFAULT_WAKE_ALIASES` (D-088); no such thing exists in the code and the grep is
+clean across the tree, so the claim was stale and was corrected in CCB-S5-014
+(D-172).** There is no alias mechanism: a bot answers to its wake word, which may
+be several words, and a partial name is a NICKNAME and earns the retort.
 Prose in this repo still says "Cinderella" for readability; that is fine, and it is
 not something to go and "fix". The consent-based SimpleX-group-to-web **archive is her
 first capability**; later she brings a team of additional agents. Treat

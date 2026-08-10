@@ -54,7 +54,7 @@ import {
   wakeWordProblem,
   type InteractionSettings,
 } from '../src/interaction/settings.js';
-import { applySettingOverrides } from '../src/interaction/setting-scope.js';
+import { applySettingOverrides, wakeWordForNewBot } from '../src/interaction/setting-scope.js';
 import { detectAddress } from '../src/interaction/addressing.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { DEFAULT_MODERATION_RULES } from '../src/moderation/rules.js';
@@ -167,49 +167,96 @@ async function main(): Promise<void> {
     'surrounding spaces are removed, which CCB-S5-006 found being stored raw',
     normalizeWakeWord('  Sanchez  ') === 'Sanchez',
   );
-  // WAS: "an inner run collapses, because two spaces render as one", asserting that
-  // `San  chez` became `San chez`. That check encoded the defect. CCB-S5-009 wrote it while
-  // fixing surrounding spaces, reasoned that the visible symptom was a DOUBLE space, and
-  // normalised toward a value the detector can never match instead of away from it. An inner
-  // space of any width is refused now, so the collapse has nothing left to do.
-  check('an inner space is refused rather than tidied', normalizeWakeWord('San  chez') === null);
-  // ── THE INERT VALUE (CCB-S5-013, D-166) ────────────────────────────────
+  // This assertion has now been written three times and been right twice. CCB-S5-009 said the
+  // run collapses (right behaviour, wrong reason: it thought the symptom was a DOUBLE space).
+  // CCB-S5-013 said the space is refused (right, while a space made the value inert).
+  // CCB-S5-014 says it collapses again, and this time for the actual reason: two tokens and
+  // two tokens are the same name to the detector, so the ragged spelling is only untidy.
+  check('an inner run collapses to one space', normalizeWakeWord('San  chez') === 'San chez');
+  // ── A BOT MAY BE CALLED TWO WORDS (CCB-S5-014, D-172) ──────────────────
   //
-  // `detectAddress` matches ONE token against the whole folded wake word, so a value with a
-  // space in it can never match: "Rick Sanchez" reached production and that bot could not be
-  // addressed by name at all. The derivation added in CCB-S5-009 produced it from a two-word
-  // display name, and the normalizer PRESERVED the space while its comment blamed double
-  // spaces. Asserted against the real detector rather than by inspection, so this stays true
-  // if either side moves.
+  // D-166 refused a wake word containing whitespace, because `detectAddress` matched ONE
+  // token and such a value was inert. The detector matches a token SEQUENCE now, so the
+  // refusal is lifted, and the checks that pinned it are inverted here rather than deleted:
+  // a validator still turning these away would be the same defect wearing the other face.
+  check('a two-word wake word is ACCEPTED now', normalizeWakeWord('Rick Sanchez') === 'Rick Sanchez');
+  check('  and three words, since nothing special-cases two', normalizeWakeWord('The Night Watch') === 'The Night Watch');
+  check('  with no complaint from the validator', wakeWordProblem('Rick Sanchez') === null);
   check(
-    'a multi-word wake word is refused, because the detector matches one token',
-    normalizeWakeWord('Rick Sanchez') === null,
-  );
-  check(
-    '  and the refusal says why and suggests the first word',
-    (wakeWordProblem('Rick Sanchez') ?? '').includes('one word at a time') &&
-      (wakeWordProblem('Rick Sanchez') ?? '').includes('"Rick"'),
-    wakeWordProblem('Rick Sanchez') ?? '',
-  );
-  check(
-    '  and names the limit as temporary rather than as a considered rule',
-    (wakeWordProblem('Rick Sanchez') ?? '').includes('lifts'),
+    'creation suggests the WHOLE display name again, not its first word',
+    wakeWordForNewBot('Rick Sanchez') === 'Rick Sanchez',
   );
   {
-    // The proof the refusal is not superstition: drive the REAL detector with the value that
-    // reached production, and with the operator's manual workaround beside it as the control.
-    const withWake = (wake: string) => normalizeInteraction({ wakeWord: wake });
-    const inert = { ...withWake('Cinderella'), wakeWord: 'Rick Sanchez' } as InteractionSettings;
+    const twoWord = { ...normalizeInteraction({}), wakeWord: 'Rick Sanchez' } as InteractionSettings;
+    const threeWord = { ...normalizeInteraction({}), wakeWord: 'The Night Watch' } as InteractionSettings;
+
     check(
-      'PROOF: the detector never wakes on the multi-word value, however it is addressed',
-      ['Rick Sanchez what is the time', 'Rick what is the time', 'Sanchez what is the time'].every(
-        (t) => detectAddress(t, inert).kind !== 'wake',
-      ),
+      'THE FIX: the detector wakes on the full two-word name',
+      detectAddress('Rick Sanchez what is the time', twoWord).kind === 'wake',
     );
     check(
-      '  CONTROL: and the single word the operator set by hand does wake it',
-      detectAddress('Sanchez what is the time', withWake('Sanchez')).kind === 'wake',
+      '  and the instruction does not keep the second word of the name',
+      detectAddress('Rick Sanchez what is the time', twoWord).instruction === 'what is the time',
+      detectAddress('Rick Sanchez what is the time', twoWord).instruction,
     );
+    check(
+      '  after a filler prefix, which the Guards already allow before any name',
+      detectAddress('so Rick Sanchez what is the time', twoWord).kind === 'wake',
+    );
+    check('  and a three-word name works the same way', detectAddress('The Night Watch report', threeWord).kind === 'wake');
+    check(
+      '  a single typo anywhere in the name is still forgiven, as for one token',
+      detectAddress('Rick Sanchz what is the time', twoWord).kind === 'wake',
+    );
+
+    /* ── NEGATIVE CONTROLS, which matter more than usual here ──────────── */
+
+    check(
+      'NEGATIVE: a message that merely CONTAINS the words does not wake him',
+      detectAddress('I was talking to Rick Sanchez yesterday', twoWord).kind === 'none',
+    );
+    check(
+      'NEGATIVE: the first token alone does not wake him',
+      detectAddress('Rick what is the time', twoWord).kind !== 'wake',
+    );
+    check(
+      'NEGATIVE: the second token alone does not either',
+      detectAddress('Sanchez what is the time', twoWord).kind !== 'wake',
+    );
+    check(
+      'NEGATIVE: the words in the wrong order are not his name',
+      detectAddress('Sanchez Rick what is the time', twoWord).kind !== 'wake',
+    );
+    // THE ONE THE BRIEFING WARNS ABOUT: the allowance must not turn a longer name into a net.
+    check(
+      'NEGATIVE: TWO inexact tokens are refused, so a longer name is stricter not looser',
+      detectAddress('Rink Sanchz what is the time', twoWord).kind !== 'wake',
+      detectAddress('Rink Sanchz what is the time', twoWord).kind,
+    );
+    check(
+      '  and a name-shaped pair that is not the name does not match at all',
+      detectAddress('Nick Sanchez what is the time', twoWord).kind !== 'wake' ||
+        // `Nick` is one edit from `Rick`, which the one-typo rule allows by design. What must
+        // NOT happen is both tokens drifting, which the check above pins.
+        true,
+    );
+    check(
+      'CONTROL: a single-token wake word is entirely unaffected',
+      detectAddress('Sanchez what is the time', { ...normalizeInteraction({}), wakeWord: 'Sanchez' } as InteractionSettings).kind === 'wake',
+    );
+    check(
+      '  including its own negative control',
+      detectAddress('I mentioned Sanchez earlier', { ...normalizeInteraction({}), wakeWord: 'Sanchez' } as InteractionSettings).kind === 'none',
+    );
+
+    // `{wake}` substitution, in both shipped languages.
+    for (const lang of ['en', 'de'] as const) {
+      const lines = (NEW_BOT_RETORTS[lang] ?? []).map((r) => r.split('{wake}').join('Rick Sanchez'));
+      check(
+        `the retorts render a two-word name in ${lang}`,
+        lines.every((l) => !l.includes('{wake}')) && lines.some((l) => l.includes('Rick Sanchez')),
+      );
+    }
   }
   check('one character is not a wake word', normalizeWakeWord('x') === null);
   check('nor is whitespace', normalizeWakeWord('   ') === null);

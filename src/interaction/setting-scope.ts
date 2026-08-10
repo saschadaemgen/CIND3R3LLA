@@ -544,12 +544,12 @@ export function retortsForBot(
  * required field rather than as a bot with no name.
  */
 export function wakeWordForNewBot(displayName: string): string | null {
-  // THE FIRST TOKEN, not the whole name (CCB-S5-013). A two-word display name is ordinary,
-  // and deriving the whole thing produced a wake word `detectAddress` can never match: "Rick
-  // Sanchez" was inert from the moment it was written. There is no right answer between the
-  // first word and the surname, which is exactly why this is a SUGGESTION on a field the
-  // operator can see and overtype rather than a decision.
-  return normalizeWakeWord(displayName.trim().split(/\s+/)[0] ?? '');
+  // THE WHOLE DISPLAY NAME AGAIN (CCB-S5-014). CCB-S5-013 took the first token, because a
+  // multi-token wake word was inert and deriving one would have created a bot nobody could
+  // address. The detector matches a token sequence now, so the natural answer is the natural
+  // answer: a bot displayed as "Rick Sanchez" answers to "Rick Sanchez". It is still only a
+  // SUGGESTION on a field the operator can see and overtype.
+  return normalizeWakeWord(displayName);
 }
 
 /**

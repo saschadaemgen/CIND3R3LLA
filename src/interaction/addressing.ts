@@ -27,7 +27,7 @@
  */
 
 import type { InteractionSettings } from './settings.js';
-import { fold, levenshtein, maxDistanceFor, normTokens, tokenize, type Token } from './text.js';
+import { levenshtein, maxDistanceFor, normTokens, tokenize, type Token } from './text.js';
 
 export type AddressKind = 'wake' | 'nickname' | 'none';
 
@@ -67,6 +67,67 @@ export function matchesWakeWord(tokenNorm: string, wakeNorm: string): boolean {
   if (max === 0) return false;
   if (Math.abs(tokenNorm.length - wakeNorm.length) > max) return false;
   return levenshtein(tokenNorm, wakeNorm, max) <= max;
+}
+
+/**
+ * How many tokens of a multi-token name matched here, or 0 (CCB-S5-014, D-172).
+ *
+ * ── WHY THE NAME IS A SEQUENCE AND NOT A STRING ──────────────────────────────
+ *
+ * `detectAddress` compared ONE token against the whole folded wake word, so a name with a
+ * space in it could never match: "rick" against "rick sanchez" fails the exact test, fails
+ * the prefix guard, and is rejected by the length gate before Levenshtein is reached. D-166
+ * refused such a wake word for that reason and said in its own title that the refusal was
+ * temporary. This is what lifts it.
+ *
+ * ── THE FUZZY RULE, WHICH IS THE PART THAT COULD GO WRONG ───────────────────
+ *
+ * Per TOKEN, never over the joined string. `maxDistanceFor` scales with length, so applying
+ * it to "rick sanchez" as one 12-character string would buy a budget of 2 edits anywhere in
+ * it, and a longer name would become an easier target than a short one. Per token, each
+ * token's allowance is sized to that token.
+ *
+ * And **at most one token in the whole name may be inexact**. That is the generalisation of
+ * what a single-token name already does - its one token may be inexact - and it is what makes
+ * a longer name STRICTER rather than looser: every token beyond the first must be exactly
+ * right, so "Rick Sanchez" is harder to hit by accident than "Sanchez" is, not easier.
+ *
+ * A total budget instead of a per-token one was considered and rejected: it would let two
+ * half-wrong tokens through, which is the shape of an accidental match rather than a typo.
+ */
+export function matchWakeSequence(
+  tokens: readonly Token[],
+  from: number,
+  wakeTokens: readonly string[],
+): number {
+  if (wakeTokens.length === 0) return 0;
+  if (from + wakeTokens.length > tokens.length) return 0;
+
+  let inexact = 0;
+  for (let i = 0; i < wakeTokens.length; i++) {
+    const got = tokens[from + i]?.norm ?? '';
+    const want = wakeTokens[i] ?? '';
+    if (got === want) continue;
+    // One typo in the whole name, wherever it falls. A second means this is not the name.
+    if (inexact > 0) return 0;
+    if (!matchesWakeWord(got, want)) return 0;
+    inexact++;
+  }
+  return wakeTokens.length;
+}
+
+/** The same, exact only: nicknames are never fuzzy (§6) and may also be several words. */
+export function matchNicknameSequence(
+  tokens: readonly Token[],
+  from: number,
+  nickTokens: readonly string[],
+): number {
+  if (nickTokens.length === 0) return 0;
+  if (from + nickTokens.length > tokens.length) return 0;
+  for (let i = 0; i < nickTokens.length; i++) {
+    if (tokens[from + i]?.norm !== nickTokens[i]) return 0;
+  }
+  return nickTokens.length;
 }
 
 /**
@@ -136,23 +197,43 @@ export function detectAddress(text: string, s: InteractionSettings): AddressResu
     .join(' ');
   const greeted = skip > 0 && greetingSets.includes(consumedText);
 
-  if (matchesWakeWord(head.norm, fold(s.wakeWord).trim())) {
+  // ── THE NAME IS A TOKEN SEQUENCE (CCB-S5-014) ─────────────────────────────
+  //
+  // One or more tokens, anchored at exactly the same place a single-token name was: the
+  // first token after any greeting or filler prefix. Nothing about the anchoring changes,
+  // which is what keeps "a long sentence that merely contains her name" from being an
+  // address, and `maxPrefixWords` / `maxPrefixChars` keep their meaning too because they
+  // bound what comes BEFORE the name and not the name itself.
+  const wakeMatched = matchWakeSequence(tokens, skip, normTokens(s.wakeWord));
+  if (wakeMatched > 0) {
     // Strict mode (CCB-S3-005 §4): the name alone is not an address, a greeting
     // must precede it. Direct replies, the follow-up window and slash commands
     // bypass this entirely — they are handled by the caller, not here.
     if (s.addressing.mode === 'strict' && !greeted) return NOT_ADDRESSED;
-    return { kind: 'wake', instruction: instructionFrom(head), nickname: undefined, greeted };
+    // From the LAST token of the name, so a two-word name does not leave its second word
+    // at the front of the instruction.
+    const last = tokens[skip + wakeMatched - 1] ?? head;
+    return { kind: 'wake', instruction: instructionFrom(last), nickname: undefined, greeted };
   }
 
   // Nicknames match EXACTLY (§6). They are short — `cin`, `ella` — and a fuzzy
   // match on a three or four letter word would fire on ordinary German and
   // English words, which would make her interrupt conversations to be sarcastic.
+  //
+  // Multi-token since CCB-S5-014, for the same reason the wake word is: a bot called in two
+  // words has near-misses in two words, and "Rick baby" could not have been refused. Longest
+  // first, so a two-word nickname wins over a one-word one that is its prefix.
   if (s.nicknames.enabled) {
-    for (const nick of s.nicknames.words) {
-      if (head.norm === fold(nick).trim()) {
+    const byLength = [...s.nicknames.words]
+      .map((nick) => ({ nick, tokens: normTokens(nick) }))
+      .sort((a, b) => b.tokens.length - a.tokens.length);
+    for (const { nick, tokens: nickTokens } of byLength) {
+      const n = matchNicknameSequence(tokens, skip, nickTokens);
+      if (n > 0) {
         // A nickname is answered in both modes: refusing to answer to "Cindy" is
         // the point, and staying silent would read as her accepting it.
-        return { kind: 'nickname', instruction: instructionFrom(head), nickname: nick, greeted };
+        const last = tokens[skip + n - 1] ?? head;
+        return { kind: 'nickname', instruction: instructionFrom(last), nickname: nick, greeted };
       }
     }
   }

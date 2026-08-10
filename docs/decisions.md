@@ -18,16 +18,17 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 170 decisions</strong> — newest first. Highest allocated: <strong>D-171</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 171 decisions</strong> — newest first. Highest allocated: <strong>D-172</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-172 | A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname | IMPLEMENTED |
 | D-171 | An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect | IMPLEMENTED |
 | D-170 | The ladders are per bot and arming is per build, which are two different scopes on one card | IMPLEMENTED |
 | D-169 | One switcher in the sidebar, remembered in the session, replacing the primary's console role | IMPLEMENTED |
 | D-168 | A face is applied on demand, and the panel gives the operator the control instead of the sentence | IMPLEMENTED |
 | D-167 | Scheduling from inside a scheduled command is refused, because it always deadlocks | IMPLEMENTED |
-| D-166 | A wake word with a space in it is refused, and the refusal is temporary | IMPLEMENTED |
+| D-166 | A wake word with a space in it is refused, and the refusal is temporary (LIFTED by D-172) | Superseded by D-172 |
 | D-165 | The existing SimpleX identity is adopted only when nothing holds it, which removes the primary's last functional consumer | IMPLEMENTED |
 | D-164 | A wizard that hides steps must never let native validation refuse in silence | IMPLEMENTED |
 | D-163 | A new bot is given plain retorts, because a retort is content and the voice is applied at reply time | IMPLEMENTED |
@@ -199,6 +200,61 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-172 - A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname
+
+**Status: IMPLEMENTED** (CCB-S5-014, no migration). **This lifts D-166**, which refused a wake
+word containing whitespace and said in its own title that the refusal was temporary. Bots are
+named in two words as a matter of course, and telling an operator to rename his bot is not an
+answer.
+
+**THE MODEL: A SEQUENCE, ANCHORED WHERE ONE TOKEN WAS.** `detectAddress` compared one token
+against the whole folded wake word, so a name with a space could never match. It now matches
+`normTokens(wakeWord)` as a sequence starting at exactly the same place: the first token after
+any greeting or filler prefix. Nothing about the anchoring changes, which is what keeps a long
+sentence that merely contains the name from being an address. The instruction is sliced from
+the LAST token of the name, so a two-word name does not leave its second word at the front of
+what the resolver reads.
+
+**PREFIX ACCOUNTING NEEDED NO CHANGE, and that is a finding rather than an omission.**
+`maxPrefixWords` and `maxPrefixChars` bound what may come BEFORE the name; they never bounded
+the name. A multi-token name changes what follows the prefix, not the prefix, so both keep
+their meaning exactly. Reported rather than adjusted quietly, as the briefing asked.
+
+**THE FUZZY RULE: PER TOKEN, AND AT MOST ONE TOKEN INEXACT IN THE WHOLE NAME.**
+`maxDistanceFor` scales with length, so applying it to `"rick sanchez"` as one 12-character
+string would buy 2 edits anywhere in it and make a longer name an EASIER target than a short
+one. Per token, each token's allowance is sized to that token. The one-inexact cap is the
+generalisation of what a single-token name already does, and it is what makes a longer name
+**stricter**: every token beyond the first must be exactly right. A total budget was considered
+and rejected, because it would admit two half-wrong tokens, which is the shape of an accidental
+match rather than of a typo. Mutation-proven: removing the cap turns the two-inexact negative
+control red.
+
+**THE PARTIAL NAME IS A NICKNAME, and the alias question is settled first.** `DEFAULT_WAKE_ALIASES`
+(D-088) is recorded in `CLAUDE.md` and in D-088's own prose and **exists nowhere in the code**;
+the grep is clean across the whole tree. The standing document was stale and is corrected here.
+
+With no alias mechanism, the three options were: the first token also wakes, the partial name is
+a nickname, or the operator chooses per bot. **Nickname**, because the mechanism already exists
+for exactly this shape of near-miss, is already per bot, and is already editable, and because
+"Rick" waking a bot called "Rick Sanchez" would also make "Rick" ambiguous the moment a second
+bot is called "Rick Something". An operator who genuinely wants the short form to wake sets the
+wake word to it; nothing else is needed. Nicknames became multi-token in the same change, longest
+first, since a bot called in two words has near-misses in two words.
+
+**WHAT WENT IN THE SAME COMMIT, deliberately.** `wakeWordProblem`'s whitespace branch and the
+first-token derivation both. Leaving either would be this defect inverted: a validator refusing
+values the detector has learned to match, which is harder to diagnose than one that never
+matched. Creation suggests the whole display name again.
+
+**AND THE INNER-RUN COLLAPSE IS BACK, for the right reason this time.** That one assertion has
+now been written three times: CCB-S5-009 collapsed the run (right behaviour, wrong reason - it
+thought the symptom was a DOUBLE space), CCB-S5-013 refused it (right, while any space made the
+value inert), and this collapses it again because two tokens and two tokens are the same name to
+the detector, so the ragged spelling is only untidy.
+
 ---
 
 ### D-171 - An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect
@@ -451,9 +507,9 @@ loud at the line that causes it rather than sixty seconds later in a log nobody 
 
 ---
 
-### D-166 - A wake word with a space in it is refused, and the refusal is temporary
+### D-166 - A wake word with a space in it is refused, and the refusal is temporary (LIFTED by D-172)
 
-**Status: IMPLEMENTED** (CCB-S5-013, no migration). **The refusal is lifted by CCB-S5-014**,
+**Status: Superseded by D-172** (CCB-S5-013, no migration). **The refusal was lifted by CCB-S5-014**, which made the detector match a token sequence,
 which makes the detector match multi-token wake words. It is recorded here as temporary so
 nobody later reads it as a considered limit: bots are named in two words as a matter of course,
 and telling an operator to rename his bot is not a fix.
