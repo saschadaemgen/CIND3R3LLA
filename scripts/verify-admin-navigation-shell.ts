@@ -6,6 +6,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import type { LocalAiConfig, AdminConfig, Config } from '../src/config.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -76,7 +77,7 @@ const fakeFetch: FetchLike = async (input) => {
 async function main(): Promise<void> {
   process.env['SESSION_SECRET'] ??= SESSION_SECRET;
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const result = await pg.query(text, values ? [...values] : undefined);

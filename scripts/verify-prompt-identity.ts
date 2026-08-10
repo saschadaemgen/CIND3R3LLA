@@ -47,6 +47,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   HISTORY_FENCE,
+  KNOWLEDGE_FENCE,
   SEARCH_FENCE,
   systemPrompt,
   type AiReplyMode,
@@ -127,6 +128,7 @@ interface Case {
   identity?: typeof IDENTITY_FULL | { name: string } | undefined;
   now?: CurrentTime | undefined;
   webResults?: { title: string; snippet: string; url: string }[];
+  knowledgePassages?: { title: string; text: string }[];
   history?: { speaker: string; text: string }[];
   historyWindowMinutes?: number;
   nameableRules?: PromptRule[];
@@ -239,6 +241,17 @@ const CASES: Case[] = [
       { title: 'A page', snippet: 'Some text from the web.', url: 'https://example.org/a' },
     ],
   },
+  // CCB-S5-022. Without this configuration the knowledge fence rules reach no prompt at
+  // all, and three of them are CRITICAL, which this harness refuses. That refusal is the
+  // check working: a constitutional sentence nothing selects is a sentence nobody is told.
+  {
+    id: 'conversation.with-knowledge',
+    mode: 'conversation',
+    personality: personality(),
+    identity: IDENTITY_FULL,
+    now: NOW,
+    knowledgePassages: [{ title: 'A document', text: 'Some text the operator gave her.' }],
+  },
 ];
 
 /** The output bound this case's dial earns, which is also what the length rule interpolates. */
@@ -260,6 +273,7 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.identity ? { identity: testCase.identity } : {}),
     ...(testCase.now ? { now: testCase.now } : {}),
     ...(testCase.webResults ? { webResults: testCase.webResults } : {}),
+    ...(testCase.knowledgePassages ? { knowledgePassages: testCase.knowledgePassages } : {}),
     ...(testCase.history ? { history: testCase.history } : {}),
     ...(testCase.nameableRules ? { nameableRules: testCase.nameableRules } : {}),
     ...(testCase.hasWithheldRules !== undefined ? { hasWithheldRules: testCase.hasWithheldRules } : {}),
@@ -300,6 +314,7 @@ function selectionFor(
   const context: PromptRuleContext = {
     ...base.context,
     hasWebResults: (testCase.webResults?.length ?? 0) > 0,
+    hasKnowledge: (testCase.knowledgePassages?.length ?? 0) > 0,
     hasHistory: (testCase.history?.length ?? 0) > 0,
     hasNameableRules: (testCase.nameableRules?.length ?? 0) > 0,
     hasWithheldRules: testCase.hasWithheldRules === true,
@@ -313,6 +328,7 @@ function selectionFor(
     maxChars: String(maxCharsFor(testCase)),
     fence: SEARCH_FENCE,
     historyFence: HISTORY_FENCE,
+    knowledgeFence: KNOWLEDGE_FENCE,
     historyCount: String(testCase.history?.length ?? 0),
     historyMinutes: String(testCase.historyWindowMinutes ?? 0),
     ruleTotal: String(testCase.ruleOverview?.total ?? 0),

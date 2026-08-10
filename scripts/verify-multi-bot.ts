@@ -19,6 +19,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
 import { listPromptRules } from '../src/db/prompt-rules.js';
@@ -67,7 +68,7 @@ async function seedTwoBots(db: Queryable): Promise<{ sharp: number; warm: number
 
 async function main(): Promise<void> {
   setLogLevel('error');
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

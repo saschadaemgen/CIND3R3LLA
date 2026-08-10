@@ -7,6 +7,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import type { CapturedMessage } from '../src/capture/message.js';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
@@ -51,7 +52,7 @@ function message(
 }
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const result = await pg.query(text, values ? [...values] : undefined);

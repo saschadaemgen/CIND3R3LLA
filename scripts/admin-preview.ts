@@ -12,6 +12,7 @@
 
 import { resolve } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
@@ -40,7 +41,7 @@ const PORT = Number(process.env['PREVIEW_PORT'] ?? process.env['PORT']) || 8788;
 const PASSWORD = 'preview-password';
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

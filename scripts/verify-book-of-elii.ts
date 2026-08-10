@@ -18,6 +18,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
@@ -90,7 +91,7 @@ async function main(): Promise<void> {
   setLogLevel('error');
   process.env['SESSION_SECRET'] ??= 'book-of-elii-preview-secret-0123456789abcdef';
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

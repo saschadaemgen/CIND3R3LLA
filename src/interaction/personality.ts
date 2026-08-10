@@ -839,6 +839,7 @@ export function dialledPromptInputs(
     hasNicknames: nicknames.length > 0,
     hasClock: stamp !== null,
     hasWebResults: false,
+    hasKnowledge: false,
     hasHistory: false,
     hasNameableRules: false,
     hasWithheldRules: false,

@@ -31,6 +31,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import sharp from 'sharp';
 import { mkdir, readFile, rm } from 'node:fs/promises';
@@ -226,7 +227,7 @@ async function main(): Promise<void> {
 
   /* ── 4. The column, and what the runtime reads out of it ─────────────────── */
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

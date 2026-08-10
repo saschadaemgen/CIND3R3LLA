@@ -14,6 +14,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { replaceLinks, updateMedia, upsertMessage } from '../src/db/messages.js';
 import { extractLinks, linksToSearchText } from '../src/capture/links.js';
@@ -46,7 +47,7 @@ function mkMsg(over: Partial<CapturedMessage>): CapturedMessage {
 }
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

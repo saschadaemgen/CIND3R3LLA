@@ -81,6 +81,7 @@ const EVERYTHING_IN_SCOPE: PromptRuleContext = {
   hasNicknames: true,
   hasClock: true,
   hasWebResults: true,
+    hasKnowledge: true,
   hasHistory: true,
   hasNameableRules: true,
   hasWithheldRules: true,

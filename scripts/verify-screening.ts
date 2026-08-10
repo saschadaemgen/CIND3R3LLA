@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 
 import { destroyMessage } from '../src/archive/destroy.js';
 import { isHoldViolation } from '../src/consent/revocation.js';
@@ -60,7 +61,7 @@ const MEMBER = 'member-mallory';
 const FIXTURE_BYTES = Buffer.from('cinderella-benign-screening-fixture-v1', 'utf8');
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

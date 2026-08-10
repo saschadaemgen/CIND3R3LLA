@@ -20,6 +20,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { upsertMessage } from '../src/db/messages.js';
 import { recordOptIn, recordOptOut } from '../src/db/consent.js';
@@ -55,7 +56,7 @@ const ROBIN = 'member-robin';
 const ALL_TYPES = ['text', 'image', 'video', 'voice', 'link', 'file'] as const;
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

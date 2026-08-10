@@ -29,6 +29,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -136,7 +137,7 @@ async function main(): Promise<void> {
 
   section('2. The console: one control, in one place, on every page that edits a bot');
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

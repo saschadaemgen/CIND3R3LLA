@@ -19,6 +19,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { listPromptRules } from '../src/db/prompt-rules.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -27,7 +28,7 @@ import type { PromptRule } from '../src/interaction/prompt-rules.js';
 let cached: Promise<PromptRule[]> | null = null;
 
 async function load(): Promise<PromptRule[]> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   try {
     for (const migration of await loadMigrationFiles()) await pg.exec(migration.sql);
     const db: Queryable = {

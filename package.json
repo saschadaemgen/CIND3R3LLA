@@ -110,10 +110,13 @@
     "verify:decisions-index": "tsx scripts/verify-decisions-index.ts",
     "verify:interaction-scope": "tsx scripts/verify-interaction-scope.ts",
     "verify:two-names": "tsx scripts/verify-two-names.ts",
+    "verify:knowledge": "tsx scripts/verify-knowledge.ts",
+    "verify:knowledge-live": "tsx scripts/verify-knowledge-live.ts",
     "verify:plugin-scope": "tsx scripts/verify-plugin-scope.ts",
     "verify:plugin-scope-live": "tsx scripts/verify-plugin-scope-live.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite-pgvector": "0.0.5",
     "@fastify/cookie": "^11.1.2",
     "@fastify/formbody": "^8.0.2",
     "@fastify/static": "^10.1.2",

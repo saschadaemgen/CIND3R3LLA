@@ -44,6 +44,8 @@ import { DEFAULT_CRYPTO_PRICES } from './crypto-prices/settings.js';
 import { CRYPTO_PRICES_ID } from './crypto-prices/plugin.js';
 import { WEB_SEARCH_DEFAULTS } from './web-search/settings.js';
 import { WEB_SEARCH_ID } from './web-search/plugin.js';
+import { KNOWLEDGE_DEFAULTS } from './knowledge-base/settings.js';
+import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
 import { listPlugins, type PluginStates } from './registry.js';
 
 /** Where a plugin setting lives. */
@@ -239,6 +241,104 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     label: 'Auto-resolve dominance factor',
     reason: 'The other half of the same disambiguation mechanic, and it travels with it.',
   },
+
+  /* ── Knowledge Base (CCB-S5-022) ────────────────────────────────────────── */
+  //
+  // The whole point of D-175's pattern, tested: what a bot is GIVEN is per bot, the store
+  // and the model behind it are shared. Note that the DOCUMENTS are per bot without
+  // appearing here, because a grant is a row in `cinderella_kb_document_bots` rather than a
+  // setting: absence there means NOT GIVEN, where absence in this table means inherit.
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Knowledge base enabled',
+    reason:
+      'Whether this bot reads what it was given at all. One bot with the protocol work beside one with nothing is the capability.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'trigger',
+    scope: 'shared',
+    label: 'When she consults it',
+    reason:
+      'Whether retrieval is attempted at all is a deployment behaviour, and the relevance floor rather than the trigger is what decides per question.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'targetChars',
+    scope: 'shared',
+    label: 'Chunk size',
+    reason:
+      'It decides what is IN the one shared store. Two bots reading chunks cut to different sizes would need two stores.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'overlapChars',
+    scope: 'shared',
+    label: 'Chunk overlap',
+    reason: 'The other half of the same cut, and it cannot differ from the size it qualifies.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'maxChars',
+    scope: 'shared',
+    label: 'Chunk ceiling',
+    reason: 'The hard bound on a single stored chunk. A property of the store, not of a reader.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'contextualPrefix',
+    scope: 'shared',
+    label: 'Contextual prefixing',
+    reason:
+      'It changes what is indexed, so it is an ingest setting: turning it off for one bot would mean re-embedding the shared store.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'candidatesPerSearch',
+    scope: 'shared',
+    label: 'Candidates per search',
+    reason: 'How hard the one index is worked. A cost, not a character.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'maxChunks',
+    scope: 'shared',
+    label: 'Chunks in the prompt',
+    reason: 'Travels with the budget it shares a purpose with.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'keywordWeight',
+    scope: 'shared',
+    label: 'Keyword weight',
+    reason:
+      'How the one index is searched. A property of the corpus, which is one corpus, rather than of the bot asking.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'vectorWeight',
+    scope: 'shared',
+    label: 'Vector weight',
+    reason: 'The other side of the same fusion, and meaningless apart from it.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'minScore',
+    scope: 'shared',
+    label: 'Minimum relevance',
+    reason:
+      'The floor below which she says she has nothing. It is the promise the feature makes, and a promise with N values is one nobody can state.',
+  },
+  {
+    pluginId: KNOWLEDGE_BASE_ID,
+    key: 'budgetChars',
+    scope: 'shared',
+    label: 'Retrieved text budget',
+    reason:
+      'A SAFETY BOUND on what reaches the model, on exactly the terms the web search budgets are shared: one number, or nobody can state it for any bot.',
+  },
 ]);
 
 /** One bot's deviation from one plugin setting. Absence means inherit; NULL is not stored. */
@@ -370,5 +470,6 @@ export function expectedPluginSettingKeys(): Map<string, string[]> {
   };
   add(CRYPTO_PRICES_ID, Object.keys(DEFAULT_CRYPTO_PRICES));
   add(WEB_SEARCH_ID, Object.keys(WEB_SEARCH_DEFAULTS));
+  add(KNOWLEDGE_BASE_ID, Object.keys(KNOWLEDGE_DEFAULTS));
   return out;
 }

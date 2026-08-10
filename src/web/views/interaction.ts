@@ -338,6 +338,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Web search sources (appended verbatim, never reworded)',
     vars: '{sources}',
   },
+  knowledgeSources: {
+    label: 'Knowledge base sources (appended verbatim, never reworded)',
+    vars: '{sources}',
+  },
   searchUnavailable: { label: 'Web search could not be reached', vars: '' },
   rulesNoElimination: {
     label: 'Refuses to narrow down which rules are withheld (answered by the application)',

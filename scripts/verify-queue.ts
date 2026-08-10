@@ -17,6 +17,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { readFileSync } from 'node:fs';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -80,7 +81,7 @@ async function scalar(db: Queryable, sql: string, params: unknown[] = []): Promi
 }
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

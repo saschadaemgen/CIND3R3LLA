@@ -26,6 +26,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import type * as T from 'simplex-chat/dist/types.js';
 import type { AdminConfig, Config } from '../src/config.js';
@@ -190,7 +191,7 @@ async function main(): Promise<void> {
   setLogLevel('error');
   process.env['SESSION_SECRET'] ??= SESSION_SECRET;
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

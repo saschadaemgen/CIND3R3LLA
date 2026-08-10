@@ -22,6 +22,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 
 import { destroyMessage, recordPendingDestruction } from '../src/archive/destroy.js';
 import { sweepDestructions } from '../src/archive/sweeper.js';
@@ -58,7 +59,7 @@ const ALICE = 'member-alice';
 const BOB = 'member-bob';
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

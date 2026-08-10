@@ -324,6 +324,18 @@ export interface InteractionDeps {
    * not in this bot's catalog either, so this is the second line of defence rather than
    * the first. A getter for the same reason `prices` is one; see there.
    */
+  /**
+   * What she was given to read (CCB-S5-022, D-176).
+   *
+   * Declared narrowly here for the reason `WebSearchLookup` is: the interaction layer must
+   * not depend on the store, and a reader can see in six lines that the only thing a
+   * knowledge lookup can produce is text and document names.
+   *
+   * Null when the plugin is off FOR THIS BOT, and that is the whole absent-capability
+   * property for a plugin that contributes no intent: nothing is embedded, nothing is
+   * searched, and no passage reaches the model.
+   */
+  knowledge?: () => KnowledgeLookup | null;
   webSearch?: () => WebSearchLookup | null;
   moderationRules?: () => ModerationRules | null;
   /**
@@ -365,6 +377,19 @@ export interface InteractionDeps {
  * readable: a reader can see, in five lines, that the only thing a search can produce
  * here is a list of strings.
  */
+/** The only shape of a knowledge base the engine knows about (CCB-S5-022). */
+export interface KnowledgeLookup {
+  query(
+    botProfileId: number,
+    question: string,
+  ): Promise<{
+    /** Verbatim passages, already budgeted and above the relevance floor. */
+    passages: { title: string; text: string }[];
+    /** Document titles the APPLICATION prints. Never model-written (D-137). */
+    sources: string[];
+  }>;
+}
+
 export interface WebSearchLookup {
   /** Whether a search could be attempted at all right now. */
   available(): boolean;
@@ -3221,6 +3246,31 @@ export class InteractionEngine {
     // the one path built to keep them away from her. See `renderBookPage`.
     const { page, ...disclosure } = await this.disclosure(msg, lang);
 
+    // ── WHAT SHE WAS GIVEN TO READ (CCB-S5-022, D-176) ────────────────────
+    //
+    // Free conversation only. No command lane consults the store: consent, moderation, the
+    // retorts and the Book all have words the application decided, and a retrieved passage
+    // has no business near a consent confirmation.
+    //
+    // Never throws outward. A store that cannot be read costs her the documents and not the
+    // reply, which is the same call `recentHistory` makes about the thread.
+    let knowledgeSources: string[] = [];
+    let knowledgePassages: { title: string; text: string }[] = [];
+    const knowledge = this.deps.knowledge?.() ?? null;
+    if (knowledge && this.deps.botProfileId != null) {
+      try {
+        const found = await knowledge.query(this.deps.botProfileId, msg.text);
+        knowledgePassages = found.passages;
+        knowledgeSources = found.sources;
+      } catch (error) {
+        log.warn(
+          `Interaction: the knowledge base could not be read (${
+            error instanceof Error ? error.message : String(error)
+          }); answering without it.`,
+        );
+      }
+    }
+
     if (personalize) {
       try {
         spoken =
@@ -3257,6 +3307,10 @@ export class InteractionEngine {
               // that turns "what did I just say" into an answerable question.
               history: toPromptHistory(history, HISTORY_FENCE),
               historyWindowMinutes: s.memory.windowMinutes,
+              // THE OPERATOR'S DOCUMENTS (CCB-S5-022), fenced in the user message and
+              // incapable of causing anything, exactly as the history and the search
+              // results are. Empty unless something cleared the relevance floor.
+              ...(knowledgePassages.length ? { knowledgePassages } : {}),
               // The book, when they are asking about it (CCB-S4-045).
               ...disclosure,
               // A page answer tells her only THAT a page is being printed under her reply,
@@ -3317,6 +3371,22 @@ export class InteractionEngine {
      * truth.
      */
     let body = spoken ?? '';
+
+    // ── THE SOURCE LINE IS PRINTED, NOT WRITTEN (CCB-S5-022, D-137) ────────
+    //
+    // Same shape as the search sources and the law page: application-owned text appended
+    // verbatim. She is told, in the registry, not to write one; this is why. It names the
+    // documents she was actually HANDED, which is a fact this code knows, rather than the
+    // documents she believes she used, which is a claim she would sometimes get wrong.
+    //
+    // Attached only when a passage really reached her. A source line under an answer that
+    // used nothing is the defect CCB-S4-042 fixed for search, in a new place.
+    if (knowledgeSources.length > 0 && spoken !== null) {
+      body = `${body}
+${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
+        sources: knowledgeSources.join(', '),
+      })}`;
+    }
     if (page) {
       const framing = spoken !== null && sceneVoiceUsable(spoken) ? spoken.trim() : '';
       body = [

@@ -14,6 +14,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { readFileSync } from 'node:fs';
 import argon2 from 'argon2';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
@@ -61,7 +62,7 @@ async function main(): Promise<void> {
   // Plugin secrets are encrypted with a key derived from SESSION_SECRET, which
   // production supplies through the systemd EnvironmentFile.
   process.env['SESSION_SECRET'] ??= SESSION_SECRET;
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

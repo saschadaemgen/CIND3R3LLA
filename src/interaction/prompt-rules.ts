@@ -83,6 +83,7 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-nicknames',
   'has-clock',
   'has-web-results',
+  'has-knowledge',
   'has-history',
   'has-no-history',
   'has-nameable-rules',
@@ -164,6 +165,8 @@ export interface PromptRuleContext {
   hasNicknames: boolean;
   hasClock: boolean;
   hasWebResults: boolean;
+  /** Passages from the operator's documents are attached (CCB-S5-022). */
+  hasKnowledge: boolean;
   /** Whether any remembered conversation was supplied (CCB-S4-044). */
   hasHistory: boolean;
   /** Rules were supplied for her to quote (CCB-S4-045). */
@@ -193,6 +196,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasNicknames: false,
   hasClock: false,
   hasWebResults: false,
+  hasKnowledge: false,
   hasHistory: false,
   hasNameableRules: false,
   hasWithheldRules: false,
@@ -245,6 +249,8 @@ export function conditionHolds(
       return context.hasClock;
     case 'has-web-results':
       return context.hasWebResults;
+    case 'has-knowledge':
+      return context.hasKnowledge;
     case 'has-history':
       return context.hasHistory;
     case 'has-no-history':

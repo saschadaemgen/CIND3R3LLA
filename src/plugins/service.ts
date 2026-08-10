@@ -37,6 +37,7 @@ import {
   setPluginOverride,
 } from '../db/plugin-overrides.js';
 import { applyPluginOverrides, ENABLED_KEY, type PluginOverride } from './scope.js';
+import { ingestSettingsDiffer } from '../knowledge/chunk.js';
 import {
   activePluginIntents,
   isPluginEnabled,
@@ -59,6 +60,12 @@ import {
   type WebSearchSettings,
 } from './web-search/settings.js';
 import { WEB_SEARCH_ID } from './web-search/plugin.js';
+import {
+  normalizeKnowledge,
+  KNOWLEDGE_DEFAULTS,
+  type KnowledgeSettings,
+} from './knowledge-base/settings.js';
+import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
 
 const STATES_KEY = 'plugins';
 const settingsKey = (id: string): string => `plugin:${id}`;
@@ -91,6 +98,7 @@ export class PluginService {
     private states: PluginStates,
     private cryptoPrices: CryptoPricesSettings,
     private webSearch: WebSearchSettings,
+    private knowledge: KnowledgeSettings,
   ) {}
 
   static async load(db: Queryable): Promise<PluginService> {
@@ -104,6 +112,12 @@ export class PluginService {
     // crypto keys needed one for.
     const webSearch = normalizeWebSearchSettings(
       (await getSetting(db, settingsKey(WEB_SEARCH_ID))) ?? WEB_SEARCH_DEFAULTS,
+    );
+
+    // The knowledge base (CCB-S5-022). Normalised on read like everything else, so a stored
+    // document written by another version cannot hand the retriever a budget nobody typed.
+    const knowledge = normalizeKnowledge(
+      (await getSetting(db, settingsKey(KNOWLEDGE_BASE_ID))) ?? KNOWLEDGE_DEFAULTS,
     );
 
     // Self-repair for instances written by the doubled-encryption path
@@ -142,7 +156,7 @@ export class PluginService {
         );
       }
     }
-    return new PluginService(db, states, crypto, webSearch);
+    return new PluginService(db, states, crypto, webSearch, knowledge);
   }
 
   /** All-defaults instance, for harnesses and the server's fallback path. */
@@ -152,6 +166,7 @@ export class PluginService {
       normalizePluginStates({}),
       normalizeCryptoPrices({}),
       normalizeWebSearchSettings({}),
+      normalizeKnowledge({}),
     );
   }
 
@@ -407,6 +422,39 @@ export class PluginService {
     });
     this.webSearch = normalized;
     return normalized;
+  }
+
+  /* ── Knowledge Base settings (CCB-S5-022) ───────────────────────────── */
+
+  getKnowledge(): KnowledgeSettings {
+    return this.knowledge;
+  }
+
+  /**
+   * Saves the knowledge settings, and reports whether the INGEST half moved.
+   *
+   * The caller needs that answer: an ingest change makes every stored chunk a chunk
+   * somebody else's settings produced, and the console has to say so rather than leaving a
+   * store where half the chunks were cut one way and half another.
+   */
+  async saveKnowledge(
+    next: unknown,
+    actor: string,
+  ): Promise<{ settings: KnowledgeSettings; ingestChanged: boolean }> {
+    const normalized = normalizeKnowledge({ ...this.knowledge, ...(next ?? {}) });
+    const ingestChanged = ingestSettingsDiffer(this.knowledge, normalized);
+    await setSetting(this.db, settingsKey(KNOWLEDGE_BASE_ID), normalized);
+    await writeAudit(this.db, actor, 'plugin.settings', `plugin:${KNOWLEDGE_BASE_ID}`, {
+      trigger: normalized.trigger,
+      targetChars: normalized.targetChars,
+      overlapChars: normalized.overlapChars,
+      contextualPrefix: normalized.contextualPrefix,
+      minScore: normalized.minScore,
+      budgetChars: normalized.budgetChars,
+      ingestChanged,
+    });
+    this.knowledge = normalized;
+    return { settings: normalized, ingestChanged };
   }
 
   async saveCryptoPrices(next: unknown, actor: string): Promise<CryptoPricesSettings> {

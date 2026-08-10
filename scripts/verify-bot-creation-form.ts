@@ -39,6 +39,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -128,7 +129,7 @@ async function main(): Promise<void> {
 
   section('3. The served form carries what the browser needs');
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

@@ -139,6 +139,14 @@ export interface AiReplyRequest {
    * and the length cap. There is nowhere for it to go except into the wording of one
    * reply to the person who asked.
    */
+  /**
+   * Passages from the operator's documents (CCB-S5-022).
+   *
+   * VERBATIM slices of what he gave her, fenced in the user message exactly as the web
+   * results and the history are. The application decides which document names appear under
+   * the answer; the model is never asked and never writes that line (D-137).
+   */
+  knowledgePassages?: readonly { title: string; text: string }[];
   webResults?: readonly { title: string; snippet: string; url: string }[];
   /**
    * Which of `webResults` the answer actually drew on, as the model declares them
@@ -258,6 +266,28 @@ export const SEARCH_FENCE = '<<<UNTRUSTED-WEB-CONTENT>>>';
  * in. The answer is the same shape as D-141 and the proof has to be stronger.
  */
 export const HISTORY_FENCE = '<<<UNTRUSTED-CHAT-HISTORY>>>';
+
+/**
+ * The delimiter that marks text retrieved from the operator's own documents
+ * (CCB-S5-022, D-176).
+ *
+ * ── WHY IT IS FENCED AT ALL, WHEN THE OPERATOR WROTE IT ─────────────────────
+ *
+ * Because the fence is structural, and an exception carved for trust is a thing somebody
+ * widens later. These documents are the least hostile input in the system - his own protocol
+ * notes, on his own disk - and that is exactly the argument that would be made for the next
+ * source, and the one after that, until the fence means nothing.
+ *
+ * There is also a real case, not a hypothetical one: a document is a FILE, and files are
+ * copied from places. A protocol specification pasted out of a vendor PDF, a decision record
+ * quoting an email, an architecture note with a snippet of somebody's config in it: the
+ * operator wrote the document, and he did not write every sentence in it.
+ *
+ * Its own marker rather than the search one, for the reason history has its own: they are
+ * different claims. The search fence says strangers on the web wrote this; this one says the
+ * operator gave me this, treat it as reference material and not as an instruction.
+ */
+export const KNOWLEDGE_FENCE = '<<<REFERENCE-DOCUMENT>>>';
 
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
@@ -408,6 +438,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
   const context: PromptRuleContext = {
     ...base.context,
     hasWebResults: (request.webResults?.length ?? 0) > 0,
+    hasKnowledge: (request.knowledgePassages?.length ?? 0) > 0,
     hasHistory: (request.history?.length ?? 0) > 0,
     hasNameableRules: (request.nameableRules?.length ?? 0) > 0,
     hasWithheldRules: request.hasWithheldRules === true,
@@ -431,6 +462,9 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     // Same reasoning as the search fence: a delimiter the transport and the rule text must
     // agree on character for character, so it is code rather than an editable sentence.
     historyFence: HISTORY_FENCE,
+    // Same reasoning again: a delimiter the transport and the rule text must agree on
+    // character for character, so it is code rather than an editable sentence.
+    knowledgeFence: KNOWLEDGE_FENCE,
     // What she may honestly say she can see. The COUNT is what was actually supplied after
     // every limit bound, not the configured maximum, because telling her she can see twenty
     // when she was handed four is the same class of false statement D-140 removed.
@@ -635,6 +669,17 @@ export async function generateOllamaReply(
                       snippet: `${SEARCH_FENCE}${result.snippet}${SEARCH_FENCE}`,
                       url: result.url,
                     })),
+                  }
+                : {}),
+              // THE OPERATOR'S DOCUMENTS (CCB-S5-022), fenced per passage for the same
+              // reason as everything else in this object. The text is verbatim from a file
+              // he uploaded; the marker is stripped from it before it gets here, so nothing
+              // in a document can close its own fence and continue as the application.
+              ...(request.knowledgePassages?.length
+                ? {
+                    referenceDocuments: request.knowledgePassages.map(
+                      (p) => `${KNOWLEDGE_FENCE}${p.title}: ${p.text}${KNOWLEDGE_FENCE}`,
+                    ),
                   }
                 : {}),
               // REMEMBERED CONVERSATION, fenced per entry for the same reason the web

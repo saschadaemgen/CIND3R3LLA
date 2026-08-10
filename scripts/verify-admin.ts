@@ -14,6 +14,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
@@ -47,7 +48,7 @@ function rawCookie(setCookie: string | string[] | undefined, name: string): stri
 }
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

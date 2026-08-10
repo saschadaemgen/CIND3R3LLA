@@ -24,6 +24,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
 import { FakeCore, runUnserialized } from './fake-core.js';
@@ -70,7 +71,7 @@ async function threw(fn: () => Promise<unknown>): Promise<Error | null> {
 
 /* ------------------------------------------------------------------ database */
 
-const db = new PGlite();
+const db = new PGlite({ extensions: { vector } });
 const queryable: Queryable = {
   async query<R = Record<string, unknown>>(text: string, values?: readonly unknown[]) {
     const r = await db.query<R>(text, values ? [...values] : undefined);

@@ -9,6 +9,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 
 import {
   DEMO_MARKER_KEY,
@@ -32,7 +33,7 @@ function section(t: string): void {
 }
 
 async function freshDb(): Promise<{ pg: PGlite; db: Queryable }> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

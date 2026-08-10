@@ -11,6 +11,7 @@ import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { buildServer } from '../src/web/server.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { readFileSync } from 'node:fs';
@@ -37,7 +38,7 @@ function check(name: string, cond: boolean): void {
 }
 
 async function main(): Promise<void> {
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const res = await pg.query(text, values ? [...values] : undefined);

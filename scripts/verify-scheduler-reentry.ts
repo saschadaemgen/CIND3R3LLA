@@ -33,6 +33,7 @@
  */
 
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -187,7 +188,7 @@ async function main(): Promise<void> {
 
   section('3. The real flush completes, and would not if it were wrapped again');
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(sql, values) {
       const result = await pg.query(sql, values ? [...values] : undefined);

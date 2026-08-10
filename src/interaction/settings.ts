@@ -99,6 +99,11 @@ export const PERSONA_KEYS = [
   // the application appends it verbatim, because a source the model reworded is a
   // source that may name the wrong page, and a wrong source is worse than none.
   'searchSources',
+  // CCB-S5-022. The document names under an answer she drew from the knowledge base.
+  // PROTECTED for the same reason `searchSources` is: {sources} is written by the
+  // application, and a persona free to drop it would be a persona that drops the one thing
+  // making the answer traceable.
+  'knowledgeSources',
   'searchUnavailable',
   // CCB-S4-042. Said INSTEAD of searching, when the pre-search gate refused the request.
   // Deterministic on purpose: the refusal is a decision the application took before any
@@ -178,6 +183,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // retort's category rather than belonging to a second one.
   moderationAction: 'nickname',
   searchSources: 'lookup',
+  knowledgeSources: 'conversation',
   searchUnavailable: 'lookup',
   searchRefused: 'lookup',
   rulesNoElimination: 'conversation',
@@ -436,6 +442,7 @@ const PERSONA_EN: PersonaStrings = {
   // CCB-S4-037. Appended verbatim after whatever she wrote from the results, so a member
   // can always tell an answer that came from the web from one that came from her.
   searchSources: '🔎 From the web: {sources}',
+  knowledgeSources: '📄 From what you gave me: {sources}',
   // Said when she could not look it up. She does NOT then answer from training data and
   // present it as current: that is the failure the whole feature exists to avoid.
   searchUnavailable:
@@ -569,6 +576,7 @@ const PERSONA_DE: PersonaStrings = {
     '🔒 Das ist jetzt {action}{duration}. Es steht im Protokoll, und es war nicht meine ' +
     'Idee, es war die Zaehlung.',
   searchSources: '🔎 Aus dem Netz: {sources}',
+  knowledgeSources: '📄 Aus deinen Unterlagen: {sources}',
   searchUnavailable:
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',
   searchEmpty:

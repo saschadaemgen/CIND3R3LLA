@@ -8,6 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import type { LocalAiConfig, AdminConfig, Config } from '../src/config.js';
 import type { Queryable } from '../src/db/pool.js';
@@ -100,7 +101,7 @@ async function main(): Promise<void> {
   const modelCatalogCss = await readFile(join(projectRoot, 'assets', 'app.css'), 'utf8');
   const assetCopier = await readFile(join(projectRoot, 'scripts', 'copy-assets.mjs'), 'utf8');
 
-  const pg = new PGlite();
+  const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
     async query(text, values) {
       const result = await pg.query(text, values ? [...values] : undefined);
