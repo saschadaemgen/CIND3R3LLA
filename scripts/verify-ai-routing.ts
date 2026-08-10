@@ -13,12 +13,24 @@ import {
   setAiModelRouting,
 } from '../src/interaction/ai-runtime.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { seededPromptRules } from './seeded-rules.js';
 
 /** The rules she is given, from the seeded registry (CCB-S4-039). */
 const RULES = await seededPromptRules();
 import { activeResolverName, resolveIntent } from '../src/interaction/resolver.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 
@@ -141,7 +153,7 @@ const fakeFetch: FetchLike = async (input, init) => {
 };
 
 async function main(): Promise<void> {
-  setActiveIntents([]);
+  setCatalog([]);
 
   const db = new MemoryDb();
   const runtime = await AiRuntimeService.load(db, config, { fetchImpl: fakeFetch });
@@ -163,6 +175,7 @@ async function main(): Promise<void> {
   await resolveIntent('what is my status', {
     threshold: 0.65,
     defaultLanguage: 'en',
+    intents: catalog,
   });
 
   check(
@@ -211,7 +224,7 @@ async function main(): Promise<void> {
   check('routing update is audited', db.audits.length >= 1, String(db.audits.length));
 
   resetAiRuntimeForTests();
-  setActiveIntents([]);
+  setCatalog([]);
 
   console.log('\n=== RESULTS ===');
   console.log(`StepSuccessful: ${failures === 0}`);
@@ -226,7 +239,7 @@ async function main(): Promise<void> {
 
 main().catch((error: unknown) => {
   resetAiRuntimeForTests();
-  setActiveIntents([]);
+  setCatalog([]);
   const message = error instanceof Error ? error.message : String(error);
 
   console.error('\n=== RESULTS ===');

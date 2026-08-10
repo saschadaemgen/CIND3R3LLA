@@ -46,10 +46,22 @@ import {
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { DEFAULT_INTERACTION, normalizeInteraction } from '../src/interaction/settings.js';
 import { DEFAULT_PERSONALITY, replyCharBudget } from '../src/interaction/personality.js';
-import { setActiveIntents, CORE_INTENTS } from '../src/interaction/intent.js';
+import { capabilityCatalog, CORE_INTENTS, type Intent } from '../src/interaction/intent.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { seededPromptRules } from './seeded-rules.js';
 import { setLogLevel } from '../src/log.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 const RULES = await seededPromptRules();
 
@@ -333,12 +345,13 @@ async function main(): Promise<void> {
 
   console.log('\n5. A planted instruction causes nothing');
 
-  setActiveIntents([...CORE_INTENTS]);
+  setCatalog([...CORE_INTENTS]);
   const interaction = normalizeInteraction({ ...DEFAULT_INTERACTION });
   const sent: string[] = [];
   let sawHistory = 0;
 
   const engine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
     rules: () => RULES,

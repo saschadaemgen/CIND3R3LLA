@@ -235,6 +235,14 @@ The history below records the pre-CCB-S2-003 state.
       their own settings page and their own intents; the sidebar has a Plugins submenu built
       from the registry. A disabled plugin's intents leave the active catalog entirely.
       Adding a second plugin needs no framework change.
+- [x] **Capability per bot (CCB-S5-021, D-175)** — whether a plugin is available is a per-bot
+      setting on D-155's inherit-unless-deviated mechanism (migration 051); the intent catalog
+      is built per bot rather than for the process, so a bot without a capability cannot
+      produce it at any of the three layers. Everything else about a plugin, the credential,
+      the quotas, the cache and the untrusted-text ceilings, stays deployment-wide, and the
+      inventory saying which is which is data in `src/plugins/scope.ts`. **The knowledge base
+      below inherits this shape**: enablement and the documents it is given are per bot, its
+      index and credentials are not.
 - [x] **Price lookups, rebuilt (CCB-S3-004 revised)** — three provider adapters
       (CoinMarketCap, CoinGecko, Dexscreener) in an ordered chain with automatic failover;
       symbols resolved lazily then PINNED in `asset_mappings` and never silently

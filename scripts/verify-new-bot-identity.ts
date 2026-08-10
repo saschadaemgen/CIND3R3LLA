@@ -68,6 +68,7 @@ import { SecurityService } from '../src/security/settings.js';
 import { InteractionService } from '../src/interaction/settings.js';
 import { setLogLevel } from '../src/log.js';
 import type { AdminConfig, Config } from '../src/config.js';
+import { CORE_INTENTS } from '../src/interaction/intent.js';
 
 let failures = 0;
 const PASSWORD = 'correct-horse-battery-staple';
@@ -423,6 +424,8 @@ async function main(): Promise<void> {
     const s = await settingsFor(second);
     const sent: string[] = [];
     const engine = new InteractionEngine({
+      // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+      capabilities: () => CORE_INTENTS,
       db,
       settings: () => s,
       personality: () => ({ ...DEFAULT_PERSONALITY }),
@@ -459,6 +462,8 @@ async function main(): Promise<void> {
     );
     const sent: string[] = [];
     const engine = new InteractionEngine({
+      // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+      capabilities: () => CORE_INTENTS,
       db,
       settings: () => emptied,
       personality: () => ({ ...DEFAULT_PERSONALITY }),

@@ -359,14 +359,26 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // A mute without this is a mute nobody lifts. Booked on the durable queue, so it
     // survives the restart that a timer would not.
     scheduleUnmute: (sanctionId, at) => enqueueModerationExpiry(getPool(), sanctionId, at),
-    // Handed over only while the plugin is enabled; when it is off, PRICE is
-    // not in the active intent catalog either, so this is belt and braces.
-    ...(plugins.isEnabled(CRYPTO_PRICES_ID) ? { prices } : {}),
+    // ── WHAT THIS BOT CAN BE ASKED FOR (CCB-S5-021, D-175) ───────────────
+    //
+    // The core intents plus the intents of the plugins enabled for THIS bot. Read live,
+    // like the dials and the laws above, so a capability switched off for one bot in the
+    // console leaves its vocabulary on the next message.
+    //
+    // It replaced a process-wide catalog. Plugin state lived under one `plugins` settings
+    // key with one writer, so enabling web search enabled it for every hosted bot, and the
+    // operator's Rick could google whether he wanted it to or not.
+    capabilities: () => plugins.capabilitiesFor(botProfileId),
+    // Handed over only while the plugin is enabled FOR THIS BOT; when it is off, PRICE is
+    // not in this bot's catalog either, so this is belt and braces. A getter rather than a
+    // spread since CCB-S5-021: decided once at boot, it would have disagreed with the
+    // catalog for the whole life of the process after any console toggle.
+    prices: () => (plugins.isEnabledFor(botProfileId, CRYPTO_PRICES_ID) ? prices : null),
     // Web search (CCB-S4-037), on exactly the same terms and for exactly the same
-    // reason: off means LOOKUP is absent from the catalog, and this is the second
+    // reason: off means LOOKUP is absent from this bot's catalog, and this is the second
     // line of defence rather than the first. The service holds no chat client, so
     // the only thing that can come back through here is text.
-    ...(plugins.isEnabled(WEB_SEARCH_ID) ? { webSearch: webSearch } : {}),
+    webSearch: () => (plugins.isEnabledFor(botProfileId, WEB_SEARCH_ID) ? webSearch : null),
     priceSettings: () => plugins.getCryptoPrices(),
     // Presentation is the engine's decision (CCB-S3-003); this is only the
     // transport. Both this and the slash-command path go through the same send,
@@ -493,6 +505,11 @@ async function startCaptureWorker(
         // the first message to a freshly booted bot races the read and is answered against
         // the SHARED wake word, which is the defect wearing a timing hat.
         interaction.refreshFor(id),
+        // Its CAPABILITIES (CCB-S5-021), for the same reason and with a sharper cost: an
+        // unwarmed bot falls back to the deployment's plugin states, so the first message
+        // to a bot that must not search could reach a search. The window is one query and
+        // this closes it.
+        plugins.refreshFor(id),
       ]);
       graphs.push(buildBotGraph(bot, { cfg, interaction, plugins, prices, webSearch, host }));
 
@@ -514,6 +531,14 @@ async function startCaptureWorker(
         wakeWord: effective.wakeWord,
         nicknames: effective.nicknames.words.length,
         addressingMode: effective.addressing.mode,
+        // What this bot can be asked for (CCB-S5-021), on the same terms as the wake word
+        // above and for the same reason: capability travels through a settings key, a
+        // per-bot override, a cache and a refresh, and a failure at any of them reads from
+        // the group as her not understanding the question.
+        plugins: plugins
+          .list(id)
+          .map((p) => `${p.id}:${p.enabled ? 'on' : 'off'}${p.inherited ? '' : '(own)'}`)
+          .join(' '),
       });
       if (effective.wakeWord === interaction.get().wakeWord && host.bots.length > 1) {
         // Not necessarily wrong: a bot may legitimately be on the shared value. It is
@@ -548,7 +573,10 @@ async function startCaptureWorker(
     log.info(
       `Interaction layer: wake words ${wakeWords}, natural addressing ` +
         `${ia.naturalAddressing ? 'on' : 'off'}, ` +
-        `plugins [${plugins
+        // The DEPLOYMENT-WIDE plugin states, said so, because each bot's own are on its
+        // own line above and a bare "plugins [...]" here would read as the whole answer -
+        // which is exactly what it was before CCB-S5-021 and exactly what was wrong.
+        `plugins (deployment-wide) [${plugins
           .list()
           .map((p) => `${p.id}:${p.enabled ? 'on' : 'off'}`)
           .join(' ')}], ` +

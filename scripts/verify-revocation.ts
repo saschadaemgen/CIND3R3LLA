@@ -42,6 +42,7 @@ import {
   servableMediaPath,
 } from '../src/media/quarantine.js';
 import type { CapturedMessage } from '../src/capture/message.js';
+import { CORE_INTENTS } from '../src/interaction/intent.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -412,6 +413,8 @@ async function main(): Promise<void> {
   const sent: string[] = [];
   const settings: InteractionSettings = { ...DEFAULT_INTERACTION, wakeWord: 'cinderella' };
   const engine = new InteractionEngine({
+    // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+    capabilities: () => CORE_INTENTS,
     db,
     settings: () => settings,
     mediaRoot,

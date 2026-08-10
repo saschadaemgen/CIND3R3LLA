@@ -26,7 +26,7 @@ import type { BotHandle } from '../src/bot/client.js';
 import type { Queryable } from '../src/db/pool.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { missingHelpPlaceholders } from '../src/interaction/help.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { detectAddress } from '../src/interaction/addressing.js';
 import {
   resolveIntent,
@@ -42,6 +42,18 @@ import { formatOutbound, sanitizeDisplayName } from '../src/interaction/reply.js
 import { clearNearMisses, recentNearMisses } from '../src/interaction/near-misses.js';
 import { detectLanguage } from '../src/interaction/text.js';
 import { setLogLevel } from '../src/log.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -142,9 +154,10 @@ async function main(): Promise<void> {
   }[] = [];
 
   const engine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => settings,
-    prices: {
+    prices: () => ({
       price: async (base) => {
         priceAsked.push(base);
         return Promise.resolve({
@@ -160,7 +173,7 @@ async function main(): Promise<void> {
       },
       pin: () => Promise.resolve({}),
       isPinned: (symbol: string) => Promise.resolve(pinned.has(symbol.trim().toUpperCase())),
-    },
+    }),
     priceSettings: () => ({
       rateLimitPerMember: 100,
       rateLimitPerChat: 100,
@@ -271,7 +284,7 @@ async function main(): Promise<void> {
 
   section('2. Intent resolver — catalog, typo tolerance, guards');
 
-  const ctx = { threshold: settings.confidenceThreshold, defaultLanguage: 'en' };
+  const ctx = { threshold: settings.confidenceThreshold, defaultLanguage: 'en', intents: catalog };
   const r = async (t: string): Promise<Awaited<ReturnType<typeof resolveIntent>>> =>
     resolveIntent(t, ctx);
 
@@ -1070,6 +1083,7 @@ async function main(): Promise<void> {
   const dangerous = await resolveIntent(ANNOUNCEMENT.slice(0, 240), {
     threshold: settings.confidenceThreshold,
     defaultLanguage: 'en',
+    intents: catalog,
   });
   check(
     'the announcement text really does resolve to a consent intent without the guards',
@@ -1667,7 +1681,7 @@ async function main(): Promise<void> {
   );
   check('help lists PRICE while the plugin is enabled here', /price/i.test(helpText));
 
-  setActiveIntents([]);
+  setCatalog([]);
   coolDown();
   const helpNoPrice = (await say('Cinderella help')).replies[0] ?? '';
   check('a disabled plugin drops out of the help text', !/price of/i.test(helpNoPrice));
@@ -1675,7 +1689,7 @@ async function main(): Promise<void> {
     'and the core capabilities remain',
     /publish/i.test(helpNoPrice) && /unpublish/i.test(helpNoPrice),
   );
-  setActiveIntents(['PRICE']);
+  setCatalog(['PRICE']);
 
   coolDown();
   const topicHelp = (await say('Cinderella help consent')).replies[0] ?? '';

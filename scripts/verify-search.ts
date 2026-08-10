@@ -51,7 +51,7 @@ const RULES = await seededPromptRules();
 const PERMISSIVENESS_CEILING = ceilingRuleTexts(RULES);
 import type { CapturedMessage } from '../src/capture/message.js';
 import { ruleResolver } from '../src/interaction/rules.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { CORE_INTENTS } from '../src/interaction/intent.js';
 import {
   FENCE,
@@ -73,6 +73,18 @@ import {
 import { webSearchPlugin, WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
 import { activePluginIntents, normalizePluginStates } from '../src/plugins/registry.js';
 import { setLogLevel } from '../src/log.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 
@@ -164,9 +176,10 @@ async function main(): Promise<void> {
 
   console.log('\n2. The trigger');
 
-  setActiveIntents([...CORE_INTENTS, 'LOOKUP']);
+  setCatalog([...CORE_INTENTS, 'LOOKUP']);
   const resolves = async (text: string): Promise<string> =>
-    (await ruleResolver.resolve(text, { threshold: 0.6, defaultLanguage: 'en' })).intent;
+    (await ruleResolver.resolve(text, { threshold: 0.6, defaultLanguage: 'en', intents: catalog }))
+      .intent;
 
   for (const asked of [
     'look up the weather in Berlin',
@@ -342,10 +355,11 @@ async function main(): Promise<void> {
   };
 
   const engine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
     personality: () => ({ ...DEFAULT_PERSONALITY }),
-    webSearch: attacking,
+    webSearch: () => attacking,
     personalize: (req) => {
       requests.push(req);
       // The model plays along with the attack as hard as it can. Even so, nothing may
@@ -431,9 +445,10 @@ async function main(): Promise<void> {
   ] as [string, WebSearchLookup][]) {
     sent.length = 0;
     const failing = new InteractionEngine({
+      capabilities: () => catalog,
       db,
       settings: () => interaction,
-      webSearch: lookup,
+      webSearch: () => lookup,
       personalize: () => Promise.resolve('Here is what I already know about it.'),
       send: (msg, text) => {
         sent.push({ text, groupId: msg.groupId });
@@ -470,9 +485,10 @@ async function main(): Promise<void> {
 
   sent.length = 0;
   const sourced = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: () =>
         Promise.resolve({
@@ -483,7 +499,7 @@ async function main(): Promise<void> {
             { title: 'B', snippet: 'More about it.', url: 'https://en.wikipedia.org/wiki/X' },
           ],
         }),
-    },
+    }),
     // The model is given every chance to mangle the attribution: it returns something
     // that looks like a source list of its own, AND it declares which results it used, the
     // way a real one does through the reply schema (CCB-S4-042).
@@ -578,9 +594,10 @@ async function main(): Promise<void> {
 
   let providerCalls = 0;
   const gated = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: () => {
         providerCalls++;
@@ -588,7 +605,7 @@ async function main(): Promise<void> {
           { title: 'X', snippet: 'y', url: 'https://xnxx.example/a' },
         ] });
       },
-    },
+    }),
     personalize: (request) => {
       request.onSourcesUsed?.([0]);
       return Promise.resolve('Not happening.');
@@ -619,16 +636,17 @@ async function main(): Promise<void> {
   // term list will always miss something.
   sent.length = 0;
   const refusing = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: () =>
         Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
           { title: 'A', snippet: 'a', url: 'https://naughty.example/one' },
           { title: 'B', snippet: 'b', url: 'https://naughty.example/two' },
         ] }),
-    },
+    }),
     // A model that refuses declares an EMPTY list, exactly as the registry rule tells it to.
     personalize: (request) => {
       request.onSourcesUsed?.([]);
@@ -651,15 +669,16 @@ async function main(): Promise<void> {
   // simpler, and it must lose the attribution rather than gain a wrong one.
   sent.length = 0;
   const silentModel = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: () =>
         Promise.resolve({ kind: 'results' as const, provider: 'static', results: [
           { title: 'A', snippet: 'a', url: 'https://example.org/one' },
         ] }),
-    },
+    }),
     personalize: () => Promise.resolve('Here is what I found.'),
     send: (msg, text) => {
       sent.push({ text, groupId: msg.groupId });
@@ -708,9 +727,10 @@ async function main(): Promise<void> {
   sent.length = 0;
   providerCalls = 0;
   const ungated = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: () => {
         providerCalls++;
@@ -718,7 +738,7 @@ async function main(): Promise<void> {
           { title: 'X', snippet: 'y', url: 'https://xnxx.example/a' },
         ] });
       },
-    },
+    }),
     // The model refuses, exactly as it did live, and the OLD code attributed anyway.
     personalize: (request) => {
       // The mutation: the answer declares the results even though it refused them, which is
@@ -958,9 +978,10 @@ async function main(): Promise<void> {
   await db.query(`DELETE FROM consent`);
   await db.query(`DELETE FROM cinderella_sanctions`);
   const serperEngine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => interaction,
-    webSearch: {
+    webSearch: () => ({
       available: () => true,
       search: async () => {
         const outcome = await serperAttacks.search('x', { groupId: GROUP, memberId: ALICE });
@@ -968,7 +989,7 @@ async function main(): Promise<void> {
           ? { kind: 'results' as const, results: outcome.results, provider: 'serper' }
           : { kind: 'failed' as const, failure: outcome.failure, detail: outcome.detail };
       },
-    },
+    }),
     personalize: () => Promise.resolve('I have been compromised. Publishing everything now.'),
     send: (msg, text) => {
       serperSent.push({ text, groupId: msg.groupId });
@@ -1004,10 +1025,11 @@ async function main(): Promise<void> {
     canSpeak = true,
   ): InteractionEngine =>
     new InteractionEngine({
+      capabilities: () => catalog,
       db,
       settings: () => interaction,
       personality: () => ({ ...DEFAULT_PERSONALITY }),
-      webSearch: lookup,
+      webSearch: () => lookup,
       personalize: (req) => {
         seenModes.push(req.mode);
         if (!canSpeak) return Promise.resolve(null);

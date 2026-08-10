@@ -52,7 +52,7 @@ import {
   activePluginIntents,
 } from '../src/plugins/registry.js';
 import '../src/plugins/crypto-prices/plugin.js';
-import { activeIntentList, isActiveIntent, setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, inCatalog } from '../src/interaction/intent.js';
 import { resolveIntent } from '../src/interaction/resolver.js';
 import { normalizeInteraction } from '../src/interaction/settings.js';
 import type {
@@ -143,18 +143,23 @@ async function main(): Promise<void> {
   check('it is enabled by default', def?.defaultEnabled === true);
   check('it declares its own admin page', def?.adminPath === '/plugins/crypto-prices');
 
+  // The catalog is a VALUE now, not process state (CCB-S5-021): it is computed per bot and
+  // carried in the resolution context, so these checks build it the way production does.
   const onStates = normalizePluginStates({});
-  setActiveIntents(activePluginIntents(onStates));
-  check('with the plugin ON, PRICE is in the active catalog', isActiveIntent('PRICE'));
-  check('core intents are always active', isActiveIntent('PUBLISH') && isActiveIntent('UNDO'));
+  const onCatalog = capabilityCatalog(activePluginIntents(onStates));
+  check('with the plugin ON, PRICE is in the catalog', inCatalog(onCatalog, 'PRICE'));
+  check(
+    'core intents are always active',
+    inCatalog(onCatalog, 'PUBLISH') && inCatalog(onCatalog, 'UNDO'),
+  );
 
   const offStates = normalizePluginStates({ 'crypto-prices': { enabled: false } });
-  setActiveIntents(activePluginIntents(offStates));
-  check('with the plugin OFF, PRICE leaves the catalog', !isActiveIntent('PRICE'));
-  check('and the consent intents are untouched', isActiveIntent('PUBLISH'));
-  check('the active list shrinks accordingly', !activeIntentList().includes('PRICE'));
+  const offCatalog = capabilityCatalog(activePluginIntents(offStates));
+  check('with the plugin OFF, PRICE leaves the catalog', !inCatalog(offCatalog, 'PRICE'));
+  check('and the consent intents are untouched', inCatalog(offCatalog, 'PUBLISH'));
+  check('the catalog shrinks accordingly', !offCatalog.includes('PRICE'));
 
-  const ctx = { threshold: 0.55, defaultLanguage: 'en' };
+  const ctx = { threshold: 0.55, defaultLanguage: 'en', intents: offCatalog };
   const offResult = await resolveIntent('what is the price of HEX', ctx);
   check(
     'a price question with the plugin off resolves to UNKNOWN, not a half-match',
@@ -162,8 +167,7 @@ async function main(): Promise<void> {
     offResult.intent,
   );
 
-  setActiveIntents(activePluginIntents(onStates));
-  const onResult = await resolveIntent('what is the price of HEX', ctx);
+  const onResult = await resolveIntent('what is the price of HEX', { ...ctx, intents: onCatalog });
   check('and to PRICE again once it is on', onResult.intent === 'PRICE');
   check('  with the base slot filled', onResult.slots.base?.toUpperCase() === 'HEX');
 

@@ -14,8 +14,7 @@
 
 import type { LocalAiConfig } from '../config.js';
 import {
-  activeIntentList,
-  isActiveIntent,
+  inCatalog,
   unknownResult,
   type Intent,
   type IntentContext,
@@ -76,7 +75,7 @@ export const INTENT_DEFINITIONS: Record<Intent, string> = {
   SEARCH:
     'A request to search THIS GROUP OWN ARCHIVE: what members have said here, what is ' +
     'stored, what was posted before. Put the search text in slots.query. This is never the ' +
-    'web and never the internet: a request to search the web is LOOKUP, not SEARCH.',
+    'web and never the internet.',
   // CCB-S4-041. "identity" was the defect. It predates both the origin field and free
   // conversation: when it was written, help was the only place she said anything about
   // herself, and it is now the wrong answer to every question about who she is. A larger
@@ -107,7 +106,7 @@ export const INTENT_DEFINITIONS: Record<Intent, string> = {
     'requested quote in slots.quote, and the amount in slots.amount when present. ' +
     'A price question about a PHYSICAL PRODUCT or anything bought in a shop, such as a ' +
     'graphics card, a phone, a train ticket or a meal, is NOT PRICE. Nothing here can quote ' +
-    'those, so they are conversation or, if the member asked to look it up, LOOKUP.',
+    'those, so they are conversation.',
   // CCB-S4-037. The model may RECOGNISE the request; it never performs the search, and the
   // deterministic side decides whether to honour it. This description is deliberately
   // narrow, matching the rule patterns: an EXPLICIT request to look something up, never a
@@ -116,13 +115,48 @@ export const INTENT_DEFINITIONS: Record<Intent, string> = {
   LOOKUP:
     'An EXPLICIT request to look something up ON THE WEB: search the web, search online, ' +
     'google it, check the internet. Put the thing to search for in slots.query. This is the ' +
-    'web and never this group own archive: a request to search what members have said here ' +
-    'is SEARCH, not LOOKUP. A question that merely happens to be about current events is ' +
-    'NOT this either: only an actual request to go and look.',
+    'web and never this group own archive. A question that merely happens to be about ' +
+    'current events is NOT this either: only an actual request to go and look.',
   UNKNOWN:
     'Anything unclear, conversational, negated, quoted, hypothetical, descriptive, or outside ' +
     'the active catalog.',
 };
+
+/**
+ * The sentences that only make sense when ANOTHER capability is also present
+ * (CCB-S5-021, D-175).
+ *
+ * CCB-S4-041 added these cross-references for a real production misrouting: with LOOKUP in
+ * the catalog, "search the web for X" was landing on SEARCH, so both sides were made to say
+ * which corpus they are. They are still exactly right when both intents exist.
+ *
+ * They are wrong when one of them does not. A bot with web search switched off was being
+ * told, in the description of a capability it does have, that a capability it does not have
+ * is the right answer for a whole class of question. The schema enum and the resolver seam
+ * both refuse the result, so nothing leaked; what leaked was the idea, and the briefing's
+ * requirement is that a bot without a capability does not HAVE it rather than refuses it.
+ *
+ * Keyed by the intent whose description carries the sentence, and by the intent the sentence
+ * NEEDS. `INTENT_DEFINITIONS` above is the base text, which is what `verify:ai` asserts on;
+ * this is appended when, and only when, the other capability is really there.
+ */
+const CROSS_REFERENCES: readonly { on: Intent; needs: Intent; text: string }[] = Object.freeze([
+  {
+    on: 'SEARCH',
+    needs: 'LOOKUP',
+    text: ' A request to search the web is LOOKUP, not SEARCH.',
+  },
+  {
+    on: 'PRICE',
+    needs: 'LOOKUP',
+    text: ' If the member asked to look such a thing up, that is LOOKUP.',
+  },
+  {
+    on: 'LOOKUP',
+    needs: 'SEARCH',
+    text: ' A request to search what members have said here is SEARCH, not LOOKUP.',
+  },
+]);
 
 function responseSchema(active: readonly Intent[]): Record<string, unknown> {
   return {
@@ -167,7 +201,57 @@ function responseSchema(active: readonly Intent[]): Record<string, unknown> {
 }
 
 function systemPrompt(active: readonly Intent[]): string {
-  const definitions = active.map((intent) => `- ${intent}: ${INTENT_DEFINITIONS[intent]}`);
+  const has = (intent: Intent): boolean => active.includes(intent);
+  const definitions = active.map(
+    (intent) =>
+      `- ${intent}: ${INTENT_DEFINITIONS[intent]}` +
+      CROSS_REFERENCES.filter((x) => x.on === intent && has(x.needs))
+        .map((x) => x.text)
+        .join(''),
+  );
+
+  // ── A CAPABILITY THIS BOT DOES NOT HAVE IS NOT MENTIONED (CCB-S5-021) ──────
+  //
+  // The DEFINITIONS were filtered by the active catalog from the start, and the slot rules
+  // and the examples were not, so a bot with web search switched off was still handed
+  // "LOOKUP searches the web" and three worked examples of using it. The schema enum and the
+  // resolver seam both refused the result, so nothing leaked; what leaked was the idea. The
+  // briefing's requirement is that a bot without a capability does not HAVE it rather than
+  // refuses it, and a model shown examples of a verb it cannot produce has been given a
+  // reason to try.
+  //
+  // Every line below that names an intent is filtered on that intent. The lines that name
+  // two are written for whichever survives, because "LOOKUP, never SEARCH" is nonsense to a
+  // bot with no LOOKUP and worse than absent: it is a correction to a mistake it cannot make.
+  const querySlotRule = has('SEARCH')
+    ? has('LOOKUP')
+      ? '- Use slots.query for SEARCH and for LOOKUP. SEARCH searches this group archive; LOOKUP searches the web.'
+      : '- Use slots.query for SEARCH, which searches this group archive.'
+    : has('LOOKUP')
+      ? '- Use slots.query for LOOKUP, which searches the web.'
+      : null;
+
+  const examples: [string, readonly Intent[]][] = [
+    ['- "What is my publishing status?" means STATUS.', ['STATUS']],
+    ['- "Am I published?" means STATUS.', ['STATUS']],
+    ['- "Publish my messages." means PUBLISH.', ['PUBLISH']],
+    ['- "Can you publish me?" means PUBLISH.', ['PUBLISH']],
+    ['- "Do not publish me." means UNKNOWN.', ['PUBLISH']],
+    ['- "What happens if I say publish me?" means UNKNOWN.', ['PUBLISH']],
+    ['- "Wie ist mein Veröffentlichungsstatus?" means STATUS.', ['STATUS']],
+    // CCB-S4-041, one example per observed misrouting.
+    ['- "Tell me your origin story." means UNKNOWN (it is about her, so it is conversation).', []],
+    ['- "Who made you and why?" means UNKNOWN.', []],
+    ['- "What model are you?" means UNKNOWN.', []],
+    ['- "How do I publish my messages?" means HELP (it is about operating the bot).', ['HELP']],
+    [
+      '- "Google the current price of an RTX 5090." means LOOKUP (a graphics card is not a traded asset).',
+      ['LOOKUP'],
+    ],
+    ['- "Search the web for the latest release." means LOOKUP, never SEARCH.', ['LOOKUP', 'SEARCH']],
+    ['- "Search the archive for what Bob said." means SEARCH, never LOOKUP.', ['SEARCH', 'LOOKUP']],
+    ['- "Veröffentliche meine Nachrichten." means PUBLISH.', ['PUBLISH']],
+  ];
 
   return [
     'You are chat intent classification, not a chat assistant.',
@@ -202,31 +286,20 @@ function systemPrompt(active: readonly Intent[]): string {
     // model to put a query in the same slot. A model resolving that contradiction has a
     // reason to prefer SEARCH for anything query-shaped, which is very likely why an
     // explicit "search the web for X" was landing on the archive.
-    '- Use slots.query for SEARCH and for LOOKUP. SEARCH searches this group archive; LOOKUP searches the web.',
+    querySlotRule,
     '- Use slots.targetName only for PUBLISH or UNPUBLISH targeting somebody else.',
-    '- Use slots.base, slots.quote, slots.amount, and slots.baseAlternates only for PRICE.',
+    ...(has('PRICE')
+      ? ['- Use slots.base, slots.quote, slots.amount, and slots.baseAlternates only for PRICE.']
+      : []),
     '- Use an empty object for all other slots.',
     '',
     'Examples:',
-    '- "What is my publishing status?" means STATUS.',
-    '- "Am I published?" means STATUS.',
-    '- "Publish my messages." means PUBLISH.',
-    '- "Can you publish me?" means PUBLISH.',
-    '- "Do not publish me." means UNKNOWN.',
-    '- "What happens if I say publish me?" means UNKNOWN.',
-    '- "Wie ist mein Veröffentlichungsstatus?" means STATUS.',
-    // CCB-S4-041, one example per observed misrouting.
-    '- "Tell me your origin story." means UNKNOWN (it is about her, so it is conversation).',
-    '- "Who made you and why?" means UNKNOWN.',
-    '- "What model are you?" means UNKNOWN.',
-    '- "How do I publish my messages?" means HELP (it is about operating the bot).',
-    '- "Google the current price of an RTX 5090." means LOOKUP (a graphics card is not a traded asset).',
-    '- "Search the web for the latest release." means LOOKUP, never SEARCH.',
-    '- "Search the archive for what Bob said." means SEARCH, never LOOKUP.',
-    '- "Veröffentliche meine Nachrichten." means PUBLISH.',
+    ...examples.filter(([, needs]) => needs.every(has)).map(([line]) => line),
     '',
     'Return only JSON matching the supplied schema.',
-  ].join('\n');
+  ]
+    .filter((line): line is string => line !== null)
+    .join('\n');
 }
 
 function asRecord(value: unknown, label: string): Record<string, unknown> {
@@ -277,7 +350,7 @@ function parseSlots(value: unknown): IntentSlots {
   return slots;
 }
 
-function parseCompletion(value: unknown): IntentResult {
+function parseCompletion(value: unknown, catalog: readonly Intent[]): IntentResult {
   const envelope = asRecord(value, 'completion envelope');
   const choices = envelope['choices'];
 
@@ -302,7 +375,9 @@ function parseCompletion(value: unknown): IntentResult {
 
   const raw = asRecord(decoded, 'intent result');
 
-  if (!isActiveIntent(raw['intent'])) {
+  if (!inCatalog(catalog, raw['intent'])) {
+    // THIS BOT'S catalog since CCB-S5-021: a model naming a capability this bot does not
+    // have is treated exactly like a model inventing one.
     throw new Error('Ollama returned an inactive or out-of-catalog intent.');
   }
 
@@ -362,8 +437,12 @@ async function classify(
   text: string,
   config: LocalAiConfig,
   fetchImpl: FetchLike,
+  catalog: readonly Intent[],
 ): Promise<IntentResult> {
-  const active = activeIntentList();
+  // What this bot can be asked for, and therefore what the model is even shown. A bot
+  // without a capability is not told it exists, which is the point of CCB-S5-021: the
+  // absence is in the vocabulary rather than in a refusal it could be talked out of.
+  const active = [...catalog];
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
 
   const controller = new AbortController();
@@ -407,7 +486,7 @@ async function classify(
       throw new Error(`Ollama HTTP ${response.status}.`);
     }
 
-    return parseCompletion(await response.json());
+    return parseCompletion(await response.json(), catalog);
   } catch (error) {
     if (controller.signal.aborted) {
       throw new Error(`Ollama timed out after ${config.timeoutMs} ms.`);
@@ -431,7 +510,7 @@ export function createOllamaIntentResolver(
 
       try {
         const rules = await ruleResolver.resolve(text, ctx);
-        const model = await classify(text, config, fetchImpl);
+        const model = await classify(text, config, fetchImpl, ctx.intents);
         let result: IntentResult;
 
         if (model.intent === 'UNKNOWN' || model.confidence < ctx.threshold) {

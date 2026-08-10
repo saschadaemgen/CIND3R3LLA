@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 173 decisions</strong> — newest first. Highest allocated: <strong>D-174</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 174 decisions</strong> — newest first. Highest allocated: <strong>D-175</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-175 | Capability is per bot; the credential, the bill and the safety bound are not | IMPLEMENTED |
 | D-174 | A green `npm audit` describes the lockfile, and reachability decides urgency | IMPLEMENTED |
 | D-173 | Nothing reads the primary flag, and the one bot it could rename refuses the boot | IMPLEMENTED |
 | D-172 | A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname | IMPLEMENTED |
@@ -203,6 +204,95 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-175 - Capability is per bot; the credential, the bill and the safety bound are not
+
+**Status: IMPLEMENTED** (CCB-S5-021, migration 051). Plugin state lived under a single `plugins`
+settings key with a single writer, so enabling Web Search enabled it for **every hosted bot**. It
+is not in CCB-S5-006's scope inventory because it is not in `InteractionSettings` at all: a sweep
+of one type cannot see a key that lives in another, which is why nothing pointed at it. That is
+the **fifth** thing this season that was correct before multi-bot and silently stopped being
+correct, after the three call sites that were five, the wake word, the onboarding steps and the
+primary flag, and it is the one that matters most, because capability is what makes a second bot
+worth having.
+
+**THE SPLIT, AND THE THREE QUESTIONS BEHIND IT.** The inventory is data, in
+[`src/plugins/scope.ts`](../src/plugins/scope.ts), for the reason `setting-scope.ts` gives: as
+prose it would drift and the drift would be invisible. Twenty settings across two plugins, and
+exactly **two** are per bot, both of them `enabled`. The questions, in order:
+
+1. Does it decide **whether** this bot has the capability, or **what** the capability reaches?
+   Per bot. That is the product.
+2. Is it a **credential**, an upstream **quota** or a **cache**? Deployment-wide. One account,
+   one bill, one cache, and asking an operator to paste a key per bot is an invitation to leak
+   it.
+3. Is it a **safety bound** on what reaches the model? Deployment-wide, for the reason
+   constitutional laws are (D-155): an outermost limit with N values is a limit nobody can state,
+   and tightening it later would reach only the bots nobody had touched. `maxResults`,
+   `perResultChars` and `totalChars` are the size of the injection surface, not a quality knob.
+
+**THE BUDGETS WERE THE INTERESTING ONES, AND THEY SPLIT DIFFERENTLY FROM HOW THEY LOOK.** The
+briefing asked whether a shared ceiling with a per-bot allowance under it was worth building. It
+is not, and the reason is that the two halves of a budget are different things. The **number** is
+the operator's bill and belongs to the deployment; the **spend** must be per bot or a busy bot
+starves a quiet one. Crypto prices already spent per bot, through `ConversationState`, because
+each bot has its own engine, which is exactly what `setting-scope.ts` says about
+`replyLimitPerMember`. Web search did not: one `WebSearchService` held one `Window` keyed
+`m:<memberId>` and `g:<groupId>`, isolated only **by the accident** that SimpleX group and member
+ids differ per profile. That is the accident migration 044 removed from the moderation counters,
+with the note that conversation canonicalisation would collapse it, so the bot is now in the key.
+A per-bot allowance under a ceiling would be a second number to keep consistent with the first,
+preventing a starvation that keying already prevents; the override mechanism carries it in one
+row the day there is a use for it.
+
+**THE ABSENT-CAPABILITY PROPERTY HAD TO STOP BEING A PROCESS FACT.** "A disabled plugin registers
+no intents" was implemented as module state in `interaction/intent.ts`: one `activeIntents` set,
+written by `setActiveIntents` whenever enablement changed. Correct with one hosted bot, and with
+several it meant a plugin switched off for one bot was still in **every** bot's vocabulary. The
+catalog is now built per bot by `PluginService.capabilitiesFor` and carried in `IntentContext`,
+where it is **required rather than optional**: an optional field defaulting to a process-wide set
+would fail open on any call site that forgot it, and nothing would say so (the D-164 shape). The
+module state is gone, which also removed an order dependence between harnesses that mutated it.
+
+Three layers hold the property, and **all three had to be fixed**, which is the part worth
+recording. The rule engine and the resolver seam were already catalog-driven and became per bot
+for free. The **model's own prompt was not**: the intent definitions were filtered by the active
+catalog from the start, and the slot rules, the examples and three cross-references inside other
+intents' definitions were not, so a bot with search switched off was still handed "LOOKUP searches
+the web" and three worked examples of using it. The schema enum and the seam both refused the
+result, so nothing leaked; what leaked was the idea. `CROSS_REFERENCES` now appends those
+sentences only when the other capability is genuinely present, and CCB-S4-041's cross-references
+are preserved exactly for the bots that have both.
+
+**THE CACHE MISS FAILS CLOSED, AND THAT IS THE OPPOSITE OF `InteractionService`.** A bot whose
+override rows have not been read yet gets **no plugin capabilities at all**, not the shared ones.
+The interaction settings answer a miss with the shared record deliberately, because a bot briefly
+answering to the name it inherits beats a bot answering to nothing. Here the trade runs the other
+way: a capability answered from the shared states is a bot doing the thing the operator forbade
+it, and a capability withheld for one message is a question she does not understand. Both writers
+**re-derive rather than clear**, so the window does not open on an ordinary console toggle; what is
+left is the fault case, which already reaches the dashboard.
+
+**Also made live rather than boot-time.** The `prices` and `webSearch` ports were spread into the
+engine's deps once at boot, so a console toggle moved the catalog immediately and the port only on
+the next restart, and the two guards would have disagreed for the life of the process. They are
+getters now, like `personality` and `enforcementPort` beside them.
+
+**THE PATTERN A FUTURE PER-BOT CAPABILITY FOLLOWS**, which is what the briefing asked for above
+the plugin split itself. The knowledge base the operator wants next lands on the same three
+questions: its enablement and **the documents it is given** are per bot (1), its embedding
+credentials and its index are shared (2), and how much retrieved text reaches a prompt is shared
+(3). Mechanically it needs no new table: `cinderella_plugin_overrides` is keyed
+`(bot_profile_id, plugin_id, setting_key, value)` precisely so a second per-bot key is a CHECK
+edit and an inventory row rather than a third mechanism. `plugin_id` is deliberately **not** a
+foreign key, because plugins are declared in code and a plugin removed from a build must not take
+an operator's decisions with it.
+
+The backfill is **empty, deliberately**, and says so in the migration: absence means inherit, so
+every bot keeps every plugin it has today. 047 had to write rows because inheritance would have
+preserved the defect it was fixing; here inheritance is the correct outcome. Proven by
+`verify:plugin-scope` (mutation-proven four ways, including restoring the deployment-wide catalog
+and the bot-less rate-limit key) and read at two voices by `verify:plugin-scope-live`.
 
 ### D-174 - A green `npm audit` describes the lockfile, and reachability decides urgency
 

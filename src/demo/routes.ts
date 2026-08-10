@@ -121,6 +121,11 @@ export function registerDemo(app: FastifyInstance, ctx: ViewContext): void {
   const engine = new InteractionEngine({
     db: ctx.db,
     settings: () => ctx.interaction.get(),
+    // The demo has no bot, so it gets the DEPLOYMENT'S capabilities (CCB-S5-021). Stated
+    // rather than inherited: with no bot named there is nothing to deviate from, and the
+    // demo showing a capability the visitor's imaginary bot does not have is not a
+    // question that exists here.
+    capabilities: () => ctx.plugins.capabilitiesFor(),
     // Phase 1: no `personalize`, so the deterministic persona strings answer.
     send: async (_msg, text) => {
       await transport.sendText({ to: 'group', groupId: DEMO_GROUP }, text);

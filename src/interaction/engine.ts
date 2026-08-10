@@ -70,7 +70,7 @@ import type { PriceOutcome } from '../plugins/crypto-prices/service.js';
 import { formatAmount, formatValue, describeAge } from '../price/format.js';
 import { candidateMetric } from '../plugins/crypto-prices/service.js';
 import { formatOutbound, type OutboundReply } from './reply.js';
-import { activeIntentList } from './intent.js';
+import type { Intent } from './intent.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import {
@@ -182,11 +182,29 @@ export interface InteractionDeps {
   /** Injectable randomness for retort rotation (harness). */
   random?: () => number;
   /**
-   * Market data (CCB-S3-004), injected by the plugin. Absent when the plugin is
-   * disabled — in which case PRICE is not in the active catalog either, so this
-   * is belt and braces rather than the only guard.
+   * WHAT THIS BOT CAN BE ASKED FOR (CCB-S5-021, D-175).
+   *
+   * The core intents plus the intents of the plugins enabled for THIS bot, read live so a
+   * capability switched off in the console leaves this bot's vocabulary on the next
+   * message rather than on the next restart.
+   *
+   * REQUIRED, and that is the point. It replaced a process-wide catalog in `intent.ts`
+   * that every hosted bot shared, which meant a plugin switched off for one bot was still
+   * in every bot's vocabulary. An optional getter defaulting to a deployment-wide set
+   * would reintroduce exactly that, silently, on any construction that omitted it.
    */
-  prices?: {
+  capabilities: () => readonly Intent[];
+  /**
+   * Market data (CCB-S3-004), injected by the plugin. Null when the plugin is off FOR
+   * THIS BOT (CCB-S5-021) — in which case PRICE is not in this bot's catalog either, so
+   * this is belt and braces rather than the only guard.
+   *
+   * A GETTER since CCB-S5-021, like the personality and the enforcement port beside it.
+   * Held as a value it was decided once at boot, so switching a capability on or off for
+   * one bot in the console reached the catalog immediately and this only on the next
+   * restart, and the two guards would have disagreed for as long as the process ran.
+   */
+  prices?: () => {
     price(
       base: string,
       quote: string | undefined,
@@ -202,7 +220,7 @@ export interface InteractionDeps {
     ): Promise<unknown>;
     /** Already resolved on this instance? Reads the pin table, never a provider. */
     isPinned(symbol: string): Promise<boolean>;
-  };
+  } | null;
   /** Live plugin settings for the price feature. */
   priceSettings?: () => {
     rateLimitPerMember: number;
@@ -302,10 +320,11 @@ export interface InteractionDeps {
    * handed in, so a harness can substitute it and prove exactly what was and was not
    * attempted, and the plugin's own module cannot be reached from here at all.
    *
-   * Absent means the plugin is off or unconfigured, in which case LOOKUP is not in the
-   * active catalog either, so this is the second line of defence rather than the first.
+   * Null means the plugin is off FOR THIS BOT or unconfigured, in which case LOOKUP is
+   * not in this bot's catalog either, so this is the second line of defence rather than
+   * the first. A getter for the same reason `prices` is one; see there.
    */
-  webSearch?: WebSearchLookup;
+  webSearch?: () => WebSearchLookup | null;
   moderationRules?: () => ModerationRules | null;
   /**
    * The capability that makes a sanction real (CCB-S4-035, D-139).
@@ -351,7 +370,12 @@ export interface WebSearchLookup {
   available(): boolean;
   search(
     query: string,
-    scope: { groupId: number; memberId: string },
+    /**
+     * `botProfileId` since CCB-S5-021: the search BUDGET is spent per bot, so one bot
+     * cannot exhaust another's allowance. The number itself stays deployment-wide,
+     * because it is the operator's bill.
+     */
+    scope: { groupId: number; memberId: string; botProfileId?: number },
   ): Promise<
     | { kind: 'results'; results: { title: string; snippet: string; url: string }[]; provider: string }
     | { kind: 'failed'; failure: string; detail: string }
@@ -780,6 +804,10 @@ export class InteractionEngine {
     let result = await resolveIntent(instruction, {
       threshold,
       defaultLanguage: lang,
+      // THIS BOT'S catalog (CCB-S5-021). A capability another bot has is not merely
+      // refused here, it cannot be produced: the rule engine never matches its patterns,
+      // the model is never shown the intent, and the seam downgrades a claim to it.
+      intents: this.deps.capabilities(),
     });
 
     // §7c — an elliptical follow-up inside the window inherits the previous
@@ -1633,7 +1661,7 @@ export class InteractionEngine {
    * very resolution that carry-over is not allowed to start.
    */
   private async isPinnedAsset(symbol: string): Promise<boolean> {
-    const prices = this.deps.prices;
+    const prices = this.deps.prices?.() ?? null;
     if (!prices) return false;
     try {
       // Called through the service so `this` stays bound to it.
@@ -1766,7 +1794,7 @@ export class InteractionEngine {
     slots: { query?: string },
     instruction: string,
   ): Promise<boolean> {
-    const search = this.deps.webSearch;
+    const search = this.deps.webSearch?.() ?? null;
     if (!search || !search.available()) {
       // The plugin is off or has no key. LOOKUP should not be in the active catalog at
       // all in that case, so this is the second line of defence, and it is honest rather
@@ -1856,6 +1884,11 @@ export class InteractionEngine {
     const outcome = await search.search(query, {
       groupId: msg.groupId,
       memberId: msg.senderMemberId,
+      // Whose budget this comes out of (CCB-S5-021). Absent in a harness that builds an
+      // engine with no bot, which spends against one shared key, as it did before.
+      ...(typeof this.deps.botProfileId === 'number'
+        ? { botProfileId: this.deps.botProfileId }
+        : {}),
     });
 
     if (outcome.kind === 'failed') {
@@ -2029,7 +2062,7 @@ export class InteractionEngine {
      */
     carried = false,
   ): Promise<boolean> {
-    const prices = this.deps.prices;
+    const prices = this.deps.prices?.() ?? null;
     const cfg = this.deps.priceSettings?.();
     const base = slots.base;
     if (!prices || !cfg) {
@@ -2195,7 +2228,7 @@ export class InteractionEngine {
     if (!picked) return false;
 
     this.state.clearPendingChoice(msg.groupId, msg.senderMemberId);
-    const prices = this.deps.prices;
+    const prices = this.deps.prices?.() ?? null;
     if (!prices) return false;
     try {
       await prices.pin(choice.symbol, picked, picked.provider, 'member-choice');
@@ -2231,7 +2264,7 @@ export class InteractionEngine {
           // The one editable help text (CCB-S3-021 §3): her persona `help` field,
           // which the machine fills. Blank falls back to the shipped default.
           template: s.persona[helpLang]?.help ?? '',
-          intents: activeIntentList(),
+          intents: this.deps.capabilities(),
           wake: s.wakeWord,
           lang: helpLang,
           links: [s.archiveUrl, s.projectUrl].filter((u) => u),

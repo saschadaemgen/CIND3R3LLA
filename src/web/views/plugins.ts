@@ -1,10 +1,28 @@
 /**
- * Plugin console (CCB-S3-004 §0).
+ * Plugin console (CCB-S3-004 §0), under the bot switcher since CCB-S5-021.
  *
  * Two surfaces: a list of installed plugins with their on/off switch, and one
  * page per plugin owning its own settings. The list is generated from the
  * registry, so a second plugin appears here with no change to this file beyond
  * its own page.
+ *
+ * ── WHOSE SWITCH IS IT ───────────────────────────────────────────────────────
+ *
+ * The list edits the SELECTED BOT and says so, because that is the switch that decides what
+ * a bot can do and it is the operator's stated product direction: one bot that searches,
+ * one that does not. Every other setting on a plugin's own page is deployment-wide, and each
+ * of those pages says so, with the reason from the inventory in `src/plugins/scope.ts`. An
+ * operator who changes the API key must know he changed it for every bot; an operator who
+ * switches a plugin off must know he switched it off for one.
+ *
+ * ── THE ROWS, NOT THE CACHE ──────────────────────────────────────────────────
+ *
+ * The per-bot state is read from the override ROWS on every render rather than from
+ * `PluginService`'s cache. `statesFor` answers with the shared states on a cache miss, which
+ * is right for the reply path and exactly wrong here: `kickRefreshFor` is fire-and-forget,
+ * so the first request for any bot would render the deployment's capabilities under that
+ * bot's name. That is the defect CCB-S5-011 found on the Interaction page and this page is
+ * built with it already known.
  *
  * API KEYS ARE WRITE-ONLY. The form shows whether a key is set, never the key.
  * Submitting with the field blank keeps the stored key; clearing is an explicit
@@ -14,6 +32,19 @@
 import type { FastifyInstance } from 'fastify';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
+import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
+import { resolveSelectedBot } from '../selected-bot.js';
+import {
+  listAllPluginOverrides,
+  listPluginOverridesForBot,
+} from '../../db/plugin-overrides.js';
+import {
+  applyPluginOverrides,
+  describePluginScopes,
+  ENABLED_KEY,
+  PLUGIN_SETTING_SCOPES,
+} from '../../plugins/scope.js';
+import { isPluginEnabled, listPlugins } from '../../plugins/registry.js';
 import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
 import { webSearchDiagnostics } from '../../plugins/web-search/service.js';
 import {
@@ -143,75 +174,268 @@ function save(label = 'Save'): SafeHtml {
   </button>`;
 }
 
+/**
+ * What a plugin's own settings page has to say about its scope (CCB-S5-021).
+ *
+ * Every setting on both plugin pages is deployment-wide, so neither page carries the bot
+ * switcher: a page with no switcher above it is saying it does not belong to one bot, which
+ * is information an operator needs as much as the switcher itself (see `html.ts`).
+ *
+ * The banner is not decoration. The briefing's requirement is that an operator who changes
+ * the API key must KNOW he changed it for every bot, and a page that silently edits N bots
+ * while the page beside it edits one is how that goes wrong. The count is real, so it says
+ * something true on a deployment with one bot as well as on one with five.
+ */
+function deploymentWideBanner(pluginName: string, botCount: number): SafeHtml {
+  return html`<div
+    class="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+  >
+    <p class="font-semibold">
+      Everything on this page is deployment-wide. It applies to
+      ${botCount === 1 ? 'the one bot' : `all ${String(botCount)} bots`}.
+    </p>
+    <p class="mt-1">
+      The provider, the API key, the budgets and the limits are one account and one set of
+      numbers, so changing any of them here changes it for every bot at once. Whether
+      <strong>${pluginName}</strong> is available to a
+      <strong>particular</strong> bot is the one per-bot setting, and it lives on the
+      <a class="underline" href="/plugins">plugin list</a> under the bot switcher.
+    </p>
+  </div>`;
+}
+
 export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
   const { plugins, db } = ctx;
 
   /* ── The plugin list ─────────────────────────────────────────────────── */
 
-  app.get<{ Querystring: { saved?: string; error?: string } }>('/plugins', async (req, reply) => {
-    const csrf = req.session?.csrfToken ?? '';
-    const list = plugins.list();
+  app.get<{ Querystring: { saved?: string; error?: string; bot?: string } }>(
+    '/plugins',
+    async (req, reply) => {
+      const csrf = req.session?.csrfToken ?? '';
 
-    const body = html`
-      ${pageHeader('Plugins', 'Capabilities beyond the archive itself')}
-      ${
-        req.query.saved
-          ? html`<div
-              class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
-            >
-              Saved.
-            </div>`
-          : null
-      }
-      <div
-        class="mb-6 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700"
-      >
-        <p class="font-semibold">A disabled plugin is not merely idle.</p>
-        <p class="mt-1">
-          Switching a plugin off removes the intents it contributes from the catalog entirely.
-          CIND3R3LLA stops understanding those questions rather than understanding them and
-          declining, so nothing half-wired can run behind a switch that is off.
-        </p>
-      </div>
-      <div class="flex flex-col gap-4">
-        ${list.map(
-          (p) => html`
-            <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <h2 class="text-sm font-semibold">
-                    <a class="hover:underline" href="${p.adminPath}">${p.name}</a>
-                    <span class="ml-2 text-xs font-normal text-slate-400">v${p.version}</span>
-                  </h2>
-                  <p class="mt-1 max-w-2xl text-sm text-slate-500">${p.description}</p>
-                </div>
-                <form method="post" action="/plugins/${p.id}/toggle" class="shrink-0">
-                  <input type="hidden" name="_csrf" value="${csrf}" />
-                  <input type="hidden" name="enabled" value="${p.enabled ? 'off' : 'on'}" />
-                  <button
-                    type="submit"
-                    class="rounded-lg px-3 py-1.5 text-sm font-medium ${
-                      p.enabled
-                        ? 'border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                        : 'border border-slate-300 bg-slate-50 text-slate-600 hover:bg-slate-100'
-                    }"
-                  >
-                    ${p.enabled ? 'Enabled — click to disable' : 'Disabled — click to enable'}
-                  </button>
-                </form>
-              </div>
-              <p class="mt-3 text-xs text-slate-400">
-                Settings: <a class="underline" href="${p.adminPath}">${p.adminPath}</a>
-              </p>
-            </section>
-          `,
+      // WHICH BOT this page is editing (CCB-S5-021), through the one resolver every
+      // settings page uses: the URL when it names a bot, otherwise the session's standing
+      // choice, otherwise the first bot.
+      const botProfiles = await listBotOnboardingProfiles(db);
+      const selection = resolveSelectedBot(
+        botProfiles,
+        req.query.bot,
+        req.session?.selectedBotProfileId ?? null,
+      );
+      const selectedBotId = selection.selectedId;
+
+      const shared = plugins.getStates();
+      // THE ROWS, NOT THE CACHE. See the module header.
+      const overrides =
+        selectedBotId === null ? [] : await listPluginOverridesForBot(db, selectedBotId);
+      const effective = applyPluginOverrides(shared, overrides);
+      const deviates = new Set(
+        overrides.filter((o) => o.key === ENABLED_KEY).map((o) => o.pluginId),
+      );
+
+      const allOverrides = await listAllPluginOverrides(db);
+      const scopes = describePluginScopes(allOverrides, botProfiles.length);
+      const botName = (id: number): string =>
+        botProfiles.find((b) => b.id === id)?.displayName ?? `bot ${String(id)}`;
+
+      /** The three-state control: on for this bot, off for this bot, or follow the deployment. */
+      const perBotSwitch = (pluginId: string, isOn: boolean, ownsIt: boolean): SafeHtml => {
+        const btn = (value: string, label: string, active: boolean, tone: string): SafeHtml =>
+          html`<button
+            type="submit"
+            name="state"
+            value="${value}"
+            ${active ? raw('aria-pressed="true"') : raw('aria-pressed="false"')}
+            class="rounded-lg px-3 py-1.5 text-sm font-medium ${active
+              ? tone
+              : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100'}"
+          >
+            ${label}
+          </button>`;
+        return html`<form
+          method="post"
+          action="/plugins/${pluginId}/toggle-bot"
+          class="flex shrink-0 flex-wrap items-center gap-2"
+        >
+          <input type="hidden" name="_csrf" value="${csrf}" />
+          <input type="hidden" name="botProfileId" value="${String(selectedBotId ?? '')}" />
+          ${btn(
+            'on',
+            'On for this bot',
+            ownsIt && isOn,
+            'border border-emerald-300 bg-emerald-50 text-emerald-700',
+          )}
+          ${btn(
+            'off',
+            'Off for this bot',
+            ownsIt && !isOn,
+            'border border-red-300 bg-red-50 text-red-700',
+          )}
+          ${btn(
+            'inherit',
+            'Follow the deployment',
+            !ownsIt,
+            'border border-slate-400 bg-slate-100 text-slate-700',
+          )}
+        </form>`;
+      };
+
+      const body = html`
+        ${pageHeader(
+          'Plugins',
+          selection.selectedName
+            ? `Capabilities beyond the archive itself. These switches are ${selection.selectedName}'s.`
+            : 'Capabilities beyond the archive itself',
         )}
-      </div>
-    `;
-    reply.type('text/html');
-    return page({ title: 'Plugins', active: 'plugins', csrfToken: csrf, body });
-  });
+        ${
+          req.query.saved
+            ? html`<div
+                class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+              >
+                Saved.
+              </div>`
+            : null
+        }
+        ${
+          req.query.error
+            ? html`<div
+                class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                ${req.query.error}
+              </div>`
+            : null
+        }
+        <div
+          class="mb-6 rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700"
+        >
+          <p class="font-semibold">A plugin that is off for a bot is not merely idle for it.</p>
+          <p class="mt-1">
+            Switching a plugin off removes the intents it contributes from
+            <strong>that bot's</strong> catalog entirely. It stops understanding those
+            questions rather than understanding them and declining, so nothing half-wired can
+            run behind a switch that is off, and a bot without a capability cannot be talked
+            into using it.
+          </p>
+          <p class="mt-2">
+            The switch below is <strong>per bot</strong>. Everything else about a plugin, its
+            provider, its API key, its budgets and its limits, is
+            <strong>deployment-wide</strong>: changing one changes it for every bot. Each
+            plugin's own page says which is which.
+          </p>
+        </div>
+        <div class="flex flex-col gap-4">
+          ${listPlugins().map((def) => {
+            const isOn = isPluginEnabled(effective, def.id);
+            const sharedOn = isPluginEnabled(shared, def.id);
+            const ownsIt = deviates.has(def.id);
+            const scope = scopes.get(`${def.id}:${ENABLED_KEY}`);
+            const others = (scope?.deviatingBotIds ?? []).filter((id) => id !== selectedBotId);
+            return html`
+              <section class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h2 class="text-sm font-semibold">
+                      <a class="hover:underline" href="${def.adminPath}">${def.name}</a>
+                      <span class="ml-2 text-xs font-normal text-slate-400">v${def.version}</span>
+                    </h2>
+                    <p class="mt-1 max-w-2xl text-sm text-slate-500">${def.description}</p>
+                    <p class="mt-2 flex flex-wrap items-center gap-2">
+                      ${isOn ? badge('on for this bot', 'green') : badge('off for this bot', 'red')}
+                      ${ownsIt
+                        ? badge('has its own setting', 'amber')
+                        : badge(
+                            `following the deployment (${sharedOn ? 'on' : 'off'})`,
+                            'slate',
+                          )}
+                    </p>
+                  </div>
+                  ${selectedBotId === null
+                    ? html`<p class="text-sm text-slate-500">
+                        No bot exists yet, so there is nothing to switch this on for.
+                      </p>`
+                    : perBotSwitch(def.id, isOn, ownsIt)}
+                </div>
+                ${others.length > 0
+                  ? html`<p class="mt-3 text-xs text-slate-500">
+                      Other bots with their own setting for this:
+                      ${others.map((id) => botName(id)).join(', ')}.
+                    </p>`
+                  : null}
+                <div
+                  class="mt-3 flex flex-col gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <p class="text-xs text-slate-500">
+                    Deployment-wide default: <strong>${sharedOn ? 'on' : 'off'}</strong>. It is
+                    what the ${String(scope?.sharedBotCount ?? 0)} bot(s) with no setting of
+                    their own follow.
+                  </p>
+                  <form method="post" action="/plugins/${def.id}/toggle" class="shrink-0">
+                    <input type="hidden" name="_csrf" value="${csrf}" />
+                    <input type="hidden" name="enabled" value="${sharedOn ? 'off' : 'on'}" />
+                    <button
+                      type="submit"
+                      class="rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                    >
+                      Turn the deployment default ${sharedOn ? 'off' : 'on'}
+                      (${String(scope?.sharedBotCount ?? 0)} bot(s))
+                    </button>
+                  </form>
+                </div>
+                <p class="mt-3 text-xs text-slate-400">
+                  Settings: <a class="underline" href="${def.adminPath}">${def.adminPath}</a>
+                </p>
+              </section>
+            `;
+          })}
+        </div>
+        ${card(
+          'What is deployment-wide, and why',
+          html`<p class="mb-3 text-sm text-slate-600">
+              Everything below is one value for the whole deployment. Changing any of them
+              changes it for every bot at once. The reasons are the inventory in
+              <code>src/plugins/scope.ts</code>, so the page and the code cannot drift.
+            </p>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-sm">
+                <thead>
+                  <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                    <th class="py-2 pr-3">Plugin</th>
+                    <th class="py-2 pr-3">Setting</th>
+                    <th class="py-2 pr-3">Scope</th>
+                    <th class="py-2">Why</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${PLUGIN_SETTING_SCOPES.map(
+                    (p) => html`<tr class="border-b border-slate-100 align-top">
+                      <td class="py-2 pr-3 text-slate-500">${p.pluginId}</td>
+                      <td class="py-2 pr-3 font-medium text-slate-700">${p.label}</td>
+                      <td class="py-2 pr-3">
+                        ${p.scope === 'per-bot'
+                          ? badge('per bot', 'amber')
+                          : badge('deployment-wide', 'slate')}
+                      </td>
+                      <td class="py-2 text-slate-600">${p.reason}</td>
+                    </tr>`,
+                  )}
+                </tbody>
+              </table>
+            </div>`,
+        )}
+      `;
+      reply.type('text/html');
+      return page({
+        title: 'Plugins',
+        active: 'plugins',
+        csrfToken: csrf,
+        body,
+        botSwitcher: { ...selection, returnTo: '/plugins' },
+      });
+    },
+  );
 
+  /** The DEPLOYMENT-WIDE switch. Every bot with no setting of its own follows it. */
   app.post<{ Params: { id: string } }>('/plugins/:id/toggle', async (req, reply) => {
     const body = (req.body ?? {}) as Record<string, unknown>;
     const enabled = body['enabled'] === 'on';
@@ -222,6 +446,46 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
       return reply.redirect(`/plugins?error=${encodeURIComponent(message)}`);
     }
     return reply.redirect('/plugins?saved=1');
+  });
+
+  /**
+   * ONE BOT'S switch (CCB-S5-021).
+   *
+   * Three states rather than two, because "off for this bot" and "off because the
+   * deployment has it off" are different facts and an operator who cannot tell them apart
+   * cannot predict what changing the shared value will do. `inherit` removes the row.
+   */
+  app.post<{ Params: { id: string } }>('/plugins/:id/toggle-bot', async (req, reply) => {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const raw = body['botProfileId'];
+    const parsed = Number.parseInt(typeof raw === 'string' ? raw : '', 10);
+    if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+      return reply.redirect(
+        '/plugins?error=' +
+          encodeURIComponent(
+            'No bot was named, so there was nothing to change. Pick a bot in the switcher and try again.',
+          ),
+      );
+    }
+    const state = body['state'];
+    const enabled = state === 'on' ? true : state === 'off' ? false : null;
+    if (state !== 'on' && state !== 'off' && state !== 'inherit') {
+      return reply.redirect(
+        '/plugins?error=' + encodeURIComponent(`Unknown plugin state "${String(state)}".`),
+      );
+    }
+    try {
+      await plugins.setEnabledForBot(
+        parsed,
+        req.params.id,
+        enabled,
+        req.session?.username ?? 'unknown',
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not change the plugin.';
+      return reply.redirect(`/plugins?error=${encodeURIComponent(message)}`);
+    }
+    return reply.redirect(`/plugins?saved=1&bot=${String(parsed)}`);
   });
 
   /* ── Crypto Prices ───────────────────────────────────────────────────── */
@@ -608,6 +872,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
 
       const body = html`
         ${pageHeader('Crypto Prices', 'Market data, pinned to the assets you actually mean')}
+        ${deploymentWideBanner('Crypto Prices', (await listBotOnboardingProfiles(db)).length)}
         ${
           req.query.saved
             ? html`<div
@@ -715,7 +980,13 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
       const csrf = req.session?.csrfToken ?? '';
       const cfg = ctx.plugins.getWebSearch();
       const key = describeWebSearchKey(cfg);
+      // The DEPLOYMENT default. A bot may have its own answer, which is on the plugin list;
+      // this page has no switcher because nothing on it belongs to one bot.
       const enabled = ctx.plugins.isEnabled(WEB_SEARCH_ID);
+      const botCount = (await listBotOnboardingProfiles(db)).length;
+      const perBot = (await listAllPluginOverrides(db)).filter(
+        (o) => o.pluginId === WEB_SEARCH_ID && o.key === ENABLED_KEY,
+      );
       reply.type('text/html');
 
       return page({
@@ -727,6 +998,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
             'Web Search',
             'Looks a question up on the web and lets her answer from what it found, with the sources named.',
           )}
+          ${deploymentWideBanner('Web Search', botCount)}
 
           ${card(
             'What this actually does, and what it costs',
@@ -841,11 +1113,21 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
                 <input type="hidden" name="_csrf" value="${csrf}" />
 
                 <div class="flex flex-wrap items-center gap-3">
-                  ${enabled ? badge('enabled', 'green') : badge('off', 'slate')}
+                  ${enabled
+                    ? badge('deployment default: on', 'green')
+                    : badge('deployment default: off', 'slate')}
+                  ${perBot.length > 0
+                    ? badge(
+                        `${String(perBot.length)} bot(s) have their own answer`,
+                        'amber',
+                      )
+                    : null}
                   ${key.set
                     ? badge('key set', 'green')
                     : badge('no key, so she cannot search', 'amber')}
-                  <a class="text-sm underline" href="/plugins">Turn it on or off on the plugin list</a>
+                  <a class="text-sm underline" href="/plugins"
+                    >Turn it on or off per bot on the plugin list</a
+                  >
                 </div>
 
                 ${field(

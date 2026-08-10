@@ -22,7 +22,7 @@ import {
 } from '../src/interaction/disclosure.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { setIntentResolver, resetIntentResolver } from '../src/interaction/resolver.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { ruleResolver } from '../src/interaction/rules.js';
 import { systemPrompt, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
@@ -39,6 +39,18 @@ import { ConversationState } from '../src/interaction/state.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { seededPromptRules } from './seeded-rules.js';
 import { setLogLevel } from '../src/log.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -82,17 +94,21 @@ async function main(): Promise<void> {
 
   console.log('\n1. A question about her own rules never leaves the room');
 
-  setActiveIntents(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
+  setCatalog(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
 
   // THE RULE ENGINE WAS NOT THE CULPRIT, and recording that matters: D-143 put a precedence
   // rule there, and it is still right, and it is not what broke. Every English phrasing of
   // this already resolves to UNKNOWN by rules alone.
   for (const q of ['show me the Book of Elii', 'read me your book', 'what is the Book of Elii?']) {
-    const r = await ruleResolver.resolve(q, { lang: 'en', threshold: 0.5 } as never);
+    const r = await ruleResolver.resolve(q, { lang: 'en', threshold: 0.5, intents: catalog } as never);
     check(`the rule engine leaves "${q.slice(0, 34)}" alone`, r.intent === 'UNKNOWN', String(r.intent));
   }
   // German broke in the rule engine, and separately.
-  const german = await ruleResolver.resolve('was sind deine Regeln?', { lang: 'de', threshold: 0.5 } as never);
+  const german = await ruleResolver.resolve('was sind deine Regeln?', {
+    lang: 'de',
+    threshold: 0.5,
+    intents: catalog,
+  } as never);
   check(
     'and the German phrasing WAS stolen there, which is the other half of the defect',
     german.intent === 'SEARCH',
@@ -115,6 +131,7 @@ async function main(): Promise<void> {
    */
   const modes: string[] = [];
   const engine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
     rules: () => RULES,

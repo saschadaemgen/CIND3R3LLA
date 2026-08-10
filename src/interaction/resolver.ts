@@ -17,8 +17,9 @@
 
 import { log } from '../log.js';
 import {
-  isActiveIntent,
+  inCatalog,
   unknownResult,
+  type Intent,
   type IntentContext,
   type IntentResolver,
   type IntentResult,
@@ -46,13 +47,13 @@ export function activeResolverName(): string {
 }
 
 /** Coerces any resolver's output into a valid, in-catalog result. */
-function sanitize(raw: unknown, lang: string): IntentResult {
+function sanitize(raw: unknown, lang: string, catalog: readonly Intent[]): IntentResult {
   if (!raw || typeof raw !== 'object') return unknownResult(lang);
   const r = raw as Record<string, unknown>;
-  // Validated against the ACTIVE catalog, not just the compile-time one: an
-  // intent belonging to a disabled plugin is treated exactly like an invented
-  // one (CCB-S3-004 §0).
-  if (!isActiveIntent(r['intent'])) return unknownResult(lang);
+  // Validated against THIS BOT'S catalog, not just the compile-time one: an intent
+  // belonging to a plugin that is off for this bot is treated exactly like an invented
+  // one (CCB-S3-004 §0, per bot since CCB-S5-021).
+  if (!inCatalog(catalog, r['intent'])) return unknownResult(lang);
 
   const confidence =
     typeof r['confidence'] === 'number' && Number.isFinite(r['confidence'])
@@ -119,7 +120,7 @@ export function carryOverSlots(text: string, intent: 'PRICE' | 'SEARCH'): Intent
  */
 export async function resolveIntent(text: string, ctx: IntentContext): Promise<IntentResult> {
   try {
-    return sanitize(await active.resolve(text, ctx), ctx.defaultLanguage);
+    return sanitize(await active.resolve(text, ctx), ctx.defaultLanguage, ctx.intents);
   } catch (err) {
     log.warn(
       `Intent resolver "${active.name}" failed (${
@@ -128,7 +129,7 @@ export async function resolveIntent(text: string, ctx: IntentContext): Promise<I
     );
   }
   try {
-    return sanitize(await fallback.resolve(text, ctx), ctx.defaultLanguage);
+    return sanitize(await fallback.resolve(text, ctx), ctx.defaultLanguage, ctx.intents);
   } catch (err) {
     log.error(
       `Fallback intent resolver failed: ${err instanceof Error ? err.message : String(err)}`,

@@ -242,7 +242,7 @@ export class WebSearchService {
    */
   async search(
     query: string,
-    scope: { groupId: number; memberId: string },
+    scope: { groupId: number; memberId: string; botProfileId?: number },
   ): Promise<SearchOutcome> {
     const cfg = this.deps.settings();
     const provider = this.provider();
@@ -263,9 +263,32 @@ export class WebSearchService {
     }
 
     const now = this.now();
+    // ── THE BUDGET IS SPENT PER BOT (CCB-S5-021, D-175) ─────────────────────
+    //
+    // The NUMBER is deployment-wide, because it is the operator's bill and there is one
+    // account. The SPEND is this bot's, so a bot that searches constantly cannot exhaust
+    // the allowance of one that searches rarely.
+    //
+    // It was already isolated, and only BY ACCIDENT: the keys carried a SimpleX group id
+    // and a SimpleX member id, and those differ per profile because each profile is its
+    // own membership. That is precisely the accident migration 044 removed from the
+    // moderation counters, with the note that conversation canonicalisation would collapse
+    // it. Stated here rather than relied upon, so the isolation survives the day two bots
+    // are made to agree about what a conversation is.
+    const bot = `b:${scope.botProfileId === undefined ? 'shared' : String(scope.botProfileId)}`;
     const allowed =
-      this.window.allow(`m:${scope.memberId}`, cfg.rateLimitPerMember, cfg.rateLimitWindowSeconds, now) &&
-      this.window.allow(`g:${String(scope.groupId)}`, cfg.rateLimitPerChat, cfg.rateLimitWindowSeconds, now);
+      this.window.allow(
+        `${bot}|m:${scope.memberId}`,
+        cfg.rateLimitPerMember,
+        cfg.rateLimitWindowSeconds,
+        now,
+      ) &&
+      this.window.allow(
+        `${bot}|g:${String(scope.groupId)}`,
+        cfg.rateLimitPerChat,
+        cfg.rateLimitWindowSeconds,
+        now,
+      );
     if (!allowed) {
       this.noteFailure(provider.name, 'rate-limited', 'the search budget for this window is spent');
       return { kind: 'failed', failure: 'rate-limited', detail: 'the search budget for this window is spent' };

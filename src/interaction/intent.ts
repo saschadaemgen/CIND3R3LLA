@@ -48,27 +48,35 @@ export const CORE_INTENTS: readonly Intent[] = [
 ];
 
 /**
- * The catalog as it stands RIGHT NOW: the core intents plus whatever enabled
- * plugins contribute (CCB-S3-004 §0).
+ * The catalog as it stands for ONE BOT: the core intents plus whatever plugins are
+ * enabled for that bot (CCB-S3-004 §0, per bot since CCB-S5-021).
  *
  * `INTENTS` above is the compile-time closed set — it is what makes an invented
  * intent a type error. This is the runtime subset, and it is what the resolver
  * seam validates against, so a disabled plugin's intent is not merely unhandled
  * but absent: nothing can resolve to it.
+ *
+ * ── IT WAS MODULE STATE, AND THAT IS THE DEFECT CCB-S5-021 FIXES ─────────────
+ *
+ * This used to be a `let activeIntents` set with a `setActiveIntents` writer, which was
+ * correct while a process hosted one bot and silently stopped being correct when it hosted
+ * several: one catalog for the whole process means a plugin switched off for one bot is
+ * still in every bot's vocabulary. A per-bot catalog cannot live in module state, so it
+ * does not: it is built here and carried in {@link IntentContext}, which every resolver
+ * already receives.
+ *
+ * The catalog is therefore a PARAMETER rather than an ambient fact, and `IntentContext`
+ * requires it. That is deliberate and it is the D-164 lesson in another shape: an optional
+ * field defaulting to a process-wide set would fail OPEN, handing a bot the deployment's
+ * capabilities on any call site that forgot it, and nothing would say so.
  */
-let activeIntents = new Set<Intent>(CORE_INTENTS);
-
-/** Replaces the active catalog. Called whenever plugin enablement changes. */
-export function setActiveIntents(extra: readonly Intent[]): void {
-  activeIntents = new Set<Intent>([...CORE_INTENTS, ...extra]);
+export function capabilityCatalog(extra: readonly Intent[]): Intent[] {
+  return [...new Set<Intent>([...CORE_INTENTS, ...extra])];
 }
 
-export function isActiveIntent(v: unknown): v is Intent {
-  return isIntent(v) && activeIntents.has(v);
-}
-
-export function activeIntentList(): Intent[] {
-  return [...activeIntents];
+/** True when `v` is an intent this catalog actually carries. */
+export function inCatalog(catalog: readonly Intent[], v: unknown): v is Intent {
+  return isIntent(v) && catalog.includes(v);
 }
 
 /** Intents that change consent, and therefore always require confirmation (§4.1). */
@@ -123,6 +131,14 @@ export interface IntentContext {
   threshold: number;
   /** Language to assume when the instruction gives no clue. */
   defaultLanguage: string;
+  /**
+   * THE CATALOG THIS RESOLUTION MAY PRODUCE (CCB-S5-021).
+   *
+   * One bot's capabilities: the core intents plus the intents of the plugins enabled for
+   * THAT bot. Required, not optional, so a call site cannot silently inherit a
+   * deployment-wide set; see {@link capabilityCatalog}.
+   */
+  intents: readonly Intent[];
 }
 
 export interface IntentResolver {

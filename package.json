@@ -109,7 +109,9 @@
     "verify:self-claims": "tsx scripts/verify-self-claims.ts",
     "verify:decisions-index": "tsx scripts/verify-decisions-index.ts",
     "verify:interaction-scope": "tsx scripts/verify-interaction-scope.ts",
-    "verify:two-names": "tsx scripts/verify-two-names.ts"
+    "verify:two-names": "tsx scripts/verify-two-names.ts",
+    "verify:plugin-scope": "tsx scripts/verify-plugin-scope.ts",
+    "verify:plugin-scope-live": "tsx scripts/verify-plugin-scope-live.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.1.2",

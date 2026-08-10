@@ -21,7 +21,7 @@
  */
 
 import {
-  isActiveIntent,
+  inCatalog,
   unknownResult,
   type Intent,
   type IntentContext,
@@ -1305,10 +1305,11 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
   // for the weighted contest.
   const bestByLang = new Map<string, number>();
   for (const pattern of PATTERNS) {
-    // A pattern belonging to a disabled plugin is not merely outranked, it is
-    // never considered — so a price question with the plugin off is UNKNOWN and
-    // follows the CCB-S3-005 silence rules rather than half-matching.
-    if (!isActiveIntent(pattern.intent)) continue;
+    // A pattern belonging to a plugin that is off FOR THIS BOT is not merely outranked,
+    // it is never considered — so a price question put to a bot without the capability is
+    // UNKNOWN and follows the CCB-S3-005 silence rules rather than half-matching. The
+    // catalog is the asking bot's, not the deployment's, since CCB-S5-021.
+    if (!inCatalog(ctx.intents, pattern.intent)) continue;
     const match = findWindow(instr, pattern.tokens);
     if (!match) continue;
 
@@ -1349,7 +1350,7 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
   // can say plainly that she cannot look things up. Honest and quiet beats confident and
   // wrong.
   if (webVerb) {
-    if (isActiveIntent('LOOKUP')) {
+    if (inCatalog(ctx.intents, 'LOOKUP')) {
       if (!best || best.pattern.intent === 'PRICE' || best.pattern.intent === 'SEARCH') {
         const lookup = PATTERNS.filter((pattern) => pattern.intent === 'LOOKUP')
           .map((pattern) => {
@@ -1370,7 +1371,7 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
   // instruction, and only while the PRICE intent is actually active.
   if (
     (!best || best.score < ctx.threshold) &&
-    isActiveIntent('PRICE') &&
+    inCatalog(ctx.intents, 'PRICE') &&
     looksLikeConversion(tokens)
   ) {
     const slots: IntentSlots = {};

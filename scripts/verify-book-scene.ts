@@ -54,7 +54,7 @@ import {
 import { tellBookScene, type RecitalDeps } from '../src/interaction/recital-service.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { setIntentResolver, resetIntentResolver } from '../src/interaction/resolver.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
 import {
   CEILING_RULE_IDS,
@@ -74,6 +74,18 @@ import type { AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { seededPromptRules } from './seeded-rules.js';
 import { setLogLevel } from '../src/log.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -527,6 +539,7 @@ async function main(): Promise<void> {
   const delivered: string[] = [];
   const composed = sceneHarness();
   const wired: InteractionEngine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
     rules: () => RULES,
@@ -544,7 +557,7 @@ async function main(): Promise<void> {
       return Promise.resolve();
     },
   });
-  setActiveIntents(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
+  setCatalog(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
   setIntentResolver({
     name: 'always-unknown',
     resolve: () => Promise.resolve({ intent: 'UNKNOWN', confidence: 0.1, slots: {}, lang: 'en' } as never),
@@ -574,6 +587,7 @@ async function main(): Promise<void> {
   const broken = sceneHarness();
   delivered.length = 0;
   const brokenEngine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
     rules: () => RULES,
@@ -720,12 +734,13 @@ async function main(): Promise<void> {
     check(`"${q}" does NOT`, !asksForAnotherLaw(q), q);
   }
 
-  setActiveIntents(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
+  setCatalog(['PUBLISH', 'UNPUBLISH', 'STATUS', 'HELP', 'SEARCH', 'UNDO', 'RESTORE', 'PRICE', 'LOOKUP']);
 
   const requests: AiReplyRequest[] = [];
   const sent: string[] = [];
   const sceneLaw: string | null = 'ceiling.hard-limit';
   const engine = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
     rules: () => RULES,
@@ -862,6 +877,7 @@ async function main(): Promise<void> {
 
   const missed: string[] = [];
   const deterministic = new InteractionEngine({
+    capabilities: () => catalog,
     db,
     settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
     rules: () => RULES,

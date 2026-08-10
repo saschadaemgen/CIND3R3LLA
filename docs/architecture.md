@@ -148,7 +148,8 @@ exist twice** (017, 018, 019), because the parallel-chat AI work reused numbers 
 CCB-attributed work had already taken. The runner keys `schema_migrations` on the **full
 filename**, so all six apply exactly once and nothing is broken — but the number is a label
 rather than an ordinal, **no applied migration may be renamed**, and new migrations allocate
-from the highest number on disk plus one (currently **023**). See **D-069** and the appendix.
+from the highest number on disk plus one (currently **052**, since 051 landed with the per-bot
+plugin overrides). See **D-069** and the appendix.
 
 > Note: `CLAUDE.md`'s migrations list labels 004 the "moderation gate"; the file itself is headed "Cinderella admin views support — Season 0, Stage 5" (`migrations/004_moderation.sql:1`) and its concrete effect is adding `media_error` and folding `rejected` into the publish views. It implements the takedown gate in the views but is not exclusively about moderation.
 
@@ -531,11 +532,52 @@ its admin page. Enablement lives under the `plugins` settings key; its own setti
 `plugin:<id>`. The sidebar's **Plugins** submenu is generated from the registry, so adding a
 second plugin is a `definePlugin` call, a settings page and one import.
 
-**A disabled plugin registers no intents.** The intent catalog is now two things: `INTENTS`
+**A disabled plugin registers no intents.** The intent catalog is two things: `INTENTS`
 is the compile-time closed set that makes an invented intent a type error, and a RUNTIME
-ACTIVE set recomputed whenever enablement changes. When a plugin is off its intents leave the
-active set, so `rules.ts` skips their patterns and `resolver.ts` downgrades anything
-claiming them to UNKNOWN. Absence is the mechanism; there is no handler left to reason about.
+catalog derived from enablement. When a plugin is off its intents leave that catalog, so
+`rules.ts` skips their patterns and `resolver.ts` downgrades anything claiming them to
+UNKNOWN. Absence is the mechanism; there is no handler left to reason about.
+
+### 14.1 Per bot (CCB-S5-021, D-175, migration 051)
+
+**Enablement is per bot.** It was one `plugins` settings key with one writer, so enabling Web
+Search enabled it for every hosted bot. `cinderella_plugin_overrides`
+(`bot_profile_id, plugin_id, setting_key, value`) carries a bot's deviation on D-155's
+mechanism: absence means inherit, so editing the shared value still reaches every bot that has
+not deviated. Reading model in [`src/plugins/scope.ts`](../src/plugins/scope.ts), SQL in
+[`src/db/plugin-overrides.ts`](../src/db/plugin-overrides.ts).
+
+**Exactly two settings are per bot**, both `enabled`; the other eighteen are deployment-wide.
+`PLUGIN_SETTING_SCOPES` is the inventory as data, mirrored by the migration's CHECK, and
+`verify:plugin-scope` asserts the two agree and that every key of every plugin's settings
+document is placed. The three questions that decide a placement, and what a future per-bot
+capability follows, are in D-175.
+
+**The runtime catalog is per bot and is a PARAMETER, not module state.** It was a
+`let activeIntents` set in `interaction/intent.ts` written by `setActiveIntents`, which is one
+catalog for the process: correct with one hosted bot, and with several it meant a plugin
+switched off for one bot was still in every bot's vocabulary. `PluginService.capabilitiesFor`
+builds it per bot and `IntentContext.intents` carries it, **required rather than optional**, so
+a call site cannot silently inherit a deployment-wide set. The property holds at three layers:
+the rule engine never matches the pattern, the model is never shown the intent (including the
+slot rules, the examples and the `CROSS_REFERENCES` inside other intents' definitions), and the
+seam downgrades a resolver that claims it anyway. The `prices` and `webSearch` ports are live
+getters gated on the same per-bot fact, so the second line of defence cannot drift from the
+first between restarts.
+
+**A cache miss fails CLOSED**: a bot whose rows have not been read gets no plugin capabilities
+rather than the shared ones, which is the opposite of `InteractionService` and deliberately so
+(D-175). Both writers re-derive rather than clear, so an ordinary console toggle opens no window.
+
+**The budget number is deployment-wide; the spend is per bot.** Crypto prices already spent per
+bot through each engine's `ConversationState`; web search now carries the bot in its rate-limit
+key, where isolation had been an accident of SimpleX ids differing per profile (the accident
+migration 044 removed from the moderation counters).
+
+**Console**: the plugin list sits under the bot switcher and edits the selected bot, with a
+three-state control (on for this bot / off for this bot / follow the deployment) and the
+shared-or-own badge the Book and Interaction pages use. Each plugin's own settings page carries
+**no** switcher and a banner saying it is deployment-wide and how many bots that is.
 
 ## 15. Market data — the Crypto Prices plugin (CCB-S3-004)
 

@@ -869,8 +869,18 @@ async function main(): Promise<void> {
   const pluginsPage = await getPage('/plugins');
   check('plugins page renders', pluginsPage.code === 200);
   check(
-    'it lists the Crypto Prices plugin as enabled',
-    pluginsPage.body.includes('Crypto Prices') && pluginsPage.body.includes('Enabled'),
+    // The page states enablement PER BOT since CCB-S5-021, so the old assertion on the
+    // word "Enabled" is asserting copy that deliberately no longer exists. What it was
+    // really checking is that the plugin appears with its state readable, which is what
+    // this asserts against the wording the page actually serves.
+    'it lists the Crypto Prices plugin with its state for the selected bot',
+    pluginsPage.body.includes('Crypto Prices') &&
+      (pluginsPage.body.includes('on for this bot') ||
+        pluginsPage.body.includes('off for this bot')),
+  );
+  check(
+    'and says what the deployment-wide default is, separately from the bot',
+    pluginsPage.body.includes('Deployment-wide default'),
   );
   check(
     'and explains that disabling removes its intents',

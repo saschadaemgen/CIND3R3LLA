@@ -7,7 +7,19 @@
 
 import { loadLocalAiConfig } from '../src/config.js';
 import { createOllamaIntentResolver } from '../src/interaction/ollama-resolver.js';
-import { setActiveIntents, type Intent } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 interface Case {
   label: string;
@@ -76,7 +88,7 @@ async function main(): Promise<void> {
     throw new Error('LOCAL_AI_ENABLED must be true for the live verification.');
   }
 
-  setActiveIntents([]);
+  setCatalog([]);
   const resolver = createOllamaIntentResolver(config);
 
   let failures = 0;
@@ -89,6 +101,7 @@ async function main(): Promise<void> {
     const result = await resolver.resolve(test.text, {
       threshold: 0.65,
       defaultLanguage: test.defaultLanguage,
+      intents: catalog,
     });
     const elapsed = Math.round((performance.now() - started) * 10) / 10;
     timings.push(elapsed);

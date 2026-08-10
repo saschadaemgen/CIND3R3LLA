@@ -12,13 +12,25 @@ import {
   resolverSystemPromptForTest,
   type FetchLike,
 } from '../src/interaction/ollama-resolver.js';
-import { CORE_INTENTS, setActiveIntents } from '../src/interaction/intent.js';
+import { CORE_INTENTS, capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { ruleResolver } from '../src/interaction/rules.js';
 import {
   resetIntentResolver,
   resolveIntent,
   setIntentResolver,
 } from '../src/interaction/resolver.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 
@@ -37,6 +49,11 @@ const config: LocalAiConfig = {
 const ctx = {
   threshold: 0.65,
   defaultLanguage: 'en',
+  // Stated rather than ambient (CCB-S5-021). `get intents()` so a `setCatalog` later in
+  // the run reaches a context object built here, which is what the module global did.
+  get intents(): Intent[] {
+    return catalog;
+  },
 };
 
 function completion(result: unknown): FetchLike {
@@ -89,7 +106,7 @@ async function resolveWith(text: string, result: unknown) {
 }
 
 async function main(): Promise<void> {
-  setActiveIntents([]);
+  setCatalog([]);
 
   console.log('\n1. STATUS cannot be escalated into consent');
 
@@ -216,7 +233,7 @@ async function main(): Promise<void> {
   );
 
   resetIntentResolver();
-  setActiveIntents([]);
+  setCatalog([]);
 
   console.log(`\n=== RESULTS ===`);
   console.log(`StepSuccessful: ${failures === 0}`);
@@ -274,6 +291,25 @@ async function main(): Promise<void> {
     'LOOKUP says it is the web and never the archive',
     /web/i.test(lookupDef) && /never this group own archive|is SEARCH, not LOOKUP/i.test(lookupDef),
   );
+  // ── THE CROSS-REFERENCES MOVED INTO THE COMPOSITION (CCB-S5-021) ───────────
+  //
+  // CCB-S4-041's "a request to search the web is LOOKUP, not SEARCH" used to live in
+  // SEARCH's constant, which meant a bot with web search switched OFF was told, inside the
+  // description of a capability it has, that a capability it does not have is the right
+  // answer. They are appended by `systemPrompt` now, only when the other intent is really
+  // in that bot's catalog, so the guarantee is asserted where it now lives: present with
+  // both, absent with one, and that pair is the whole point.
+  const bothPrompt = resolverSystemPromptForTest([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
+  const noLookupPrompt = resolverSystemPromptForTest([...CORE_INTENTS, 'PRICE']);
+  check(
+    'with both active, the prompt still states the boundary from both sides',
+    /A request to search the web is LOOKUP, not SEARCH\./.test(bothPrompt) &&
+      /A request to search what members have said here is SEARCH, not LOOKUP\./.test(bothPrompt),
+  );
+  check(
+    'and with LOOKUP absent, the prompt never names it at all',
+    !/LOOKUP/.test(noLookupPrompt),
+  );
 
   // ── The slot rule contradicted LOOKUP's own description ────────────────────
   const prompt = resolverSystemPromptForTest();
@@ -301,9 +337,10 @@ async function main(): Promise<void> {
   console.log('\nThe rule engine: an explicit web verb wins');
 
   const routes = async (text: string): Promise<string> =>
-    (await ruleResolver.resolve(text, { threshold: 0.6, defaultLanguage: 'en' })).intent;
+    (await ruleResolver.resolve(text, { threshold: 0.6, defaultLanguage: 'en', intents: catalog }))
+      .intent;
 
-  setActiveIntents([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
+  setCatalog([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
 
   // THE OBSERVED DEFECT, and it never reached the model: "price of" is a two token phrase
   // and "google" is one, so PRICE scored 0.94 and the crypto plugin quoted 1.9758 USD for
@@ -335,7 +372,7 @@ async function main(): Promise<void> {
   // member asked for the web and would otherwise get a count of what the group said,
   // presented as an answer, without ever being told the web was not consulted. UNKNOWN
   // sends it to conversation, where she can say she cannot look things up.
-  setActiveIntents([...CORE_INTENTS, 'PRICE']);
+  setCatalog([...CORE_INTENTS, 'PRICE']);
   check(
     'with web search off, a web request falls to conversation rather than the archive',
     (await routes('search the web for the latest release')) === 'UNKNOWN',
@@ -351,7 +388,7 @@ async function main(): Promise<void> {
     'while an ordinary archive search still works with the plugin off',
     (await routes('search the archive for what bob said')) === 'SEARCH',
   );
-  setActiveIntents([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
+  setCatalog([...CORE_INTENTS, 'LOOKUP', 'PRICE']);
 
 
 

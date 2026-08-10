@@ -421,6 +421,17 @@ the audit detail records only whether a key is set. Rotating `SESSION_SECRET` ma
 plugin keys undecryptable and they must be re-entered; that is the deliberate trade for not
 introducing a second operator-managed secret.
 
+**And the key is DEPLOYMENT-WIDE, on purpose (CCB-S5-021, D-175).** Plugin enablement became a
+per-bot setting; the credential did not, and the reason is a security one rather than a
+convenience one. One account means one key, so a per-bot field would ask an operator to paste the
+same live secret once per bot, multiplying the number of places it is typed, pasted and possibly
+mistyped for no gain in isolation. The same reasoning keeps the untrusted-text budgets
+(`maxResults`, `perResultChars`, `totalChars`) deployment-wide: they are the size of the
+injection surface, and an outermost limit with N values is a limit nobody can state and that
+tightening later would reach only the bots nobody had touched. The database CHECK on
+`cinderella_plugin_overrides` refuses a per-bot row for either, and the application refuses it
+first with the inventory's own reason.
+
 **Outbound calls (CCB-S3-004).** The price feature is the instance's only egress. It sends
 canonical asset ids and a currency code to the configured provider and nothing else — no
 member id, no message text, no group identity. Responses are not trusted: a bad status, a

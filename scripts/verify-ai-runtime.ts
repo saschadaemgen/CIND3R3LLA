@@ -12,8 +12,20 @@ import {
   type AiRuntimeSnapshot,
 } from '../src/interaction/ai-runtime.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
-import { setActiveIntents } from '../src/interaction/intent.js';
+import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { activeResolverName, resolveIntent } from '../src/interaction/resolver.js';
+
+/**
+ * The catalog this harness drives with (CCB-S5-021).
+ *
+ * It used to be process state, written by `setActiveIntents`. It is a VALUE now, computed
+ * per bot in production and carried in the resolution context, so a harness states the
+ * capabilities it is testing instead of mutating a global that outlived the check.
+ */
+let catalog: Intent[] = capabilityCatalog([]);
+const setCatalog = (extra: readonly Intent[]): void => {
+  catalog = capabilityCatalog(extra);
+};
 
 let failures = 0;
 
@@ -129,7 +141,7 @@ function snapshotDetail(snapshot: AiRuntimeSnapshot): string {
 }
 
 async function main(): Promise<void> {
-  setActiveIntents([]);
+  setCatalog([]);
   const db = new MemoryDb();
   let nowTick = 0;
   const now = (): Date => new Date(Date.parse('2026-07-25T12:00:00.000Z') + nowTick++ * 1000);
@@ -167,7 +179,7 @@ async function main(): Promise<void> {
   check('runtime changes are audited', db.audits.length >= 2, String(db.audits.length));
 
   console.log('\n4. Runtime telemetry records success, guards, and fallback');
-  const ctx = { threshold: 0.65, defaultLanguage: 'en' };
+  const ctx = { threshold: 0.65, defaultLanguage: 'en', intents: catalog };
   const statusResult = await resolveIntent('what is my status', ctx);
   check('successful live path returns STATUS', statusResult.intent === 'STATUS', statusResult.intent);
 
@@ -195,7 +207,7 @@ async function main(): Promise<void> {
   check('rules remain active after reload', activeResolverName() === 'rules');
 
   resetAiRuntimeForTests();
-  setActiveIntents([]);
+  setCatalog([]);
 
   console.log('\n=== RESULTS ===');
   console.log(`StepSuccessful: ${failures === 0}`);

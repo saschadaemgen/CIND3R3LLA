@@ -83,6 +83,7 @@ import { SecurityService } from '../src/security/settings.js';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
 import { setLogLevel } from '../src/log.js';
+import { CORE_INTENTS } from '../src/interaction/intent.js';
 
 let failures = 0;
 
@@ -552,6 +553,8 @@ async function main(): Promise<void> {
 
   const basePersonality: BotPersonality = { ...DEFAULT_PERSONALITY, sharpness: 5 };
   const engine = new InteractionEngine({
+    // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+    capabilities: () => CORE_INTENTS,
     db,
     settings: () => settings,
     personality: () => basePersonality,
@@ -1308,6 +1311,8 @@ async function main(): Promise<void> {
    */
   const makeArmedEngine = (): InteractionEngine =>
     new InteractionEngine({
+      // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+      capabilities: () => CORE_INTENTS,
       db,
       // Named since CCB-S5-017. Production always names one; this harness did not, so every
       // row it drove through the engine was written against no bot, which was invisible
@@ -1428,6 +1433,8 @@ async function main(): Promise<void> {
   await db.query(`DELETE FROM cinderella_sanctions`);
   armedCalls.length = 0;
   const injectionEngine = new InteractionEngine({
+    // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+    capabilities: () => CORE_INTENTS,
     db,
     settings: () => normalizeInteraction({ nicknames: { enabled: true, words: 'Cindy', spamLimit: 1000 } }),
     personality: () => ({ ...DEFAULT_PERSONALITY, sharpness: 5 }),

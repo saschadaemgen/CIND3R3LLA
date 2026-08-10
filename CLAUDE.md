@@ -220,7 +220,16 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   a different law,
   and `conversation-log.ts`: the content-free record of what the conversational path
   did, shown on the Diagnostics page), `plugins/` (plugin
-  registry + the Crypto Prices plugin: providers, pinning, cache), `price/`
+  registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
+  `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
+  deployment** (CCB-S5-021, D-175). Exactly two are per bot, both of them `enabled`, and the
+  other eighteen are deployment-wide: the credential, the upstream quota, the cache and the
+  untrusted-text ceilings. The catalog a bot can be asked for is built per bot by
+  `capabilitiesFor` and carried in `IntentContext`, where it is REQUIRED: it was module state
+  in `intent.ts`, which is one catalog for the process and therefore one set of capabilities
+  for every hosted bot. A cache miss fails CLOSED, unlike the interaction settings, because a
+  capability answered from the shared states is a bot doing what the operator forbade it),
+  `price/`
   (amount parsing + number formatting), `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
@@ -383,7 +392,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **050**, since 049 landed with the per-bot avatar). Stated as a rule
+  (currently **052**, since 051 landed with the per-bot plugin overrides). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -522,6 +531,20 @@ out of the DATABASE constraint and compares it to the code, because the duplicat
 is deliberate and the drift would not be. `verify:two-names` drives the real `detectAddress`,
 because the defect was never that the settings object had one wake word but that both bots woke
 on it; its mutation puts a bot back on the shared value and shows both waking again),
+`verify:plugin-scope` (different bots, different capabilities, CCB-S5-021: the inventory placing
+every plugin setting, the database CHECK agreeing with it, inheritance leaving the existing
+deployment alone, and above all the ABSENT-CAPABILITY property PER BOT, asserted at all three
+layers it has - the rule engine never matches the pattern, the model is never shown the intent,
+and the seam downgrades a resolver that claims it anyway - and then driven end to end through the
+real engine with a spy on the search port. Mutation-proven four ways, including one that RESTORES
+the shipped defect and shows a bot reaching a plugin that is off for it. Every negative has a
+positive control beside it, because "this bot cannot search" passes against a bot that answers
+nothing at all, which is why the quiet bot is also shown answering a question it still can.
+`npm run verify:plugin-scope-live` puts one lookup question to two real bots with different
+capabilities and prints both replies; it needs Ollama and is not in the offline set. Read its
+output rather than its exit code: the one thing it can decide is that no provider was reached and
+that neither bot CLAIMED to have looked, and the rest is whether the answer sounds like a bot that
+never had the capability),
 `verify:self-claims` (what she may claim about herself, CCB-S5-002: that the fence is present,
 constitutional and critical, that the spine is emitted before the prohibition, that it reaches
 every lane that speaks in her voice and NO command lane, and above all that the detector the live

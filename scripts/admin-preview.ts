@@ -28,6 +28,8 @@ import { WebSearchService, setWebSearchService } from '../src/plugins/web-search
 import { PromptRuleService, setPromptRuleService } from '../src/interaction/prompt-rule-service.js';
 import { setOverrideRecorded } from '../src/db/prompt-rule-overrides.js';
 import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
+import { PluginService } from '../src/plugins/service.js';
+import { WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
@@ -291,6 +293,17 @@ async function main(): Promise<void> {
   setPromptRuleService(await PromptRuleService.load(db));
 
   registerNav();
+  // ── TWO BOTS WITH DIFFERENT CAPABILITIES (CCB-S5-021) ────────────────────
+  //
+  // With every plugin in one deployment-wide state the Plugins page shows the same thing
+  // for both bots, and the whole distinction the briefing asks to be visible is invisible.
+  // Web search on for the deployment and OFF for SupportDesk is the smallest fixture that
+  // shows all three states at once: on-and-inheriting, off-and-its-own, and the
+  // deployment default they are read against.
+  const plugins = await PluginService.load(db);
+  await plugins.setEnabled(WEB_SEARCH_ID, true, 'admin-preview');
+  await plugins.setEnabledForBot(supportBotId, WEB_SEARCH_ID, false, 'admin-preview');
+
   const app = buildServer({
     db,
     adminCfg,
@@ -298,6 +311,7 @@ async function main(): Promise<void> {
     settings,
     security,
     cfg,
+    plugins,
     registerViews: registerAdminViews,
   });
   await app.listen({ host: '127.0.0.1', port: PORT });

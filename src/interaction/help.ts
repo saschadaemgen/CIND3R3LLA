@@ -3,7 +3,7 @@
  *
  * Help is the first thing anyone tries, and it is the one message that has to be
  * true about what she can actually do right now. So the capability list is not a
- * fixed string — it is built from the live catalog (`activeIntentList()`), which
+ * fixed string — it is built from the asking bot's live catalog, which
  * means a disabled plugin stops advertising itself and a new plugin appears
  * without a copy change. A static list would drift the moment anything was
  * toggled, and drift in the help text is drift in the one explanation a member

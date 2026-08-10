@@ -87,6 +87,7 @@ import {
   recentConversations,
 } from '../src/interaction/conversation-log.js';
 import { setLogLevel } from '../src/log.js';
+import { CORE_INTENTS } from '../src/interaction/intent.js';
 
 let failures = 0;
 
@@ -1276,6 +1277,8 @@ async function main(): Promise<void> {
   const seen: AiReplyRequest[] = [];
 
   const engine = new InteractionEngine({
+    // No plugin is in play here, so the core catalog and nothing else (CCB-S5-021).
+    capabilities: () => CORE_INTENTS,
     db,
     settings: () => settings,
     // As the runtime wires it: one engine per bot, each passing its own id (CCB-S5-001).
