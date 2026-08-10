@@ -615,10 +615,12 @@ async function startCaptureWorker(
           // command timeout, logged that its message had not gone out, and then sent it
           // anyway the moment the tail unblocked. Per bot, serialized by this loop.
           //
-          // The wrapper was never needed: every SDK call inside already names its bot.
-          // `apiListGroups` takes the user id explicitly and `sendGroupText` schedules
-          // itself. The scheduler refuses re-entry outright now, so this cannot silently
-          // come back.
+          // The wrapper was never needed: every SDK call inside already goes through the
+          // scheduler as this bot. That was written here as "apiListGroups takes the user id
+          // explicitly", which was the false rule CCB-S5-018 corrected (D-171): naming a user
+          // id does not exempt a command, it makes the core REFUSE it when the active user
+          // differs. The listing is a scheduled port now. The scheduler refuses re-entry
+          // outright, so the wrapper cannot silently come back either.
           await flushAvatarToGroups(getPool(), {
             user: bot.user,
             displayName: bot.config.displayName,

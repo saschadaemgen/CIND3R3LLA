@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 169 decisions</strong> — newest first. Highest allocated: <strong>D-170</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 170 decisions</strong> — newest first. Highest allocated: <strong>D-171</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-171 | An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect | IMPLEMENTED |
 | D-170 | The ladders are per bot and arming is per build, which are two different scopes on one card | IMPLEMENTED |
 | D-169 | One switcher in the sidebar, remembered in the session, replacing the primary's console role | IMPLEMENTED |
 | D-168 | A face is applied on demand, and the panel gives the operator the control instead of the sentence | IMPLEMENTED |
@@ -198,6 +199,60 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-171 - An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect
+
+**Status: IMPLEMENTED** (CCB-S5-018, no migration). The sixth instance of the class CCB-S5-001
+fixed at five call sites, and the first one whose cause was a **rule written down as fact**.
+
+`core.ts` said, in as many words: *"`apiListGroups` takes an EXPLICIT user id, so it needs no
+scheduler: it is one of the few commands that cannot be misrouted."* Production disagreed:
+
+    {"type":"error","errorType":{"type":"differentActiveUser",
+     "commandUserId":2,"activeUserId":1}}
+
+The core does not use the id in place of the active user. It **checks that the two agree and
+refuses when they do not**. So an explicit user id makes a command *refusable*, not
+unmisroutable, and needs the scheduler exactly as much as one carrying no id. The primary
+worked because she happens to be the active user; every other bot's groups could not be read
+at all.
+
+The same sentence appeared in three places and produced three bare call sites:
+`refreshOwnership`, `reportGroups`, and `flushAvatarToGroups` - the last of which CCB-S5-015
+made bare by removing the `runScheduled` wrapper that had been setting the active user as a
+side effect. One scheduled `MultiProfileRuntime.listGroups` now, and the flush takes a
+`listGroups` **port** rather than a chat handle, which is what made the compiler find both of
+its callers. The third statement of the rule, in `admin-actions.ts`, was corrected although the
+code there was already right: **reasoning is what propagates**, and that sentence is why this
+happened at all.
+
+**IT PRESENTED AS AN ADDRESSING DEFECT FOR TWO DAYS.** The reported symptom was "the second bot
+does not wake on his name, but answers a quoted reply". Everything about that points at
+addressing: the wake word, the nickname list, the relaxed mode, the detector. It was none of
+them. The bot heard every message and could not reply, and the quoted-reply path differed just
+enough to keep working, which made the false explanation fit.
+
+Two things separated it, and both were diagnostics rather than fixes:
+
+- **`describeChatError`**, because the operator-facing line had been the SDK's own message,
+  "Chat command error (see chatError property)": an instruction to inspect a property, printed
+  on a surface that cannot inspect properties. The real error named the fault in one line.
+- **A boot line stating each bot's effective wake word**, read back through the same getter the
+  engine's `settings` closure uses. It ruled out the settings, the override, the cache and the
+  refresh in one deploy, after two days of reasoning about them.
+
+**WHAT IS NOT ESTABLISHED, AND IS RECORDED AS OPEN RATHER THAN GUESSED.** The empty ownership
+index is what changed for the reply path, but **no ownership consult has been located on it**.
+Every consult in the tree is `runForGroup` (enforcement), `deleteChatItems` (erasure),
+`sendGroupTextAsOwner` / `sendGroupComposedAsOwner` (the recital port) and `ownerOf` (the
+recital job); an ordinary reply goes `sendViaRuntime` to `runtime.sendGroupText(userId, ...)`,
+which names the bot and asks nobody who owns the group. So the fault was one fault - it started
+working on this deploy and no near-miss was ever recorded for that bot, which rules the detector
+out - but the path from "ownership empty" to "cannot reply" is a hypothesis. Writing a mechanism
+into this entry that a later reader would take as established is exactly the failure the first
+half of it describes.
+
 ---
 
 ### D-170 - The ladders are per bot and arming is per build, which are two different scopes on one card

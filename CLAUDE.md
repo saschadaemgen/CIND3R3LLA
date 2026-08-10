@@ -71,6 +71,14 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   follows as the regression guard it is rather than as the evidence it is not. The same applies
   to copy: a label is only correct against what the code does *today*, which is the other half
   of this defect and the reason `selected_for_runtime` lied for seven briefings.
+- **An explicit user id is not an exemption from the scheduler** (standing rule, D-171). This
+  file's own architecture notes said `apiListGroups` "takes an EXPLICIT user id, so it needs no
+  scheduler: it is one of the few commands that cannot be misrouted". The core does the
+  opposite: it CHECKS the id against the active user and refuses with `differentActiveUser`.
+  Naming a user makes a command refusable, not unmisroutable. Every SimpleX command goes
+  through `ActiveUserScheduler`, whatever it carries. The sentence appeared three times and
+  produced three bare call sites, so **correct the reasoning and not only the code**: reasoning
+  is what propagates.
 - **A validation rule that fails to compile fails OPEN, and silently** (standing rule, D-164).
   The slug's `pattern` attribute contained an unescaped `-` in a character class. Browsers
   compile `pattern` in regex `v` mode, where that is a syntax error, so it threw on every
