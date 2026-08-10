@@ -50,7 +50,6 @@ import {
   listViolations,
   recordSanction,
   recordViolation,
-  primaryModerationRules,
   updateModerationRules,
   ARM_CONFIRMATION,
   findSanction,
@@ -466,7 +465,6 @@ async function main(): Promise<void> {
   const shipped = await botModerationRules(db, botId);
   check('a new bot ships with the default ladders', shipped?.verbal[3]?.sharpnessBonus === 4);
   check('and ships observing', shipped?.mode === 'observe');
-  check('the primary bot resolves', (await primaryModerationRules(db))?.mode === 'observe');
 
   const saved = await updateModerationRules(
     db,

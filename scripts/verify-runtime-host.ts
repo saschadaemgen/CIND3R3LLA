@@ -35,6 +35,7 @@ import { RoutedEventSource } from '../src/bot/runtime/events.js';
 import { heldUntilReady } from '../src/bot/runtime/gate.js';
 import { EventRouter } from '../src/bot/runtime/router.js';
 import { emptyCounters } from '../src/bot/runtime/types.js';
+import { findRenameOnBoot, renameRefusal } from '../src/bot/runtime/naming.js';
 import { registerCapture, type CaptureHooks, type CaptureHost } from '../src/capture/handler.js';
 import { sendViaRuntime } from '../src/bot/send.js';
 import type { CapturedMessage } from '../src/capture/message.js';
@@ -400,6 +401,142 @@ section('The outbound decision is the same as the pre-runtime transport');
   );
 }
 
+/* ===================================== every bot is named from its own record (D-173) */
+
+section('The reconciliation: a bot that would be renamed in front of its group');
+{
+  // The dangerous half of CCB-S5-019. Until it, the primary's SimpleX profile was named
+  // from BOT_DISPLAY_NAME and every other bot from its record; every bot reads its record
+  // now. Where the two disagree for the bot WEARING the env name, the next deploy renames
+  // it silently, once, and irreversibly from the members' side.
+  const ENV = 'CIND3R3LLA';
+
+  // ── The ordinary deployment: they agree, and nothing happens ──────────────
+  check(
+    'a bot whose live name and record agree boots',
+    findRenameOnBoot([{ liveName: ENV, recordName: ENV }], ENV) === null,
+  );
+  check(
+    'and so does a whole deployment of them',
+    findRenameOnBoot(
+      [
+        { liveName: ENV, recordName: ENV },
+        { liveName: 'Aurora', recordName: 'Aurora' },
+      ],
+      ENV,
+    ) === null,
+  );
+
+  // ── The one that refuses ──────────────────────────────────────────────────
+  const caught = findRenameOnBoot(
+    [
+      { liveName: ENV, recordName: 'Renamed In The Console' },
+      { liveName: 'Aurora', recordName: 'Aurora' },
+    ],
+    ENV,
+  );
+  check('the bot wearing the env name with a differing record is caught', caught !== null);
+  check(
+    'and it is that bot, not its neighbour',
+    caught?.liveName === ENV && caught?.recordName === 'Renamed In The Console',
+  );
+
+  // The message is the whole remedy: an operator reads it at deploy time and has to act on
+  // it without reading the source. Both values by name, and both directions offered.
+  const message = caught === null ? '' : renameRefusal(caught);
+  check('the refusal quotes the name its members see', message.includes(`"${ENV}"`));
+  check('and the name in the record', message.includes('"Renamed In The Console"'));
+  check('and names the env var, so the second remedy is actionable', message.includes('BOT_DISPLAY_NAME'));
+  check('and names the page, so the first one is', message.includes('AI Bot Setup'));
+  check('and says nothing was changed', /nothing has been changed/i.test(message));
+
+  // ── BOUNDED. These must all still boot ────────────────────────────────────
+  //
+  // A refusal that fired on any disagreement would pass every assertion above and stop
+  // deployments that are in no danger at all. This is the half that says it does not.
+  check(
+    'a SECOND bot whose record differs from an env value it never wore still boots',
+    findRenameOnBoot(
+      [
+        { liveName: ENV, recordName: ENV },
+        { liveName: 'Aurora', recordName: 'Something Else' },
+      ],
+      ENV,
+    ) === null,
+  );
+  check(
+    'and a deployment whose BOT_DISPLAY_NAME matches nobody boots',
+    findRenameOnBoot(
+      [
+        { liveName: 'Aurora', recordName: 'Something Else' },
+        { liveName: 'Rick', recordName: 'Also Different' },
+      ],
+      ENV,
+    ) === null,
+  );
+  check(
+    'and so does a deployment with no bots at all',
+    findRenameOnBoot([], ENV) === null,
+  );
+
+  // ── MUTATION: the shape that was rejected ─────────────────────────────────
+  //
+  // A migration copying the env value into the record, or equivalently a boot that just
+  // took the env name for the primary and said nothing. Modelled as "always take the env
+  // value": it never refuses, so the caught case above goes green while the bot gets
+  // renamed. Printed so the guarantee is visible as a difference rather than asserted.
+  const migrated = (bots: { liveName: string; recordName: string }[]): null => {
+    void bots;
+    return null;
+  };
+  check(
+    'MUTATION: silently taking the env value refuses nothing, including the dangerous case',
+    migrated([{ liveName: ENV, recordName: 'Renamed In The Console' }]) === null &&
+      findRenameOnBoot([{ liveName: ENV, recordName: 'Renamed In The Console' }], ENV) !== null,
+  );
+
+  // ── MUTATION: the bound removed ───────────────────────────────────────────
+  //
+  // The other way to get this wrong, and the likelier one: refuse whenever ANY bot's live
+  // name and record disagree. It catches the dangerous case too, so every assertion above
+  // the bound would stay green - and it stops a deployment where a second bot was simply
+  // renamed in the console, which is an ordinary thing to do and no danger at all.
+  const unbounded = (bots: { liveName: string; recordName: string }[]) =>
+    bots.find((b) => b.liveName !== b.recordName) ?? null;
+  const safe = [
+    { liveName: ENV, recordName: ENV },
+    { liveName: 'Aurora', recordName: 'Something Else' },
+  ];
+  check(
+    'MUTATION: without the bound, an ordinary console rename stops the deployment',
+    unbounded(safe) !== null && findRenameOnBoot(safe, ENV) === null,
+  );
+
+  // ── And that host.ts actually acts on it ──────────────────────────────────
+  //
+  // The decision is pure and provable here; that the boot path THROWS on it is not, so it
+  // is read out of the source. Without this the whole section could be green against a host
+  // that computes the answer and drops it, which is the shape D-162 is about.
+  const host = readFileSync(join('src', 'bot', 'runtime', 'host.ts'), 'utf8').replace(/\s+/g, ' ');
+  check(
+    'host.ts consults it',
+    /const rename = findRenameOnBoot\(/.test(host),
+  );
+  check(
+    'and throws rather than logging and continuing',
+    /if \(rename !== null\) throw new Error\(renameRefusal\(rename\)\);/.test(host),
+  );
+  check(
+    'and reads the live name from the core profile, not from the flag being retired',
+    /liveName: \(b\.user\.profile as unknown as T\.Profile\)\.displayName/.test(host) &&
+      !/selected_for_runtime|isPrimary/.test(host.replace(/\/\/[^\n]*/g, '')),
+  );
+  check(
+    'and every bot is named from its own record when it does boot',
+    /applyProfileUpdate\( runtime, b\.simplexUserId, b\.config\.displayName,/.test(host),
+  );
+}
+
 /* ============================== the runtime's SDK-free files are still SDK-free */
 
 section('D-105 scope review: the runtime files that must not import the SDK');
@@ -420,6 +557,10 @@ section('D-105 scope review: the runtime files that must not import the SDK');
     // covered it (D-105, CCB-S5-007). `faces.ts` exists precisely so the avatar decision is
     // answerable with no core; an SDK import there would quietly undo that.
     'faces.ts',
+    // Same walk, same reason (CCB-S5-019). `naming.ts` holds the reconciliation, which is
+    // the one thing in this briefing that can stop a deployment, and it is only drivable
+    // above because it imports no core.
+    'naming.ts',
   ];
   const offenders: string[] = [];
   for (const file of mustBeFree) {
@@ -569,6 +710,8 @@ console.log(`  proven here      every subscribed event tag exists AND is routed 
                    one profile's events never reach another's handlers
                    nothing is sent before readiness, and a held send is not lost
                    the runtime's SDK-free files are still SDK-free
+                   the D-173 rename reconciliation: what refuses, what still boots,
+                   and that host.ts throws on it rather than computing and dropping it
   live core only   that a real core reaches ready, and how long it takes
                    that a real send is attributed to this profile by the core
                    that media receipt still works end to end`);

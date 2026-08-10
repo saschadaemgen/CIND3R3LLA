@@ -78,12 +78,13 @@ export interface HostedIdentity {
  * would create an address for, or accept a contact as, a bot the operator was not looking
  * at. With no id it answers for the primary, which is the console's default selection.
  */
-export function hostedIdentity(botProfileId?: number): HostedIdentity | null {
-  if (handle === null) return null;
-  // READ-ONLY, so a default is honest here where it was not for the actions: this answers
-  // "who is running" for a page, and the primary is the console's default selection. Nothing
-  // reached through it has a side effect on a profile.
-  const bot = botProfileId === undefined ? handle.primary : pick(handle, botProfileId);
+export function hostedIdentity(botProfileId: number | undefined): HostedIdentity | null {
+  if (handle === null || botProfileId === undefined) return null;
+  // No fallback to the primary since CCB-S5-019. It read "the primary is the console's
+  // default selection", which the sidebar switcher replaced, and its only caller already
+  // passes the selected bot's id. With no bot named the honest answer is "no identity",
+  // not "some identity".
+  const bot = pick(handle, botProfileId);
   if (bot === undefined) return null;
   return {
     simplexUserId: bot.simplexUserId,
@@ -114,7 +115,7 @@ function chatOf(): RuntimeHost['chat'] {
  *
  * ── WHY THE ID IS REQUIRED (CCB-S5-007) ──────────────────────────────────────
  *
- * It used to be optional and fall back to `host.primary`, which is how the onboarding
+ * It used to be optional and fall back to the primary bot, which is how the onboarding
  * console came to run all four of its steps as the primary whatever bot the operator
  * thought he was configuring. The database write was per bot and the SimpleX call was not:
  * accepting a contact for bot B recorded it against B and accepted it as A.

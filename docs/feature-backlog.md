@@ -56,7 +56,7 @@ survives only in historical task labels and in-code comments).
   > **Note:** the outline lists the avatar as Done and the code confirms it — SEASON-1-PROTOCOL records it delivered (CCB-S1-014/015, [`seasons/SEASON-1-PROTOCOL.md:57`](../seasons/SEASON-1-PROTOCOL.md)). CLAUDE.md's stated invocation `npm run avatar -- <img>` is **accurate** — it matches the tool's own usage string ([`src/bot/set-avatar.ts:4`](../src/bot/set-avatar.ts)), which reads the image path from `process.argv[2]` ([`:22`](../src/bot/set-avatar.ts)); the npm script `"avatar": "tsx src/bot/set-avatar.ts"` ([`package.json:15`](../package.json)) forwards the `--` args to it. The stale point this note used to carry — that CLAUDE.md still filed the avatar under "Parked (do not build now)" — was **corrected under CCB-S5-007**.
 
 - [x] **One image per bot** (CCB-S5-007, D-161, [`migrations/049_per_bot_avatar.sql`](../migrations/049_per_bot_avatar.sql)). `AVATAR_PATH` is one image in the environment, so with every enabled bot hosted (CCB-S5-001) a second bot could have no picture or the first one's. `cinderella_bot_profiles.avatar_path` now holds a path per bot, **NULL meaning the deployment default**, so there is no special primary case and an existing deployment keeps exactly the picture it has. Uploaded from the AI Bot page through the same `sharp` re-encode the chapter images use, decided at boot by [`src/bot/runtime/faces.ts`](../src/bot/runtime/faces.ts), proven by `npm run verify:bot-avatar`. `npm run avatar -- <img>` still stages the **deployment default**, and is primary-only by construction; a per-bot image is uploaded in the console, not staged on disk.
-  > **Still single-bot elsewhere, reported and not fixed:** `BOT_DISPLAY_NAME` is one env value (non-primary bots are named from their own record), and both `npm run connect` and `npm run avatar` act on one profile by construction.
+  > **Still single-bot elsewhere, reported and not fixed:** both `npm run connect` and `npm run avatar` act on one profile by construction. `BOT_DISPLAY_NAME` no longer names any bot's profile since CCB-S5-019 (D-173) - every bot is named from its own record - and the env value's only remaining role is the boot reconciliation that refuses a rename.
 
 ---
 
@@ -1111,11 +1111,20 @@ history. What CCB-S5-001 deliberately left is in
       defaults to true and the accept is manual regardless: nothing reads the flag. That
       is the safe direction, and it is a setting that currently means nothing, which is
       its own kind of dishonesty. Either honour it or say on the page that it is not read.
-- [ ] **Nothing links an onboarding record to a runtime profile except the operator's
-      `selected_for_runtime` flag.** D-096 Decision 3 left the FK for an operator to set
-      deliberately and nothing populates `cinderella_bot_registry` yet, so the
-      create-address action guards on the flag and shows the hosted identity instead. When
-      the registry is populated, that guard should become the FK.
+- [x] **Nothing links an onboarding record to a runtime profile except the operator's
+      `selected_for_runtime` flag.** Overtaken. Migration 044 put `simplex_user_id` on
+      `cinderella_bot_profiles`, which is the link, and CCB-S5-019 (D-173) removed every reader
+      of the flag: the create-address action is given a bot id and resolves the hosted identity
+      from that. What remains is the flag's own retirement, below.
+- [ ] **Drop `selected_for_runtime`** (step two of D-173). Nothing reads the column since
+      CCB-S5-019; creation still writes it so it stays coherent, and the unique partial index
+      `cinderella_one_runtime_bot_profile_idx` still exists. The migration drops both, and takes
+      with it the INSERT's `NOT EXISTS (...)` computation, the duplicate-key message in
+      `bot-onboarding.ts` that names the index, and the fixture columns in `verify:adoption`,
+      `verify:interaction-scope`, `verify:multi-bot`, `verify:two-names` and
+      `verify:multi-bot-live`. Deliberately a separate briefing: a deployment runs for a while
+      with nothing reading a column that still exists, which is the state where a missed reader
+      is a defect rather than a failed migration.
 - [x] **Hosting EVERY enabled profile** (half two, CCB-S5-001, D-155). `startRuntimeHost`
       hosts `cinderella_bot_profiles WHERE enabled = TRUE`; each gets its own event source,
       file receiver, engine, consent handler and capture registration. `deleteFromCore` now
@@ -1146,11 +1155,10 @@ history. What CCB-S5-001 deliberately left is in
       ever wants genuinely different outermost limits for a community (an adults-only group
       behind an AVS). Explicitly NOT per-bot suspension of a constitutional law, which
       CCB-S5-001 refuses in three places on purpose.
-- [ ] **The onboarding console pages do not yet name their bot.** `admin-actions.ts` takes an
-      optional bot profile id and defaults to the primary; the views have not been threaded
-      through, so with several bots hosted the address and contact-request actions still act
-      as the primary. The refusal path is correct (a bot that is not hosted is named and
-      refused); what is missing is the caller passing the id.
+- [x] **The onboarding console pages do not yet name their bot.** Done. CCB-S5-007 threaded the
+      views through so every onboarding step acts as the bot it was given, and CCB-S5-019
+      removed `hostedIdentity`'s fallback to the primary altogether: the id is required, and an
+      unhosted one raises rather than acting as somebody else.
 - [ ] **Close the boot event-loss window.** Capture subscribes after `startRuntimeBot`
       returns, so an event in between reaches a tag with no handler. Narrower than the
       pre-runtime path's and now COUNTED (`RoutedEventSource.unhandled`, with a

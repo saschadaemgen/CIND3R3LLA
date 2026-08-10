@@ -63,9 +63,9 @@ import {
 } from '../src/interaction/settings.js';
 import type { CapturedMessage } from '../src/capture/parse.js';
 import {
+  botPersonalityById,
   createBotOnboardingProfile,
   listBotOnboardingProfiles,
-  primaryBotPersonality,
   updateBotOnboardingProfile,
   updateBotPersonality,
   type BotOnboardingInput,
@@ -74,6 +74,7 @@ import {
   BotPersonalityService,
   currentBotPersonality,
   invalidateBotPersonality,
+  warmBotPersonality,
   setBotPersonalityService,
 } from '../src/profiles/bot-personality.js';
 import { SettingsService } from '../src/settings/service.js';
@@ -1215,36 +1216,48 @@ async function main(): Promise<void> {
     (await listBotOnboardingProfiles(db)).find((p) => p.id === botId)?.personality.origin === '',
   );
 
+  // Read BY ID, which is the only way it is read (CCB-S5-019). There used to be a
+  // deployment-wide read here that resolved whichever row carried the primary flag; it was
+  // the flag's last reader in this tree and it went with the rest of it.
   await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
-  const runtime = await primaryBotPersonality(db);
-  check('the primary bot personality is the one configured', runtime?.sharpness === 9);
-  check('the primary read carries her history', runtime?.origin === ORIGIN_FIXTURE);
-
-  await db.query(`UPDATE cinderella_bot_profiles SET selected_for_runtime = FALSE`);
-  check('no primary yields null rather than invented defaults', (await primaryBotPersonality(db)) === null);
-  await db.query(`UPDATE cinderella_bot_profiles SET selected_for_runtime = TRUE WHERE id = $1`, [botId]);
+  const runtime = await botPersonalityById(db, botId);
+  check('a bot personality read by id is the one configured', runtime?.sharpness === 9);
+  check('and it carries her history', runtime?.origin === ORIGIN_FIXTURE);
+  check(
+    'an unknown bot id yields null rather than invented defaults',
+    (await botPersonalityById(db, 999_999)) === null,
+  );
 
   /* ── 7. The live cache the reply path reads ─────────────────────────────── */
 
   console.log('\n7. A saved slider reaches the reply path without a restart');
 
+  // NAMING THE BOT, which is the only way the cache is read (CCB-S5-019). This section used
+  // the no-argument form, which resolved the primary; that form now answers null and the
+  // reply path never used it. Warmed explicitly, because a bot's first read is a miss by
+  // design and the boot path is what warms it in production.
   setBotPersonalityService(await BotPersonalityService.load(db));
-  check('the cached personality is the saved one', currentBotPersonality()?.sharpness === 9);
-  check('the cache carries her history too', currentBotPersonality()?.origin === ORIGIN_FIXTURE);
+  await warmBotPersonality(botId);
+  check('the cached personality is the saved one', currentBotPersonality(botId)?.sharpness === 9);
+  check('the cache carries her history too', currentBotPersonality(botId)?.origin === ORIGIN_FIXTURE);
+  check(
+    'and asking without naming a bot answers null rather than guessing one',
+    currentBotPersonality() === null,
+  );
 
   await updateBotPersonality(db, botId, { ...DIALLED, sharpness: 1 }, 'verify-personality');
   check(
     'without invalidation the cache is stale, which is why the console invalidates',
-    currentBotPersonality()?.sharpness === 9,
+    currentBotPersonality(botId)?.sharpness === 9,
   );
 
   invalidateBotPersonality();
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  check('after invalidation the new value is served', currentBotPersonality()?.sharpness === 1);
+  await warmBotPersonality(botId);
+  check('after invalidation the new value is served', currentBotPersonality(botId)?.sharpness === 1);
 
   await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
   invalidateBotPersonality();
-  await new Promise((resolve) => setTimeout(resolve, 30));
+  await warmBotPersonality(botId);
 
   /* ── 8. The engine carries it into the request ──────────────────────────── */
 
@@ -1265,7 +1278,8 @@ async function main(): Promise<void> {
   const engine = new InteractionEngine({
     db,
     settings: () => settings,
-    personality: currentBotPersonality,
+    // As the runtime wires it: one engine per bot, each passing its own id (CCB-S5-001).
+    personality: () => currentBotPersonality(botId),
     personalize: async (request) => {
       seen.push(request);
       return Promise.resolve(

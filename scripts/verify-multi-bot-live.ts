@@ -136,8 +136,8 @@ async function main(): Promise<void> {
   for (const migration of await loadMigrationFiles()) await pg.exec(migration.sql);
 
   const { rows } = await db.query<{ id: string; slug: string }>(
-    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled, selected_for_runtime)
-     VALUES ('sharp-bot','SharpBot',TRUE,TRUE), ('warm-bot','WarmBot',TRUE,FALSE)
+    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled)
+     VALUES ('sharp-bot','SharpBot',TRUE), ('warm-bot','WarmBot',TRUE)
      RETURNING id, slug`,
   );
   const ids = new Map(rows.map((r) => [r.slug, Number(r.id)]));

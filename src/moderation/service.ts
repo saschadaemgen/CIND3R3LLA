@@ -16,7 +16,7 @@
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import type { ModerationRules } from './rules.js';
-import { botModerationRules, primaryModerationRules } from './store.js';
+import { botModerationRules } from './store.js';
 
 /**
  * ── PER BOT SINCE CCB-S5-001 ─────────────────────────────────────────────────
@@ -29,7 +29,6 @@ import { botModerationRules, primaryModerationRules } from './store.js';
  * not using.
  */
 export class ModerationService {
-  private value: ModerationRules | null = null;
   private readonly perBot = new Map<number, ModerationRules | null>();
   private readonly inFlight = new Map<number, Promise<void>>();
   private loaded = false;
@@ -44,15 +43,18 @@ export class ModerationService {
   }
 
   /**
-   * The rules of the runtime bot, or null when no bot is selected for the runtime.
+   * One bot's ladders, or null when they are not loaded or not configured.
    *
    * Null means the ladders do not run at all. That is deliberate: with no bot profile
    * there is no operator-chosen policy, and inventing one to moderate a real group with
    * would be the worst possible default.
+   *
+   * No unnamed answer since CCB-S5-019. It returned the PRIMARY's ladders, which was the
+   * flag's last reader here, and nothing on the reply path ever asked without naming a bot.
    */
   get(botProfileId?: number): ModerationRules | null {
     if (!this.loaded) void this.kickRefresh();
-    if (botProfileId === undefined) return this.value;
+    if (botProfileId === undefined) return null;
     const cached = this.perBot.get(botProfileId);
     if (cached !== undefined) return cached;
     void this.kickRefreshFor(botProfileId);
@@ -91,16 +93,14 @@ export class ModerationService {
     return p;
   }
 
-  async refresh(): Promise<void> {
-    try {
-      this.value = await primaryModerationRules(this.db);
-      this.loaded = true;
-    } catch (error) {
-      log.warn(
-        `Moderation: reading the primary bot's rules failed, keeping the last known ` +
-          `ladders (${error instanceof Error ? error.message : String(error)}).`,
-      );
-    }
+  /**
+   * Mark the cache live. Nothing deployment-wide is read any more (CCB-S5-019): every
+   * value here is per bot and arrives through {@link refreshFor}, which the boot path calls
+   * for each hosted bot and which keeps the last known ladders on a failed read.
+   */
+  refresh(): Promise<void> {
+    this.loaded = true;
+    return Promise.resolve();
   }
 
   private kickRefresh(): Promise<void> {
@@ -125,10 +125,7 @@ export function invalidateModerationRules(): void {
   active?.invalidate();
 }
 
-/**
- * The getter the engine is wired with. Each engine passes its own bot's id
- * (CCB-S5-001); the no-argument form is the primary's, for the console's default views.
- */
+/** The getter the engine is wired with. Each engine passes its own bot's id (CCB-S5-001). */
 export function currentModerationRules(botProfileId?: number): ModerationRules | null {
   return active?.get(botProfileId) ?? null;
 }

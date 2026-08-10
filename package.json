@@ -43,7 +43,6 @@
     "verify:bot-onboarding": "tsx scripts/verify-bot-onboarding.ts",
     "verify:onboarding-per-bot": "tsx scripts/verify-onboarding-per-bot.ts",
     "verify:bot-avatar": "tsx scripts/verify-bot-avatar.ts",
-    "verify:primary-bot": "tsx scripts/verify-primary-bot.ts",
     "verify:new-bot-identity": "tsx scripts/verify-new-bot-identity.ts",
     "verify:bot-creation-form": "tsx scripts/verify-bot-creation-form.ts",
     "verify:adoption": "tsx scripts/verify-adoption.ts",

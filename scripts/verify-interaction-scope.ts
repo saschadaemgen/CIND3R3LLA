@@ -122,11 +122,11 @@ async function main(): Promise<void> {
 
   const shared = normalizeInteraction({});
 
-  // The PRIMARY is inserted directly, standing in for the bot that predates this briefing:
+  // The FIRST bot is inserted directly, standing in for the bot that predates this briefing:
   // it must come out with exactly what it has today and no override rows.
   const { rows } = await db.query<{ id: string }>(
-    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled, selected_for_runtime)
-     VALUES ('primary-bot','CIND3R3LLA',TRUE,TRUE) RETURNING id`,
+    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled)
+     VALUES ('primary-bot','CIND3R3LLA',TRUE) RETURNING id`,
   );
   const primary = Number(rows[0]?.id ?? 0);
 

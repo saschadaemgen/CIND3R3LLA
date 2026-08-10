@@ -56,7 +56,6 @@ function bot(id: number, displayName: string, simplexUserId: number | null): Hos
     slug: displayName.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     displayName,
     simplexUserId,
-    isPrimary: false,
     avatarPath: null,
   };
 }
@@ -160,14 +159,14 @@ async function main(): Promise<void> {
   check('with no bots at all, nothing is bound', (await anyBotIsBound(db)) === false);
 
   await db.query(
-    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled, selected_for_runtime)
-     VALUES ('unbound-one','Unbound',TRUE,FALSE)`,
+    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled)
+     VALUES ('unbound-one','Unbound',TRUE)`,
   );
   check('  and a configured but unbound bot does not count', (await anyBotIsBound(db)) === false);
 
   await db.query(
-    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled, selected_for_runtime, simplex_user_id)
-     VALUES ('bound-one','Bound',TRUE,FALSE,1)`,
+    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled, simplex_user_id)
+     VALUES ('bound-one','Bound',TRUE,1)`,
   );
   check('a bound bot counts', (await anyBotIsBound(db)) === true);
 

@@ -17,7 +17,6 @@ import {
   recordContactAddress,
   resetBotOnboardingWorkflow,
   setBotAvatarPath,
-  setPrimaryBot,
   updateBotOnboardingProfile,
   type BotCreationInput,
   type BotOnboardingInput,
@@ -1145,19 +1144,15 @@ async function applyFaceIfRunning(ctx: ViewContext, profileId: number): Promise<
 /**
  * What actually happened, instead of "AI bot configuration saved" for all of it.
  *
- * Added with the make-primary action (CCB-S5-008), because that action's whole difficulty is
+ * Added with the make-primary action (CCB-S5-008), because that action's whole difficulty was
  * that operators reasonably expect it to start or stop something, and a success banner reading
- * "configuration saved" answers none of that. The mapping is from a fixed set to fixed strings:
+ * "configuration saved" answers none of that. That action is gone (CCB-S5-019) and this is not:
+ * the reasoning applies to every one of them. The mapping is from a fixed set to fixed strings:
  * the query parameter chooses a sentence and is never rendered, so a hand-edited URL cannot put
  * text on the page.
  */
 function savedMessage(action: string): string {
   switch (action) {
-    case 'make-primary':
-      return (
-        'That bot is now the primary. Nothing was started, stopped or restarted: every ' +
-        'enabled bot was already running and still is.'
-      );
     case 'create-profile':
       return 'AI bot created.';
     case 'delete-profile':
@@ -1273,52 +1268,6 @@ function identityPanel(profile: BotOnboardingProfile, identity: BotIdentityFacts
       carries them is missing. Set the retorts before you tune the ladders on the
       <a href="/moderation/rules">Moderation page</a>.
     </p>
-  </section>`;
-}
-
-/**
- * Which bot is the primary, and one honest line about what that now decides (CCB-S5-008).
- *
- * ── THE LABEL SURVIVED A CHANGE OF MEANING, WHICH IS THE DEFECT ──────────────
- *
- * `selected_for_runtime` used to mean "this bot runs". Under D-155 every enabled bot runs and
- * the column came to mean "this bot is the primary", and nothing renamed it. The operator was
- * left with a wizard toggle called "select for the runtime" that had to be ticked to create a
- * bot which explicitly must not be primary, and which the unique index then refused. That is
- * not a workflow anybody can follow, and the operator said so.
- *
- * So the flag is named for what it is and the panel states the smallest true thing about it.
- * Above all it says what it does NOT decide, because that is the part an operator cannot see
- * and would otherwise infer from the old name: a bot that is not the primary is hosted,
- * answers members, and captures, exactly like the one that is.
- */
-function primaryPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
-  return html`<section class="setup-primary" data-primary-panel>
-    <header>
-      <span class="setup-eyebrow">Primary bot</span>
-      ${profile.selectedForRuntime ? badge('the primary', 'green') : badge('not the primary', 'slate')}
-    </header>
-    <p>
-      The primary is the bot this console opens on, and the one the few paths that are not yet
-      per bot read. It decides nothing about hosting: every enabled bot runs, answers members
-      and captures, whether it is the primary or not. Exactly one bot holds it.
-    </p>
-    ${profile.selectedForRuntime
-      ? html`<p class="setup-inline-note">
-          This bot holds it. It is never switched off, only handed over: open another bot and
-          make that one the primary.
-        </p>`
-      : html`<form method="post" action="/ai/onboarding">
-          <input type="hidden" name="_csrf" value="${csrf}" />
-          <input type="hidden" name="action" value="make-primary" />
-          <input type="hidden" name="profileId" value="${profile.id}" />
-          <button type="submit" class="setup-button setup-button-secondary">
-            Make this the primary
-          </button>
-          <span class="setup-inline-note">
-            Moves it off whichever bot holds it now. Nothing starts, stops or restarts.
-          </span>
-        </form>`}
   </section>`;
 }
 
@@ -1529,7 +1478,6 @@ function profileDetails(
         </div>
       </section>
 
-      ${primaryPanel(profile, csrf)}
       ${avatarPanel(profile, csrf)}
       ${contactAddressPanel(profile)}
       ${contactRequestPanel(requests, csrf)}
@@ -1537,7 +1485,6 @@ function profileDetails(
 
       <div class="setup-chip-row">
         ${badge(profile.enabled ? 'enabled' : 'paused', profile.enabled ? 'green' : 'amber')}
-        ${badge(profile.selectedForRuntime ? 'primary bot' : 'not the primary', 'blue')}
         ${badge('settings stored', 'green')}
         ${profile.contactAddressLink
           ? badge('contact address created on the runtime', 'green')
@@ -1825,15 +1772,6 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         case 'reset-workflow':
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           await resetBotOnboardingWorkflow(ctx.db, profileId, actor);
-          break;
-
-        // Its own action (CCB-S5-008), which is the correction. It used to be a field on the
-        // create and edit form, so moving the primary meant re-saving every setting of an
-        // unrelated dialog, and creating a bot meant answering it. Nothing is started or
-        // stopped here: every enabled bot was hosted before this ran and still is.
-        case 'make-primary':
-          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
-          await setPrimaryBot(ctx.db, profileId, actor);
           break;
 
         // The button that replaces "restart the bot" (CCB-S5-016). It applies whatever the

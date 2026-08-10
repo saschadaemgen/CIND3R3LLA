@@ -50,7 +50,7 @@ import { listPromptRules } from '../../db/prompt-rules.js';
 import { ceilingRuleTexts, type PromptRuleSet } from '../../interaction/prompt-rules.js';
 import { html, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
-import { badge, card } from './ui.js';
+import { card } from './ui.js';
 import { renderAiPage, type AiPageQuery } from './ai.js';
 import { resolveSelectedBot } from '../selected-bot.js';
 
@@ -71,11 +71,10 @@ function text(value: unknown): string {
 /**
  * The profile the page is editing.
  *
- * Defaults to the PRIMARY, which is only a default: `listBotOnboardingProfiles` orders the
- * primary first, so it falls out of the query. The reason used to be written here as "that
- * is the one whose personality is actually reaching members", which stopped being true under
- * D-155 and was corrected in CCB-S5-008. Every enabled bot's personality reaches members;
- * this picks which one the page opens on when the operator has not said.
+ * The caller resolves it through `resolveSelectedBot` (CCB-S5-011), so this only has to turn
+ * an id into a row and fall back to the first bot. It used to default to the PRIMARY, which
+ * was the flag's last console role; the sidebar switcher replaced it and CCB-S5-019 removed
+ * the reader.
  */
 function selectedProfile(
   profiles: BotOnboardingProfile[],
@@ -97,27 +96,14 @@ function whichBotCard(
       <div class="flex flex-wrap items-center gap-3">
         <span class="text-lg font-semibold text-slate-900">${active.displayName}</span>
         <code class="text-xs text-slate-500">${active.slug}</code>
-        ${active.selectedForRuntime
-          ? badge('the primary bot', 'green')
-          : badge('not the primary', 'slate')}
       </div>
       <p class="mt-2 text-sm text-slate-600">
         Saving here changes how this bot sounds on its next reply, with no restart.
-        ${active.selectedForRuntime
-          ? 'It is also the primary, which decides only which bot this console opens on.'
-          : 'It is not the primary, which changes nothing about that: it is hosted, it answers members, and this is its voice.'}
       </p>
       ${
-        // ── THE PICKER IS GONE (CCB-S5-018) ────────────────────────────────
-        //
-        // This card carried a dropdown of its own, so after CCB-S5-011 the operator had two
-        // controls doing one job: one in the sidebar and one in the content, on the only
-        // page with both. One control, one place, was the point of that briefing, and a
-        // second one is worse than the four separate ones it replaced because the two can
-        // disagree on screen.
-        //
-        // The card stays, without the control. It says things the sidebar does not: the
-        // slug, whether this bot is the primary, and that a save here needs no restart.
+        // The picker went in CCB-S5-018 (two controls doing one job, one in the sidebar and
+        // one here) and the primary badge in CCB-S5-019. What is left is what the sidebar
+        // does not say: the slug, and that a save here needs no restart.
         null
       }
       <input type="hidden" name="_csrf" value="${csrf}" />

@@ -1367,9 +1367,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
         <div class="mb-4 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
           <p>
             Previewing
-            <strong>${selected?.displayName ?? 'no bot'}</strong>${selected?.selectedForRuntime
-              ? html` <span class="text-slate-400">(the primary)</span>`
-              : null}.
+            <strong>${selected?.displayName ?? 'no bot'}</strong>.
             ${deviations > 0
               ? html`It has <strong>${String(deviations)}</strong> law(s) of its own; the rest
                   it shares with every other bot.`

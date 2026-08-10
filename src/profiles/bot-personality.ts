@@ -33,7 +33,7 @@
 import type { Queryable } from '../db/pool.js';
 import { log } from '../log.js';
 import type { BotPersonality } from '../interaction/personality.js';
-import { botPersonalityById, primaryBotPersonality } from './bot-onboarding.js';
+import { botPersonalityById } from './bot-onboarding.js';
 
 /**
  * ── PER BOT SINCE CCB-S5-001 ─────────────────────────────────────────────────
@@ -50,14 +50,12 @@ import { botPersonalityById, primaryBotPersonality } from './bot-onboarding.js';
  */
 export class BotPersonalityService {
   private readonly values = new Map<number, BotPersonality | null>();
-  /** The primary's, for the paths that still ask without naming a bot. */
-  private primary: BotPersonality | null = null;
   private loaded = false;
   private refreshing: Promise<void> | null = null;
 
   constructor(private readonly db: Queryable) {}
 
-  /** Read the primary bot's personality once, at boot. */
+  /** A service with an empty cache; the boot path warms one entry per hosted bot. */
   static async load(db: Queryable): Promise<BotPersonalityService> {
     const service = new BotPersonalityService(db);
     await service.refresh();
@@ -71,12 +69,15 @@ export class BotPersonalityService {
    * completes it returns null, which the prompt builder reads as "not configured" and
    * answers with the ceiling and the original voice, never with an error.
    *
-   * With no bot named this answers for the PRIMARY, which is what the console's default
-   * views want. The reply path always names one.
+   * The reply path always names a bot. With none named the answer is null.
    */
   get(botProfileId?: number): BotPersonality | null {
     if (!this.loaded) void this.kickRefresh();
-    if (botProfileId === undefined) return this.primary;
+    // No unnamed answer since CCB-S5-019. This returned the PRIMARY's, which was the flag's
+    // last reader here; nothing on the reply path ever asked without naming a bot, so the
+    // slot was a cached value no caller retrieved. Null reads as "not configured", which the
+    // prompt builder already handles.
+    if (botProfileId === undefined) return null;
     const cached = this.values.get(botProfileId);
     if (cached !== undefined) return cached;
     void this.kickRefreshFor(botProfileId);
@@ -93,16 +94,14 @@ export class BotPersonalityService {
     void this.kickRefresh();
   }
 
-  async refresh(): Promise<void> {
-    try {
-      this.primary = await primaryBotPersonality(this.db);
-      this.loaded = true;
-    } catch (error) {
-      log.warn(
-        `Personality: reading the runtime bot personality failed, keeping the last known ` +
-          `value (${error instanceof Error ? error.message : String(error)}).`,
-      );
-    }
+  /**
+   * Mark the cache live. Nothing deployment-wide is read any more (CCB-S5-019): every value
+   * here is per bot and arrives through {@link refreshFor}, which the boot path calls for
+   * each hosted bot and which keeps the last known value on a failed read.
+   */
+  refresh(): Promise<void> {
+    this.loaded = true;
+    return Promise.resolve();
   }
 
   /** Load one bot's personality into the cache. */
@@ -160,9 +159,7 @@ export function invalidateBotPersonality(): void {
 /**
  * The getter the interaction engine is wired with.
  *
- * Each engine belongs to one bot and passes its own id (CCB-S5-001). The no-argument
- * form answers for the primary and is what the console's default views use; it must not
- * be used on the reply path, because there it would give every bot the primary's voice.
+ * Each engine belongs to one bot and passes its own id (CCB-S5-001).
  */
 export function currentBotPersonality(botProfileId?: number): BotPersonality | null {
   return active?.get(botProfileId) ?? null;

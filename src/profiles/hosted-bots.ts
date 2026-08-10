@@ -10,17 +10,18 @@
  *
  * Migration 044 adds the column that answers it. This module is the only writer of it.
  *
- * ── THE ORDER MATTERS, AND NOT FOR TIDINESS ──────────────────────────────────
+ * ── WHO MAY ADOPT THE CORE'S ACTIVE USER ─────────────────────────────────────
  *
- * The primary is hosted FIRST and is the only bot allowed to adopt the core's active
- * user. That is what preserves the existing deployment: the profile that is already in
- * the operator's groups, already has the avatar, already has the members, stays exactly
- * where it is and simply gets its id written down. Every other unbound bot gets a NEW
- * profile, because taking over the active user would move a second character into the
- * first one's groups.
+ * Adoption preserves the existing deployment: the profile that is already in the operator's
+ * groups, already has the avatar, already has the members, stays exactly where it is and
+ * simply gets its id written down. Every other unbound bot gets a NEW profile, because
+ * taking over the active user would move a second character into the first one's groups.
  *
- * A bot that already carries a `simplex_user_id` is named by id and neither adopts nor
- * creates, which is the steady state after the first boot.
+ * The condition is that NOTHING is bound yet (D-165), not that the bot is special. It was
+ * the primary's privilege until CCB-S5-012, and that stranded the second bot on a deployment
+ * whose first bot had never been bound: the seat was reserved for a bot that was never going
+ * to sit in it. A bot that already carries a `simplex_user_id` is named by id and neither
+ * adopts nor creates, which is the steady state after the first boot.
  */
 
 import type { Queryable } from '../db/pool.js';
@@ -34,8 +35,6 @@ export interface HostedBotConfig {
   displayName: string;
   /** NULL until this bot has been bound to a SimpleX profile. */
   simplexUserId: number | null;
-  /** The console's default selection. Decides nothing about hosting. */
-  isPrimary: boolean;
   /**
    * This bot's own avatar, relative to the asset root, or null for the deployment default
    * (CCB-S5-007). Null is an answer rather than a gap: it means AVATAR_PATH, which is what
@@ -49,12 +48,11 @@ interface BotRow {
   slug: string;
   display_name: string;
   simplex_user_id: string | null;
-  selected_for_runtime: boolean;
   avatar_path: string | null;
 }
 
 /**
- * Every bot that should be running, primary first.
+ * Every bot that should be running.
  *
  * `enabled` on `cinderella_bot_profiles` is the flag, and it is the one the wizard
  * writes. Note it is NOT `cinderella_bot_registry.enabled`: 023 says in as many words
@@ -62,22 +60,25 @@ interface BotRow {
  * runtime may host this profile"), and this reads the operator's configuration rather
  * than the record of what the core reported.
  *
- * Ordered primary first, then by id, so hosting is deterministic across boots and the
- * one bot allowed to adopt the active user is always the same one.
+ * Ordered by id, so hosting is deterministic across boots. The order carries no other
+ * meaning since CCB-S5-019; see the note on the query.
  */
 export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> {
   const { rows } = await db.query<BotRow>(
-    `SELECT id, slug, display_name, simplex_user_id, selected_for_runtime, avatar_path
+    // ORDER BY id (CCB-S5-019). It was `selected_for_runtime DESC, id`, which mattered only
+    // while the primary was the one bot allowed to adopt the core's active user. D-165 made
+    // adoption depend on whether ANYTHING is bound rather than on which bot is special, so
+    // the ordering carries no meaning beyond being stable across boots.
+    `SELECT id, slug, display_name, simplex_user_id, avatar_path
        FROM cinderella_bot_profiles
       WHERE enabled = TRUE
-      ORDER BY selected_for_runtime DESC, id`,
+      ORDER BY id`,
   );
   return rows.map((r) => ({
     botProfileId: Number(r.id),
     slug: r.slug,
     displayName: r.display_name,
     simplexUserId: r.simplex_user_id === null ? null : Number(r.simplex_user_id),
-    isPrimary: r.selected_for_runtime,
     avatarPath: r.avatar_path,
   }));
 }

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 171 decisions</strong> — newest first. Highest allocated: <strong>D-172</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 172 decisions</strong> — newest first. Highest allocated: <strong>D-173</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-173 | Nothing reads the primary flag, and the one bot it could rename refuses the boot | IMPLEMENTED |
 | D-172 | A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname | IMPLEMENTED |
 | D-171 | An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect | IMPLEMENTED |
 | D-170 | The ladders are per bot and arming is per build, which are two different scopes on one card | IMPLEMENTED |
@@ -200,6 +201,79 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-173 - Nothing reads the primary flag, and the one bot it could rename refuses the boot
+
+**Status: IMPLEMENTED** (CCB-S5-019, no migration). Step one of retiring
+`selected_for_runtime`. **The column, its unique partial index and its data are untouched**;
+what goes is every reader, and with them every place an operator could see or move it. The
+migration that drops the column is step two, and it is deliberately a separate briefing so
+that a deployment can run for a while with nothing reading a column that still exists, which
+is the state in which a missed reader shows up as a defect rather than as a failed migration.
+
+**THE ONE GENUINE CONSUMER WAS A DISPLAY NAME.** After D-165 took adoption off the flag, the
+last thing in the product that *behaved* differently for the primary was one ternary in
+`host.ts`: `b.config.isPrimary ? cfg.botDisplayName : b.config.displayName`. The primary's
+SimpleX profile was named from `BOT_DISPLAY_NAME` and every other bot from its own record.
+Every bot now reads its own record. Everything else the flag touched was the flag
+administering itself.
+
+**THE RECONCILIATION IS THE DANGEROUS PART, AND IT REFUSES RATHER THAN MIGRATES.** For every
+deployment where the env value and the record agree, that ternary's removal is not a change at
+all. For one where they disagree, the next deploy renames a bot **in front of its group**,
+silently, once, and irreversibly from the members' side. A migration copying the env value into
+the record was considered and rejected: it decides which of two disagreeing sources wins at a
+moment nobody is watching, and if the env value is the stale one it makes the rename permanent
+instead of preventing it. So the boot **refuses**, naming both values and offering both
+remedies, and says nothing has been changed.
+
+**AND IT IS BOUNDED TO THE ONE BOT THE CHANGE CAN RENAME.** Only the bot actually *wearing*
+`BOT_DISPLAY_NAME` can be renamed by this, so only that bot is checked, and its live name is
+read from the profile the core reports rather than from the flag under suspicion. A deployment
+whose `BOT_DISPLAY_NAME` matches nobody is in no danger and still boots; so does one where a
+second bot was simply renamed in the console, which is an ordinary thing to do. The unbounded
+version would have caught the dangerous case too and stopped deployments that were fine, so
+`verify:runtime-host` mutation-proves the bound in both directions: silently taking the env
+value refuses nothing, and dropping the bound stops an ordinary rename.
+
+The decision lives in `src/bot/runtime/naming.ts`, which imports no SDK, for the same reason
+`faces.ts` and `ownership.ts` do: the one thing in this briefing that can stop a deployment is
+then drivable with no core, rather than read. That the boot path *throws* on it rather than
+computing it and continuing is asserted from the source, because a control that is computed and
+dropped is exactly the shape D-162 is about.
+
+**WHAT WENT, AND WHERE IT WENT FROM.** `setPrimaryBot` and its `make-primary` audit action;
+the Make Primary panel and the `primary bot` / `not the primary` badges on AI Bot Setup; the
+badge and sentence on Personality; the `(the primary)` suffix in the Book of Elii;
+`primaryBotPersonality` and `primaryModerationRules`, and with them the cached no-argument slot
+in both `BotPersonalityService` and `ModerationService`; the primary-first ordering in
+`listBotsToHost` and `listBotOnboardingProfiles`; `HostedBotConfig.isPrimary`;
+`RuntimeHost.primary`; `selectedForRuntime` on `BotOnboardingProfile` and out of the SELECT;
+and `verify:primary-bot` in full, since every guarantee it held was about machinery that no
+longer exists.
+
+**THE TWO SERVICES' NO-ARGUMENT FORM ANSWERS NULL NOW, and that is the safe direction.** Both
+cached the primary's value for a caller that named no bot. Nothing on the reply path ever asked
+without naming one - each engine belongs to one bot and passes its own id (D-124) - so the slot
+was a cached value no caller retrieved. Null reads as "not configured", which the prompt builder
+already handles and which, on the moderation side, means the ladders do not run rather than that
+somebody is sanctioned by another bot's thresholds.
+
+**CREATION STILL WRITES THE COLUMN, WITH NOTHING READING IT.** The `NOT EXISTS (SELECT 1 ...
+WHERE selected_for_runtime = TRUE)` in the INSERT stays, so the column remains coherent for the
+migration that drops it, but the `RETURNING` that reported what it decided and the audit detail
+that recorded it are both gone. A write with no reader is the correct interim state for a column
+being retired in two steps; a read with no meaning is not.
+
+**ONE READER THE INVENTORY MISSED, and it was in a harness.** `verify:personality` section 7
+drove the live cache through `currentBotPersonality()` with no argument, which resolved the
+primary. `scripts/` is not in `tsconfig.json`, so the compiler could not see it and the suite
+found it instead. It now names the bot, as the reply path does, and asserts that the unnamed
+form answers null. That is the fourth time this season a call site was missed because the
+scripts tree is not type-checked, and it is the reason the sweep here was a grep over
+`src` **and** `scripts` rather than a clean `tsc`.
+
 ---
 
 ### D-172 - A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname

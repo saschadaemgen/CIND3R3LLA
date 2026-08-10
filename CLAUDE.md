@@ -327,7 +327,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   PRIMARY, the console's default selection and nothing more. **Nothing renamed the control for
   another seven briefings**, so the wizard went on asking the operator to "select for the
   runtime" and refusing the second bot that answered yes; CCB-S5-008 took the flag out of
-  creation entirely and gave moving it its own action, D-162) ·
+  creation entirely and gave moving it its own action, D-162. **Nothing reads it at all from
+  CCB-S5-019** (D-173): the column, its index and its data are still here and step two drops
+  them, but every reader is gone, including the display-name ternary in `host.ts` that was its
+  last functional consumer. A boot REFUSES, naming both values, if the bot wearing
+  `BOT_DISPLAY_NAME` has a different name in its record, because booting would otherwise rename
+  it in front of its group) ·
   045 standard laws per bot (`cinderella_prompt_rule_overrides`, NULL meaning inherit in both
   value columns so on, off and reworded are ONE mechanism. **The `bot` tier 035 reserved for
   this is the wrong mechanism and stays unused**: a tier is a property of a row and cannot
@@ -552,16 +557,6 @@ repository goes blind to it. Two harnesses carried one, written as a `?? '<NUL>'
 should have been the escape, and a stale import in one of them survived a repository-wide grep
 because of it. The third was written by the commit that reported the first two. Stricter than
 the tools it protects, because they decide on the first block and this reads the whole file),
-`verify:primary-bot` (creating a bot, and which one is the primary, CCB-S5-008: that creating a
-bot never touches the flag, that the FIRST one takes it because nothing else holds it and every
-one after does not, that a save cannot move it in either direction, that `setPrimaryBot` moves it
-and ROLLS BACK on an unknown id rather than leaving a deployment with no primary, and that the
-console's create form no longer carries the control at all. The load-bearing check is that the
-removed field arriving anyway, from a stale page or a replayed request, is **ignored rather than
-honoured**, which is what makes the removal real rather than cosmetic. Mutation-proven twice.
-**It is a regression guard and not the discovery method**: this defect and the one below were
-both found by clicking in a browser, and no harness here can see that a rendered control is
-invisible or inert),
 `verify:onboarding-per-bot` and `verify:bot-avatar` (onboarding a second bot and giving it a
 face, CCB-S5-007: that every onboarding step acts as the bot it was GIVEN, with the other bot as
 a positive control on each one and an unhosted id raising rather than falling back to the
@@ -596,7 +591,10 @@ double; merged to `main` under CCB-S4-020),
 capture through the router proven call-for-call identical to capture through the SDK, the
 readiness gate, and the assertion that the runtime's SDK-free files are still SDK-free,
 which `verify:adapter-seam` cannot catch because it permits the SDK anywhere under
-`src/bot/`),
+`src/bot/`. Since CCB-S5-019 it also drives **the rename reconciliation** (D-173): what refuses,
+and above all what still BOOTS, since a refusal that fired on any disagreement would pass every
+positive assertion and stop deployments in no danger. Mutation-proven both ways, and it reads
+from the source that `host.ts` throws on the answer rather than computing it and dropping it),
 `verify:adapter-seam` (nothing outside the adapter imports the SDK, and the check
 proves it fails on a violation), `verify:adapter-fake` (the seam driven with no SDK),
 `verify:screening` (encryption at rest + the hash-screening seam; the fixture

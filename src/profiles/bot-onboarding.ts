@@ -60,7 +60,6 @@ export interface BotOnboardingProfile {
   slug: string;
   displayName: string;
   enabled: boolean;
-  selectedForRuntime: boolean;
   workflowState: BotWorkflowState;
   sdkVersion: string;
   sdkTypesVersion: string;
@@ -116,23 +115,21 @@ export interface BotOnboardingProfile {
  * wizard must not be able to clear it by omission. That is the failure the personality
  * columns already have a comment about, arrived at from a different direction.
  *
- * ── AND `selectedForRuntime` IS OMITTED BECAUSE CREATING A BOT IS NOT THAT DECISION ──
+ * ── AND `selectedForRuntime` IS GONE ENTIRELY (CCB-S5-019, D-173) ─────────────
  *
- * It used to be on the form, and the form is where the workflow broke (CCB-S5-008). The flag
- * changed meaning under D-155 without changing its name: it used to mean "this bot runs", it
- * now means "this bot is the primary", and every enabled bot runs either way. A wizard field
- * called "select for the runtime" therefore asked the operator to make hosting decision that
- * does not exist, on a form where the honest answer for the second bot is always no, and
- * defaulted it to yes so that creating a second bot failed on the unique index.
+ * It came off the creation input under CCB-S5-008, because creating a bot is not that
+ * decision. It is off the read shape too now, and nothing in the product reads the column:
+ * the flag changed meaning under D-155 without changing its name, meant "this bot is the
+ * console's default selection" for seven briefings, and the switcher's remembered selection
+ * (D-169) is what a console actually uses. The column, its unique index and its data are
+ * untouched here and go in step two.
  *
- * Taking it off the type rather than off the form is deliberate: the compiler then finds every
- * caller that still believes creating a bot decides this, which is how the harnesses and the
- * preview seed were found. {@link setPrimaryBot} is the one path that moves it.
+ * Taking it off the type rather than off the pages is deliberate, as it was the first time:
+ * the compiler then finds every caller that still believes it means something.
  */
 export type BotOnboardingInput = Omit<
   BotOnboardingProfile,
   | 'id'
-  | 'selectedForRuntime'
   | 'workflowState'
   | 'sdkVersion'
   | 'sdkTypesVersion'
@@ -400,11 +397,11 @@ function dbError(error: unknown): Error {
     return new Error('A bot onboarding profile with this slug already exists.');
   }
 
-  // Reworded with the flag (CCB-S5-008). The index is right and stays; the old sentence
-  // described a choice the operator no longer makes and named a thing the flag no longer
-  // means. It should now be unreachable from creating or saving a bot, because neither
-  // writes the column any more, and reachable only from two operators racing
-  // {@link setPrimaryBot}. Kept because "should be unreachable" is not "is".
+  // The index is right and stays (CCB-S5-008, CCB-S5-019). With nothing left that moves the
+  // flag this should be unreachable: creating computes it in SQL from "does anybody hold it",
+  // saving does not write it, and no operator action moves it any more. Kept because "should
+  // be unreachable" is not "is", and a raw constraint name reaching an operator is worse than
+  // a sentence nobody sees.
   if (message.includes('cinderella_one_runtime_bot_profile_idx')) {
     return new Error('There is already a primary bot. Only one bot can be the primary.');
   }
@@ -421,7 +418,6 @@ function mapRow(row: {
   slug: string;
   display_name: string;
   enabled: boolean;
-  selected_for_runtime: boolean;
   workflow_state: BotWorkflowState;
   sdk_version: string;
   sdk_types_version: string;
@@ -465,7 +461,6 @@ function mapRow(row: {
     slug: row.slug,
     displayName: row.display_name,
     enabled: row.enabled,
-    selectedForRuntime: row.selected_for_runtime,
     workflowState: row.workflow_state,
     sdkVersion: row.sdk_version,
     sdkTypesVersion: row.sdk_types_version,
@@ -514,7 +509,6 @@ const SELECT_COLUMNS = `
   slug,
   display_name,
   enabled,
-  selected_for_runtime,
   workflow_state,
   sdk_version,
   sdk_types_version,
@@ -558,7 +552,10 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
   const result = await db.query<Parameters<typeof mapRow>[0]>(
     `SELECT ${SELECT_COLUMNS}
        FROM cinderella_bot_profiles
-      ORDER BY selected_for_runtime DESC, display_name, id`,
+      -- By NAME since CCB-S5-019. It was primary-first, so the console would open on the
+      -- primary; the sidebar switcher decides that now and remembers it per session, so the
+      -- list is simply a list.
+      ORDER BY display_name, id`,
   );
 
   return result.rows.map(mapRow);
@@ -585,8 +582,12 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
  * Written as "no primary exists" rather than "no bot exists" so it also answers the case an
  * operator can actually reach: delete the primary, and the next bot created takes the empty
  * seat instead of leaving the console with no default selection and no way to get one back
- * except {@link setPrimaryBot}. It can therefore never violate the unique index on its own,
- * because it only ever writes TRUE when nothing else holds it.
+ * except by hand in SQL. It can therefore never violate the unique index on its own, because
+ * it only ever writes TRUE when nothing else holds it.
+ *
+ * It is a WRITE WITH NO READER from CCB-S5-019 (D-173), kept only so the column stays coherent
+ * for the migration that drops it. Nothing reads what it decided: the RETURNING that reported
+ * it and the audit detail that recorded it are both gone.
  */
 export async function createBotOnboardingProfile(
   db: Queryable,
@@ -599,7 +600,7 @@ export async function createBotOnboardingProfile(
   const wakeWord = await validateCreation(db, rawInput.wakeWord, input.displayName);
 
   try {
-    const result = await db.query<{ id: string; selected_for_runtime: boolean }>(
+    const result = await db.query<{ id: string }>(
       `INSERT INTO cinderella_bot_profiles (
          slug,
          display_name,
@@ -640,7 +641,7 @@ export async function createBotOnboardingProfile(
          $12::jsonb, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24,
          NULLIF($25, ''), $26, $27, $28, $29, $30
        )
-       RETURNING id, selected_for_runtime`,
+       RETURNING id`,
       [
         input.slug,
         input.displayName,
@@ -676,8 +677,6 @@ export async function createBotOnboardingProfile(
     );
 
     const id = numberOf(result.rows[0]?.id ?? 0);
-    // What the database decided, not what anybody asked for. Audited below as the fact it is.
-    const becamePrimary = result.rows[0]?.selected_for_runtime === true;
 
     // ── ITS OWN NAME, ASKED FOR RATHER THAN DERIVED (CCB-S5-006, CCB-S5-009) ──
     //
@@ -723,7 +722,6 @@ export async function createBotOnboardingProfile(
       displayName: input.displayName,
       // Recorded because it happened, not because it was requested: creating a bot cannot
       // ask for this since CCB-S5-008. True only for the bot that found the seat empty.
-      becamePrimary,
       // The name it answers to, recorded because it is the fact CCB-S5-009 exists to make
       // visible, and because an audit that cannot answer "what did this bot start as called"
       // is missing the one thing an operator asks after the fact.
@@ -766,8 +764,8 @@ export async function createBotOnboardingProfile(
  * IT NO LONGER WRITES `selected_for_runtime` EITHER, for the same reason one step further
  * on (CCB-S5-008): the dialog does not show it, so a save from the dialog must not be able
  * to move it. It used to, which meant editing any setting on the primary re-asserted the
- * flag and editing any setting on a second bot silently posted FALSE for it. Changing which
- * bot is the primary is {@link setPrimaryBot} and nothing else.
+ * flag and editing any setting on a second bot silently posted FALSE for it. Nothing moves
+ * the flag at all from CCB-S5-019, and nothing reads it.
  */
 export async function updateBotOnboardingProfile(
   db: Queryable,
@@ -853,76 +851,6 @@ export async function updateBotOnboardingProfile(
 }
 
 /**
- * Make one bot the primary (CCB-S5-008).
- *
- * ── ITS OWN ACTION, WHICH IS THE WHOLE POINT ─────────────────────────────────
- *
- * The flag used to move as a side effect of creating or saving a bot, from a wizard field
- * that named a decision nobody makes. So there was no way to say "this one is the primary
- * now" without opening an unrelated dialog and re-saving twenty settings, and no way to
- * create a second bot without first answering a question about the first one. One button,
- * one statement pair, one audit row.
- *
- * ── AND WHY IT IS TWO STATEMENTS IN A TRANSACTION ────────────────────────────
- *
- * The partial unique index from 019 is checked as each row is written, not at the end of
- * the statement, so the obvious single UPDATE (`SET selected_for_runtime = (id = $1)`) fails
- * whenever Postgres happens to reach the new primary before the old one. Clearing first and
- * setting second is ordered and therefore never transiently holds two, and the transaction
- * is what stops a failure between them leaving the deployment with no primary at all.
- *
- * BEGIN/COMMIT on the handle we were given rather than `withTransaction`, which reaches for
- * the global pool: this runs under PGlite in the harness and the real pool in production,
- * and both speak plain SQL. Same reason `db/prompt-rules.ts` does it that way.
- */
-export async function setPrimaryBot(db: Queryable, id: number, actor: string): Promise<void> {
-  if (!Number.isSafeInteger(id) || id <= 0) throw new Error('Bot profile ID is invalid.');
-
-  await db.query('BEGIN');
-  try {
-    const { rows: before } = await db.query<{ id: string; display_name: string }>(
-      `SELECT id, display_name FROM cinderella_bot_profiles WHERE selected_for_runtime = TRUE`,
-    );
-    const previous = before[0] ?? null;
-
-    await db.query(
-      `UPDATE cinderella_bot_profiles
-          SET selected_for_runtime = FALSE, updated_at = now()
-        WHERE selected_for_runtime = TRUE AND id <> $1`,
-      [id],
-    );
-
-    const result = await db.query(
-      `UPDATE cinderella_bot_profiles
-          SET selected_for_runtime = TRUE, updated_at = now()
-        WHERE id = $1`,
-      [id],
-    );
-
-    // Not found means the id is wrong, and the clear above has already run. Throwing rolls
-    // it back, so a mistyped id cannot cost the deployment the primary it had.
-    if (result.rowCount !== 1) throw new Error('Bot onboarding profile not found.');
-
-    await writeAudit(db, actor, 'cinderella.bot-profile.make-primary', `bot-profile:${id}`, {
-      previousPrimaryId: previous ? numberOf(previous.id) : null,
-      previousPrimaryName: previous?.display_name ?? null,
-      // Named explicitly because the flag's old name says otherwise: this changes which bot
-      // the console offers first and which one the not-yet-per-bot paths read. It starts and
-      // stops nothing. Every enabled bot was hosted before this and still is.
-      hostingChanged: false,
-      runtimeApplied: false,
-    });
-
-    await db.query('COMMIT');
-  } catch (error) {
-    await db.query('ROLLBACK');
-    throw dbError(error);
-  }
-
-  log.info(`Bot ${id} is now the primary; hosting is unchanged and every enabled bot still runs.`);
-}
-
-/**
  * Save the personality alone (CCB-S4-029).
  *
  * Separate from {@link updateBotOnboardingProfile} because the Personality page edits
@@ -991,31 +919,12 @@ export async function updateBotPersonality(
 }
 
 /**
- * The PRIMARY bot's personality, or null when no bot holds the flag.
- *
- * Called `runtimeBotPersonality` until CCB-S5-008, which was a name that stopped being true
- * under D-155 and said so to nobody: it reads as "the personality of the bot the runtime
- * hosts", and the runtime hosts every enabled bot. What it actually answers is the console's
- * default, for pages that must show one bot before the operator has picked one. The reply
- * path names a bot and uses {@link botPersonalityById}; it never comes here.
- *
- * NULL IS A REAL ANSWER AND NOT A DEFAULT. An operator who has created no bot profile has
- * configured no personality, and handing back mid-value dials would be inventing one. The
- * prompt builder distinguishes the two: null gets the original voice paragraph plus the
- * safety ceiling, a real row gets the dials. See `conversationVoice` in
- * src/interaction/personality.ts.
- */
-export async function primaryBotPersonality(db: Queryable): Promise<BotPersonality | null> {
-  return await readBotPersonality(db, `WHERE selected_for_runtime = TRUE`, []);
-}
-
-/**
  * The personality of ONE bot (CCB-S5-001).
  *
- * The per-bot form of {@link primaryBotPersonality}, needed because every enabled bot is
- * hosted now and the engine that answers a member has to read the character of the bot
- * that received the message rather than of whichever row carries the primary flag.
- * Same null semantics: absence is an answer, not a default.
+ * The engine that answers a member reads the character of the bot that RECEIVED the message.
+ * There used to be a deployment-wide form of this that read whichever row carried the primary
+ * flag; it was the last thing here that did, and it went under CCB-S5-019.
+ * Null semantics: absence is an answer, not a default.
  */
 export async function botPersonalityById(
   db: Queryable,

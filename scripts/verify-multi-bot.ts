@@ -51,11 +51,11 @@ function check(label: string, ok: boolean, detail = ''): void {
 async function seedTwoBots(db: Queryable): Promise<{ sharp: number; warm: number }> {
   const { rows } = await db.query<{ id: string; slug: string }>(
     `INSERT INTO cinderella_bot_profiles
-       (slug, display_name, enabled, selected_for_runtime,
+       (slug, display_name, enabled,
         axis_sharpness, axis_warmth, axis_humor, axis_verbosity, axis_permissiveness)
      VALUES
-       ('sharp-bot', 'SharpBot', TRUE, TRUE,  10, 1, 9, 8, 7),
-       ('warm-bot',  'WarmBot',  TRUE, FALSE,  1, 10, 2, 3, 2)
+       ('sharp-bot', 'SharpBot', TRUE, 10, 1, 9, 8, 7),
+       ('warm-bot',  'WarmBot',  TRUE,  1, 10, 2, 3, 2)
      RETURNING id, slug`,
   );
   const bySlug = new Map(rows.map((r) => [r.slug, Number(r.id)]));
@@ -141,8 +141,8 @@ async function main(): Promise<void> {
     };
 
     const bots: HostedBotConfig[] = [
-      { botProfileId: sharp, slug: 'sharp-bot', displayName: 'SharpBot', simplexUserId: null, isPrimary: true },
-      { botProfileId: warm, slug: 'warm-bot', displayName: 'WarmBot', simplexUserId: null, isPrimary: false },
+      { botProfileId: sharp, slug: 'sharp-bot', displayName: 'SharpBot', simplexUserId: null, avatarPath: null },
+      { botProfileId: warm, slug: 'warm-bot', displayName: 'WarmBot', simplexUserId: null, avatarPath: null },
     ];
     //  since CCB-S5-012: false here, which is this section's premise (two fresh
     // bots, nothing bound), and the case  owns in full.

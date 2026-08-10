@@ -60,6 +60,7 @@ import { configureFilesFolder, ensureDirs, type StartBotOptions } from '../clien
 import { loadAvatarDataUri } from '../avatar.js';
 import { resolveAssetPath } from '../../media/assets.js';
 import { avatarFault, decideFaces } from './faces.js';
+import { findRenameOnBoot, renameRefusal } from './naming.js';
 import { FileReceiver } from '../files.js';
 import {
   bindSimplexUser,
@@ -105,8 +106,6 @@ export interface RuntimeHost {
    */
   chat: api.ChatApi;
   bots: HostedBot[];
-  /** The console's default selection. Never the answer to "who should send this". */
-  primary: HostedBot;
   whenReady: () => Promise<void>;
   close: () => Promise<void>;
 }
@@ -306,6 +305,22 @@ export async function startRuntimeHost(
   // where the SimpleX profile envelope is honoured (~15,610 bytes; the step-down lives in
   // `buildAvatarDataUri`). The decision itself is in `faces.ts`, which imports no SDK and is
   // therefore answerable without a core; this loop is what it costs to act on it.
+  // ── THE RECONCILIATION, AND WHY IT REFUSES RATHER THAN MIGRATES (D-173) ──
+  //
+  // The reasoning is in `naming.ts`, which imports no SDK so `verify:runtime-host` can drive
+  // it. In short: every bot is named from its own record from this briefing, so a bot WEARING
+  // the env name whose record says something else would be renamed in front of its group on
+  // the next deploy. That refuses, naming both values, rather than a migration silently
+  // picking a winner, and it is bounded to the one bot that change can rename.
+  const rename = findRenameOnBoot(
+    bots.map((b) => ({
+      liveName: (b.user.profile as unknown as T.Profile).displayName,
+      recordName: b.config.displayName,
+    })),
+    cfg.botDisplayName,
+  );
+  if (rename !== null) throw new Error(renameRefusal(rename));
+
   const faces = await decideFaces(
     bots.map((b) => ({ bot: b, displayName: b.config.displayName, avatarPath: b.config.avatarPath })),
     {
@@ -327,12 +342,13 @@ export async function startRuntimeHost(
       status.error(outcome.fault ?? avatarFault(b.config.displayName));
       continue;
     }
+    // EVERY BOT READS ITS OWN RECORD (CCB-S5-019, D-173). This was
+    // `b.config.isPrimary ? cfg.botDisplayName : b.config.displayName`, and it was the
+    // primary flag's last functional consumer anywhere in the product.
     await applyProfileUpdate(
       runtime,
       b.simplexUserId,
-      // The primary keeps the env display name it has always used; a second bot is named by
-      // its own record, because there is only one `BOT_DISPLAY_NAME` in the environment.
-      b.config.isPrimary ? cfg.botDisplayName : b.config.displayName,
+      b.config.displayName,
       outcome.image,
       b.user,
     );
@@ -370,7 +386,6 @@ export async function startRuntimeHost(
     runtime,
     chat,
     bots,
-    primary,
     whenReady: () => runtime.whenReady(),
     close,
   };

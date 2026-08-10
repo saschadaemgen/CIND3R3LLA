@@ -1828,12 +1828,11 @@ deleting the primary leaves a seat the next creation takes, rather than a deploy
 default and no way to get one. `updateBotOnboardingProfile` no longer writes the column either,
 for the same reason it does not write the personality columns: the dialog does not show it.
 
-Moving it is `setPrimaryBot`, its own action and its own button, **clear-then-set inside a
-transaction**: the partial unique index is checked per row, so the obvious single
-`SET selected_for_runtime = (id = $1)` fails whenever Postgres reaches the new primary first, and
-without the transaction a failed move would leave no primary at all. The index itself is
-unchanged and correct. `npm run verify:primary-bot` covers all of it, including that the old
-field name arriving anyway from a stale page is **ignored rather than honoured**.
+Moving it was `setPrimaryBot`, its own action and its own button. **That whole mechanism is gone
+under CCB-S5-019 (D-173)**, along with `verify:primary-bot`, so the two paragraphs above are the
+record of what CCB-S5-008 fixed rather than a description of the code. What survives is the
+INSERT: creation still computes the column so it stays coherent for the migration that drops it,
+and nothing reads what it decided. See **32.7**.
 
 
 **A new bot arrives knowing its own name (CCB-S5-009, D-163).** Two identity facts were set
@@ -1967,7 +1966,8 @@ for concurrency on a host where that trade has gone wrong before.
 
 ### 32.6 A face per bot (CCB-S5-007, D-161)
 
-`AVATAR_PATH` is one image in the environment. CCB-S5-001 applied it to the **primary only**,
+`AVATAR_PATH` is one image in the environment. CCB-S5-001 applied it to the **primary only**
+(the flag still existed then; nothing reads it now, see 32.7),
 deliberately: writing one image onto every profile gives every bot the same face, which looks
 intentional and is not. So a second bot could have no picture, or the first one's.
 
@@ -2007,6 +2007,59 @@ records `runtimeApplied: false`.
 read back through `listBotsToHost` and handed to `decideFaces`. Every guarantee has a positive
 control beside it, because "bot A is not wearing bot B's face" passes against an implementation
 that dresses nobody.
+
+### 32.7 Retiring the primary, step one (CCB-S5-019, D-173)
+
+`selected_for_runtime` meant "this bot runs" until D-155 made every enabled bot run, and then
+meant "this bot is the console's default selection" for seven briefings without being renamed,
+which is the defect D-162 is about. D-169 gave the console a real switcher, remembered in the
+admin session; D-165 took adoption off the flag. This briefing removes every reader. **The
+column, its unique partial index and its data are untouched**; the migration that drops them is
+step two, deliberately separate so that a deployment runs for a while with nothing reading a
+column that still exists - which is the state where a missed reader shows up as a defect rather
+than as a failed migration.
+
+**The last genuine consumer was a display name.** One ternary in `host.ts`,
+`b.config.isPrimary ? cfg.botDisplayName : b.config.displayName`: the primary's SimpleX profile
+was named from `BOT_DISPLAY_NAME` and every other bot from its own record. Every bot reads its
+own record now.
+
+**Which is the whole reason the boot can refuse.** Where the env value and the record agree, that
+removal is not a change at all. Where they disagree for the bot *wearing* the env name, the next
+deploy renames it in front of its group, silently, once, and irreversibly from the members' side.
+A migration copying the env value into the record was rejected: it decides which of two
+disagreeing sources wins at a moment nobody is watching, and if the env value is the stale one it
+makes the rename permanent instead of preventing it. So the boot throws, naming both values and
+both remedies, and states that nothing was changed.
+
+[`naming.ts`](../src/bot/runtime/naming.ts) holds the decision and imports no SDK, for the same
+reason [`faces.ts`](../src/bot/runtime/faces.ts) does; `host.ts` keeps the two lines that act on
+it. It is **bounded to the one bot the change can rename**: only the bot whose live profile name
+is `BOT_DISPLAY_NAME` is checked, and that name is read from the profile the core reports rather
+than from the flag under suspicion.
+
+| Deployment | Refuses? | Why |
+|---|---|---|
+| Env name and record agree | no | nothing would change |
+| The bot wearing the env name, record differs | **yes** | this is the rename, and the only one |
+| A second bot renamed in the console | no | it never wore the env name |
+| `BOT_DISPLAY_NAME` matches nobody | no | no bot is named from it |
+| No bots at all | no | nothing to rename |
+
+`verify:runtime-host` drives all of that with no core, and mutation-proves the bound in both
+directions: silently taking the env value refuses nothing, and dropping the bound stops an
+ordinary console rename. It also asserts from the source that `host.ts` **throws** on the answer
+rather than computing it and continuing, which is the D-162 shape.
+
+**Also removed**: the Make Primary panel and its badges on AI Bot Setup, the badge on Personality,
+the `(the primary)` suffix in the Book of Elii, the `make-primary` audit action,
+`primaryBotPersonality` and `primaryModerationRules` with the cached no-argument slot in both
+services, the primary-first ordering in `listBotsToHost` and `listBotOnboardingProfiles`,
+`HostedBotConfig.isPrimary`, `RuntimeHost.primary`, and `selectedForRuntime` off
+`BotOnboardingProfile`. Both services' no-argument getters answer **null** now: nothing on the
+reply path ever asked without naming a bot, and null reads as "not configured", which on the
+moderation side means the ladders do not run rather than that somebody is sanctioned by another
+bot's thresholds.
 
 ## 33. The personality layer (CCB-S4-029, D-133)
 
