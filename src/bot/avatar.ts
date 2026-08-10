@@ -23,15 +23,12 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import sharp from 'sharp';
-import type { api } from 'simplex-chat';
 import { util } from 'simplex-chat';
 import type { T } from '@simplex-chat/types';
 import { log } from '../log.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import type { Queryable } from '../db/pool.js';
 import { SchedulerReentryError } from './runtime/scheduler.js';
-
-type Chat = api.ChatApi;
 
 /**
  * The one bot whose avatar is being flushed (CCB-S5-001).
@@ -50,6 +47,16 @@ export interface AvatarBot {
   displayName: string;
   /** Send as THIS bot, through the active-user scheduler. */
   sendToGroup: (groupId: number, text: string) => Promise<unknown>;
+  /**
+   * This bot's groups, listed AS this bot (CCB-S5-018, D-171).
+   *
+   * A port rather than a bare `chat.apiListGroups(userId)` here, which is what this was.
+   * The core checks the explicit user id against the active user and refuses on
+   * `differentActiveUser`, so the bare call worked only for whichever bot happened to be
+   * active and threw for every other one: the flush for a second bot never got as far as
+   * its first send. The caller owns the scheduler, so the caller supplies the listing.
+   */
+  listGroups: () => Promise<{ groupId: number; localDisplayName: string }[]>;
 }
 
 /**
@@ -164,11 +171,7 @@ const FLUSH_MESSAGE = '🕯️✨';
  * flushed the profile and won't re-piggyback; normal command replies keep it
  * current thereafter.
  */
-export async function flushAvatarToGroups(
-  chat: Chat,
-  db: Queryable,
-  bot: AvatarBot,
-): Promise<FlushResult> {
+export async function flushAvatarToGroups(db: Queryable, bot: AvatarBot): Promise<FlushResult> {
   const user = bot.user;
   const image = util.fromLocalProfile(user.profile).image;
   if (!image) return { sent: 0, alreadyFlushed: false, hadImage: false };
@@ -184,7 +187,7 @@ export async function flushAvatarToGroups(
   // Attempt every group; a non-connected group just errors and is skipped (the
   // GroupMemberStatus runtime value doesn't reliably match the typed enum, so we
   // don't pre-filter on it).
-  const groups = await chat.apiListGroups(user.userId);
+  const groups = await bot.listGroups();
   let sent = 0;
   for (const g of groups) {
     try {

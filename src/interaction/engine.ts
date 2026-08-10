@@ -1590,8 +1590,14 @@ export class InteractionEngine {
     text: string,
     result: { intent: string; confidence: number } | undefined,
   ): void {
+    // WHOSE engine ignored it (CCB-S5-018). The near-miss BUFFER has carried the bot since
+    // CCB-S5-001, but it is gated on `logNearMisses` and lives on the Diagnostics page, so
+    // the journal line was the only trace an operator diagnosing "he does not answer" would
+    // meet first, and it named no bot. With several bots that makes the one fact he needs -
+    // did THIS bot's engine even see the message - the one fact it does not say.
     log.debug(
-      `Interaction: ignored a message from ${msg.senderMemberId} (${reason})` +
+      `Interaction: ${this.deps.botName ?? 'a bot'} ignored a message from ` +
+        `${msg.senderMemberId} in group ${String(msg.groupId)} (${reason})` +
         `${result ? ` — ${result.intent} @ ${result.confidence.toFixed(2)}` : ''}.`,
     );
     if (!s.addressing.logNearMisses) return;

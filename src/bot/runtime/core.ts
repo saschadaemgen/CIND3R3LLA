@@ -217,9 +217,12 @@ export class MultiProfileRuntime {
    * profile is currently active, so with more than one profile hosted, issuing one
    * here rather than through {@link scheduler} is the silent cross-profile execution
    * D-085 measured. It is exposed because the single-bot wiring (CCB-S4-021) needs the
-   * handle for profile-independent commands (`/_files_folder`), for commands that take
-   * an explicit user id (`apiListGroups`), and for the file receiver. With one profile
-   * hosted there is nothing to misroute to.
+   * handle for profile-independent commands (`/_files_folder`) and for the file receiver.
+   *
+   * It used to say "and for commands that take an explicit user id (`apiListGroups`)".
+   * That was wrong and cost a working second bot: the core CHECKS the explicit id against
+   * the active user and refuses on `differentActiveUser` (CCB-S5-018, D-171). A command
+   * carrying a user id needs the scheduler as much as one that does not.
    *
    * When the second profile arrives, every call site reached through this accessor has
    * to be re-examined; the backlog says so rather than leaving it to be discovered.
@@ -494,22 +497,46 @@ export class MultiProfileRuntime {
   /* ── Which bot owns which group (CCB-S5-001, D-155) ───────────────────────── */
 
   /**
+   * List one profile's groups, as that profile.
+   *
+   * ── AN EXPLICIT USER ID IS NOT AN EXEMPTION (CCB-S5-018, D-171) ────────────
+   *
+   * This file used to say, in as many words, that `apiListGroups` "takes an EXPLICIT user
+   * id, so it needs no scheduler: it is one of the few commands that cannot be misrouted".
+   * That is exactly backwards, and production said so:
+   *
+   *     {"type":"error","errorType":{"type":"differentActiveUser",
+   *      "commandUserId":2,"activeUserId":1}}
+   *
+   * The core does not USE the id in place of the active user; it CHECKS that the two agree
+   * and refuses the command when they do not. So an explicit user id makes a command
+   * refusable rather than unmisroutable, and every such command needs the scheduler exactly
+   * as much as the ones that carry no id. The bot that happened to be active worked; every
+   * other bot got an error nobody could read until `describeChatError` landed.
+   *
+   * One method, so the three call sites that had this wrong cannot drift apart again.
+   */
+  async listGroups(simplexUserId: number): Promise<T.GroupInfo[]> {
+    const chat = this.requireChat();
+    return await this.scheduler.run(simplexUserId, `listGroups:${String(simplexUserId)}`, () =>
+      chat.apiListGroups(simplexUserId),
+    );
+  }
+
+  /**
    * Rebuild the group index from what each hosted profile reports.
    *
-   * `apiListGroups` takes an EXPLICIT user id, so it needs no scheduler: it is one of
-   * the few commands that cannot be misrouted. It is still listed per profile rather
-   * than once, because there is no "all groups" command and each profile only ever sees
-   * its own rows.
+   * Listed per profile rather than once, because there is no "all groups" command and each
+   * profile only ever sees its own rows.
    *
    * One profile failing does not blank the others: `adopt` is per profile, and a failed
    * read leaves that profile's previous entries alone. Surfaced rather than swallowed,
    * because a stale index routes an erasure at the wrong bot.
    */
   async refreshOwnership(): Promise<void> {
-    const chat = this.requireChat();
     for (const profile of this.hosted) {
       try {
-        const groups = await chat.apiListGroups(profile.simplexUserId);
+        const groups = await this.listGroups(profile.simplexUserId);
         this.ownership.adopt(
           profile.simplexUserId,
           groups.map((g) => ({

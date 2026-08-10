@@ -202,14 +202,6 @@ async function main(): Promise<void> {
   {
     const s = makeScheduler();
     const sent: number[] = [];
-    // Only what the flush actually touches: the group list, keyed by an explicit user id.
-    const chat = {
-      apiListGroups: async (_userId: number) =>
-        Promise.resolve([
-          { groupId: 10, localDisplayName: 'archive' },
-          { groupId: 11, localDisplayName: 'lab' },
-        ]),
-    };
     const user = {
       userId: 1,
       profile: { displayName: 'CIND3R3LLA', fullName: '', image: 'data:image/jpg;base64,AAAA' },
@@ -223,10 +215,19 @@ async function main(): Promise<void> {
           sent.push(groupId);
           return 'ok';
         }),
+      // Scheduled too, since CCB-S5-018: a bare `apiListGroups` is refused with
+      // `differentActiveUser` for every bot that is not the active one.
+      listGroups: () =>
+        s.run(1, 'listGroups:1', async () =>
+          Promise.resolve([
+            { groupId: 10, localDisplayName: 'archive' },
+            { groupId: 11, localDisplayName: 'lab' },
+          ]),
+        ),
     };
 
     const started = Date.now();
-    await flushAvatarToGroups(chat as never, db, bot);
+    await flushAvatarToGroups(db, bot);
     const elapsed = Date.now() - started;
 
     check(
@@ -244,7 +245,7 @@ async function main(): Promise<void> {
     check('and recorded its marker, so a restart does not re-send', Number(rows[0]?.n ?? 0) === 1);
 
     sent.length = 0;
-    await flushAvatarToGroups(chat as never, db, bot);
+    await flushAvatarToGroups(db, bot);
     check('a second flush of the same image sends nothing', sent.length === 0);
   }
 
@@ -252,15 +253,18 @@ async function main(): Promise<void> {
     // THE REGRESSION GUARD, driven rather than asserted on markup: wrapped the old way, the
     // same call does not complete. This is the check that goes red if anybody restores it.
     const s = makeScheduler();
-    const chat = { apiListGroups: async (_u: number) => Promise.resolve([{ groupId: 10, localDisplayName: 'g' }]) };
     const bot = {
       user: { userId: 2, profile: { displayName: 'B', fullName: '', image: 'data:image/jpg;base64,BBBB' } } as never,
       displayName: 'B',
       sendToGroup: (groupId: number) => s.run(2, `sendGroupText:${groupId}`, async () => 'ok'),
+      listGroups: () =>
+        s.run(2, 'listGroups:2', async () =>
+          Promise.resolve([{ groupId: 10, localDisplayName: 'g' }]),
+        ),
     };
     let wrappedFailed = false;
     try {
-      await s.run(2, 'avatar-flush', () => flushAvatarToGroups(chat as never, db, bot));
+      await s.run(2, 'avatar-flush', () => flushAvatarToGroups(db, bot));
     } catch {
       wrappedFailed = true;
     }

@@ -22,12 +22,18 @@
  * that held a chat handle would be one careless import away from issuing commands with
  * no scheduler and no readiness check, from an HTTP request handler.
  *
- * ── WHY AN EXPLICIT USER ID MAKES THIS SAFE ON THE SHARED HANDLE ────────────
+ * ── AN EXPLICIT USER ID IS NOT AN EXEMPTION (corrected, CCB-S5-018, D-171) ──
  *
- * `apiCreateUserAddress` and `apiGetUserAddress` both take a `userId`. Commands that
- * carry one cannot execute as the wrong profile, which is the whole hazard D-085
- * measured and the scheduler exists to prevent. They still go through the scheduler
- * here, because the alternative is a rule that holds only while somebody remembers it.
+ * This paragraph used to say that `apiCreateUserAddress` and `apiGetUserAddress` take a
+ * `userId` and that "commands that carry one cannot execute as the wrong profile". That is
+ * false, and production proved it elsewhere: the core CHECKS the explicit id against the
+ * active user and refuses with `differentActiveUser` when they differ. An explicit id makes
+ * a command REFUSABLE, not unmisroutable.
+ *
+ * The code here was always right, because every one of these goes through the scheduler
+ * anyway. The reasoning was wrong, and reasoning is what propagates: the same sentence in
+ * `core.ts` is why `apiListGroups` was called bare at three sites and why a second bot's
+ * groups could not be read at all.
  */
 
 import { util } from 'simplex-chat';
@@ -387,11 +393,12 @@ export async function applyBotFaceNow(
   const before = (bot.user.profile as unknown as T.Profile).image;
   await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user);
 
-  const flushed = await flushAvatarToGroups(host.chat, db, {
+  const flushed = await flushAvatarToGroups(db, {
     // The image just written, NOT the boot snapshot. See above; this is the whole trap.
     user: { ...bot.user, profile: { ...bot.user.profile, image } },
     displayName,
     sendToGroup: (groupId, text) => bot.sendGroupText(groupId, text),
+    listGroups: () => host.runtime.listGroups(simplexUserId),
   });
 
   log.info('runtime: applied a bot face on demand', {

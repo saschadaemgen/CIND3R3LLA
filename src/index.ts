@@ -129,7 +129,9 @@ async function assertDbReady(): Promise<void> {
 async function reportGroups(host: RuntimeHost, cfg: Config): Promise<void> {
   for (const bot of host.bots) {
     try {
-      const groups = await host.chat.apiListGroups(bot.simplexUserId);
+      // Through the runtime, which schedules it as this bot: a bare call is refused with
+      // `differentActiveUser` for every bot that is not the active one (CCB-S5-018).
+      const groups = await host.runtime.listGroups(bot.simplexUserId);
       if (groups.length === 0) {
         log.warn(
           `Bot "${bot.config.displayName}" is not a member of any group yet. Join one with: ` +
@@ -617,10 +619,11 @@ async function startCaptureWorker(
           // `apiListGroups` takes the user id explicitly and `sendGroupText` schedules
           // itself. The scheduler refuses re-entry outright now, so this cannot silently
           // come back.
-          await flushAvatarToGroups(host.chat, getPool(), {
+          await flushAvatarToGroups(getPool(), {
             user: bot.user,
             displayName: bot.config.displayName,
             sendToGroup: (groupId, text) => bot.sendGroupText(groupId, text),
+            listGroups: () => host.runtime.listGroups(bot.simplexUserId),
           });
         }
       })
