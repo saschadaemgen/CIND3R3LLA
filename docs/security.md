@@ -1445,3 +1445,112 @@ STILL BLOCKED.
 whole product through one ordered path needs a bound on each step and a report when the bound is
 hit, or its failure mode is total and silent. The same question should be asked of any future
 queue, lock or gate added to a path a member is waiting on.
+
+## 15. Dependency advisories: reachability first, then the patch, then the call sites (CCB-S5-020, D-174)
+
+`npm audit` on production reported one high-severity advisory: **GHSA-5p4m-2wfm-xmqj**, quadratic
+CPU consumption in js-yaml's `!!omap` resolution, affecting 4.0.0 - 4.3.0, with the CVE-2026-59870
+fix not backported. This section records what was established, because the answer changed how
+urgent it was and the method is the reusable part.
+
+### 15.1 The exposure: build-time only, and unreachable even there
+
+| Question | Answer |
+|---|---|
+| How does it enter the tree? | `eslint` -> `@eslint/eslintrc` -> `js-yaml@4.3.0`, one path, no other |
+| Runtime or build-time? | **Build-time.** `eslint` is a `devDependency`; `npm ls js-yaml --omit=dev` is **empty** |
+| Does the product parse YAML? | **No.** Nothing in `src/`, `scripts/`, `migrations/` or `deploy/` imports js-yaml or any YAML parser |
+| Does the built output reference it? | **No.** Nothing yaml-related in `dist/` |
+| Are there YAML files to parse? | **None tracked in the repository at all** |
+| Where is it called? | Two `yaml.load` call sites in `@eslint/eslintrc`, both lazy-loaded, both reached only for a legacy `.eslintrc.yml`/`.yaml` config. This repo uses flat config (`eslint.config.js`) |
+
+So the vulnerable code was **present on the production host** - `deploy/RUNBOOK.md` installs with a
+plain `npm ci`, which includes dev dependencies because the host builds from source - and was
+**never loaded by the running service**, which is `node /opt/cinderella/dist/index.js`. A
+quadratic parser is only a denial of service if something feeds it attacker-shaped input; nothing
+here feeds it anything. That is a real reduction in urgency and it is stated rather than assumed,
+because "high severity" on a transitive dev dependency and "high severity" on the capture path are
+not the same fact.
+
+**This is not an argument for leaving it.** It was taken the same day. It is an argument for
+knowing which kind of advisory you are holding before deciding what to interrupt.
+
+### 15.2 The trap: `npm audit fix` reported green with the vulnerable code still installed
+
+`npm audit fix` rewrote `package-lock.json` from 4.3.0 to 4.3.1 and **did not install it**. The
+subsequent `npm audit` read the lockfile, saw 4.3.1, and printed `found 0 vulnerabilities` while
+`node_modules/js-yaml/package.json` still said **4.3.0** and the array-probe resolver was still
+the code on disk.
+
+A green audit is therefore **a statement about the lockfile, not about what executes**. The
+installed version has to be read separately, and it was:
+
+```
+node -e "console.log(require('./node_modules/js-yaml/package.json').version)"
+```
+
+The install itself then failed twice with `EPERM ... unlink` on `esbuild.exe` and on sharp's
+`libvips-cpp` DLL, both held open by leftover `admin-preview` processes. Worth recording because
+the failure is silent in the direction that matters: `npm ci` errors out **after** it has begun
+removing packages, so a tree can be left with the old version, no version, or a partial install,
+while the audit that reads the lockfile keeps reporting green.
+
+### 15.3 Confirming the patch rather than the version number
+
+The bump was verified against the code, not the advisory metadata. The resolver changed shape:
+
+| | 4.3.0 | 4.3.1 |
+|---|---|---|
+| seen-keys store | `const objectKeys = []` | `const objectKeys = {}` |
+| probe | `objectKeys.indexOf(pairKey)` - O(n) per pair | `_hasOwnProperty.call(objectKeys, pairKey)` - O(1) |
+| insert | `objectKeys.push(pairKey)` | `Object.defineProperty(objectKeys, pairKey, { value: true })` |
+| total | **O(n^2)** | **O(n)** |
+
+`defineProperty` rather than plain assignment, and `hasOwnProperty.call` rather than `in`, so a
+document whose keys are `__proto__` or `constructor` neither pollutes the lookup nor trips its
+setter - the fix is careful, not just faster.
+
+Measured on the installed package, with the 4.3.0 resolver copied verbatim for contrast:
+
+| pairs | installed 4.3.1 (full parse) | the 4.3.0 resolver |
+|---|---|---|
+| 2 000 | 28.5 ms | 2.5 ms |
+| 4 000 | 30.9 ms | 12.1 ms |
+| 8 000 | 38.1 ms | 50.1 ms |
+| 16 000 | 51.2 ms | 233.0 ms |
+
+Over an 8x growth in input the installed parser grew **1.8x** (linear, on a fixed parser
+overhead), and the old resolver grew **91.5x** against the 64x that pure n^2 predicts. And the fix
+did not buy its speed by dropping the check: a duplicate `!!omap` key is still rejected.
+
+All four entry paths were confirmed patched, including the minified bundle, where the identifier
+names are mangled and the shape is what has to be read: `var r=[]` with `r.indexOf(c)` became
+`var r={}` with `t.call(r,c)` and `Object.defineProperty`.
+
+### 15.4 The call sites of what moved
+
+The season-4 precedent (the sharp bump, where all three call sites were checked rather than the
+audit being taken at its word) applies to every dependency that moves. Here:
+
+- **Exactly one package moved.** `npm audit fix --dry-run` proposed one change and made one.
+  Diffing the two published tarballs: `lib/type/omap.js`, the four rebuilt `dist/` bundles and
+  their maps, and `package.json` - whose only difference is the version string. Same
+  dependencies (`argparse ^2.0.1`), same `exports` map, **identical exported API surface**.
+- **Two call sites**, both `yaml.load(readFile(...))` in `@eslint/eslintrc`, neither reached by
+  this repository's flat config. Both exercised by running `npm run lint`, which passed.
+- **No product call sites**, because the product has none.
+
+An unrelated pre-existing drift was reconciled in passing: the lockfile's root `engines.node` said
+`>=20` while `package.json` said `>=20.9.0`. `package.json` is unchanged; the lockfile caught up.
+
+### 15.5 The standing lesson
+
+**A green `npm audit` describes the lockfile; read the installed version separately.** The tool
+that reports the fix and the tool that applies it are the same command and they can disagree, with
+the disagreement resolving in favour of "you are safe". After any advisory is closed, read the
+version off `node_modules` and, for anything that matters, read the patched code.
+
+**And establish reachability before urgency.** Runtime dependency, build-time dependency, and
+build-time dependency with no reachable call site are three different facts wearing the same
+severity badge. The first two questions are always `npm ls <pkg> --omit=dev` and "does anything
+here call it".

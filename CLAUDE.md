@@ -83,6 +83,21 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   through `ActiveUserScheduler`, whatever it carries. The sentence appeared three times and
   produced three bare call sites, so **correct the reasoning and not only the code**: reasoning
   is what propagates.
+- **A green `npm audit` describes the LOCKFILE, not what executes** (standing rule, D-174).
+  `npm audit fix` rewrote the lockfile from the vulnerable js-yaml to the patched one and **did
+  not install it**; the next audit read the lockfile and printed `found 0 vulnerabilities` while
+  the vulnerable resolver was still the code on disk. The tool that reports the fix and the tool
+  that applies it are one command, they can disagree, and the disagreement resolves in favour of
+  "you are safe". `npm ci` also errors out AFTER it starts removing packages, so a locked file
+  (`esbuild.exe`, a sharp DLL, anything a stray dev server holds) leaves the tree old, empty or
+  partial with the audit still green. So read the installed version separately -
+  `node -e "console.log(require('./node_modules/<pkg>/package.json').version)"` - and for anything
+  that matters read the patched code rather than the version number.
+  **And establish reachability before urgency**: a runtime dependency, a build-time dependency,
+  and a build-time dependency with no reachable call site wear the same severity badge and are
+  three different facts. The first two questions are `npm ls <pkg> --omit=dev` and "does anything
+  here call it". When something moves, check every call site of what moved, which is the
+  season-4 sharp-bump precedent.
 - **A validation rule that fails to compile fails OPEN, and silently** (standing rule, D-164).
   The slug's `pattern` attribute contained an unescaped `-` in a character class. Browsers
   compile `pattern` in regex `v` mode, where that is a syntax error, so it threw on every

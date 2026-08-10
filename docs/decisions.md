@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 172 decisions</strong> — newest first. Highest allocated: <strong>D-173</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 173 decisions</strong> — newest first. Highest allocated: <strong>D-174</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-174 | A green `npm audit` describes the lockfile, and reachability decides urgency | IMPLEMENTED |
 | D-173 | Nothing reads the primary flag, and the one bot it could rename refuses the boot | IMPLEMENTED |
 | D-172 | A wake word is a token sequence, one typo across the whole name, and a partial name is a nickname | IMPLEMENTED |
 | D-171 | An explicit user id is not an exemption from the scheduler, and the misrouting presented as an addressing defect | IMPLEMENTED |
@@ -201,6 +202,60 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-174 - A green `npm audit` describes the lockfile, and reachability decides urgency
+
+**Status: IMPLEMENTED** (CCB-S5-020, no migration). `npm audit` reported GHSA-5p4m-2wfm-xmqj,
+quadratic CPU consumption in js-yaml's `!!omap` resolution, high severity, 4.0.0 - 4.3.0. Closed
+by taking 4.3.1. Two things are worth keeping.
+
+**REACHABILITY DECIDES URGENCY, AND IT IS TWO COMMANDS.** The path is
+`eslint` -> `@eslint/eslintrc` -> `js-yaml`, and `eslint` is a `devDependency`, so
+`npm ls js-yaml --omit=dev` is **empty**: nothing a runtime install contains, nothing `dist/`
+references, and no YAML parser imported anywhere in `src/`, `scripts/`, `migrations/` or
+`deploy/`. There is not one `.yml` file tracked in the repository, and the two `yaml.load` call
+sites in `@eslint/eslintrc` are lazy-loaded and reached only for a legacy `.eslintrc.yml`, which
+this repo does not use. The vulnerable code was **on the production host** - the RUNBOOK installs
+with a plain `npm ci` because the host builds from source - and was **never loaded by the running
+service**. A quadratic parser is a denial of service only if something feeds it attacker-shaped
+input, and nothing feeds it anything.
+
+That is a real reduction in urgency and it is stated rather than assumed, because "high severity"
+on a transitive dev dependency and "high severity" on the capture path are not the same fact. It
+is **not** an argument for leaving it: it was taken the same day. It is an argument for knowing
+which kind of advisory you are holding before deciding what to interrupt.
+
+**AND THE GREEN AUDIT WAS WRONG.** `npm audit fix` rewrote `package-lock.json` to 4.3.1 and **did
+not install it**. The next `npm audit` read the lockfile, saw 4.3.1, and printed
+`found 0 vulnerabilities` while `node_modules/js-yaml` was still **4.3.0** and the array-probe
+resolver was still the code on disk. The tool that reports the fix and the tool that applies it
+are the same command, they can disagree, and the disagreement resolves in favour of "you are
+safe". The install then failed twice with `EPERM ... unlink` on `esbuild.exe` and on sharp's
+`libvips-cpp` DLL, both held by leftover `admin-preview` processes - and `npm ci` errors out
+**after** it has begun removing packages, so a tree can be left old, empty or partial while the
+lockfile-reading audit keeps reporting green.
+
+So: **read the installed version separately, and for anything that matters read the patched
+code.** Here the resolver changed shape - `const objectKeys = []` with `objectKeys.indexOf(...)`
+became `const objectKeys = {}` with `_hasOwnProperty.call(...)` and `Object.defineProperty(...)`,
+O(n^2) to O(n), with `defineProperty` rather than assignment so a `__proto__` key neither pollutes
+the lookup nor trips its setter. Measured on the installed package against the 4.3.0 resolver
+copied verbatim: over an 8x growth in input the installed parser grew **1.8x** and the old
+resolver **91.5x**, against the 64x pure n^2 predicts. A duplicate `!!omap` key is still rejected,
+so the speed was not bought by dropping the check.
+
+**Every call site of what moved was checked**, which is the season-4 sharp-bump precedent applied
+to a smaller change. Exactly one package moved; diffing the two published tarballs gives
+`lib/type/omap.js`, the four rebuilt `dist/` bundles and their maps, and a `package.json` whose
+only difference is the version string - same dependencies, same `exports`, identical exported API
+surface. Both consumer call sites are `yaml.load` in `@eslint/eslintrc` and both were exercised by
+running the linter. The product has no call sites of its own. See
+[`security.md` §15](security.md) for the measurements and the tables.
+
+No product code changed, so this is a lockfile-and-documentation decision; the suite is green
+because nothing it covers moved.
+
 ---
 
 ### D-173 - Nothing reads the primary flag, and the one bot it could rename refuses the boot
