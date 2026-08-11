@@ -657,6 +657,80 @@ async function main(): Promise<void> {
     'so the section-4 "no chunk was truncated" check is what catches it',
   );
 
+  /* ── 8. The extension guard says what to do ─────────────────────────────── */
+
+  console.log('\n8. The pgvector guard names the fix instead of the symptom');
+
+  // ── WHY THIS SECTION EXISTS ────────────────────────────────────────────────
+  //
+  // Migration 052 shipped as a bare `CREATE EXTENSION IF NOT EXISTS vector`, and the first
+  // production deploy failed with `permission denied to create extension "vector"`: the
+  // package was installed, but CREATE EXTENSION needs a superuser and the application role
+  // is deliberately not one. That message is true and does not tell an operator what to do.
+  //
+  // The guard distinguishes the two causes. Only ONE of them is reachable from a test - PGlite
+  // runs as a superuser, so the privilege branch cannot be provoked - and that one is driven
+  // here for real, by building a PGlite WITHOUT the extension registered. The other is
+  // asserted on its text, which is the honest limit of what a harness can do here.
+  const guardSql = (await loadMigrationFiles()).find((m) => m.name.startsWith('052'))?.sql ?? '';
+  check('migration 052 is present', guardSql.length > 0);
+  check(
+    'it no longer runs a bare CREATE EXTENSION that fails with the raw error',
+    !/^\s*CREATE EXTENSION IF NOT EXISTS vector;/m.test(guardSql),
+  );
+  check(
+    'the privilege branch names the superuser command an operator must run',
+    guardSql.includes('sudo -u postgres psql cinderella -c "CREATE EXTENSION IF NOT EXISTS vector;"') &&
+      /insufficient_privilege/.test(guardSql),
+  );
+  check(
+    'and the not-installed branch derives the package from the server version',
+    /postgresql-\$\{PG_MAJOR\}-pgvector/.test(guardSql) && /SHOW server_version/.test(guardSql),
+    'a hardcoded major is what sent the first attempt at postgresql-16 to a PostgreSQL 17 box',
+  );
+
+  // THE REACHABLE BRANCH, driven for real: every migration BEFORE 052 applied so the
+  // prerequisites exist, then 052 itself, against a PGlite with no vector extension. Running
+  // 052 alone would also raise, but for the wrong reason: its foreign keys reference tables
+  // earlier migrations create, so the failure would be about those rather than the guard.
+  const upTo052 = (await loadMigrationFiles()).filter((m) => m.name < '052');
+  const applyThrough = async (pg: PGlite): Promise<string> => {
+    for (const m of upTo052) await pg.exec(m.sql);
+    try {
+      await pg.exec(guardSql);
+      return '';
+    } catch (error) {
+      return error instanceof Error ? error.message : String(error);
+    }
+  };
+
+  const bare = new PGlite();
+  const guardSaid = await applyThrough(bare);
+  await bare.close();
+  check(
+    'with pgvector absent the migration refuses',
+    guardSaid.length > 0,
+    guardSaid.split('\n')[1]?.slice(0, 70) ?? guardSaid.slice(0, 70),
+  );
+  check(
+    '  and it says to install the package and create the extension, not merely that it failed',
+    /apt-get install/.test(guardSaid) && /CREATE EXTENSION IF NOT EXISTS vector/.test(guardSaid),
+  );
+  check(
+    '  and it never shows the raw permission error on its own',
+    !/^permission denied to create extension/.test(guardSaid),
+  );
+  // POSITIVE CONTROL: the same migration against a PGlite that HAS the extension must apply
+  // cleanly, or the checks above would pass against a migration that refused unconditionally.
+  const equipped = new PGlite({ extensions: { vector } });
+  const equippedSaid = await applyThrough(equipped);
+  await equipped.close();
+  check(
+    'CONTROL: with pgvector present the same migration applies cleanly',
+    equippedSaid === '',
+    equippedSaid.slice(0, 90),
+  );
+
   console.log(
     failures === 0 ? '\nAll knowledge base checks passed.\n' : `\n${String(failures)} check(s) FAILED.\n`,
   );

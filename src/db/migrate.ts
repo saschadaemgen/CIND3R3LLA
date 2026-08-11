@@ -35,6 +35,29 @@ export async function loadMigrationFiles(): Promise<Migration[]> {
 }
 
 /**
+ * A Postgres error with everything it actually said.
+ *
+ * ── WHY THE HINT AND THE DETAIL ARE NOT DROPPED ─────────────────────────────
+ *
+ * They were, and it cost an operator a deploy. Migration 052 failed with
+ * `permission denied to create extension vector`, which is true and does not say what to
+ * do; Postgres attached `HINT: Must be superuser to create this extension.`, which does, and
+ * this runner threw away everything but `message`.
+ *
+ * Any migration can raise a hint, and a future one will. Surfacing all three costs four
+ * lines and is the difference between an error an operator can act on and one they have to
+ * take to somebody else.
+ */
+function describePgError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const pg = err as Error & { detail?: unknown; hint?: unknown; where?: unknown };
+  const parts = [err.message];
+  if (typeof pg.detail === 'string' && pg.detail) parts.push(`DETAIL: ${pg.detail}`);
+  if (typeof pg.hint === 'string' && pg.hint) parts.push(`HINT: ${pg.hint}`);
+  return parts.join(String.fromCharCode(10));
+}
+
+/**
  * Applies any not-yet-applied migrations against the pool. Returns the names of
  * the migrations that were applied in this run.
  */
@@ -63,9 +86,7 @@ export async function runMigrations(): Promise<string[]> {
         applied.push(migration.name);
       } catch (err) {
         await client.query('ROLLBACK');
-        throw new Error(
-          `Migration ${migration.name} failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        throw new Error(`Migration ${migration.name} failed: ${describePgError(err)}`);
       }
     }
   } finally {

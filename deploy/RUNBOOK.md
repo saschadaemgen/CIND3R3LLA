@@ -32,14 +32,28 @@ npm run build          # tsc + Tailwind/htmx assets
 
 # 3) PostgreSQL: least-privilege role + owned database
 #
-# pgvector FIRST. Migration 052 runs `CREATE EXTENSION vector` for the knowledge base
-# (CCB-S5-022), and the extension has to be INSTALLED ON THE SERVER before any migration
-# runs: without it `node dist/db/migrate.js` fails at 052 and the deploy stops there.
-# Additive, and it touches no neighbouring database.
-sudo apt-get install -y postgresql-16-pgvector   # match your server's major version
+# ── PGVECTOR IS TWO STEPS, NOT ONE ──────────────────────────────────────────
+#
+# Migration 052 needs the pgvector extension for the knowledge base (CCB-S5-022). Two things
+# are required, and the first deployment of this got both wrong:
+#
+#   1. THE PACKAGE, named after THIS server's major version. Derive it rather than copying a
+#      number: this instruction originally said `postgresql-16-pgvector`, and production runs
+#      PostgreSQL 17 on Debian 13, where no 16 package exists at all.
+#   2. THE EXTENSION, created by a SUPERUSER. `CREATE EXTENSION` requires one and the
+#      application role is deliberately not a superuser, so installing the package is NOT
+#      enough: the migration still fails with `permission denied to create extension
+#      "vector"`. Creating it once as postgres is the whole fix. The role stays unprivileged,
+#      and the migration then finds the extension already present and does nothing.
+#
+# Both are additive and touch no neighbouring database.
 DB_PW="$(openssl rand -hex 24)"
 sudo -u postgres psql -c "CREATE ROLE cinderella LOGIN PASSWORD '${DB_PW}';"
 sudo -u postgres psql -c "CREATE DATABASE cinderella OWNER cinderella;"
+
+PG_MAJOR="$(sudo -u postgres psql -tAc "SHOW server_version" | cut -d. -f1)"
+sudo apt-get install -y "postgresql-${PG_MAJOR}-pgvector"
+sudo -u postgres psql cinderella -c "CREATE EXTENSION IF NOT EXISTS vector;"
 
 # 4) Secrets + env file (root-owned, 0600)
 SESSION_SECRET="$(openssl rand -hex 32)"
@@ -198,9 +212,12 @@ The manual equivalent, if you need to run a step by hand:
 cd /opt/cinderella
 git pull            # (needs a deploy key; else use the bundle above)
 npm ci && npm run build
-# ONE-OFF, before the first deploy that carries migration 052 (CCB-S5-022): the knowledge
-# base needs pgvector on the server, and the migration fails without it.
-#   sudo apt-get install -y postgresql-16-pgvector
+# ONE-OFF, before the first deploy that carries migration 052 (CCB-S5-022). Installing the
+# package is NOT enough: CREATE EXTENSION needs a superuser and the application role is not
+# one, so it must be created once as postgres. The migration then finds it and does nothing.
+#   PG_MAJOR="$(sudo -u postgres psql -tAc "SHOW server_version" | cut -d. -f1)"
+#   sudo apt-get install -y "postgresql-${PG_MAJOR}-pgvector"
+#   sudo -u postgres psql cinderella -c "CREATE EXTENSION IF NOT EXISTS vector;"
 env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.js
 systemctl restart cinderella   # sessions survive this now
 ```

@@ -19,15 +19,27 @@
 -- settings must not require the operator to upload the file again, and a chunk store with no
 -- source is a store that can never be rebuilt.
 --
--- ── PGVECTOR, AND WHAT IT COSTS ──────────────────────────────────────────────
+-- ── PGVECTOR, AND WHY THIS IS A GUARD RATHER THAN ONE LINE ──────────────────
 --
--- `CREATE EXTENSION vector` requires the extension to be INSTALLED on the server. On the VPS
--- that is one additive apt package (`postgresql-16-pgvector` on Debian/Ubuntu for PG 16) and
--- it must be installed BEFORE this migration runs, or the deploy fails here. See
--- deploy/RUNBOOK.md, where it is a numbered step rather than a footnote.
+-- `CREATE EXTENSION vector` needs two things that are easy to confuse, and the first
+-- deployment confused them: the extension FILES installed on the server, and a role allowed
+-- to create it. The application role is deliberately not a superuser, and `CREATE EXTENSION`
+-- requires one, so with the package correctly installed this migration still failed with
+--
+--     permission denied to create extension "vector"
+--
+-- which is true, unhelpful, and does not tell an operator what to do next. Postgres does
+-- attach a `HINT` there, and the migration runner used to drop it.
+--
+-- So the block below distinguishes the two cases and raises the actual instruction. Once a
+-- superuser has created the extension, this finds it already present and does nothing, which
+-- is why the fix is a one-off and not a permanent privilege grant.
 --
 -- In the harnesses it is `@electric-sql/pglite-pgvector` (Apache-2.0), registered at PGlite
--- construction, which is why all 51 `new PGlite()` calls in the tree now pass it.
+-- construction, which is why all 51 `new PGlite()` calls in the tree pass it. PGlite runs as
+-- a superuser, so it takes the create path; `verify:knowledge` drives the not-installed
+-- branch by constructing a PGlite WITHOUT the extension, which is the one branch a test can
+-- reach.
 --
 -- The alternative considered and rejected was a `real[]` column with cosine computed in SQL,
 -- which needs no extension anywhere and works fine at this corpus size. It was rejected for
@@ -35,7 +47,46 @@
 -- machinery over every message a group ever sent, where a sequential scan is untenable, and
 -- choosing the shape twice is worse than paying for it once.
 
-CREATE EXTENSION IF NOT EXISTS vector;
+DO $ext$
+BEGIN
+  -- Already created by a superuser: nothing to do, and no privilege needed to find out.
+  IF EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'vector') THEN
+    RETURN;
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_available_extensions WHERE name = 'vector') THEN
+    RAISE EXCEPTION USING MESSAGE = $msg$
+The knowledge base needs the pgvector extension, and this PostgreSQL server does not have it
+installed. Install the package for THIS server's major version and create the extension as a
+superuser, then deploy again:
+
+  PG_MAJOR="$(sudo -u postgres psql -tAc "SHOW server_version" | cut -d. -f1)"
+  sudo apt-get install -y "postgresql-${PG_MAJOR}-pgvector"
+  sudo -u postgres psql cinderella -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+Deriving the version matters: the package is named after the server it is for, and installing
+the wrong one leaves pgvector present on disk and invisible to this database.
+$msg$;
+  END IF;
+
+  BEGIN
+    EXECUTE 'CREATE EXTENSION vector';
+  EXCEPTION
+    WHEN insufficient_privilege THEN
+      RAISE EXCEPTION USING MESSAGE = $msg$
+pgvector IS installed on this server, but the role this application connects as may not run
+CREATE EXTENSION: that requires a superuser, and this role is deliberately not one.
+
+Create it once, as postgres, and then deploy again:
+
+  sudo -u postgres psql cinderella -c "CREATE EXTENSION IF NOT EXISTS vector;"
+
+This migration then finds the extension already present and does nothing. The application
+role is not granted superuser, and does not need to be.
+$msg$;
+  END;
+END
+$ext$;
 
 /* ── The documents ─────────────────────────────────────────────────────────── */
 

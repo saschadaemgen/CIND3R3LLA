@@ -306,8 +306,12 @@ embeddings from the wrong layer, which is worse than none because it looks like 
 one means a second inference service on a GPU with 733 MiB free. The seam is in `retrieve()`.
 
 **PGVECTOR, AND WHAT IT COSTS.** `@electric-sql/pglite-pgvector` in the harnesses, which is why
-all 51 PGlite constructions register it, and `postgresql-16-pgvector` on the server, installed
-BEFORE the migration or the deploy fails at 052. A `real[]` column with cosine in SQL would
+all 51 PGlite constructions register it, and `postgresql-<major>-pgvector` on the server. That
+package is **not sufficient on its own**: `CREATE EXTENSION` requires a superuser and the
+application role is deliberately not one, so a superuser must create the extension once before
+the deploy. The first attempt got both halves wrong, and migration 052 now distinguishes "not
+installed" from "installed but not permitted" and raises the actual command for each rather
+than the raw `permission denied to create extension "vector"`. A `real[]` column with cosine in SQL would
 have needed no extension and works fine at this corpus size; it was rejected for what comes
 next, because long-term per-member memory is the same machinery over every message a group ever
 sent, where a sequential scan is untenable.
