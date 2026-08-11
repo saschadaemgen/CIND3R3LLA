@@ -21,8 +21,8 @@
  *
  * ── WHAT THIS CHECK DELIBERATELY DOES NOT CLAIM ──────────────────────────────
  *
- * It does not claim the production rejection stops happening. `ElatingBrain` is not a
- * substring false positive; a reply containing it contained the name, and the boundary
+ * It does not claim the production rejection stops happening. The name in that incident is
+ * not a substring false positive; a reply containing it contained the name, and the boundary
  * changes nothing about that case. Whether a true match should STRIP rather than reject is
  * a separate decision with its own briefing, and section 3 exists to make it measurable
  * rather than to pre-empt it.
@@ -168,16 +168,21 @@ async function main(): Promise<void> {
 
   // THE PRODUCTION SHAPE FIRST, so the fix cannot be mistaken for a weakening: a long name
   // written out in her prose is still rejected, exactly as before.
+  //
+  // A PLACEHOLDER of SimpleX's auto-generated adjective-plus-noun shape, not the display name
+  // from the incident, because this repository is public and a display name is member data.
+  // Only the shape matters here: long enough that a substring hit is unambiguous, and a word
+  // it can be embedded in.
   check(
     'a display name she actually wrote is still rejected',
-    await rejected('Good question, ElatingBrain, the archive keeps that.', 'ElatingBrain'),
+    await rejected('Good question, BeamingRiver, the archive keeps that.', 'BeamingRiver'),
   );
 
   // ...and the negative that the boundary buys, with the SAME name at the SAME length, so
   // the pair differs in one property only.
   check(
     '  but the same letters inside a longer word are not',
-    !(await rejected('That is an elatingbrainwave of an idea.', 'ElatingBrain')),
+    !(await rejected('They talked about beamingriverside walks.', 'BeamingRiver')),
   );
 
   // The four-character floor is the boundary's partner and neither works alone. `Ella` is a
