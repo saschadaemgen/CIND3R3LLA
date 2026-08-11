@@ -377,9 +377,24 @@ const LEXICON: LexEntry[] = [
       'search online',
       // CCB-S4-041. 'search for' was here from CCB-S4-037 and does not name the web at
       // all. The archive SEARCH legitimately owns it, and once an explicit web verb took
-      // precedence over SEARCH, "search for pizza" stopped reaching the archive. Every
-      // phrase in this list must SAY web, online, internet or google; a bare search verb
-      // is not a statement about where to look. Caught by verify:interaction.
+      // precedence over SEARCH, "search for pizza" stopped reaching the archive.
+      //
+      // ── THE BAR HERE IS NOT THE ARCHIVE'S, AND THE COMMENT USED TO SAY IT WAS ──
+      //
+      // It read: "Every phrase in this list must SAY web, online, internet or google; a bare
+      // search verb is not a statement about where to look. Caught by verify:interaction."
+      // BOTH HALVES WERE FALSE (CCB-S5-028). Six of the phrases below name no place at all -
+      // `look up`, `look that up`, `find out about`, `find out what`, `can you look`,
+      // `could you look`, plus `finde heraus` and `recherchiere` - and no check anywhere
+      // asserted anything about this list; `verify:interaction` never mentioned LOOKUP. A
+      // stated invariant, a named check that does not exist, and a list already violating it,
+      // which is the D-162 shape in the file a gate was about to be built out of.
+      //
+      // The real bar, and the one `asksToLookItUp` enforces, is **an explicit instruction to
+      // GO AND LOOK**. `look up` names nowhere and is unmistakably a request to go; "which is
+      // correct, and where did the clarification come from?" is a question, and questions are
+      // conversation. That is the same distinction the archive list draws between naming a
+      // place and containing a keyword, applied to the verb instead of to the noun.
       'google',
       'web search',
       'find out about',
@@ -1384,9 +1399,10 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
    * a topic keyword sitting in the same sentence. "Google the price of X" is a request to
    * go and look, not a price question that happens to mention Google.
    */
-  const webVerb = PATTERNS.some(
-    (pattern) => pattern.intent === 'LOOKUP' && findWindow(instr, pattern.tokens) !== null,
-  );
+  // The same predicate the two gates use (CCB-S5-028). It was a local copy of the same scan;
+  // one definition means the rule engine's precedence and the resolver gates cannot come to
+  // different conclusions about what asking to look something up looks like.
+  const webVerb = asksToLookItUp(text);
 
   let best: { pattern: Pattern; match: Match; score: number } | null = null;
   // Best score achieved per language (CCB-S3-005 Addendum A). The reply language a
@@ -1554,10 +1570,58 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
  * remove a claim, never create one.
  */
 export function namesTheArchive(text: string): boolean {
+  return matchesIntentPattern(text, 'SEARCH');
+}
+
+/**
+ * Does this message ASK HER TO GO AND LOOK on the web (CCB-S5-028, D-183)?
+ *
+ * ── THE SIXTH ROUTING COLLISION, AND THE LAST LANE WITHOUT A GATE ────────────
+ *
+ * The operator asked *"One SimpleGo protocol says SUB after NEW is required, another says it
+ * is a noop. Which is correct for SimpleGo, and where did the clarification come from?"* - a
+ * question about documents he had loaded into her knowledge base. It was classified LOOKUP,
+ * two university pages about amending human-subjects research protocols came back because the
+ * word "protocol" matched, and she answered from nothing while the application printed their
+ * domains underneath.
+ *
+ * Measured against this file: the rule engine returns UNKNOWN for it. So the claim came from
+ * the model, and the seam honoured it, because LOOKUP's bar existed only as a sentence in the
+ * model's own intent description. D-181 had already recorded what a bar in a prompt is worth
+ * and had already fixed the identical hole one intent along; this is the same fix on the last
+ * lane that lacked it.
+ *
+ * ── WHY THIS MATTERS MORE THAN A MISROUTE ────────────────────────────────────
+ *
+ * The knowledge base contributes NO intent (`plugins/knowledge-base/plugin.ts`, `intents: []`)
+ * and is consulted at exactly ONE call site, inside free conversation. It is RESIDUE: it gets
+ * the questions every other lane declined. So an intent that claims a question does not merely
+ * answer it in the wrong place, it removes the knowledge base from the running permanently,
+ * and nothing anywhere says so. Closing this gate is what puts a question about the operator's
+ * own documents back where it can be answered.
+ *
+ * ── BUILT FROM THE PATTERNS, LIKE THE ARCHIVE'S ──────────────────────────────
+ *
+ * Same predicate shape, same reason: a second phrase list is a second thing to keep in step.
+ * `resolveRules` uses this for its own web-verb precedence too, so the rule engine and the two
+ * gates cannot drift apart.
+ */
+export function asksToLookItUp(text: string): boolean {
+  return matchesIntentPattern(text, 'LOOKUP');
+}
+
+/**
+ * Does any pattern for `intent` appear as a contiguous window in `text`?
+ *
+ * Answers only that. It does not care about negation, quoting or hypotheticals: those lower a
+ * SCORE, and these gates never raise one. They can only ever remove a claim, never create one,
+ * which is the property that makes them safe to apply on top of any resolver.
+ */
+function matchesIntentPattern(text: string, intent: Exclude<Intent, 'UNKNOWN'>): boolean {
   const instr = normTokens(text);
   if (instr.length === 0) return false;
   return PATTERNS.some(
-    (pattern) => pattern.intent === 'SEARCH' && findWindow(instr, pattern.tokens) !== null,
+    (pattern) => pattern.intent === intent && findWindow(instr, pattern.tokens) !== null,
   );
 }
 

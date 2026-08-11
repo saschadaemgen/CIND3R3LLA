@@ -25,7 +25,7 @@ import {
   type IntentResult,
   type IntentSlots,
 } from './intent.js';
-import { namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
+import { asksToLookItUp, namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
 
 let active: IntentResolver = ruleResolver;
 /** Fallback used when `active` fails. Always the deterministic engine. */
@@ -115,20 +115,38 @@ export function carryOverSlots(text: string, intent: 'PRICE' | 'SEARCH'): Intent
 }
 
 /**
- * The archive is explicit-only for EVERY resolver (CCB-S5-027, D-181).
+ * THE THREE LOOKUPS ARE ALL EXPLICIT-ONLY, FOR EVERY RESOLVER (D-181, extended by D-183).
  *
  * Enforced here for the same reason the catalog is: a property this seam can decide is not
- * left to the implementation to honour. `ollama-resolver.ts` also applies it, beside its
- * consent guard and where the override is counted for the console; this is the copy that
+ * left to the implementation to honour. `ollama-resolver.ts` also applies both bars, beside
+ * its consent guard and where the override is counted for the console; this is the copy that
  * survives somebody registering a different resolver, which the seam exists to allow.
  *
- * Both call the one predicate in `rules.ts`, so there is nothing here to drift.
+ * Each bar calls the one predicate in `rules.ts`, built from the same patterns the rule engine
+ * scores, so there is nothing here to drift.
+ *
+ * ── WHY THE TABLE, RATHER THAN TWO IFS ───────────────────────────────────────
+ *
+ * Because there were two, and the second one took four months and six production misroutes to
+ * arrive. SEARCH got its gate in CCB-S5-027 and LOOKUP kept a bar that existed only as prose
+ * in a prompt, which is the thing that had just been established as not working. A table makes
+ * the question "does this intent have a deterministic bar" answerable by reading one object,
+ * and makes the third case somebody adds an entry rather than an oversight.
+ *
+ * The knowledge base is deliberately NOT in here and cannot be: it contributes no intent at
+ * all. It is the residue, and what these bars protect is its share of it.
  */
-function archiveNeedsNaming(result: IntentResult, text: string): IntentResult {
-  if (result.intent !== 'SEARCH' || namesTheArchive(text)) return result;
+const EXPLICIT_ONLY: Partial<Record<Intent, { names: (text: string) => boolean; why: string }>> = {
+  SEARCH: { names: namesTheArchive, why: 'names no place to look' },
+  LOOKUP: { names: asksToLookItUp, why: 'does not ask her to go and look' },
+};
+
+function explicitOnly(result: IntentResult, text: string): IntentResult {
+  const bar = EXPLICIT_ONLY[result.intent];
+  if (!bar || bar.names(text)) return result;
   log.debug(
-    `Intent resolver "${active.name}" claimed SEARCH for a message that names no place to ` +
-      'look; answering it as conversation instead (D-181).',
+    `Intent resolver "${active.name}" claimed ${result.intent} for a message that ${bar.why}; ` +
+      'answering it as conversation instead (D-183).',
   );
   return unknownResult(result.lang);
 }
@@ -139,7 +157,7 @@ function archiveNeedsNaming(result: IntentResult, text: string): IntentResult {
  */
 export async function resolveIntent(text: string, ctx: IntentContext): Promise<IntentResult> {
   try {
-    return archiveNeedsNaming(
+    return explicitOnly(
       sanitize(await active.resolve(text, ctx), ctx.defaultLanguage, ctx.intents),
       text,
     );
@@ -151,7 +169,7 @@ export async function resolveIntent(text: string, ctx: IntentContext): Promise<I
     );
   }
   try {
-    return archiveNeedsNaming(
+    return explicitOnly(
       sanitize(await fallback.resolve(text, ctx), ctx.defaultLanguage, ctx.intents),
       text,
     );
