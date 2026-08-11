@@ -28,6 +28,7 @@ import {
 import { modelQueue } from './model-queue.js';
 import { stripProtectedLines } from './protected-text.js';
 import { recordForgedLine } from './forgery-log.js';
+import { recordBlockedName } from './blocked-name-log.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
@@ -605,13 +606,100 @@ function requiredLiterals(request: AiReplyRequest): string[] {
   return cleanLiterals(request.requiredLiterals);
 }
 
+/**
+ * The shortest display name this guard will act on (CCB-S5-031).
+ *
+ * `containsBlockedLiteral` used to be `text.includes(name)` with no boundary and no floor,
+ * so a member calling themselves `Al`, `In`, `Ed` or `A` had every reply she wrote rejected
+ * for containing an ordinary English or German word, and none of them ever learned an answer
+ * had existed. `In` is the worst of them and it is not a contrived example: it is a
+ * substring of a preposition that appears in most sentences in both languages.
+ *
+ * FOUR IS A PROXY AND IS NOT A CLEAN LINE, which is worth saying rather than implying.
+ * A boundary alone does not fix it, because `art`, `ill`, `ore`, `max` and `in` are all
+ * standalone words; and no threshold separates `Sam`, which she probably should not say,
+ * from `Art`, which she cannot avoid saying. Length is the only signal available here that
+ * does not require knowing the language of the sentence.
+ *
+ * FOUR RATHER THAN THREE BECAUSE THE COSTS ARE NOT SYMMETRIC. Over-rejecting destroys an
+ * answer the member never learns existed; under-rejecting means she says a member's name
+ * once, in a group where that member is already named on every message. The cheaper failure
+ * is chosen deliberately and the residual is stated: a member whose display name is three
+ * characters or fewer is not protected by this guard at all.
+ *
+ * `npm run calibrate:name-usage` is what this number should be revisited against.
+ */
+export const MIN_BLOCKED_NAME_CHARS = 4;
+
+/**
+ * The blocked names long enough to be worth matching.
+ *
+ * The floor lives HERE and not in `cleanLiterals`, which is shared with `requiredLiterals`:
+ * a required literal is a count or a price the rewrite must preserve exactly, and a
+ * two-character one is as load-bearing as a long one.
+ *
+ * Counted in CODE POINTS rather than UTF-16 units, so a four-character name written in
+ * characters outside the basic plane is not silently treated as eight and let through a
+ * floor it clears.
+ */
 function blockedLiterals(request: AiReplyRequest): string[] {
-  return cleanLiterals(request.blockedLiterals);
+  return cleanLiterals(request.blockedLiterals).filter(
+    (literal) => [...literal].length >= MIN_BLOCKED_NAME_CHARS,
+  );
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * The name as a WHOLE WORD, case-insensitively.
+ *
+ * Unicode-aware lookarounds rather than `\b`, which is ASCII-only in JavaScript: a display
+ * name of `Jürgen` or `Ольга` would otherwise have its boundary computed against a letter
+ * the engine does not consider a word character, and the guard would behave differently for
+ * non-English members than for English ones.
+ *
+ * FAILS CLOSED, per D-164. That decision recorded a `pattern` attribute which threw on every
+ * validation and so dropped the constraint entirely, silently, for the field's whole life.
+ * The literal is escaped, so there is no known input that makes this throw; if one exists,
+ * the old substring test is used instead. Over-rejecting is the failure this function was
+ * rewritten to reduce, but it is still the safer of the two, and the alternative is a guard
+ * that quietly stops guarding.
+ */
+function matchesBlockedName(text: string, literal: string): boolean {
+  try {
+    return new RegExp(
+      `(?<![\\p{L}\\p{N}_])${escapeRegExp(literal)}(?![\\p{L}\\p{N}_])`,
+      'iu',
+    ).test(text);
+  } catch {
+    return text.toLocaleLowerCase().includes(literal.toLocaleLowerCase());
+  }
 }
 
 function containsBlockedLiteral(text: string, request: AiReplyRequest): string | undefined {
-  const lower = text.toLocaleLowerCase();
-  return blockedLiterals(request).find((literal) => lower.includes(literal.toLocaleLowerCase()));
+  return blockedLiterals(request).find((literal) => matchesBlockedName(text, literal));
+}
+
+/**
+ * Books a rejection so it reaches the operator (CCB-S5-031, CCB-S3-023).
+ *
+ * The cost is DERIVED rather than passed in, from the one fact the request already carries:
+ * a caller with a deterministic draft falls back to it and the member gets a complete if
+ * plainer sentence, while free conversation supplies an empty draft and the rejection costs
+ * the member the entire answer. Those are two different failures and a card that showed one
+ * number for both would hide the expensive one.
+ */
+function noteBlockedName(literal: string, text: string, request: AiReplyRequest): void {
+  recordBlockedName({
+    at: Date.now(),
+    botProfileId: request.botProfileId ?? null,
+    kind: request.kind,
+    literal,
+    cost: request.deterministicDraft.trim() === '' ? 'silence' : 'draft',
+    text,
+  });
 }
 
 /**
@@ -848,7 +936,10 @@ export async function generateOllamaReply(
         throw new Error('Ollama returned an invalid locked reply lead.');
       }
       const blocked = containsBlockedLiteral(lead, request);
-      if (blocked) throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+      if (blocked) {
+        noteBlockedName(blocked, lead, request);
+        throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+      }
       const leaked = unresolvedPlaceholder(lead);
       if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
       const protectedText = request.deterministicDraft.trim();
@@ -874,7 +965,10 @@ export async function generateOllamaReply(
       throw new Error(`Ollama reply lost required literal(s): ${missing.join(', ')}.`);
     }
     const blocked = containsBlockedLiteral(reply, request);
-    if (blocked) throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+    if (blocked) {
+      noteBlockedName(blocked, reply, request);
+      throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
+    }
     const leaked = unresolvedPlaceholder(reply);
     if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
     // Checked LAST, on the text that is about to be returned, so nothing added after the
