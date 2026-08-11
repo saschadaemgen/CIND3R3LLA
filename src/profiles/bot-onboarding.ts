@@ -13,7 +13,11 @@ import type { Queryable } from '../db/pool.js';
 import { setSettingOverride } from '../db/interaction-overrides.js';
 import { getSetting } from '../db/settings.js';
 import { log } from '../log.js';
-import { wakeWordTakenBy, type WakeWordHolder } from '../interaction/setting-scope.js';
+import {
+  wakeWordForNewBot,
+  wakeWordTakenBy,
+  type WakeWordHolder,
+} from '../interaction/setting-scope.js';
 import {
   DEFAULT_INTERACTION,
   NEW_BOT_RETORTS,
@@ -692,12 +696,23 @@ export async function createBotOnboardingProfile(
     //
     // Written as a per-bot OVERRIDE rather than by copying the whole settings record: the
     // bot inherits everything else, so a later edit to a shared value still reaches it.
-    const sharedWake = await sharedWakeWord(db);
-    // Only when it actually DIFFERS from the shared wake word. A bot whose wake word is
-    // already the shared value needs no deviation, and storing one would show it in the
-    // console as differing from a default it matches, and would freeze it at today's value
-    // so a later shared edit stopped reaching it. Same rule the console's save path uses.
-    if (wakeWord !== sharedWake) {
+    // ── AND THIS IS WHERE THE TWO STATES ARE REMEMBERED (CCB-S5-030) ──────
+    //
+    // A row is written ONLY when the operator's wake word differs from what this bot's
+    // DISPLAY NAME derives. Absence therefore means "follow my name" and presence means "the
+    // operator chose this", and because absence is now resolved from the display name at read
+    // time, a rename carries through on its own.
+    //
+    // It used to compare against the SHARED wake word, which was right when absence meant
+    // "inherit the shared value" and is wrong now: a bot accepting the suggested name would
+    // have been pinned to the string derived from the name it had on the day it was made, and
+    // renaming it afterwards changed nothing. That is the defect, and it is one comparison.
+    //
+    // Case-insensitively, because that is how `detectAddress` and `wakeWordTakenBy` compare:
+    // a wake word differing only in case is the same wake word, and pinning one would show a
+    // bot as "custom" in the console for a difference no member can hear.
+    const derived = wakeWordForNewBot(input.displayName);
+    if (derived === null || wakeWord.toLocaleLowerCase() !== derived.toLocaleLowerCase()) {
       await setSettingOverride(db, id, 'wakeWord', wakeWord);
     }
 

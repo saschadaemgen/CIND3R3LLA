@@ -20,7 +20,7 @@
  */
 
 import { getSetting, setSetting } from '../db/settings.js';
-import { listSettingOverridesForBot } from '../db/interaction-overrides.js';
+import { botDisplayName, listSettingOverridesForBot } from '../db/interaction-overrides.js';
 import { applySettingOverrides } from './setting-scope.js';
 import { log } from '../log.js';
 import { status } from '../web/status.js';
@@ -1409,8 +1409,21 @@ export class InteractionService {
   /** Load one bot's effective settings. */
   async refreshFor(botProfileId: number): Promise<void> {
     try {
-      const overrides = await listSettingOverridesForBot(this.db, botProfileId);
-      this.perBot.set(botProfileId, applySettingOverrides(this.current, overrides));
+      // THE DISPLAY NAME IS READ HERE (CCB-S5-030), because it is now the wake word's
+      // fallback: a bot with no override answers to its OWN name rather than to the shared
+      // one, which is what makes a rename carry through. One small query beside the one that
+      // already runs once per bot per invalidation.
+      const [overrides, displayName] = await Promise.all([
+        listSettingOverridesForBot(this.db, botProfileId),
+        botDisplayName(this.db, botProfileId),
+      ]);
+      this.perBot.set(
+        botProfileId,
+        // Undefined rather than an empty string when the row is gone: an empty name derives
+        // nothing and would quietly hand the bot the shared name back, which is the exact
+        // behaviour this change exists to remove.
+        applySettingOverrides(this.current, overrides, displayName ?? undefined),
+      );
     } catch (error) {
       log.warn(
         `Interaction: reading bot ${botProfileId}'s settings failed; it is answering from ` +

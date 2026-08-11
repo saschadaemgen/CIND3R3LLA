@@ -430,13 +430,74 @@ export function writePath(
 export function applySettingOverrides(
   shared: InteractionSettings,
   overrides: readonly SettingOverride[],
+  /**
+   * The bot's OWN display name, when the caller knows it (CCB-S5-030).
+   *
+   * Supplying it makes the wake word derive from the bot's own name instead of falling back to
+   * the shared one. Omitting it keeps the pre-CCB-S5-030 behaviour, which is what the console's
+   * shared view and every harness that does not care about naming want.
+   */
+  displayName?: string,
 ): InteractionSettings {
   let out = shared;
+  // ── THE FALLBACK IS THE BOT'S OWN NAME (CCB-S5-030) ──────────────────────
+  //
+  // Applied BEFORE the overrides, so an operator's own wake word still wins. That ordering is
+  // the whole mechanism: presence of a `wakeWord` override means "the operator chose this",
+  // absence means "follow my display name", and the two states cannot drift apart because
+  // there is only one place the answer comes from.
+  //
+  // Before this, absence meant "use the SHARED wake word", which is another bot's name, so
+  // creation had to write an override for every bot just to stop a new bot answering to the
+  // primary's name. That worked and it froze the derivation at creation: a bot renamed
+  // afterwards kept answering to a word derived from the name it used to have, and nothing
+  // said so. `validateCreation` has one caller and there is no rename path that recomputes.
+  if (displayName !== undefined) {
+    const derived = wakeWordForNewBot(displayName);
+    // Null means nothing usable could be derived (an emoji-only name, say). The shared value
+    // is then still the better answer than no name at all.
+    if (derived !== null) out = writePath(out, 'wakeWord', derived);
+  }
   for (const o of overrides) {
     if (!isPerBot(o.key)) continue;
     out = writePath(out, o.key, o.value);
   }
   return out;
+}
+
+/**
+ * Which of the two states a bot's wake word is in, for the console to say plainly
+ * (CCB-S5-030).
+ *
+ * The operator's complaint was not only that a renamed bot kept its old name; it was that
+ * nothing said so. There are exactly two states and they are distinguished by whether an
+ * override row exists, which is a fact rather than a flag: a flag could disagree with the
+ * value it describes, and this cannot.
+ */
+export interface WakeWordState {
+  /** What the bot actually answers to. */
+  word: string;
+  /** True when it follows the display name, false when the operator set his own. */
+  derived: boolean;
+  /** What it WOULD be if it followed the name. Null when nothing can be derived. */
+  fromDisplayName: string | null;
+}
+
+export function wakeWordState(
+  shared: InteractionSettings,
+  overrides: readonly SettingOverride[],
+  displayName: string,
+): WakeWordState {
+  const own = overrides.find((o) => o.key === 'wakeWord');
+  const fromDisplayName = wakeWordForNewBot(displayName);
+  if (own !== undefined && typeof own.value === 'string') {
+    return { word: own.value, derived: false, fromDisplayName };
+  }
+  return {
+    word: fromDisplayName ?? shared.wakeWord,
+    derived: true,
+    fromDisplayName,
+  };
 }
 
 export interface SettingScopeView {

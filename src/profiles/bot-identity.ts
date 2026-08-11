@@ -13,6 +13,7 @@
  */
 
 import type { InteractionSettings } from '../interaction/settings.js';
+import { wakeWordForNewBot } from '../interaction/setting-scope.js';
 import type { SettingOverride } from '../interaction/setting-scope.js';
 
 /** Where a bot's nickname retorts come from. The three are not interchangeable. */
@@ -26,8 +27,21 @@ export type RetortSource =
 
 export interface BotIdentityFacts {
   wakeWord: string;
-  /** False when the bot has no deviation and is answering to the deployment default. */
-  wakeWordIsOwn: boolean;
+  /**
+   * Where the wake word comes from (CCB-S5-030).
+   *
+   *   own     the operator set it. It stays put, including through a rename.
+   *   name    it follows this bot's display name, so a rename carries through.
+   *   shared  neither: the display name derives nothing usable, so the deployment default
+   *           applies and this bot cannot be told apart from any other on it.
+   *
+   * This replaced a boolean. The boolean had only two answers and the interesting state was
+   * the third: a bot whose word was pinned at creation reported "its own" in green, which is
+   * exactly what an operator sees on a bot that has silently stopped following its name.
+   */
+  wakeWordSource: 'own' | 'name' | 'shared';
+  /** What the word WOULD be if it followed the name, so the panel can offer it. Null if none. */
+  wakeWordFromName: string | null;
   retortCount: number;
   retortSource: RetortSource;
   hasFace: boolean;
@@ -42,6 +56,13 @@ export interface BotIdentityInput {
   /** This bot's deviations. Absence of a key means it inherits the shared value. */
   overrides: readonly SettingOverride[];
   shared: InteractionSettings;
+  /**
+   * This bot's display name, which is what its wake word falls back to (CCB-S5-030).
+   *
+   * Optional so that callers written before this keep compiling; absent means the panel
+   * cannot tell "follows its name" from "on the shared default" and reports the latter.
+   */
+  displayName?: string;
   /** Which language's retorts to count. The reply path picks per message; this reports one. */
   language?: string;
 }
@@ -77,12 +98,18 @@ export function botIdentity(input: BotIdentityInput): BotIdentityFacts {
   const own = retortOverride === undefined ? undefined : retortsOf(retortOverride.value, language, 'en');
   const inherited = retortsOf(input.shared.retorts, language, 'en') ?? [];
 
+  const ownWake =
+    typeof wakeOverride?.value === 'string' && wakeOverride.value.trim() !== ''
+      ? wakeOverride.value
+      : null;
+  // The same derivation the reply path uses, from the same function, so this panel and the
+  // bot cannot disagree about what it answers to (CCB-S5-030).
+  const fromName = input.displayName === undefined ? null : wakeWordForNewBot(input.displayName);
+
   return {
-    wakeWord:
-      typeof wakeOverride?.value === 'string' && wakeOverride.value.trim() !== ''
-        ? wakeOverride.value
-        : input.shared.wakeWord,
-    wakeWordIsOwn: typeof wakeOverride?.value === 'string' && wakeOverride.value.trim() !== '',
+    wakeWord: ownWake ?? fromName ?? input.shared.wakeWord,
+    wakeWordSource: ownWake !== null ? 'own' : fromName !== null ? 'name' : 'shared',
+    wakeWordFromName: fromName,
     retortCount: own === undefined ? inherited.length : own.length,
     retortSource: own === undefined ? 'inherited' : own.length === 0 ? 'none' : 'own',
     hasFace: input.avatarPath !== null,

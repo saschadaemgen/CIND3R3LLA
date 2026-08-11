@@ -111,3 +111,23 @@ export async function perBotKeysAcceptedByDatabase(db: Queryable): Promise<strin
   const def = rows[0]?.def ?? '';
   return [...def.matchAll(/'([^']+)'/g)].map((m) => m[1] ?? '').filter((s) => s.length > 0);
 }
+
+/**
+ * One bot's display name, or null if the row is gone (CCB-S5-030).
+ *
+ * Lives here rather than in `profiles/` because `InteractionService` reads it, and
+ * `src/interaction/` imports from `src/db/` and from nowhere else. Adding the first
+ * `interaction -> profiles` edge to fetch one string would be a worse trade than one small
+ * query beside the overrides it is always fetched with.
+ *
+ * It is the wake word's FALLBACK since CCB-S5-030: a bot with no `wakeWord` override answers
+ * to its own name, so a rename carries through instead of leaving the value derived at
+ * creation in place forever.
+ */
+export async function botDisplayName(db: Queryable, botProfileId: number): Promise<string | null> {
+  const { rows } = await db.query<{ display_name: string }>(
+    `SELECT display_name FROM cinderella_bot_profiles WHERE id = $1`,
+    [botProfileId],
+  );
+  return rows[0]?.display_name ?? null;
+}
