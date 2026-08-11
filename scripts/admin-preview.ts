@@ -24,6 +24,7 @@ import {
   updateBotPersonality,
 } from '../src/profiles/bot-onboarding.js';
 import { DEFAULT_ORIGIN, DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
+import { recordBlockedName } from '../src/interaction/blocked-name-log.js';
 import { SettingsService } from '../src/settings/service.js';
 import { WebSearchService, setWebSearchService } from '../src/plugins/web-search/service.js';
 import { PromptRuleService, setPromptRuleService } from '../src/interaction/prompt-rule-service.js';
@@ -440,6 +441,34 @@ async function main(): Promise<void> {
   // page is about. A preview that stops one step short of the thing being verified is a
   // preview that produces confident, incomplete evidence.
   await startQueue({ db });
+
+  // ── TWO REJECTED ANSWERS, SO THE CARD CAN BE SEEN POPULATED (CCB-S5-031) ──
+  //
+  // The name guard's Diagnostics card is fed by an in-memory log that only fills when a real
+  // model returns a reply containing a member's display name, and the preview has no model.
+  // Without a seed the card can only ever be read in its empty state, which is the "rendering
+  // a page is not verifying it" trap D-178 records: the interesting half is the populated
+  // table, the two cost labels and the amber that marks a lost answer.
+  //
+  // Placeholder names, like every other seeded row here, because this repository is public.
+  // One of each cost, because the whole point of the field is that they are not the same
+  // failure.
+  recordBlockedName({
+    at: Date.now() - 9 * 60_000,
+    botProfileId: previewBotId,
+    kind: 'conversation',
+    literal: 'BeamingRiver',
+    cost: 'silence',
+    text: 'BeamingRiver, the archive has three moments matching that.',
+  });
+  recordBlockedName({
+    at: Date.now() - 2 * 60_000,
+    botProfileId: previewBotId,
+    kind: 'retort',
+    literal: 'QuietHarbour',
+    cost: 'draft',
+    text: 'Not my name, QuietHarbour, and you know it.',
+  });
 
   const app = buildServer({
     db,

@@ -41,6 +41,8 @@ import {
   recentConversations,
 } from '../../interaction/conversation-log.js';
 import { forgedLineCount, recentForgedLines } from '../../interaction/forgery-log.js';
+import { blockedNameCount, recentBlockedNames } from '../../interaction/blocked-name-log.js';
+import { MIN_BLOCKED_NAME_CHARS } from '../../interaction/ollama-reply.js';
 import { markersFromTemplates } from '../../interaction/protected-text.js';
 import { missingHelpPlaceholders } from '../../interaction/help.js';
 import {
@@ -369,6 +371,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   },
   searchUnchecked: {
     label: 'Web search found things and their relevance could not be checked',
+    vars: '',
+  },
+  searchNoWords: {
+    label: 'A lookup ran and found something, and the reply was then lost',
     vars: '',
   },
   moderationAction: {
@@ -1060,6 +1066,12 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           const conversationStats = conversationSummary();
           const forged = recentForgedLines(25);
           const forgedTotal = forgedLineCount();
+          const blocked = recentBlockedNames(25);
+          const blockedTotal = blockedNameCount();
+          // Counted over what is SHOWN, and the label says so. The buffer is capped and the
+          // total is not, so presenting this as a share of the total would understate it the
+          // moment the cap is reached.
+          const blockedSilent = blocked.filter((b) => b.cost === 'silence').length;
           // Recomputed from the persona this page is already showing, so the card states
           // what is guarded RIGHT NOW rather than what was guarded at boot. The unguarded
           // count is the one that matters: it is how an operator finds out that rewording a
@@ -1256,6 +1268,56 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                           <td class="py-2 pr-3 text-slate-500">${f.kind}</td>
                           <td class="py-2 pr-3 text-slate-500">${f.where === 'line' ? 'own line' : 'end of a sentence'}</td>
                           <td class="py-2 text-slate-600">${f.text}</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
+          )}
+          ${card(
+            'Answers thrown away for naming the member',
+            html`<p class="mb-3 text-sm text-slate-500">
+                A reply is rejected outright when it contains the display name of the member
+                who just spoke. Nothing tells her that name directly; she reads it off the
+                conversation history, where every message is rendered with its speaker in
+                front of it. When the rejection happens on a lane with a plain fallback line
+                the member gets that instead, and in free conversation there is no fallback,
+                so the answer is simply lost and nobody is told. That is why this is counted
+                here rather than left in a log.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Rejected since restart</dt>
+                <dd class="${blockedTotal > 0 ? 'text-amber-700' : ''}">${blockedTotal}</dd>
+                <dt class="text-slate-500">Answers lost outright</dt>
+                <dd class="${blockedSilent > 0 ? 'text-amber-700' : ''}">
+                  ${blockedSilent} of the most recent ${blocked.length} left the member with
+                  nothing at all
+                </dd>
+                <dt class="text-slate-500">Shortest name guarded</dt>
+                <dd>
+                  ${MIN_BLOCKED_NAME_CHARS} characters, matched as a whole word. A shorter
+                  display name is not guarded, because below that a name cannot be told from
+                  an ordinary word and every reply containing one would be destroyed.
+                </dd>
+              </dl>
+              ${blocked.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    Nothing rejected since the last restart. Buffer holds the most recent 50 and
+                    does not survive a restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Cost</th><th class="py-2">What she had written</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${blocked.map((b) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(b.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${b.kind}</td>
+                          <td class="py-2 pr-3 text-slate-600">${b.literal}</td>
+                          <td class="py-2 pr-3 ${b.cost === 'silence' ? 'text-amber-700' : 'text-slate-500'}">${b.cost === 'silence' ? 'answer lost' : 'fell back to a draft'}</td>
+                          <td class="py-2 text-slate-600">${b.text}</td>
                         </tr>`)}
                       </tbody>
                     </table>
