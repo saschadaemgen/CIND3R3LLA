@@ -479,8 +479,27 @@ const PERSONA_EN: PersonaStrings = {
   status:
     '📜 I keep {total} of your messages. {public} of them shine publicly, the rest rest quietly ' +
     'here with me.',
+  // CCB-S5-027. THIS SENTENCE ASSERTED THE PREMISE OF THE QUESTION AS FACT. Asked, as a
+  // deliberate trap, about a switch from mbedTLS to OpenSSL that never happened, she
+  // answered "I found 2 moments where this group spoke of the switch from mbedTLS to
+  // OpenSSL" - which says the switch was discussed, and therefore that there was one. The
+  // count was two term matches. A count is a count: it now says what it MATCHED and leaves
+  // what the group meant to the reader, and it says in her own words that a word match is
+  // not a memory, because the difference is the whole of the defect.
+  //
+  // The offer went with it. "Shall I bring them to you?" was answered by nothing: a "yes"
+  // after a search inherits no intent (carry-over is PRICE only, deliberately) and reaches
+  // free conversation, so she asked a question she could not act on. An unkept promise in
+  // the same sentence as a false premise is not a thing to leave standing while fixing the
+  // other half.
+  // The literal comes FIRST, and that is not a stylistic choice. A template opening with its
+  // own placeholder has no marker in front of it, so `markersFromTemplates` cannot guard it
+  // and she could write a count in this exact shape unchallenged. The first draft of this
+  // reword opened `🔍 *{query}* matches {n}` and `verify:protected-text` reported it as an
+  // unguarded protected line, which is what that report is for.
   searchResult:
-    '🔍 I found {n} moments where this group spoke of {query}. Shall I bring them to you?',
+    '🔍 I count {n} public messages in this group matching *{query}*. A word match, mind, ' +
+    'not a memory of what was meant.',
   searchNoQuery:
     '🔍 Tell me what to look for and I will go through what this room has said: */search glass slipper*.',
   notUnderstood:
@@ -610,9 +629,10 @@ const PERSONA_DE: PersonaStrings = {
   status:
     '📜 Ich bewahre {total} deiner Nachrichten. {public} davon leuchten öffentlich, der Rest ruht ' +
     'still bei mir.',
+  // CCB-S5-027, and see the English above for what was wrong with it.
   searchResult:
-    '🔍 Ich habe {n} Momente gefunden, in denen diese Gruppe über {query} sprach. Soll ich sie ' +
-    'dir bringen?',
+    '🔍 Ich zähle {n} öffentliche Nachrichten dieser Gruppe, die zu *{query}* passen. Ein ' +
+    'Worttreffer, wohlgemerkt, keine Erinnerung daran, was gemeint war.',
   searchNoQuery:
     '🔍 Sag mir, wonach ich suchen soll, dann gehe ich durch, was hier gesagt wurde: ' +
     '*/search glaeserner schuh*.',

@@ -696,6 +696,33 @@ because nothing was built to switch off.
       Note `capture_events.payload` (migration 018) has **no production writer yet**, so its shape can
       still be defined in domain terms for free.
 
+## Left open by CCB-S5-027, deliberately
+
+Three things the briefing's fixes name and do not build. Each is written down because the
+reasoning for not building it now is part of the fix, not an oversight.
+
+- [ ] **Per-document attribution for the knowledge base.** The application's source line names
+      every document she was HANDED, not the ones her answer used, and D-180 FORECLOSED the
+      obvious fix by removing the document name from what she is shown: nothing in her prompt
+      identifies a passage any more, so she cannot declare indices the way `usedResults` lets
+      her for web search. Building it means giving the passages opaque handles she can name
+      without naming a document, and deciding whether a handle is a name by another route. The
+      current line is over-broad in one direction only, which is the safe one.
+- [ ] **`/search` brings nothing back.** The persona line used to end "Shall I bring them to
+      you?" and nothing answered a "yes": carry-over is PRICE-only by design, so the reply
+      reached free conversation. CCB-S5-027 removed the offer rather than leaving an unkept
+      promise beside a false premise it was fixing. Actually listing or linking the matches is
+      a feature, and it needs a decision about what a member may be shown in chat that the
+      public archive does not already show them.
+- [ ] **Five persona lines cannot be guarded.** `markersFromTemplates` needs a literal in front
+      of a template's first placeholder, and the price quotes (`price`, `conversion` in both
+      languages, and `de.priceUnknownAsset`) open with an emoji and an asterisk. A model could
+      therefore write a price line in her format and it would not be stripped. The Diagnostics
+      card states the number. Fixing it means rewording member-facing price copy, which is a
+      decision about her voice rather than about this guard.
+
+---
+
 ## Operator-owned open items (carried into Season 2)
 
 These are not code tasks — they are actions only the operator can take. Source:

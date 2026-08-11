@@ -176,17 +176,53 @@ async function main(): Promise<void> {
     lowConfidence.intent,
   );
 
-  console.log('\n3. AI may extend read-only understanding');
+  console.log('\n3. AI may extend read-only understanding, except about WHERE to look');
 
-  const search = await resolveWith('bring me every archive moment involving fibre taps', {
+  // ── INVERTED, NOT DELETED (CCB-S5-027, D-181) ─────────────────────────────
+  //
+  // This asserted that a model may claim SEARCH for a novel phrasing the rule engine does
+  // not match: `bring me every archive moment involving fibre taps` passed on the model's
+  // word alone. CCB-S5-026 made the archive explicit-only in the rule engine and told the
+  // model about it in a prompt sentence; a prompt sentence is an instruction, and in
+  // production it was not followed. So the bar is now deterministic and the same for
+  // everybody at the door, which means this old behaviour is exactly the hole.
+  //
+  // Kept as a check rather than removed, because "the model can no longer widen the
+  // archive trigger" is a guarantee somebody could helpfully undo.
+  const novelSearch = await resolveWith('bring me every archive moment involving fibre taps', {
     intent: 'SEARCH',
     confidence: 0.96,
-    slots: {
-      query: 'fibre taps',
-    },
+    slots: { query: 'fibre taps' },
     lang: 'en',
   });
-  check('novel read-only SEARCH passes', search.intent === 'SEARCH', search.intent);
+  check(
+    'a model-claimed SEARCH naming no place the rule engine knows is downgraded',
+    novelSearch.intent === 'UNKNOWN',
+    novelSearch.intent,
+  );
+
+  // The production question itself, which is what this gate exists for. It contains no
+  // archive phrase, it was a deliberate hallucination trap, and it was answered with a
+  // full-text count instead of reaching the knowledge base.
+  const falsePremise = await resolveWith(
+    'In which session was the switch from mbedTLS to OpenSSL decided?',
+    { intent: 'SEARCH', confidence: 0.95, slots: { query: 'mbedTLS OpenSSL' }, lang: 'en' },
+  );
+  check(
+    'the false-premise question no longer reaches the archive',
+    falsePremise.intent === 'UNKNOWN',
+    falsePremise.intent,
+  );
+
+  // THE POSITIVE CONTROL, and it is the load-bearing half: a gate that refused every SEARCH
+  // would pass both assertions above while removing the capability entirely.
+  const search = await resolveWith('search the archive for fibre taps', {
+    intent: 'SEARCH',
+    confidence: 0.96,
+    slots: { query: 'fibre taps' },
+    lang: 'en',
+  });
+  check('a SEARCH that names the archive still passes', search.intent === 'SEARCH', search.intent);
   check('SEARCH query slot survives', search.slots.query === 'fibre taps', search.slots.query ?? '');
 
   console.log('\n4. Malformed model output falls back to rules');

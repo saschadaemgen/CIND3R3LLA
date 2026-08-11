@@ -25,7 +25,7 @@ import {
   type IntentResult,
   type IntentSlots,
 } from './intent.js';
-import { priceSlotsFor, ruleResolver } from './rules.js';
+import { namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
 
 let active: IntentResolver = ruleResolver;
 /** Fallback used when `active` fails. Always the deterministic engine. */
@@ -115,12 +115,34 @@ export function carryOverSlots(text: string, intent: 'PRICE' | 'SEARCH'): Intent
 }
 
 /**
+ * The archive is explicit-only for EVERY resolver (CCB-S5-027, D-181).
+ *
+ * Enforced here for the same reason the catalog is: a property this seam can decide is not
+ * left to the implementation to honour. `ollama-resolver.ts` also applies it, beside its
+ * consent guard and where the override is counted for the console; this is the copy that
+ * survives somebody registering a different resolver, which the seam exists to allow.
+ *
+ * Both call the one predicate in `rules.ts`, so there is nothing here to drift.
+ */
+function archiveNeedsNaming(result: IntentResult, text: string): IntentResult {
+  if (result.intent !== 'SEARCH' || namesTheArchive(text)) return result;
+  log.debug(
+    `Intent resolver "${active.name}" claimed SEARCH for a message that names no place to ` +
+      'look; answering it as conversation instead (D-181).',
+  );
+  return unknownResult(result.lang);
+}
+
+/**
  * Resolves an instruction into an intent. Never throws, never executes anything,
  * and never returns anything outside the closed catalog.
  */
 export async function resolveIntent(text: string, ctx: IntentContext): Promise<IntentResult> {
   try {
-    return sanitize(await active.resolve(text, ctx), ctx.defaultLanguage, ctx.intents);
+    return archiveNeedsNaming(
+      sanitize(await active.resolve(text, ctx), ctx.defaultLanguage, ctx.intents),
+      text,
+    );
   } catch (err) {
     log.warn(
       `Intent resolver "${active.name}" failed (${
@@ -129,7 +151,10 @@ export async function resolveIntent(text: string, ctx: IntentContext): Promise<I
     );
   }
   try {
-    return sanitize(await fallback.resolve(text, ctx), ctx.defaultLanguage, ctx.intents);
+    return archiveNeedsNaming(
+      sanitize(await fallback.resolve(text, ctx), ctx.defaultLanguage, ctx.intents),
+      text,
+    );
   } catch (err) {
     log.error(
       `Fallback intent resolver failed: ${err instanceof Error ? err.message : String(err)}`,

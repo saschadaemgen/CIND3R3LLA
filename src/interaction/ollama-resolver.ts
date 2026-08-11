@@ -10,6 +10,10 @@
  * PUBLISH or UNPUBLISH only when the rule resolver independently found the same
  * intent. This lets AI improve read-only understanding without allowing a model
  * mistake to invent a consent request.
+ *
+ * SEARCH has a gate of its own since CCB-S5-027 (D-181), and for a related reason: the
+ * archive is explicit-only, naming a place is decidable without a model, and a model told
+ * that in a prompt was measured ignoring it. See the branch itself.
  */
 
 import type { LocalAiConfig } from '../config.js';
@@ -23,7 +27,7 @@ import {
   type IntentSlots,
   INTENTS,
 } from './intent.js';
-import { ruleResolver } from './rules.js';
+import { namesTheArchive, ruleResolver } from './rules.js';
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -534,6 +538,26 @@ export function createOllamaIntentResolver(
           } else {
             result = mergeMatching(model, rules);
           }
+        } else if (model.intent === 'SEARCH' && !namesTheArchive(text)) {
+          // ── THE ARCHIVE IS EXPLICIT-ONLY FOR THE MODEL TOO (CCB-S5-027, D-181) ──
+          //
+          // Same shape as the consent guard above it: a claim the model cannot be trusted
+          // to make alone is checked against something deterministic. CCB-S5-026 gave the
+          // archive an explicit-only trigger and told the model about it in its SEARCH
+          // description; a description is an instruction, and this one was not followed.
+          // "In which session was the switch from mbedTLS to OpenSSL decided?" came back
+          // SEARCH and was answered with a full-text count instead of reaching the
+          // knowledge base.
+          //
+          // Here as well as at the seam, deliberately. This is where the override is
+          // COUNTED for the console, beside the consent overrides, so an operator can see
+          // how often the model reaches for the archive uninvited; the seam's copy is what
+          // holds if a later briefing registers a different resolver.
+          //
+          // Falls to the rule engine's own answer when it had one, exactly as the consent
+          // branch does, so a message that is genuinely something else is not thrown away
+          // along with the misroute.
+          result = rules.intent !== 'UNKNOWN' && rules.intent !== 'SEARCH' ? rules : unknownResult(model.lang);
         } else if (rules.intent === model.intent) {
           result = mergeMatching(model, rules);
         } else {

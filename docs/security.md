@@ -1151,6 +1151,20 @@ replacement for it.
 application still writes every character of that line; the model supplies indices into the
 result list it was given, never a URL, so the D-137 property is unchanged.
 
+**And she cannot write a source line of her own** since CCB-S5-027 (D-180, architecture §50.1).
+The application appends its lines after she writes, so conversation memory hands them back to
+her as examples of her own writing: in production she produced a forged knowledge-base
+attribution, in the application's format, naming a document the real line one row below it did
+not name. Three structural answers, none of them a sentence in the prompt. She is handed no
+document NAME beside a passage (`knowledgePassages` carries text only). Application lines are
+stripped out of history before it reaches the prompt, from her rows and from members' alike,
+since a member typing one into the group is writing her an example. And any line of model
+output that reproduces one is removed on the raw completion, before every other guard, and
+counted for the Diagnostics page. The set of protected lines is derived from the persona rather
+than listed, and the guard recognises a FORMATTED line: a citation woven into a sentence is not
+detectable, which is why the layer that actually holds is that she is never given a name to
+weave in.
+
 **The reply system prompt is assembled from the rule registry** since CCB-S4-039 (D-144,
 architecture §36) rather than from string literals. That changes where the sentences are
 STORED and nothing about what leaves the process: every one of them is application-authored,

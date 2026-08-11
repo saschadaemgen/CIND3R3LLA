@@ -632,7 +632,17 @@ async function main(): Promise<void> {
   // Explicit-only since CCB-S5-026: the phrasing has to name the archive. Driven end to end
   // through the engine, so this proves the whole path and not only the resolver.
   const search = await say('Cinderella search the archive for pizza');
-  check('search answers with a count', search.replies[0]?.includes('I found 2 moments') === true);
+  // CCB-S5-027 reworded this: "I found 2 moments where this group spoke of pizza" asserted
+  // that the group had discussed pizza, which is a claim, when what happened was two term
+  // matches. The NUMBER is still pinned here, and it is the regression guard on the count's
+  // new exclusions: two seeded member rows in this group, neither of them hers and neither
+  // of them a search request, so both must still be counted.
+  check(
+    'search answers with a count of what MATCHED, not with what the group discussed',
+    search.replies[0]?.includes('I count 2 public messages') === true &&
+      !/spoke of|moments/.test(search.replies[0] ?? ''),
+    search.replies[0]?.slice(0, 80) ?? '(silence)',
+  );
   check('search echoes the query', search.replies[0]?.includes('pizza') === true);
 
   coolDown();
@@ -1729,7 +1739,7 @@ async function main(): Promise<void> {
     // The SHAPE, not a fixed number: consent state has moved by this point in the harness,
     // so the count is whatever is published now. What is being proven is that the command
     // reaches the archive path at all.
-    slashSearch.handled && /I found \d+ moments/.test(slashSearch.replies[0] ?? ''),
+    slashSearch.handled && /I count \d+ public messages/.test(slashSearch.replies[0] ?? ''),
     slashSearch.replies[0]?.slice(0, 60) ?? '(silence)',
   );
   check(
@@ -1749,7 +1759,7 @@ async function main(): Promise<void> {
   const notACommand = await say('Cinderella tell me about /search');
   check(
     'MUTATION: the word /search inside a sentence does not run the command',
-    !(notACommand.replies[0]?.includes('I found 2 moments') === true),
+    !(notACommand.replies[0]?.includes('I count 2 public messages') === true),
     notACommand.replies[0]?.slice(0, 50) ?? '(silence)',
   );
 

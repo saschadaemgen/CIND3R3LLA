@@ -139,11 +139,15 @@ export interface ArchiveSettings {
  *                A member who never opted in has a private total, and this would
  *                put it on the web with a timestamp beside it.
  *
- *   searchResult "I found {n} moments where this group spoke of {query}."
+ *   searchResult "{query} matches {n} of this group's public messages."
  *                → {query} is up to 200 characters typed by the member. Publishing
  *                it republishes their words under her byline, with no consent
- *                anywhere in the path. It also makes her answer itself a search
- *                hit, so asking twice returns a larger number the second time.
+ *                anywhere in the path. It also made her answer itself a search
+ *                hit, so asking twice returned a larger number the second time.
+ *                That second effect is gone since CCB-S5-027: the count excludes
+ *                her own rows outright, so switching this category ON no longer
+ *                changes the arithmetic. The consent argument stands and is the
+ *                reason it still ships EXCLUDED.
  *
  * Both therefore ship EXCLUDED, and both stay switchable exactly as the briefing
  * requires — the operator can publish them, with the help text saying what they

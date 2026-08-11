@@ -40,6 +40,8 @@ import {
   conversationSummary,
   recentConversations,
 } from '../../interaction/conversation-log.js';
+import { forgedLineCount, recentForgedLines } from '../../interaction/forgery-log.js';
+import { markersFromTemplates } from '../../interaction/protected-text.js';
 import { missingHelpPlaceholders } from '../../interaction/help.js';
 import {
   aiRuntimeSnapshot,
@@ -980,6 +982,19 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           const nearMisses = recentNearMisses(25);
           const conversations = recentConversations(25);
           const conversationStats = conversationSummary();
+          const forged = recentForgedLines(25);
+          const forgedTotal = forgedLineCount();
+          // Recomputed from the persona this page is already showing, so the card states
+          // what is guarded RIGHT NOW rather than what was guarded at boot. The unguarded
+          // count is the one that matters: it is how an operator finds out that rewording a
+          // line to open with its placeholder removed the guard on it (CCB-S5-027).
+          const guardedMarkers = markersFromTemplates(
+            Object.values(s.persona).flatMap((strings) =>
+              Object.values(strings as Record<string, string>).filter(
+                (value): value is string => typeof value === 'string',
+              ),
+            ),
+          );
           const runtime = aiRuntimeSnapshot();
           const metrics = runtime.metrics;
           const probe = runtime.probe;
@@ -1121,6 +1136,50 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                           <td class="py-2 pr-3 text-slate-500">${String(c.groupId)}</td>
                           <td class="py-2 pr-3 ${c.outcome === 'spoken' ? 'text-slate-600' : 'text-amber-700'}">${CONVERSATION_OUTCOMES[c.outcome]}</td>
                           <td class="whitespace-nowrap py-2 text-slate-500">${c.latencyMs} ms</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
+          )}
+          ${card(
+            'Lines she wrote that are not hers to write',
+            html`<p class="mb-3 text-sm text-slate-500">
+                The source line, the warning count and every other persona line whose
+                placeholders the application fills are written by the application, never by
+                her. When a reply comes back containing one anyway it is removed before the
+                message is composed, and the removal is counted here. She is not told off for
+                it and the member never sees it; this is the only place it shows.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Removed since restart</dt>
+                <dd class="${forgedTotal > 0 ? 'text-amber-700' : ''}">${forgedTotal}</dd>
+                <dt class="text-slate-500">Guarded lines</dt>
+                <dd>
+                  ${guardedMarkers.markers.length} of this bot's persona lines carry a
+                  placeholder and are guarded${guardedMarkers.unguarded.length > 0
+                    ? html`; ${guardedMarkers.unguarded.length} start with one too early to
+                        recognise and are <strong>not</strong> guarded`
+                    : ''}
+                </dd>
+              </dl>
+              ${forged.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    Nothing removed since the last restart. Buffer holds the most recent 50 and
+                    does not survive a restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Where</th><th class="py-2">What was removed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${forged.map((f) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(f.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${f.kind}</td>
+                          <td class="py-2 pr-3 text-slate-500">${f.where === 'line' ? 'own line' : 'end of a sentence'}</td>
+                          <td class="py-2 text-slate-600">${f.text}</td>
                         </tr>`)}
                       </tbody>
                     </table>

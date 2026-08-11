@@ -10,6 +10,11 @@
  *   3. A constitutional law cannot be set per bot, at any layer.
  *   4. The scope of every law is readable: shared, per bot, or constitutional.
  *
+ * And one CCB-S5-027 added (D-182), because production found it: a slash command names no
+ * bot, so every hosted bot in the group runs it. Exactly one now answers, the election is
+ * derivable by all of them from one index, and the stand-down is driven through the real
+ * engine and the real consent handler rather than left as a computable predicate.
+ *
  * Mutation-proven where it matters, because each of these passes trivially against an
  * implementation that does nothing: a counter check passes if nothing is ever counted, and
  * an isolation check passes if neither bot ever answers. Every guarantee here has a
@@ -38,6 +43,11 @@ import {
 import { countViolations, recordViolation } from '../src/moderation/store.js';
 import { ConversationState } from '../src/interaction/state.js';
 import { GroupOwnership, UnknownGroupOwnerError } from '../src/bot/runtime/ownership.js';
+import { InteractionEngine } from '../src/interaction/engine.js';
+import { makeConsentHandler } from '../src/consent/commands.js';
+import { CORE_INTENTS } from '../src/interaction/intent.js';
+import { DEFAULT_INTERACTION, normalizeInteraction } from '../src/interaction/settings.js';
+import type { CapturedMessage } from '../src/capture/message.js';
 import { resolveProfileSpecs, type ProfileDirectory } from '../src/bot/runtime/profiles.js';
 import { toRuntimeSpecs, type HostedBotConfig } from '../src/profiles/hosted-bots.js';
 import { setLogLevel } from '../src/log.js';
@@ -124,6 +134,51 @@ async function main(): Promise<void> {
       'a group with no shared identity is reported as unknown, never as "not shared"',
       own.unidentifiedGroups().length === 0 &&
         own.sharedGroups().every((g) => g.sharedKey.length > 0),
+    );
+
+    /* ── ONE BOT ANSWERS A COMMAND THAT NAMES NOBODY (CCB-S5-027, D-182) ── */
+    //
+    // `/search`, `/help`, `/publish` and `/unpublish` carry no wake word, so every bot in
+    // the group runs them. Production answered one `/search` twice with two different
+    // counts, and the same shape on `/publish` would put two actors on the consent path.
+    check(
+      'in a shared group exactly one of the two answers a command that names nobody',
+      [own.answersCommands(5), own.answersCommands(12)].filter(Boolean).length === 1,
+      `group 5 -> ${String(own.answersCommands(5))}, group 12 -> ${String(own.answersCommands(12))}`,
+    );
+    check(
+      '  and it is the lowest SimpleX user id, which every bot computes the same way',
+      own.answersCommands(5) && !own.answersCommands(12),
+    );
+    // POSITIVE CONTROL. An election that answered no to everything satisfies "exactly one"
+    // only by accident of the pair above; a bot alone in its group must always answer.
+    check(
+      'a bot alone in a group always answers',
+      own.answersCommands(9),
+    );
+    check(
+      'an unknown shared key answers YES rather than going silent on a consent command',
+      (() => {
+        const solo = new GroupOwnership();
+        solo.adopt(101, [{ groupId: 42, localDisplayName: 'lounge', sharedKey: null }]);
+        solo.adopt(202, [{ groupId: 43, localDisplayName: 'lounge', sharedKey: null }]);
+        return solo.answersCommands(42) && solo.answersCommands(43);
+      })(),
+    );
+    check(
+      'and so does a group the index has never heard of',
+      own.answersCommands(9999),
+    );
+    // MUTATION: the election must follow the SHARED KEY, not the group id. Swapping which
+    // profile holds the lower id must move the answer.
+    check(
+      'MUTATION: the elected bot moves when the lower id moves',
+      (() => {
+        const flipped = new GroupOwnership();
+        flipped.adopt(300, [{ groupId: 5, localDisplayName: 'cyberpunk', sharedKey: 'pub:AAA' }]);
+        flipped.adopt(202, [{ groupId: 12, localDisplayName: 'cyberpunk', sharedKey: 'pub:AAA' }]);
+        return !flipped.answersCommands(5) && flipped.answersCommands(12);
+      })(),
     );
   }
 
@@ -438,6 +493,87 @@ async function main(): Promise<void> {
       'every law in the registry has a scope, so none can render without one',
       rules.every((r) => scopes.has(r.id)),
       `${String(scopes.size)} of ${String(rules.length)}`,
+    );
+  }
+
+  /* ── 8. The election is WIRED, not merely computable ────────────────────── */
+
+  console.log('\n8. The stand-down reaches the two paths that act');
+
+  {
+    // D-162 and D-178 between them say it twice: a predicate a check can compute is not a
+    // control the product uses. Section 1 proved the election; this drives it through the
+    // real engine and the real consent handler.
+    const interaction = normalizeInteraction({ ...DEFAULT_INTERACTION });
+    const makeEngine = (answers: boolean, sent: string[]): InteractionEngine =>
+      new InteractionEngine({
+        capabilities: () => [...CORE_INTENTS],
+        db,
+        settings: () => interaction,
+        rules: () => [],
+        answersGroupCommands: () => answers,
+        send: (_msg, text) => {
+          sent.push(text);
+          return Promise.resolve();
+        },
+      });
+
+    const slash = (): CapturedMessage =>
+      ({
+        groupId: 5,
+        groupName: 'cyberpunk',
+        itemId: 900,
+        sharedMsgId: undefined,
+        senderMemberId: 'alice',
+        senderDisplayName: 'Alice',
+        sentAt: new Date().toISOString(),
+        type: 'text',
+        text: '/search openssl',
+        linkPreview: undefined,
+        file: undefined,
+        forwarded: false,
+        quotedFromBot: false,
+        raw: {} as never,
+      }) as CapturedMessage;
+
+    const spoke: string[] = [];
+    const quiet: string[] = [];
+    const spokeHandled = await makeEngine(true, spoke).handle(slash());
+    const quietHandled = await makeEngine(false, quiet).handle(slash());
+
+    check('the elected bot answers /search', spokeHandled && spoke.length === 1, spoke[0] ?? '');
+    check('the other one says nothing', quietHandled && quiet.length === 0, quiet.join(' | '));
+    check(
+      '  but still reports the message as handled, so its category is written and a member ' +
+        'search request cannot publish as ordinary chat',
+      quietHandled,
+    );
+
+    // CONSENT. The handler reaches `getPool()` as its first act, so a harness with no
+    // configured database can tell the two cases apart by observation alone: standing down
+    // touches nothing and says nothing, and acting reaches for the database immediately.
+    // That is the difference the guard makes, and it is what makes the negative meaningful.
+    const consentSends: string[] = [];
+    const drive = async (answers: boolean): Promise<'acted' | 'stood down'> => {
+      const handler = makeConsentHandler(undefined, undefined, {
+        send: (_msg, text) => {
+          consentSends.push(text);
+          return Promise.resolve();
+        },
+        answersCommands: () => answers,
+      });
+      try {
+        await handler({ ...slash(), text: '/publish' } as CapturedMessage, 'publish');
+      } catch {
+        return 'acted';
+      }
+      return consentSends.length > 0 ? 'acted' : 'stood down';
+    };
+
+    check('an unelected bot does not act on /publish at all', (await drive(false)) === 'stood down');
+    check(
+      '  and the elected one does, so the stand-down is the guard and not an inert handler',
+      (await drive(true)) === 'acted',
     );
   }
 

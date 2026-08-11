@@ -18,10 +18,13 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 178 decisions</strong> — newest first. Highest allocated: <strong>D-179</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 181 decisions</strong> — newest first. Highest allocated: <strong>D-182</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-182 | A slash command names no bot, so exactly one answers it | IMPLEMENTED |
+| D-181 | The archive answers only when it was named, and a count is a count | IMPLEMENTED |
+| D-180 | The application owns the facts, and memory taught her to forge them | IMPLEMENTED |
 | D-179 | The archive is explicit-only, which finishes what D-141 started | IMPLEMENTED |
 | D-178 | The preview was not the problem; reading pages instead of using them was | IMPLEMENTED |
 | D-177 | Every control is consulted, or it is not a control | IMPLEMENTED |
@@ -208,6 +211,156 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-182 - A slash command names no bot, so exactly one answers it
+
+**Status: IMPLEMENTED** (CCB-S5-027, no migration). Observed live: one `/search` answered
+twice, by two hosted bots, with two different counts. Natural addressing has been per bot
+since CCB-S5-006 because it carries a wake word; a slash command carries nothing, so every
+bot in the group runs it.
+
+**THE TWO CASES ARE NOT THE SAME ORDER OF PROBLEM.** Two answers to `/search` or `/help` is
+noise. Two actors on `/publish` is the product's legal backbone with two writers: both
+record the decision, both send a confirmation so the member cannot tell which bot holds it,
+and `/unpublish` asks the hide-or-delete question TWICE, leaving two independent pending
+choices that one "delete" answers twice over. The `consent` table has no bot dimension, so
+the second write lands on the same row as the first, which is why nothing has visibly gone
+wrong yet and is not a reason to leave it.
+
+**ONE ANSWERS, AND WHICH ONE IS NOT A RACE.** `GroupOwnership.answersCommands` elects the
+lowest SimpleX user id in the REAL group, found through the `sharedKey` that already made
+co-tenancy detectable. That id is the core's own creation order: stable across restarts and
+renames, and derivable by every bot from one index with no coordination. Anything mutable, a
+display name, a config flag, whoever replied first, either drifts or is the race itself.
+
+**AN UNKNOWN SHARED KEY ANSWERS YES.** A null key means the core gave nothing to compare, so
+co-tenancy can be neither confirmed nor ruled out. Failing closed there would mean a bot
+going silent on `/unpublish`, and a member who types `/unpublish` and sees nothing reasonably
+concludes it worked, which CCB-S3-031 already recorded as the worst failure this product has.
+A group the index has never heard of answers yes for the same reason.
+
+**THE UNELECTED BOT STILL CLASSIFIES.** It returns "handled" without speaking, so
+`member_category` is still written. Returning "not handled" would leave the category NULL,
+and `message_publish_state` publishes a NULL-category member row on consent alone, so a
+member's search request would publish as ordinary chat past a switch the operator had turned
+off.
+
+**WHAT IS NOT FIXED, and the boot notice now says so in the same breath.** The DOUBLE
+ARCHIVING is untouched: two bots in one group still write two rows for one utterance and
+nothing merges them (D-083). `reportCoTenancy` states both halves, because saying "every
+message twice and two consent writes" after fixing half of it is the stale-copy failure this
+file keeps recording. A bot per group is still the supported arrangement.
+
+### D-181 - The archive answers only when it was named, and a count is a count
+
+**Status: IMPLEMENTED** (CCB-S5-027, no migration). Three defects from one production
+session, all in one answer.
+
+**THE MODEL RESOLVER WAS NEVER HELD TO D-179'S BAR.** CCB-S5-026 made the archive
+explicit-only in the rule engine and told the model about it in its SEARCH description. A
+description is a sentence in a prompt, and this one was not followed: *"In which session was
+the switch from mbedTLS to OpenSSL decided?"*, a deliberate hallucination trap containing no
+archive phrase, was classified SEARCH and answered with a full-text count. It never reached
+retrieval, so the trap tested nothing.
+
+Measured before anything was changed: the rule engine returns UNKNOWN for it in both
+languages at zero confidence, and carry-over is structurally PRICE-only, so the model was the
+only claimant. Naming a place is a property OF THE TEXT, decidable without a model, and this
+codebase already decides it. So `namesTheArchive` is exported from the same `PATTERNS` the
+rule engine scores, and a SEARCH claim that the text does not support is downgraded to
+UNKNOWN, in the ollama resolver beside the consent guard where the override is counted, and
+again at the seam where the catalog is enforced for every resolver.
+
+**IT NARROWS THE MODEL'S CONTRIBUTION ON PURPOSE.** `verify:ai` asserted that a model may
+claim SEARCH for a novel phrasing, and that check is INVERTED rather than deleted, exactly as
+CCB-S5-026 inverted the one that pinned "was sind deine Regeln?" going to the archive. A
+paraphrase the phrase list does not match now falls to conversation, which is where the
+knowledge base is consulted, and `/search <query>` is the route for a member who cannot
+recall the wording. That was already D-179's answer to narrowing.
+
+**A COUNT IS A COUNT.** *"I found {n} moments where this group spoke of {query}"* asserts
+that the group discussed the subject, and therefore that the subject exists. Against the
+false-premise question it stated the switch as established fact. It now says what it MATCHED,
+and says in her own words that a word match is not a memory. The offer went with it: "Shall I
+bring them to you?" was answered by nothing, because a "yes" after a search inherits no
+intent and reaches free conversation. An unkept promise in the same sentence as a false
+premise is not a thing to leave standing while fixing the other half.
+
+**AND THE SEARCH WAS COUNTING ITSELF.** The 8-and-9 discrepancy between two bots was one row,
+and the row was the member's own search request. `registerCapture` persists a message BEFORE
+the interaction layer runs, deliberately, so her reply can be linked to it; a member row
+publishes on consent alone and `member_category` is consulted only once set, which happens
+AFTER the reply. So at the moment of counting, the message asking the question is a published
+message containing the query. `countPublishedMatching` now excludes three things, each a
+different sentence about what an archive search is: rows from other groups (it had no group
+filter at all, under copy that says "this group"), her own rows, and search requests. What is
+left is what members said to each other, here, before the question was asked. Two co-tenant
+bots now also return the same number, which D-182 makes moot and which is worth having
+anyway, since one of them was wrong.
+
+`archive/settings.ts` has recorded the self-counting effect since CCB-S3-007 and answered it
+by shipping the category excluded, which is a default an operator can change. This is the
+invariant underneath that default.
+
+### D-180 - The application owns the facts, and memory taught her to forge them
+
+**Status: IMPLEMENTED** (CCB-S5-027, no migration). Under one knowledge-base answer in
+production there were TWO attribution lines: hers, inline at the end of her prose, naming one
+document; and the application's, underneath it, naming two. Hers was a forgery in the
+application's own format, and it did not agree with the real one one line below it.
+
+**THE MECHANISM, CONFIRMED RATHER THAN ASSUMED.** She has conversation memory (D-147), and
+memory is the whole group thread including her own replies AS SENT. The application appends
+its lines AFTER she writes, so what `listGroupHistory` hands back an hour later is her prose
+with a source line attached to it. Nobody instructed her to write one; the product showed her
+its own output, called it hers, and she generalised. The general form is worth stating:
+**anything the application appends to her words becomes, through memory, an example of how
+she writes.** The moderation warning with its count and the sanction announcement have the
+same shape, which is what the briefing asked to be checked, and they do.
+
+**FOUR LAYERS, BECAUSE ONE SENTENCE IN A PROMPT IS NOT A STRUCTURE.** In order of strength:
+
+1. **She is never handed a document NAME.** `knowledgePassages` carried `{title, text}` and
+   rendered the title as the fence label, so she was given the exact string the application
+   was about to print. The title is dropped from the TYPE rather than merely left unrendered,
+   because a field that holds it is a field a later prompt builder can spread. D-176 had
+   already made this call one door along: the contextual prefix is not sent either, because
+   prepending "From X, under Y" would be the application putting words in the document's
+   mouth. A name beside the passage is the same act.
+2. **She is never shown one in her memory.** Protected lines are stripped from history before
+   it reaches the prompt, from her rows and from members' alike: a member who types a source
+   line into the group has written her an example she will read later, and D-147 already
+   treats everything in there as untrusted.
+3. **Anything she writes that imitates one is removed** before the message is composed, in
+   `generateOllamaReply`, on the raw completion, ahead of every other guard.
+4. **The application's line is unchanged** and is still the only one printed.
+
+**THE PROTECTED SET IS DERIVED, NOT LISTED.** A persona line is protected when its template
+carries a placeholder the application fills, and the marker is the literal run in front of the
+first one. A list of four keys would go stale the first time somebody adds a fifth and nothing
+would say so, which is D-105 exactly. The derivation has a hole it REPORTS: a template opening
+with its own placeholder yields no marker. That report earned itself immediately, by catching
+this briefing's own reword of the archive count, which opened `🔍 *{query}*` and had silently
+lost its guard. The five that remain unguarded are the price quotes, and the Diagnostics page
+states the number.
+
+**STRIP, DO NOT REJECT, WHICH IS DELIBERATELY UNLIKE `blockedLiterals`.** That guard rejects
+because stripping a placeholder leaves a hole in a sentence. A forged attribution is a whole
+trailing line or the tail of one, so removing it leaves the answer complete, and the free
+conversation lane has no deterministic draft to fall back to: rejecting would cost the member
+a good answer to punish a decoration. Every strip is counted and shown in the admin, per
+CCB-S3-023, because a fallback that can mask a fault is one the operator has to be able to
+see.
+
+**WHAT IT COSTS, stated rather than glossed.** Per-document attribution is foreclosed: the
+application's line names every document she was HANDED rather than the ones she used, because
+nothing she is shown identifies them. That is the honest direction. What she was handed is a
+fact this code knows; what she used is a claim only she could make. She also can no longer
+see her own earlier citation if asked about it, which was never hers to give.
+
+**AND WHAT IT DOES NOT COVER.** The guard recognises a FORMATTED line. A citation woven into a
+sentence, *"according to the handover"*, is not detectable and is not claimed to be. The
+layers that hold against that one are the first two: she has no document name to weave in.
 
 ### D-179 - The archive is explicit-only, which finishes what D-141 started
 

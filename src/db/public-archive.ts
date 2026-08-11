@@ -623,14 +623,60 @@ export async function publishedLastmod(
  * unpublished, recalled or deleted message exists. The query goes through
  * `websearch_to_tsquery`, the same parser the public front uses, so it is a bind
  * parameter and never string-built SQL.
+ *
+ * ── THE SEARCH USED TO COUNT ITSELF (CCB-S5-027, D-181) ──────────────────────
+ *
+ * Observed live: two hosted bots answered one `/search` with 8 and 9. The difference was
+ * not a race in the model or a stale cache, it was one row, and the row was the member's
+ * own search request. `registerCapture` persists a message BEFORE the interaction layer
+ * runs - deliberately, so her reply can be linked to it - and `message_publish_state`
+ * publishes a member row on consent alone, with `member_category` consulted only when it is
+ * set, which happens AFTER the reply. So at the moment of counting, the message asking the
+ * question is a published message containing the query, and it matches. With two bots in
+ * one group there are two such rows and the second bot to run counts both.
+ *
+ * Three exclusions, and each is a different sentence about what an archive search is:
+ *
+ *   THIS GROUP. `countPublishedMatching` had no group filter at all, so a member in one
+ *   group was told how often a DIFFERENT group had used a word, under a sentence that says
+ *   "this group". No consent is broken by that - everything counted is public either way -
+ *   but it is not the question that was asked, and with a bot per group it is not even
+ *   nearly it.
+ *
+ *   NOT HER. Her replies are derived from the archive rather than part of it: they quote
+ *   the member's own query back, so every search plants a hit for the next one, and the
+ *   count climbs with nobody having said anything. `archive/settings.ts` has recorded that
+ *   effect since CCB-S3-007 and answered it by shipping the category excluded, which is a
+ *   default an operator can turn off. This is the invariant underneath it.
+ *
+ *   NOT A SEARCH REQUEST. `member_category = 'search'` is a member asking the question, not
+ *   the group discussing the subject, and the row being answered right now is excluded by
+ *   its id because its category has not been written yet.
+ *
+ * What is left is what members said to each other, in this group, before the question was
+ * asked. That also makes two co-tenant bots return the SAME number, which the co-tenancy
+ * election (D-182) makes moot and which is worth having anyway: one of them was wrong.
  */
-export async function countPublishedMatching(db: Queryable, q: string): Promise<number> {
+export async function countPublishedMatching(
+  db: Queryable,
+  q: string,
+  scope: {
+    /** The group the question was asked in. */
+    groupId: number;
+    /** The asking message's own `group_msg_id`, so the question is never its own answer. */
+    excludeGroupMsgId: number;
+  },
+): Promise<number> {
   const term = q.trim();
   if (!term) return 0;
   const { rows } = await db.query<{ n: string }>(
     `SELECT count(*) AS n FROM published_messages
-     WHERE search @@ websearch_to_tsquery('simple', $1)`,
-    [term],
+     WHERE search @@ websearch_to_tsquery('simple', $1)
+       AND group_id = $2
+       AND group_msg_id <> $3
+       AND is_bot = FALSE
+       AND (member_category IS NULL OR member_category <> 'search')`,
+    [term, scope.groupId, scope.excludeGroupMsgId],
   );
   return Number(rows[0]?.n ?? 0);
 }

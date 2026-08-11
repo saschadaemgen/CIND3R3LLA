@@ -3547,10 +3547,14 @@ then the relevance floor on cosine, below which NOTHING is retrieved; then the b
 drops whole chunks and never truncates. The order is load-bearing: a budget with room in it
 must not be able to pull in an irrelevant chunk.
 
-**Fenced and attributed.** Passages ride in the USER message inside `KNOWLEDGE_FENCE`
+**Fenced, unnamed, and attributed.** Passages ride in the USER message inside `KNOWLEDGE_FENCE`
 (`<<<REFERENCE-DOCUMENT>>>`, its own marker, never the search one), with four registry rules
 selected only when passages are attached. The source line is written by the application
-(D-137); a registry rule tells her not to write one.
+(D-137); a registry rule tells her not to write one, and since CCB-S5-027 she also has no
+document NAME to write into one: `knowledgePassages` carries `{ text }` only, the title having
+been dropped from the type rather than merely left unrendered (D-180, §50). The application
+therefore names every document she was HANDED rather than the ones she used, which is a
+deliberate trade recorded in that entry.
 
 **Per bot.** The plugin's `enabled` is per bot through CCB-S5-021's mechanism, which needed one
 inventory row and no new machinery. The document GRANT is a row in
@@ -3571,3 +3575,60 @@ carries the bot switcher, unlike the other plugin pages, because the grants real
 retrievable and is badged, with a one-click rebuild; see D-177 for why both alternatives were
 rejected.
 
+
+## 50. The lines the application writes (CCB-S5-027, D-180 / D-181 / D-182)
+
+Four defects from one production session. The first is the one the product rests on.
+
+### 50.1 She may not write an application line, and is no longer taught to
+
+`src/interaction/protected-text.ts` is pure: `markersFromTemplates` derives, from a bot's own
+persona, the literal run in front of each template's FIRST placeholder, and
+`stripProtectedLines` removes any line of model output that reproduces one. Protected means
+"the template carries a placeholder the application fills", so the set is derived rather than
+listed and a persona key a later briefing adds is covered on the day it is added.
+
+Three call sites, one predicate:
+
+| Where | What it does |
+|---|---|
+| `generateOllamaReply` | Strips the RAW completion before every other guard, so a forgery cannot be measured, rejected or shipped |
+| `InteractionEngine.recentHistory` | Strips history before it reaches the prompt, hers and members' alike |
+| `AiReplyRequest.knowledgePassages` | Carries `{ text }` only: no document name to cite |
+
+The markers reach the transport through `personalizeForThisBot`, the engine's single seam for
+every model call, set AFTER the caller's spread so no lane can drop it. `verify:protected-text`
+asserts that from the source.
+
+A marker that appears in the deterministic draft is exempt for that call, and only in the modes
+where the model REPLACES the draft (`free`, `retort`); `locked` appends the draft under her
+lead, so a lead repeating it would be a second copy with the number possibly reworded.
+
+Every strip is recorded in `forgery-log.ts` and shown on Interaction -> Diagnostics with the
+count, the lane, the placement and the text, per CCB-S3-023. The same card states how many
+persona lines are guarded and how many open with their own placeholder and therefore cannot be.
+
+### 50.2 Naming the place is decided without a model
+
+`namesTheArchive(text)` is exported from `rules.ts` and built from the same `PATTERNS` the rule
+engine scores, so there is no second list. A SEARCH claim the text does not support is
+downgraded to UNKNOWN in two places on purpose: in `ollama-resolver.ts` beside the consent
+guard, where the override is counted for the console, and in `resolver.ts` at the seam, which is
+what survives a different resolver being registered. See D-181 for why a prompt sentence was not
+enough.
+
+### 50.3 What an archive count counts
+
+`countPublishedMatching(db, q, { groupId, excludeGroupMsgId })`. Three exclusions: other groups
+(it had none, under copy saying "this group"), her own rows, and rows whose `member_category` is
+`search`, plus the asking message by id because its category is written after the reply. The
+persona line says what MATCHED rather than what the group discussed.
+
+### 50.4 One bot answers a command that names nobody
+
+`GroupOwnership.answersCommands(groupId)` elects the lowest SimpleX user id in the real group,
+found through the `sharedKey` that already made co-tenancy detectable. Consulted by
+`InteractionEngine` for `/search` and `/help` and by `makeConsentHandler` for `/publish` and
+`/unpublish`. An unknown shared key or an unknown group answers YES, because a consent command
+must never go unanswered. The unelected bot still reports the message as handled so its
+category is written. Double ARCHIVING is unchanged (D-083).

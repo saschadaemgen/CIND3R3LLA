@@ -225,13 +225,19 @@ async function main(): Promise<void> {
     String(await publicText(refusal)),
   );
 
-  check(
-    'search cannot find the name through her words either',
-    (await countPublishedMatching(db, 'Robin')) === 0,
-  );
+  // MOVED OFF `countPublishedMatching` (CCB-S5-027). That function is the IN-CHAT count and
+  // it now excludes her own rows outright, so asking it about one of her messages would
+  // return 0 whether redaction worked or not - a check that passes for the wrong reason,
+  // which is the vacuous shape this repository keeps finding in its own harnesses. The
+  // guarantee is about what a VISITOR can find, so it is asserted against the public front's
+  // own search, which is the surface a visitor uses and which does include her rows.
+  const findPublic = async (q: string): Promise<number> =>
+    (await listPublishedItems(db, ALL_TYPES, { page: 1, pageSize: 50, q })).total;
+  check('search cannot find the name through her words either', (await findPublic('Robin')) === 0);
   check(
     'but her message is still findable by its own content',
-    (await countPublishedMatching(db, 'door')) === 1,
+    (await findPublic('door')) === 1,
+    String(await findPublic('door')),
   );
 
   await saveArchive({ mentionGuard: 'withhold' });

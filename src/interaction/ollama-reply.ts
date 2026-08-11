@@ -26,6 +26,8 @@ import {
   type PromptRuleSet,
 } from './prompt-rules.js';
 import { modelQueue } from './model-queue.js';
+import { stripProtectedLines } from './protected-text.js';
+import { recordForgedLine } from './forgery-log.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
@@ -79,6 +81,22 @@ export interface AiReplyRequest {
   requiredLiterals?: readonly string[];
   /** Values the generated wording must not expose, such as the sender's display name. */
   blockedLiterals?: readonly string[];
+  /**
+   * The openings of the lines the APPLICATION writes, which she may never write herself
+   * (CCB-S5-027, D-180).
+   *
+   * Derived from this bot's persona by `markersFromTemplates`, so an operator who rewords a
+   * line rewords its guard in the same edit, and a persona key a later briefing adds is
+   * covered without anybody remembering to add it here.
+   *
+   * OPTIONAL IN THE TYPE AND UNIVERSAL IN PRODUCTION, and the difference is worth stating.
+   * Making it required would touch twenty harnesses that build a request by hand and none of
+   * which is testing this; instead there is exactly one production path into this function,
+   * `InteractionEngine.personalizeForThisBot`, and it sets the field AFTER spreading the
+   * caller's request so no lane can drop it. `verify:protected-text` asserts that from the
+   * source, which is the same shape `verify:runtime-host` uses for `host.ts`.
+   */
+  protectedMarkers?: readonly string[];
   /** Maximum free reply length. Locked leads use their own smaller limit. */
   maxChars?: number;
   /**
@@ -146,7 +164,29 @@ export interface AiReplyRequest {
    * results and the history are. The application decides which document names appear under
    * the answer; the model is never asked and never writes that line (D-137).
    */
-  knowledgePassages?: readonly { title: string; text: string }[];
+  /**
+   * TEXT ONLY, AND NO DOCUMENT NAME (CCB-S5-027, D-180).
+   *
+   * It used to carry the title and render it as the fence label, and that is what made the
+   * forged attribution she produced in production LOOK REAL: she was handed the exact
+   * string the application was about to print, and one of the passages' titles came back
+   * inside her prose as a citation of her own.
+   *
+   * The title is dropped from the type rather than merely left unrendered, because a field
+   * that holds it is a field a later prompt builder can spread into the message. What she
+   * cannot be shown, she cannot copy.
+   *
+   * D-176 had already made this call once, one door along: the contextual prefix is not sent
+   * either, because prepending "From X, under Y" to a passage would be the application
+   * putting words in the document's mouth. A name beside the passage is the same act.
+   *
+   * WHAT IT COSTS, stated rather than glossed: she can no longer say which passage came from
+   * where, so per-document attribution is foreclosed and the application's line names every
+   * document she was HANDED rather than the ones she used. That is the honest direction. The
+   * documents she was handed is a fact this code knows; the ones she used is a claim only
+   * she could make, and this whole briefing is about not letting her make claims.
+   */
+  knowledgePassages?: readonly { text: string }[];
   webResults?: readonly { title: string; snippet: string; url: string }[];
   /**
    * Which of `webResults` the answer actually drew on, as the model declares them
@@ -592,6 +632,55 @@ export function unresolvedPlaceholder(text: string): string | undefined {
   return UNRESOLVED_PLACEHOLDER.exec(text)?.[0];
 }
 
+/**
+ * Does this call ask the model to REWRITE the application's draft, or to write beside it?
+ *
+ * The distinction decides whether a protected line inside the draft is hers to carry.
+ * `free` and `retort` replace the draft with what comes back, so the protected content has
+ * to survive in her wording or it is lost; `locked` keeps the draft and appends it under
+ * her lead, so a lead repeating it is either a duplicate or, worse, a second copy with the
+ * number reworded, which is the D-137 failure with an extra step.
+ *
+ * Stated as a predicate with the reasoning attached rather than inlined, because the next
+ * mode somebody adds has to answer this question and should have to read the answer.
+ */
+function modelRewritesTheDraft(mode: AiReplyMode): boolean {
+  return mode === 'free' || mode === 'retort';
+}
+
+/**
+ * Takes back any line of the model's that imitates one the application writes
+ * (CCB-S5-027, D-180).
+ *
+ * Runs on the RAW completion, before cleaning, length checking and every other guard, so a
+ * forged attribution can neither push a reply over its bound nor survive into a lane that
+ * appends the real line underneath it.
+ *
+ * Records what it removed. This is a fallback that hides a fault by design - the member
+ * sees a correct reply and nothing downstream knows a forgery was in it - and CCB-S3-023
+ * requires exactly that kind of fallback to be counted where an operator can see the count.
+ */
+function guardProtectedText(raw: string, request: AiReplyRequest): string {
+  const markers = request.protectedMarkers ?? [];
+  if (markers.length === 0) return raw;
+
+  const { text, removed } = stripProtectedLines(
+    raw,
+    markers,
+    modelRewritesTheDraft(request.mode) ? request.deterministicDraft : '',
+  );
+  for (const line of removed) {
+    recordForgedLine({
+      at: Date.now(),
+      botProfileId: request.botProfileId ?? null,
+      kind: request.kind,
+      where: line.where,
+      text: line.text,
+    });
+  }
+  return text;
+}
+
 export async function generateOllamaReply(
   config: LocalAiConfig,
   request: AiReplyRequest,
@@ -677,8 +766,11 @@ export async function generateOllamaReply(
               // in a document can close its own fence and continue as the application.
               ...(request.knowledgePassages?.length
                 ? {
+                    // UNNAMED, since CCB-S5-027. See the field's own documentation: the
+                    // title was the one string she could copy to forge a citation that
+                    // looked real, and she was being handed it beside the passage.
                     referenceDocuments: request.knowledgePassages.map(
-                      (p) => `${KNOWLEDGE_FENCE}${p.title}: ${p.text}${KNOWLEDGE_FENCE}`,
+                      (p) => `${KNOWLEDGE_FENCE}${p.text}${KNOWLEDGE_FENCE}`,
                     ),
                   }
                 : {}),
@@ -723,7 +815,10 @@ export async function generateOllamaReply(
     }
 
     const completion = parseCompletion(await response.json());
-    const raw = completion.reply;
+    // FIRST, before cleaning and before every other guard (CCB-S5-027). See
+    // `guardProtectedText`: the lines the application writes are taken back out of hers
+    // here, so nothing further down can measure, reject or ship one.
+    const raw = guardProtectedText(completion.reply, request);
 
     if (request.mode === 'locked') {
       const lead = cleanReply(raw, false);

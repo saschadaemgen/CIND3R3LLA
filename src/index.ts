@@ -254,9 +254,20 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   // Late-bound like noteReply, for the same reason: the engine is built below,
   // and the slash path needs it to ask the hide-or-delete question (CCB-S3-013).
   let askRevokeChoice: (msg: CapturedMessage) => Promise<void> = () => Promise.resolve();
+  /**
+   * One bot answers a command that names nobody (CCB-S5-027, D-182).
+   *
+   * Read through the runtime's ownership index on every message rather than decided at
+   * boot: a bot that joins or leaves a group changes the answer, and the index is rebuilt
+   * per profile as that happens.
+   */
+  const answersCommands = (groupId: number): boolean =>
+    deps.host.runtime.ownership.answersCommands(groupId);
+
   hooks.onCommand = makeConsentHandler(interaction, (g, m) => noteReply(g, m), {
     send: sendAndArchive,
     askRevokeChoice: (msg) => askRevokeChoice(msg),
+    answersCommands,
   });
 
   /**
@@ -373,6 +384,10 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // key with one writer, so enabling web search enabled it for every hosted bot, and the
     // operator's Rick could google whether he wanted it to or not.
     capabilities: () => plugins.capabilitiesFor(botProfileId),
+    // One bot answers `/search` and `/help` in a group (CCB-S5-027, D-182). The same
+    // predicate the consent handler above uses, so the two cannot disagree about which
+    // bot is speaking for a group.
+    answersGroupCommands: answersCommands,
     // Handed over only while the plugin is enabled FOR THIS BOT; when it is off, PRICE is
     // not in this bot's catalog either, so this is belt and braces. A getter rather than a
     // spread since CCB-S5-021: decided once at boot, it would have disagreed with the
@@ -736,11 +751,26 @@ function reportCoTenancy(host: RuntimeHost): void {
       group: group.members[0]?.localDisplayName,
       bots: names,
     });
+    // WHAT IS AND IS NOT HANDLED, in the operator's own words (CCB-S5-027). Since D-182 the
+    // commands that name nobody are answered by exactly one of them, so `/search` no longer
+    // comes back twice and a consent decision has one actor. The DOUBLE ARCHIVING is
+    // untouched and is still the reason this is an error rather than a note: canonicalising
+    // the two rows is separate work that does not exist (D-083). Saying "every message twice
+    // and two consent writes" after fixing half of it would be the stale-copy failure this
+    // repository keeps recording.
+    const elected = group.members
+      .slice()
+      .sort((a, b) => a.simplexUserId - b.simplexUserId)[0];
+    const electedName =
+      host.bots.find((b) => b.simplexUserId === elected?.simplexUserId)?.config.displayName ??
+      `user ${String(elected?.simplexUserId ?? 0)}`;
     status.error(
       `${names} are both in the group "${group.members[0]?.localDisplayName ?? 'unknown'}". ` +
-        `Every message there will be archived TWICE, once per bot, and consent derived for ` +
-        `both copies. Remove one of them from that group. A bot per group is the supported ` +
-        `arrangement; two bots in one group is not.`,
+        `Every message there is archived TWICE, once per bot, and consent derived for both ` +
+        `copies; nothing merges them. Commands that name no bot (/search, /help, /publish, ` +
+        `/unpublish) are answered by ${electedName} alone, so they are not doubled. Remove ` +
+        `one of them from that group. A bot per group is the supported arrangement; two bots ` +
+        `in one group is not.`,
     );
   }
   const unknown = host.runtime.ownership.unidentifiedGroups();

@@ -1521,6 +1521,47 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
 }
 
 /**
+ * Does this message NAME the archive as the place to look (CCB-S5-027, D-181)?
+ *
+ * ── WHY THIS IS A PREDICATE AND NOT JUST A LEXICON ENTRY ─────────────────────
+ *
+ * CCB-S5-026 made the archive explicit-only: every phrase must say WHERE, there are no
+ * keywords, and whatever is left over falls to conversation, which is where the knowledge
+ * base is consulted. It applied that to the rule engine and to the model resolver's
+ * DESCRIPTION, which is a sentence in a prompt.
+ *
+ * A sentence in a prompt is an instruction, and this one was not followed. Live, with the
+ * new description in place, *"In which session was the switch from mbedTLS to OpenSSL
+ * decided?"* was classified SEARCH and answered with a full-text count. Measured against
+ * this file: the rule engine returns UNKNOWN for it, in both languages, at zero confidence.
+ * So the claim came from the model, and the seam honoured it because SEARCH is in the
+ * catalog. The question never reached retrieval, which is where it would have been answered
+ * or honestly refused, and the false premise in it was restated back as fact instead.
+ *
+ * Naming a place is a property OF THE TEXT. It is decidable without a model, this file
+ * already decides it for the rule engine, and D-179's own reasoning says the bar is the
+ * same whoever is at the door. So the bar is enforced deterministically and a model that
+ * claims SEARCH for a sentence naming nowhere is downgraded rather than believed.
+ *
+ * ── BUILT FROM THE PATTERNS, NOT FROM A SECOND LIST ──────────────────────────
+ *
+ * The same `PATTERNS` the resolver scores. A second copy of the phrase list would be a
+ * second thing to keep in step, and the drift would show up as a capability that works in
+ * one resolver and not the other, which is precisely the class of defect this is fixing.
+ *
+ * It answers only "is the place named". It does not care about negation, quoting or
+ * hypotheticals: those lower a SCORE, and this gate never raises one. It can only ever
+ * remove a claim, never create one.
+ */
+export function namesTheArchive(text: string): boolean {
+  const instr = normTokens(text);
+  if (instr.length === 0) return false;
+  return PATTERNS.some(
+    (pattern) => pattern.intent === 'SEARCH' && findWindow(instr, pattern.tokens) !== null,
+  );
+}
+
+/**
  * Price slots for a bare fragment, used by the carry-over path (CCB-S3-006 §7c).
  * Exported for `resolver.ts` only; callers still go through the seam.
  */

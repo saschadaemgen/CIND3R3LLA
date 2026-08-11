@@ -97,6 +97,19 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   through `ActiveUserScheduler`, whatever it carries. The sentence appeared three times and
   produced three bare call sites, so **correct the reasoning and not only the code**: reasoning
   is what propagates.
+- **Anything the application appends to her words becomes, through memory, an example of how
+  she writes** (standing rule, D-180). She produced a forged knowledge-base source line in
+  production, in the application's own format, naming a document the real line one row below it
+  did not name. Nobody instructed her to write one. She has conversation memory, memory is the
+  whole thread INCLUDING her own replies as they were SENT, and the application appends the
+  source line AFTER she writes, so what she reads back an hour later is her prose with an
+  attribution attached to it. Twenty of those and the format is simply how her answers look.
+  Every application-owned line has this shape: the moderation warning with its count, the
+  sanction announcement, every persona line whose placeholders the application fills. So when
+  something is appended to her output, ask what it teaches, and keep it out of what she is shown
+  next time. **A rule in the registry is not the answer to this**, and there already was one:
+  she is told not to write a source line, and she wrote one anyway, because an instruction
+  competes with an example and the example was hers.
 - **A green `npm audit` describes the LOCKFILE, not what executes** (standing rule, D-174).
   `npm audit fix` rewrote the lockfile from the vulnerable js-yaml to the patched one and **did
   not install it**; the next audit read the lockfile and printed `found 0 vulnerabilities` while
@@ -233,7 +246,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   never states the number**, measured: handed a law and its number, `qwen3:32b` put the number on
   a different law,
   and `conversation-log.ts`: the content-free record of what the conversational path
-  did, shown on the Diagnostics page), `plugins/` (plugin
+  did, shown on the Diagnostics page.
+  **`protected-text.ts` is the pure model of the lines the APPLICATION writes and she may not**
+  (CCB-S5-027, D-180): the protected set is DERIVED, a persona line is protected when its
+  template carries a placeholder the application fills, and the marker is the literal run in
+  front of the first one. Used three times over one predicate: the raw completion is stripped in
+  `generateOllamaReply` before every other guard, history is stripped before it reaches the
+  prompt, and `knowledgePassages` carries text with no document NAME to cite. `forgery-log.ts`
+  counts every strip for the Diagnostics page, because stripping is a fallback that hides a
+  fault by design), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
   deployment** (CCB-S5-021, D-175). Exactly two are per bot, both of them `enabled`, and the
@@ -605,7 +626,28 @@ does nothing: a counter check passes if nothing is ever counted.
 `npm run verify:multi-bot-live` drives two characters with opposite dials against a real model,
 prints both replies, and measures the queue under genuine concurrency; it needs Ollama and is not
 in the offline set. Read its output rather than its exit code: the voice is the point, and no
-check can assert it),
+check can assert it. **Section 8 is CCB-S5-027's** (D-182): a slash command names no bot, so
+exactly one now answers it, and the election is driven through the REAL engine and the REAL
+consent handler rather than left as a computable predicate, which is D-162's lesson),
+`verify:protected-text` (the lines the application writes and she may not, CCB-S5-027, D-180:
+that the protected set is DERIVED from the persona rather than listed, that a forgery is removed
+whether it stands on its own line or is tacked onto the end of a sentence, that a draft she was
+GIVEN is hers to carry, that her own memory no longer shows her a source line, and that no
+document NAME reaches the prompt. Mutation-proven by emptying the marker list, and the wiring is
+read from the source because there is exactly one production path into the transport and it must
+set the field after the caller's spread.
+Two of its checks exist because of this briefing's own mistakes: the reword of the archive count
+opened with its placeholder and silently lost its guard, which the unguarded REPORT caught; and
+an earlier draft asserted a property that was true by construction and could never fail. Every
+absence has a presence beside it, because "no forged line reached the member" passes against a
+guard that eats every reply),
+`verify:archive-search` (where an archive search goes and what it counts, CCB-S5-027, D-181:
+that the rule engine really does return UNKNOWN for the production question, so the model is the
+only suspect; that a resolver claiming SEARCH for a message naming nowhere is downgraded while
+the SAME resolver naming the archive is honoured; that the answer states what it MATCHED; and
+each of the count's three exclusions mutation-proven one at a time against the number production
+would have printed. The positive controls are the load-bearing half: a gate that refused every
+SEARCH, or a count that excluded everything, passes every negative here),
 `verify:scheduler-reentry` (a command may not schedule another from inside itself,
 CCB-S5-015: re-entry refused IMMEDIATELY rather than after the 60 s command timeout, the error
 naming both commands, the alarm distinct from the timeout alarm, and a nested call for a

@@ -172,6 +172,57 @@ export class GroupOwnership {
   unidentifiedGroups(): OwnedGroup[] {
     return [...this.byGroup.values()].filter((g) => g.sharedKey === null);
   }
+
+  /**
+   * Does the profile holding `groupId` answer the commands that name nobody
+   * (CCB-S5-027, D-182)?
+   *
+   * ── THE PROBLEM A SLASH COMMAND HAS AND A WAKE WORD DOES NOT ─────────────
+   *
+   * Natural addressing names the bot, so in a group with two of them exactly one wakes
+   * (CCB-S5-006). `/search`, `/help`, `/publish` and `/unpublish` name nobody, every bot in
+   * the group receives its own copy of the message, and every one of them runs the command.
+   * Observed live: one `/search` answered twice, with two different counts.
+   *
+   * For `/search` and `/help` that is noise. For consent it is not: two bots write the
+   * decision, two confirmations go out, and an `/unpublish` asks the hide-or-delete question
+   * twice, leaving two independent pending choices that the member's single "delete"
+   * answers twice over. The consent table has no bot dimension, so the second write lands on
+   * the same row as the first - which is why nothing has gone visibly wrong yet, and is not
+   * a reason to leave two actors on the product's legal backbone.
+   *
+   * ── ONE ANSWERS, AND WHICH ONE IS NOT A RACE ─────────────────────────────
+   *
+   * The lowest SimpleX user id in the real group. It is the core's own creation order, it is
+   * stable across restarts and across a rename, and it is derivable by every bot in the
+   * group from the same index, so all of them reach the same answer with no coordination.
+   * Anything mutable - a display name, a config flag, whoever replied first - either drifts
+   * or is the race.
+   *
+   * ── AN UNKNOWN SHARED KEY ANSWERS YES ────────────────────────────────────
+   *
+   * A null `sharedKey` means the core gave nothing to compare, so co-tenancy can be neither
+   * confirmed nor ruled out (see {@link sharedGroups}). Failing closed there would mean a
+   * bot going silent on `/unpublish` because a field was missing, and a member who types
+   * `/unpublish` and sees nothing reasonably concludes it worked. So an unknown key answers
+   * YES, which is exactly today's behaviour, and `reportCoTenancy` already names those
+   * groups at boot rather than passing over them.
+   *
+   * A group this index has never heard of also answers yes: refusing to run a member's
+   * consent command because an index is cold is the same failure with a different cause.
+   */
+  answersCommands(groupId: number): boolean {
+    const mine = this.byGroup.get(groupId);
+    if (!mine || mine.sharedKey === null) return true;
+
+    let elected = mine.simplexUserId;
+    for (const other of this.byGroup.values()) {
+      if (other.sharedKey === mine.sharedKey && other.simplexUserId < elected) {
+        elected = other.simplexUserId;
+      }
+    }
+    return elected === mine.simplexUserId;
+  }
 }
 
 /**

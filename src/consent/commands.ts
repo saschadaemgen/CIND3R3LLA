@@ -169,9 +169,41 @@ export function makeConsentHandler(
      * slash path and the spoken path mean the same thing by a revocation.
      */
     askRevokeChoice?: (msg: CapturedMessage) => Promise<void>;
+    /**
+     * Does THIS bot act on a consent command in this group (CCB-S5-027, D-182)?
+     *
+     * `/publish` names no bot, so with two hosted bots in one group both of them receive
+     * the message and both of them run this handler. That is a different order of problem
+     * from two bots answering `/search`:
+     *
+     *   · the consent table has no bot dimension, so both writes land on the same member's
+     *     row and the SECOND one is a second `opt_in` for a member who already opted in;
+     *   · both send a confirmation, so a member sees their consent decision acknowledged
+     *     twice by two different names and cannot tell which one holds it;
+     *   · `/unpublish` asks the hide-or-delete question twice, leaving two independent
+     *     pending choices, and the member's single answer resolves both. A "delete" is
+     *     the one action in this product that cannot be undone.
+     *
+     * So one bot acts and the rest stand down. Absent means yes, for the reason the
+     * engine's copy of this gives: a deployment that knows nothing about co-tenancy is one
+     * where there is none, and a consent command must never go unanswered because an index
+     * was cold.
+     */
+    answersCommands?: (groupId: number) => boolean;
   },
 ): (msg: CapturedMessage, command: ConsentCommand) => Promise<void> {
   return async (msg, command) => {
+    if (opts.answersCommands && !opts.answersCommands(msg.groupId)) {
+      // NOT an error and not a warning. This is the arrangement working: another hosted
+      // bot in this group is the one that acts, and it is doing so right now. The message
+      // is already persisted and already categorised as `consent` by the capture handler,
+      // so nothing about the record depends on this branch.
+      log.debug(
+        `Consent: /${command} from member ${msg.senderMemberId} in group ${msg.groupId} is ` +
+          `another hosted bot's to act on; standing down.`,
+      );
+      return;
+    }
     const db = getPool();
     // Read the presentation settings ONCE, up front, and never between recording
     // a consent change and confirming it: a throw in that gap would send the

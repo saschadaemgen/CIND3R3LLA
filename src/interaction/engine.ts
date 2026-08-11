@@ -88,6 +88,7 @@ import {
 } from './book-scene.js';
 import { HISTORY_FENCE } from './ollama-reply.js';
 import { toPromptHistory, trimHistory, type HistoryEntry } from './history.js';
+import { markersFromTemplates, stripProtectedLines } from './protected-text.js';
 import {
   asksAboutRules,
   asksByElimination,
@@ -194,6 +195,20 @@ export interface InteractionDeps {
    * would reintroduce exactly that, silently, on any construction that omitted it.
    */
   capabilities: () => readonly Intent[];
+  /**
+   * Does this bot answer the commands that name NOBODY, in this group (CCB-S5-027, D-182)?
+   *
+   * `/search` and `/help` reach every hosted bot in a group, because a slash command carries
+   * no wake word for the addressing layer to match. In a group with one bot that is the
+   * whole point of a slash command; in a group with two it is one question answered twice
+   * with two different answers, which is what production produced.
+   *
+   * Answered by `GroupOwnership.answersCommands`, which elects one bot per REAL group from
+   * an index every bot shares. Absent means yes, because a construction that does not know
+   * about co-tenancy is a construction where there is none: a single-bot deployment and
+   * every harness must behave exactly as before.
+   */
+  answersGroupCommands?: (groupId: number) => boolean;
   /**
    * Market data (CCB-S3-004), injected by the plugin. Null when the plugin is off FOR
    * THIS BOT (CCB-S5-021) — in which case PRICE is not in this bot's catalog either, so
@@ -631,6 +646,7 @@ export class InteractionEngine {
     // so `/helpdesk` is not caught.
     if (/^\/help(?:\s+\S.*)?$/i.test(msg.text.trim())) {
       this.handledCategory = 'help';
+      if (!this.answersGroupCommands(msg.groupId)) return true;
       await this.answerHelp(
         msg,
         s,
@@ -652,6 +668,15 @@ export class InteractionEngine {
     const slashSearch = /^\/search(?:\s+(\S.*))?$/i.exec(msg.text.trim());
     if (slashSearch) {
       this.handledCategory = 'search';
+      // ── EXACTLY ONE BOT ANSWERS (CCB-S5-027, D-182) ─────────────────────
+      //
+      // A slash command names nobody, so in a group with two hosted bots both of them
+      // reach this line. Production answered one `/search` twice with two different
+      // counts. The unelected bot still returns TRUE and still classifies the message,
+      // because the category is what decides publication and leaving it NULL would let a
+      // member's search request publish as ordinary chat past a switch the operator had
+      // turned off. It simply does not speak.
+      if (!this.answersGroupCommands(msg.groupId)) return true;
       const searchLang = this.replyLanguage(msg, s, msg.text, undefined, this.now());
       const query = (slashSearch[1] ?? '').trim();
       if (!query) {
@@ -659,7 +684,10 @@ export class InteractionEngine {
         await this.reply(msg, s, searchLang, 'searchNoQuery', {});
         return true;
       }
-      const found = await countPublishedMatching(this.deps.db, query);
+      const found = await countPublishedMatching(this.deps.db, query, {
+        groupId: msg.groupId,
+        excludeGroupMsgId: msg.itemId,
+      });
       await this.reply(msg, s, searchLang, 'searchResult', { n: found, query });
       return true;
     }
@@ -1078,7 +1106,10 @@ export class InteractionEngine {
           await this.reply(msg, s, lang, 'notUnderstood', {});
           return true;
         }
-        const n = await countPublishedMatching(this.deps.db, query);
+        const n = await countPublishedMatching(this.deps.db, query, {
+          groupId: msg.groupId,
+          excludeGroupMsgId: msg.itemId,
+        });
         await this.reply(msg, s, lang, 'searchResult', { n, query });
         return true;
       }
@@ -1432,7 +1463,7 @@ export class InteractionEngine {
 
     const now = this.now();
     try {
-      const rows = await listGroupHistory(this.deps.db, msg.groupId, {
+      const raw = await listGroupHistory(this.deps.db, msg.groupId, {
         // Over-fetch against the COUNT only. The character budget can drop entries the
         // count allowed, and fetching exactly `maxMessages` would then return fewer lines
         // than the operator asked for whenever one of them was long.
@@ -1442,6 +1473,27 @@ export class InteractionEngine {
         // would appear twice: once as the question and once as a thing she remembers.
         beforeMessageId: msg.itemId,
       });
+      // ── SHE IS NEVER SHOWN A SOURCE LINE (CCB-S5-027, D-180) ──────────────
+      //
+      // This is the CAUSE half of the forged-attribution defect, and the only half that
+      // explains it. The application appends its own lines AFTER she writes, so what comes
+      // back out of this query is her prose with the application's source line, warning
+      // count or sanction notice attached. Read back as an example of her own writing, it
+      // is an instruction nobody wrote: this is what your answers look like.
+      //
+      // BOTH SIDES, hers and the members'. Hers is where she learned it; a member's is the
+      // deliberate version, because a member who types a source line into the group has
+      // written her an example she will read an hour later, and D-147 already treats
+      // everything in here as untrusted material for exactly that reason.
+      //
+      // It costs something real and it is worth naming: asked which document she cited
+      // earlier, she can no longer see her own citation. That answer was never hers to give
+      // - the application owns it - and the alternative is teaching her to forge it.
+      const markers = this.protectedMarkers();
+      const rows = raw.map((row) => ({
+        ...row,
+        text: stripProtectedLines(row.text, markers).text,
+      }));
       return trimHistory(rows, limits, now);
     } catch (error) {
       log.warn(
@@ -2839,6 +2891,16 @@ export class InteractionEngine {
 
   /* ── Replies ───────────────────────────────────────────────────────────── */
 
+  /**
+   * Does this bot answer a command addressed to nobody, here (CCB-S5-027, D-182)?
+   *
+   * Defaults to yes when nothing was injected. See the dependency's own documentation: a
+   * deployment or a harness that knows nothing about co-tenancy is one where there is none.
+   */
+  private answersGroupCommands(groupId: number): boolean {
+    return this.deps.answersGroupCommands?.(groupId) ?? true;
+  }
+
   private persona(s: InteractionSettings, lang: string, key: PersonaKey): string {
     const strings =
       s.persona[lang] ??
@@ -2909,7 +2971,51 @@ export class InteractionEngine {
     | undefined {
     const inner = this.deps.personalize;
     if (!inner) return undefined;
-    return (request) => inner({ botProfileId: this.deps.botProfileId ?? null, ...request });
+    return (request) =>
+      inner({
+        botProfileId: this.deps.botProfileId ?? null,
+        ...request,
+        // AFTER the spread, deliberately, and unlike `botProfileId` above it (CCB-S5-027).
+        // This is the one path every model call in this engine takes, so setting it here
+        // covers conversation, lookup, retort, help, the scene and the recital transitions
+        // at once; putting it after the spread means no lane can drop it by passing its own
+        // value, which is what makes "every reply is guarded" a property of this function
+        // rather than of six call sites remembering.
+        protectedMarkers: this.protectedMarkers(),
+      });
+  }
+
+  /**
+   * The openings of the lines the APPLICATION writes for this bot (CCB-S5-027, D-180).
+   *
+   * EVERY LANGUAGE in the persona, not just the reply language. What taught her the format
+   * was her own thread, and a group that switched languages last week still contains last
+   * week's lines; a German reply can perfectly well carry a forged English source line
+   * copied out of a message she sent before the switch.
+   *
+   * Read live rather than held, like the persona everywhere else, so an operator who
+   * rewords a line rewords its guard on the next reply rather than on the next boot.
+   */
+  private protectedMarkers(): string[] {
+    const templates: string[] = [];
+    try {
+      const s = this.deps.settings();
+      for (const strings of Object.values(s.persona)) {
+        for (const value of Object.values(strings as Record<string, string>)) {
+          if (typeof value === 'string') templates.push(value);
+        }
+      }
+    } catch (error) {
+      // NOT swallowed into an empty guard silently. Settings that cannot be read are a
+      // fault, and the honest consequence is that this reply goes out unguarded, which the
+      // operator has to be able to find in the log.
+      log.error(
+        `Interaction: could not read the persona to build the protected-line guard, so this ` +
+          `reply is unguarded (${error instanceof Error ? error.message : String(error)}).`,
+      );
+      return [];
+    }
+    return markersFromTemplates(templates).markers;
   }
 
   private async moderate(
@@ -3279,12 +3385,15 @@ export class InteractionEngine {
     // Never throws outward. A store that cannot be read costs her the documents and not the
     // reply, which is the same call `recentHistory` makes about the thread.
     let knowledgeSources: string[] = [];
-    let knowledgePassages: { title: string; text: string }[] = [];
+    // TEXT ONLY (CCB-S5-027, D-180). The document names stay in `knowledgeSources`, which
+    // the application prints; they are deliberately not carried into anything the model is
+    // shown. See `AiReplyRequest.knowledgePassages` for what that buys and what it costs.
+    let knowledgePassages: { text: string }[] = [];
     const knowledge = this.deps.knowledge?.() ?? null;
     if (knowledge && this.deps.botProfileId != null) {
       try {
         const found = await knowledge.query(this.deps.botProfileId, msg.text);
-        knowledgePassages = found.passages;
+        knowledgePassages = found.passages.map((p) => ({ text: p.text }));
         knowledgeSources = found.sources;
       } catch (error) {
         log.warn(
