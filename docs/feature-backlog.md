@@ -720,6 +720,55 @@ because nothing was built to switch off.
 
 ---
 
+## Left open by CCB-S5-030, deliberately — the three siblings of the rename defect
+
+D-185 made a bot's wake word follow its display name. Renaming a bot touches three other things
+that did **not** follow, all found while fixing that one and all left alone on purpose: the fix
+was scoped to what the operator reported, and each of these is a separate decision rather than a
+line of the same change. Recorded here with the reasoning, because the reasoning is what
+propagates.
+
+The first and third combine into one observable state worth stating plainly: **after a rename a
+bot answers to its new name while still wearing its old one**, until the process is restarted.
+That is a smaller inconsistency than the one D-185 removed, and it is real.
+
+- [ ] **The SimpleX profile name a member actually sees is applied only at boot.** The console
+      writes `cinderella_bot_profiles.display_name`
+      ([`bot-onboarding.ts`](../src/profiles/bot-onboarding.ts), the `UPDATE ... SET slug, display_name`),
+      and the only caller that pushes a name onto the SimpleX profile is `applyProfileUpdate` in
+      [`host.ts`](../src/bot/runtime/host.ts), inside the boot path. So a rename is invisible in
+      the group until a restart. **And for one bot it is worse than invisible**: `findRenameOnBoot`
+      REFUSES the boot, naming both values, when the bot wearing `BOT_DISPLAY_NAME` has a
+      different name in its record (D-173). That refusal is correct — booting would rename it in
+      front of its group — but it means renaming that particular bot in the console arms a failed
+      deploy, and nothing in the console says so at the moment of saving. Fixing it is either an
+      on-demand profile push (the shape `faces.ts` already uses for avatars, per D-168) or a
+      console refusal that matches the boot's; both are decisions about who owns the name, which
+      is exactly what D-173 settled for boot and not for the console.
+- [ ] **`nicknames.words` is per-bot by inventory and is never written at creation.**
+      [`setting-scope.ts`](../src/interaction/setting-scope.ts) declares it `per-bot` and states
+      the reason itself: *"Cindy" is a pet form of ONE name. A second bot inheriting them refuses
+      names nobody called it.* Creation writes `retorts` and does not write this
+      ([`bot-onboarding.ts`](../src/profiles/bot-onboarding.ts)), so every bot inherits the shared
+      default `['cindy', 'cindi', 'cin', 'ella']` — pet forms of Cinderella. A bot called anything
+      else therefore retorts when a member says "cindy" and stays silent at every diminutive of
+      its own name. The inventory documents the harm and nothing implements it, which is the
+      D-105 shape: the rule held, the check was green, the behaviour was wrong. Not fixed here
+      because deriving pet forms from an arbitrary name is a language problem, not a plumbing
+      one — "Cindy" from "Cinderella" is not a transformation a function gets right for
+      "Bob" — so it needs either an operator-entered list at creation or a deliberate decision
+      to write an EMPTY list, which is the honest default and would at least stop a new bot
+      answering to her nicknames.
+- [ ] **The runtime holds a display name snapshotted at boot.** `b.config.displayName` is read
+      once into the hosted-bot config and used throughout [`host.ts`](../src/bot/runtime/host.ts)
+      for the profile push, the avatar decision and the logs. The wake word now resolves from the
+      database on every settings refresh (D-185), so the two disagree between a rename and the
+      next restart. Fixing it means deciding what else must be re-read when a bot's record
+      changes and where that invalidation is triggered from, which is a runtime-lifecycle
+      question rather than a naming one.
+
+---
+
 ## Left open by CCB-S5-027, deliberately
 
 Three things the briefing's fixes name and do not build. Each is written down because the

@@ -3442,11 +3442,31 @@ static and lives in no other table. The list is duplicated between the migration
 `SETTING_SCOPES` deliberately; `verify:interaction-scope` reads the constraint out of the
 database with `pg_get_constraintdef` and compares, so it cannot drift.
 
-**A new bot gets its own name.** `createBotOnboardingProfile` writes a `wakeWord` override from
-the display name, and only when it differs from the shared value: an unconditional write stores
-a deviation that matches the default, which the console then shows as a difference and which
-would freeze that bot so later shared edits stopped reaching it. A display name that cannot
-serve as a wake word yields no row at all, never a fallback to the shared value.
+**A new bot gets its own name, and keeps getting it after a rename (CCB-S5-030, D-185).** An
+absent `wakeWord` override used to mean "use the shared value", which is another bot's name, so
+`createBotOnboardingProfile` had to write a row for every bot just to stop a new one answering
+to the primary. That froze the derivation on the day the bot was made and no rename path
+recomputed it, so a renamed bot went on answering to its old name.
+
+Absence now means **"follow my display name"**: `applySettingOverrides` derives the wake word
+from the bot's own name BEFORE applying the overrides, so an operator's own word still wins, and
+`InteractionService.refreshFor` reads the name alongside the overrides it already fetches per
+bot. Creation writes a row only when the chosen word differs from what the name derives,
+compared case-insensitively because `detectAddress` and `wakeWordTakenBy` compare that way. The
+two states are therefore distinguished by a fact rather than a flag — the row exists or it does
+not — and a display name that derives nothing usable (an emoji-only name) still falls back to
+the shared value, because no name at all is worse.
+
+`wakeWordState` reports which state a bot is in and `BotIdentityFacts.wakeWordSource` replaced a
+boolean whose two answers hid the interesting third: a bot pinned at creation reported "its own"
+in green, which is what an operator sees on a bot that has silently stopped following its name.
+**Migration 056 reclassifies nothing** — for an existing row it cannot tell a chosen word from an
+accepted suggestion, and re-deriving would change what a bot answers to without being asked.
+
+**One panel deliberately reports less than it used to.** The scope panel counts stored rows and a
+bot following its name stores none, so `wakeWord` reads as reaching every bot while no two bots
+answer to the same thing; the Addressing page states each bot's real state and
+`verify:interaction-scope` pins the gap.
 
 **Visibility matches the Book of Elii** rather than inventing a second language: the same
 badges, the same wording, and the shared count excluding deviating bots. The panel is generated

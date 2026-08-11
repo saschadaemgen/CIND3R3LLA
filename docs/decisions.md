@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 183 decisions</strong> — newest first. Highest allocated: <strong>D-184</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 184 decisions</strong> — newest first. Highest allocated: <strong>D-185</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-185 | A wake word with no row of its own follows the display name, so a rename carries through | IMPLEMENTED |
 | D-184 | She says she is going to look, for all three lookups, and the threshold is measured rather than shipped | IMPLEMENTED |
 | D-183 | Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it | IMPLEMENTED |
 | D-182 | A slash command names no bot, so exactly one answers it | IMPLEMENTED |
@@ -213,6 +214,58 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-185 - A wake word with no row of its own follows the display name, so a rename carries through
+
+**Status: IMPLEMENTED** (CCB-S5-030, migration 056). The operator renamed a bot and it went on
+answering to its old name. Nothing said so, which is the half that matters: the console showed
+the stale word in green as the bot's own.
+
+**ABSENCE CHANGED MEANING, AND THAT IS THE WHOLE FIX.** A `wakeWord` override row used to mean
+"this bot deviates from the shared value" and absence meant "use the shared wake word", which
+is another bot's name. So creation had to write a row for every bot, not because the operator
+had chosen anything but to stop a new bot answering to the primary's name. That worked, and it
+froze the derivation on the day the bot was made: `validateCreation` has exactly one caller and
+no rename path recomputes anything. Absence now means "follow my display name"
+([`setting-scope.ts`](../src/interaction/setting-scope.ts) resolves it before the overrides, so
+an operator's own word still wins), and creation writes a row only when the chosen word differs
+from what the name derives ([`bot-onboarding.ts`](../src/profiles/bot-onboarding.ts)). The two
+states are then distinguished by a FACT rather than a flag - the row exists or it does not - and
+they cannot drift apart, because there is one place the answer comes from.
+
+**THE COMPARISON IS CASE-INSENSITIVE, WHICH IS NOT A DETAIL.** `detectAddress` and
+`wakeWordTakenBy` both compare case-insensitively, so a word differing only in case is the same
+word; pinning one would have shown a bot as "custom" in the console for a difference no member
+can hear, and frozen it for a difference that does not exist.
+
+**NOTHING EXISTING IS RECLASSIFIED.** Migration 056 leaves every stored row exactly as it is.
+For an existing row it cannot tell whether the operator typed that word or merely accepted the
+suggestion the form pre-filled, because both were stored identically, and where the stored word
+no longer matches the display name the two explanations are "he chose it" and "the bot was
+renamed". Guessing would be worse than not knowing: silently re-deriving would change what a bot
+answers to without being asked, which is the same class of failure in the other direction. The
+console states which state each bot is in and switching to follow the name is one deliberate
+click that deletes the row.
+
+**THE BOOLEAN WAS THE REPORTING DEFECT.** `BotIdentityFacts.wakeWordIsOwn` had two answers and
+the interesting state was the third. A bot pinned at creation reported "its own" in green, which
+is exactly what an operator sees on a bot that has silently stopped following its name, so it is
+now `wakeWordSource: 'own' | 'name' | 'shared'` with `shared` meaning the display name derives
+nothing usable (an emoji-only name) and the bot cannot be told apart from any other. That is
+D-162 again: a renamed meaning needs a renamed control.
+
+**AND ONE PANEL DELIBERATELY REPORTS LESS THAN IT USED TO.** The scope panel counts stored rows,
+and a bot answering to its own display name stores none, so `wakeWord` now reports as reaching
+every bot while no two bots answer to the same thing. The Addressing page states each bot's real
+state beside it; the gap is pinned in `verify:interaction-scope` so it is a decision rather than
+a surprise.
+
+**THREE SIBLINGS FOUND AND DELIBERATELY NOT FIXED**, recorded in the backlog with their
+reasoning: the SimpleX profile name a member actually sees is applied only at boot, `nicknames.words`
+is per-bot by inventory and is never written at creation, and the runtime holds a display name
+snapshotted at boot. The first and third mean a renamed bot now answers to its new name while
+still WEARING the old one until a restart, which is a smaller inconsistency than the one this
+fixes and a real one.
 
 ### D-184 - She says she is going to look, for all three lookups, and the threshold is measured rather than shipped
 
