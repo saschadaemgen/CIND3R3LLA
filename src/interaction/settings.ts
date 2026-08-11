@@ -124,6 +124,16 @@ export const PERSONA_KEYS = [
   // exists so an announcement is never left hanging: having said she was looking, she owes
   // the member the outcome even when the outcome is nothing.
   'searchEmpty',
+  // CCB-S5-028. Results came back and NONE of them cleared the relevance floor. Its own line
+  // rather than `searchEmpty`, because they are different facts: one is an internet with
+  // nothing on the subject, the other is an internet that answered a different question. The
+  // second one is what produced the briefing, and saying "I found nothing" about it would be
+  // a small untruth in the one place this product cannot afford one.
+  'searchIrrelevant',
+  // CCB-S5-028. Results came back and could not be JUDGED, because the embedding model did
+  // not answer. Deliberately NOT collapsed into either line above: she did find things, and
+  // she did not find nothing, and the honest statement is that she could not check them.
+  'searchUnchecked',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -194,6 +204,8 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   rulesNoElimination: 'conversation',
   rulesNoSuchLaw: 'conversation',
   searchEmpty: 'lookup',
+  searchIrrelevant: 'lookup',
+  searchUnchecked: 'lookup',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -454,6 +466,16 @@ const PERSONA_EN: PersonaStrings = {
     '🔌 I could not look that up just now, so I am not going to guess at it. Try me again in a bit.',
   searchEmpty:
     '🕳️ Looked, and came back with nothing worth repeating. I am not going to invent one for you.',
+  // CCB-S5-028. The failure this replaces was answering ANYWAY from two university pages
+  // about research ethics because the word "protocol" matched. She now says what actually
+  // happened, and the sentence is the APPLICATION'S rather than the model's, so it cannot be
+  // talked into an answer it does not have.
+  searchIrrelevant:
+    '🕳️ I looked, and what came back was about something else entirely. I am not going to ' +
+    'dress that up as an answer.',
+  searchUnchecked:
+    '🌫️ I looked, but I could not check whether any of it was actually about your question, ' +
+    'so I am leaving it alone rather than guessing.',
   // CCB-S4-042. No search ran, so this says she will not, rather than that she could not.
   searchRefused:
     '🚫 I am not searching the web for that. Ask me something else.',
@@ -607,6 +629,12 @@ const PERSONA_DE: PersonaStrings = {
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',
   searchEmpty:
     '🕳️ Nachgeschaut, nichts dabei, was der Rede wert waere. Ich erfinde dir jetzt nichts.',
+  searchIrrelevant:
+    '🕳️ Ich habe nachgeschaut, und was zurueckkam, ging um etwas voellig anderes. Daraus ' +
+    'mache ich dir keine Antwort.',
+  searchUnchecked:
+    '🌫️ Ich habe nachgeschaut, konnte aber nicht pruefen, ob davon ueberhaupt etwas zu ' +
+    'deiner Frage gehoert. Dann lasse ich es lieber, statt zu raten.',
   searchRefused:
     '🚫 Dafuer suche ich nicht im Netz. Frag mich was anderes.',
   rulesNoElimination:

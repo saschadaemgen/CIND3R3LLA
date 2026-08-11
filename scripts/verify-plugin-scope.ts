@@ -32,6 +32,7 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import type { T } from '@simplex-chat/types';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
+import { alwaysRelevant } from './relevance-stub.js';
 import { setLogLevel } from '../src/log.js';
 import { PluginService } from '../src/plugins/service.js';
 import {
@@ -443,6 +444,7 @@ async function main(): Promise<void> {
   console.log('\n6. The number is deployment-wide, the spend is this bot');
 
   const budgeted = new WebSearchService({
+    embed: alwaysRelevant(),
     settings: () => normalizeWebSearchSettings({ ...WEB_SEARCH_DEFAULTS, rateLimitPerMember: 1 }),
     provider: {
       name: 'fake',
@@ -564,6 +566,7 @@ async function main(): Promise<void> {
   // only by the accident that core ids differ per profile; asked with one key, the budgets
   // merge, which is the defect migration 044 removed from the moderation counters.
   const merged = new WebSearchService({
+    embed: alwaysRelevant(),
     settings: () => normalizeWebSearchSettings({ ...WEB_SEARCH_DEFAULTS, rateLimitPerMember: 1 }),
     provider: {
       name: 'fake',

@@ -64,6 +64,15 @@ export interface EmbedderDeps {
   fetchImpl?: EmbedFetch;
   /** Injected by the harnesses so the whole pipeline runs with no model. */
   embedImpl?: (inputs: readonly string[]) => Promise<number[][]>;
+  /**
+   * The ceiling for ONE call, overriding the two-minute floor below (CCB-S5-028).
+   *
+   * That floor is right for the ingest queue job, where a batch of chunks legitimately takes
+   * minutes and nobody is waiting in a chat. It is indefensible on a member-visible turn: the
+   * web-search relevance check runs between a member's question and her answer, and a
+   * two-minute hang there is a bot that has stopped talking. The scorer passes its own.
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -97,7 +106,10 @@ export class Embedder {
 
     const endpoint = new URL('/api/embed', `${this.deps.config.baseUrl}/`);
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), Math.max(this.deps.config.timeoutMs, 120_000));
+    const timeout = setTimeout(
+      () => controller.abort(),
+      this.deps.timeoutMs ?? Math.max(this.deps.config.timeoutMs, 120_000),
+    );
     try {
       const response = await (this.deps.fetchImpl ?? fetch)(endpoint, {
         method: 'POST',

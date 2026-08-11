@@ -512,7 +512,14 @@ async function startCaptureWorker(
       db: getPool(),
       settings: () => plugins.getCryptoPrices(),
     });
-    const webSearch = new WebSearchService({ settings: () => plugins.getWebSearch() });
+    const webSearch = new WebSearchService({
+      settings: () => plugins.getWebSearch(),
+      // THE RELEVANCE FLOOR (CCB-S5-028, D-183). The same embedder the knowledge base uses,
+      // on its own SHORT timeout: this runs between a member's question and her answer, so
+      // the ingest job's two-minute ceiling would be a bot that stopped talking. Measured
+      // cost is ~120 ms warm and ~800 ms cold for a batch this size.
+      embed: new Embedder({ config: loadLocalAiConfig(), timeoutMs: 15_000 }),
+    });
     // ── WHAT SHE WAS GIVEN TO READ (CCB-S5-022, D-176) ────────────────────
     //
     // Deployment-wide, like the market data and the search provider, and for the same

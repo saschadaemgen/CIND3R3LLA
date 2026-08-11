@@ -2013,13 +2013,31 @@ export class InteractionEngine {
       //
       // `no-results` is the only failure where a search genuinely ran and found nothing.
       // Every other one, rate-limited, timed out, provider down, is her not having looked.
-      await this.reply(
-        msg,
-        s,
-        lang,
-        outcome.failure === 'no-results' ? 'searchEmpty' : 'searchUnavailable',
-        {},
-      );
+      //
+      // ── AND TWO WHERE SHE LOOKED AND FOUND THE WRONG THING (CCB-S5-028) ───
+      //
+      // `nothing-relevant` is the failure the whole briefing is about: results came back,
+      // every one of them fell below the relevance floor, and the old code had no way to
+      // express that because there was no floor. It is NOT `searchEmpty`: she did not come
+      // back empty-handed, she came back with somebody else's subject, and the line says so.
+      //
+      // `unjudged` is the third fact: she found things and could not check them. Collapsing
+      // it into either of the others would be a small untruth, and this is the one path where
+      // a small untruth is the entire defect.
+      //
+      // THE LINE IS THE APPLICATION'S IN ALL THREE CASES, and that is the structural half of
+      // the fix. The model is never called, so there is nothing here to be argued into an
+      // answer it does not have, nothing to invent a provenance for, and no `webResults` for
+      // a source line to be built from. Below the bar, she is given nothing and says so.
+      const line =
+        outcome.failure === 'no-results'
+          ? 'searchEmpty'
+          : outcome.failure === 'nothing-relevant'
+            ? 'searchIrrelevant'
+            : outcome.failure === 'unjudged'
+              ? 'searchUnchecked'
+              : 'searchUnavailable';
+      await this.reply(msg, s, lang, line, {});
       return true;
     }
 

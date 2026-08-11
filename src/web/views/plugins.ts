@@ -126,7 +126,33 @@ function diagnosticsBody(limits: {
             : 'none since the last restart'}
         </dd>
       </div>
+      <div>
+        <dt class="font-medium text-slate-700">Relevance floor</dt>
+        <dd class="text-slate-600">
+          ${d.floor.toFixed(2)} cosine, measured rather than chosen. Results below it are never
+          handed to her, and she says she found nothing about the question instead of answering
+          from them.
+        </dd>
+      </div>
+      <div>
+        <dt class="font-medium text-slate-700">Refused for irrelevance</dt>
+        <dd class="text-slate-600">
+          ${String(d.belowFloor)} search${d.belowFloor === 1 ? '' : 'es'} where nothing cleared
+          the floor${d.lastRelevance
+            ? html`. Last judged search kept ${String(d.lastRelevance.kept)} of
+                ${String(d.lastRelevance.of)}, best score
+                ${d.lastRelevance.best === null ? 'n/a' : d.lastRelevance.best.toFixed(3)}, at
+                ${d.lastRelevance.at}`
+            : '. Nothing judged yet since the restart'}
+        </dd>
+      </div>
     </dl>
+    <p class="mt-3 text-xs text-slate-500">
+      The two relevance figures are the ones to watch. Climbing steadily against a flat search
+      count means the floor is too high and she is refusing results that would have helped;
+      stuck at zero over a long run means it is too low to be doing anything. Re-measure with
+      <code>npm run calibrate:search-relevance</code> after changing the embedding model.
+    </p>
     <p class="mt-3 text-xs text-slate-500">
       Content-free by construction: no query text, no result text, no member. "Not configured" is
       deliberately not counted as a failure, because choosing not to enter a key is a choice

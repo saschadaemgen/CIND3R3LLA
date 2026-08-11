@@ -29,7 +29,15 @@
  */
 
 import { log } from '../../log.js';
+import { status } from '../../web/status.js';
 import { decryptSecret } from '../secrets.js';
+import {
+  SEARCH_RELEVANCE_FLOOR,
+  applyRelevanceFloor,
+  cosine,
+  searchRelevanceText,
+  type ScoredResult,
+} from './relevance.js';
 import { buildProvider } from './providers/adapters.js';
 import {
   SearchProviderError,
@@ -44,11 +52,34 @@ export type SearchFailure =
   | 'rate-limited'
   | 'timeout'
   | 'provider-error'
-  | 'no-results';
+  | 'no-results'
+  /**
+   * Results came back and NONE of them cleared the relevance floor (CCB-S5-028, D-183).
+   *
+   * Its own failure rather than `no-results`, because they are different facts and she says
+   * different things about them: one is an internet that had nothing on the subject, the
+   * other is an internet that answered a different question. The distinction is the same one
+   * this type already draws between `no-results` and `provider-error`.
+   */
+  | 'nothing-relevant'
+  /**
+   * Results came back and could not be JUDGED, because the embedder did not answer.
+   *
+   * Fails CLOSED: nothing reaches the model. A result nobody could score is a result nobody
+   * can vouch for, and handing over unjudged strangers' text is exactly the defect. It is a
+   * FAULT rather than a choice, so unlike `not-configured` it is logged and surfaced.
+   */
+  | 'unjudged';
 
 export type SearchOutcome =
-  | { kind: 'results'; results: SearchResult[]; provider: string }
-  | { kind: 'failed'; failure: SearchFailure; detail: string };
+  | {
+      kind: 'results';
+      results: SearchResult[];
+      provider: string;
+      /** Every result with its relevance score, for the console. Never sent to a model. */
+      scored: ScoredResult[];
+    }
+  | { kind: 'failed'; failure: SearchFailure; detail: string; scored?: ScoredResult[] };
 
 /**
  * The fence delimiter, and the one string a result may never contain.
@@ -166,6 +197,21 @@ export interface WebSearchDiagnostics {
   refusedBeforeSearch: number;
   /** The last refusal category, for the operator. Never the query. */
   lastRefusal: { category: string; at: string } | null;
+  /**
+   * Searches whose results ALL fell below the relevance floor (CCB-S5-028, D-183).
+   *
+   * The number that tells an operator whether the floor is in the right place. Rising
+   * steadily against a flat `searches` means it is too high and she is refusing to use good
+   * results; flat at zero over a long run means it is too low to be doing anything.
+   */
+  belowFloor: number;
+  /**
+   * What the last judged search scored. Content-free: how many survived, out of how many,
+   * and the best score. Never a title, a snippet, a host or a query.
+   */
+  lastRelevance: { best: number | null; kept: number; of: number; at: string } | null;
+  /** The floor in force, so the page states the number rather than describing it. */
+  floor: number;
 }
 
 export interface WebSearchDeps {
@@ -174,6 +220,25 @@ export interface WebSearchDeps {
   provider?: SearchProvider;
   now?: () => number;
   fetchImpl?: typeof fetch;
+  /**
+   * How relevance is judged (CCB-S5-028, D-183).
+   *
+   * The same `nomic-embed-text` the knowledge base uses, injected rather than constructed so
+   * a harness drives every branch of the floor with fixed vectors and no model at all.
+   *
+   * IT LIVES IN `src/knowledge/` AND THAT IS AN ACCIDENT OF BIRTH, not a dependency of web
+   * search on the knowledge base. The embedder is a deployment capability like the reply
+   * model: one model, one endpoint, one set of task prefixes. Two copies of it would be two
+   * things to keep in step, and a second embedding model on a card with 733 MiB free is not
+   * a thing that fits.
+   *
+   * ABSENT MEANS UNJUDGED, and unjudged means nothing reaches the model. A deployment that
+   * has not wired this does not get to skip the floor; see the `unjudged` failure.
+   */
+  embed?: {
+    embedQuery(text: string): Promise<number[]>;
+    embedDocuments(texts: readonly string[]): Promise<number[][]>;
+  };
 }
 
 export class WebSearchService {
@@ -183,6 +248,8 @@ export class WebSearchService {
   private refusedBeforeSearch = 0;
   private lastFailure: WebSearchDiagnostics['lastFailure'] = null;
   private lastRefusal: WebSearchDiagnostics['lastRefusal'] = null;
+  private belowFloor = 0;
+  private lastRelevance: WebSearchDiagnostics['lastRelevance'] = null;
 
   constructor(private readonly deps: WebSearchDeps) {
     this.now = deps.now ?? ((): number => Date.now());
@@ -208,6 +275,9 @@ export class WebSearchService {
       lastFailure: this.lastFailure,
       refusedBeforeSearch: this.refusedBeforeSearch,
       lastRefusal: this.lastRefusal,
+      belowFloor: this.belowFloor,
+      lastRelevance: this.lastRelevance,
+      floor: SEARCH_RELEVANCE_FLOOR,
     };
   }
 
@@ -326,7 +396,103 @@ export class WebSearchService {
     }
 
     this.searches++;
-    return { kind: 'results', results, provider: provider.name };
+
+    // ── THE RELEVANCE FLOOR (CCB-S5-028, D-183) ─────────────────────────────
+    //
+    // Everything above this line asked whether the provider ANSWERED. Nothing asked whether
+    // what it answered with had anything to do with the question, so two university pages
+    // about amending human-subjects research protocols were handed to the model as evidence
+    // for a question about a messaging protocol, and the answer that came back invented a
+    // technical position and a provenance for it.
+    //
+    // Placed AFTER sanitising and the budget on purpose: the floor judges exactly the text
+    // the model would have seen, so a result cannot pass the bar in a form it is never shown
+    // in.
+    return this.judge(results, trimmed, provider.name);
+  }
+
+  /**
+   * Score the results against the question and drop everything below the floor.
+   *
+   * NEVER THROWS, like `search` itself. An embedder that cannot answer is a named outcome
+   * (`unjudged`) rather than an exception, because the caller has to say something honest and
+   * "I could not judge what I found" is a different sentence from "I found nothing".
+   */
+  private async judge(
+    results: SearchResult[],
+    query: string,
+    providerName: string,
+  ): Promise<SearchOutcome> {
+    const embed = this.deps.embed;
+    if (!embed) {
+      // NOT a quiet pass-through. A deployment with no embedder cannot judge relevance, and
+      // the failure direction is the one that hands the model less. Loud, because unlike a
+      // missing API key this is not something an operator chose on this page.
+      log.error('Web search: no embedder is wired, so relevance cannot be judged.');
+      status.error(
+        'Web search results cannot be checked for relevance because the embedding model is ' +
+          'not wired. Nothing is being handed to her from the web until it is.',
+      );
+      this.noteFailure(providerName, 'unjudged', 'no embedder is available to score relevance');
+      return {
+        kind: 'failed',
+        failure: 'unjudged',
+        detail: 'no embedder is available to score relevance',
+      };
+    }
+
+    let scores: number[];
+    try {
+      const [queryVector, resultVectors] = await Promise.all([
+        embed.embedQuery(query),
+        embed.embedDocuments(results.map((r) => searchRelevanceText(r))),
+      ]);
+      scores = resultVectors.map((v) => cosine(queryVector, v));
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      // CONFIGURED BUT FAILING IS A FAULT (the standing rule). The search itself worked; what
+      // failed is the check that decides whether its output is worth anything.
+      log.error(`Web search: relevance could not be scored (${detail}).`);
+      status.error(
+        `Web search results could not be checked for relevance (${detail}). Nothing is being ` +
+          `handed to her from the web until the embedding model answers again.`,
+      );
+      this.noteFailure(providerName, 'unjudged', detail);
+      return { kind: 'failed', failure: 'unjudged', detail };
+    }
+
+    const outcome = applyRelevanceFloor(results, scores, SEARCH_RELEVANCE_FLOOR);
+    this.lastRelevance = {
+      best: outcome.best,
+      kept: outcome.kept.length,
+      of: results.length,
+      at: new Date(this.now()).toISOString(),
+    };
+
+    if (outcome.kept.length === 0) {
+      // Not a fault and not an outage: the internet answered a different question. Recorded
+      // as a failure so the console can show how often it happens, which is the number that
+      // tells an operator whether the floor is in the right place.
+      this.noteFailure(
+        providerName,
+        'nothing-relevant',
+        `nothing cleared the relevance floor (best ${outcome.best === null ? 'n/a' : outcome.best.toFixed(3)})`,
+      );
+      this.belowFloor++;
+      return {
+        kind: 'failed',
+        failure: 'nothing-relevant',
+        detail: `nothing cleared the relevance floor of ${String(SEARCH_RELEVANCE_FLOOR)}`,
+        scored: outcome.scored,
+      };
+    }
+
+    return {
+      kind: 'results',
+      results: outcome.kept,
+      provider: providerName,
+      scored: outcome.scored,
+    };
   }
 }
 

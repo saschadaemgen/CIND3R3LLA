@@ -294,10 +294,39 @@ async function main(): Promise<void> {
   // be looked at in its POPULATED state rather than only in its "nothing is running" state
   // (CCB-S4-042). Nothing here reaches a network: the service is never asked to search.
   const previewSearch = new WebSearchService({
-    settings: () => WEB_SEARCH_DEFAULTS,
+    settings: () => ({ ...WEB_SEARCH_DEFAULTS, apiKey: 'preview' }),
+    // A provider and a scorer, so the RELEVANCE card can be looked at populated too
+    // (CCB-S5-028). Both are local: nothing here reaches a network, and the scores are
+    // manufactured rather than embedded, so the preview needs no model running.
+    provider: {
+      name: 'preview',
+      label: 'Preview',
+      capabilities: { requiresKey: false, keyUrl: '', note: '' },
+      isConfigured: () => true,
+      search: () =>
+        Promise.resolve([
+          {
+            title: 'Protocol Amendments | Research Compliance Services',
+            snippet: 'A protocol amendment is required whenever you change an approved study.',
+            url: 'https://example.edu/protocol-amendments',
+          },
+        ]),
+    },
+    embed: {
+      embedQuery: () => Promise.resolve([1, 0]),
+      // 0.58: the score the real embedder gives the page that caused CCB-S5-028, which is
+      // below the 0.70 floor. So the preview's card shows a search refused for irrelevance,
+      // which is the state an operator most needs to recognise.
+      embedDocuments: (texts) =>
+        Promise.resolve(texts.map(() => [0.58, Math.sqrt(1 - 0.58 * 0.58)])),
+    },
   });
   previewSearch.noteRefusedBeforeSearch('sexual-explicit');
   previewSearch.noteRefusedBeforeSearch('darknet');
+  await previewSearch.search('which is correct for SimpleGo', {
+    groupId: 1,
+    memberId: 'preview-member',
+  });
   setWebSearchService(previewSearch);
 
   // The registry, so the Book of Elii previews a real prompt and the Memory page can measure

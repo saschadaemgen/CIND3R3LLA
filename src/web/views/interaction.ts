@@ -359,6 +359,14 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     vars: '',
   },
   searchEmpty: { label: 'Web search ran and found nothing (closes an announcement)', vars: '' },
+  searchIrrelevant: {
+    label: 'Web search found things, none of them about the question',
+    vars: '',
+  },
+  searchUnchecked: {
+    label: 'Web search found things and their relevance could not be checked',
+    vars: '',
+  },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
     vars: '{action} {duration}',
