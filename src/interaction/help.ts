@@ -60,10 +60,14 @@ const CAPABILITIES: Partial<Record<Intent, Capability>> = {
     en: '*status* - how much of yours I keep, and how much is public',
     de: '*status* - wie viel ich von dir bewahre, und wie viel öffentlich ist',
   },
+  // CCB-S5-026. This said "*search ...*", which is now exactly the form that does NOT reach
+  // the archive: a bare search verb says nothing about where to look, so it falls through to
+  // conversation. A help line that teaches the one phrasing which stopped working is worse
+  // than no help line, so it teaches the command and names the archive.
   SEARCH: {
     keyword: 'search',
-    en: '*search ...* - look through what the group has made public',
-    de: '*suche ...* - durchsuchen, was die Gruppe öffentlich gemacht hat',
+    en: '*/search ...* - look through what this group has made public, or just ask me what we said about something',
+    de: '*/search ...* - durchsuchen, was diese Gruppe öffentlich gemacht hat, oder frag mich einfach, was wir über etwas gesagt haben',
   },
   PRICE: {
     keyword: 'price',

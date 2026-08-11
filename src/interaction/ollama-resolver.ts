@@ -72,10 +72,16 @@ export const INTENT_DEFINITIONS: Record<Intent, string> = {
   // request naming the WEB was still landing here, helped along by a slot rule that said
   // only SEARCH may carry a query. Both sides now say which corpus they are, because a
   // boundary stated from one side only is a boundary the model has to infer.
+  // CCB-S5-026. The rule engine requires the member to NAME where to look; a model told
+  // only "a request to search the archive" would keep claiming SEARCH for a bare search
+  // verb, and the seam would honour it because SEARCH is in the catalog. The description
+  // carries the same bar the patterns do.
   SEARCH:
-    'A request to search THIS GROUP OWN ARCHIVE: what members have said here, what is ' +
-    'stored, what was posted before. Put the search text in slots.query. This is never the ' +
-    'web and never the internet.',
+    'An EXPLICIT request to look in THIS GROUP OWN ARCHIVE. It must name where: the archive, ' +
+    'the chat, this group, or asking what was said, posted or mentioned HERE before. Put the ' +
+    'search text in slots.query. A bare search verb naming no place is NOT this: ' +
+    '"search for X" and "find me X" say nothing about where to look and are UNKNOWN. This is ' +
+    'never the web and never the internet.',
   // CCB-S4-041. "identity" was the defect. It predates both the origin field and free
   // conversation: when it was written, help was the only place she said anything about
   // herself, and it is now the wrong answer to every question about who she is. A larger

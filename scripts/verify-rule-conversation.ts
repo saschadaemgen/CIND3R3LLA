@@ -110,9 +110,19 @@ async function main(): Promise<void> {
     threshold: 0.5,
     intents: catalog,
   } as never);
+  // ── THIS ASSERTED A DEFECT, AND THE DEFECT IS GONE (CCB-S5-026) ──────────
+  //
+  // It pinned the SECOND half of the CCB-S4-048 defect: "was sind deine Regeln?" was taken
+  // by the ARCHIVE, because `suche`/`finde` were bare keywords and a single word anywhere
+  // in a sentence scored toward a full-text search. D-179 removed every archive keyword and
+  // required the member to name where to look, which removes the theft at its root rather
+  // than by the precedence rule that was layered over it.
+  //
+  // Inverted rather than deleted: "the German phrasing is no longer stolen" is the thing
+  // worth holding, and a check that stopped mentioning it would leave the fix unproven.
   check(
-    'and the German phrasing WAS stolen there, which is the other half of the defect',
-    german.intent === 'SEARCH',
+    'the German phrasing is no longer stolen by the archive (D-179 removed the keywords)',
+    german.intent === 'UNKNOWN',
     `${String(german.intent)} at ${String(german.confidence)}`,
   );
 

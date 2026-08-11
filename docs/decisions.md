@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 177 decisions</strong> — newest first. Highest allocated: <strong>D-178</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 178 decisions</strong> — newest first. Highest allocated: <strong>D-179</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-179 | The archive is explicit-only, which finishes what D-141 started | IMPLEMENTED |
 | D-178 | The preview was not the problem; reading pages instead of using them was | IMPLEMENTED |
 | D-177 | Every control is consulted, or it is not a control | IMPLEMENTED |
 | D-176 | Store the text, not what a model made of it | IMPLEMENTED |
@@ -207,6 +208,57 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-179 - The archive is explicit-only, which finishes what D-141 started
+
+**Status: IMPLEMENTED** (CCB-S5-026, no migration). Three lookups now exist and they were
+competing for the same words. The web goes outside, the archive is this group's own history,
+and the knowledge base is what the operator gave her. `search for X` claimed the archive, so a
+question the knowledge base should have answered went to a full-text count instead.
+
+**THE PRINCIPLE IS NOT NEW, IT WAS ONLY APPLIED TO ONE SIDE.** CCB-S4-041 removed `search for`
+from the WEB list with the reason that *a bare search verb is not a statement about where to
+look*, and handed it back to the archive. That reasoning was right and half-finished: it is
+not a statement about the archive either. So the archive now takes the same bar the web takes,
+every phrase must name where, and the residue falls to conversation, which is where the
+knowledge base is consulted. The three stop competing.
+
+**"EXPLICIT" MEANS NAMING THE PLACE, NOT CONTAINING A KEYWORD.** The web list already accepts
+`google`, `check online` and `what does the internet say`; none contains the word "web" and all
+are unmistakable. The archive gets the same latitude: `what did we say about`,
+`did anyone mention`, `have we talked about` contain no "archive" and can mean nothing but this
+group's own past. Requiring the literal word would have been a rule members do not speak.
+
+**ALL KEYWORDS ARE GONE**, and that is the larger half of the change. `search`, `find`, `suche`,
+`suchen`, `finde`, `finden`, `durchsuche` each scored toward the archive from anywhere in a
+sentence. A single word is never a statement about where.
+
+**GERMAN NEEDED MORE PHRASES, NOT FEWER.** `suche nach` is the ordinary way to say it and it is
+going; without replacements the capability would have survived in English and quietly
+disappeared for German members, which is the kind of loss nobody reports because it looks like
+the bot simply not answering. Two constraints shaped the German list. `findWindow` matches a
+CONTIGUOUS token window, so separable constructions like "hat jemand X erwähnt" cannot be a
+pattern and every German form puts the topic last. And German puts the verb at the end, so
+"was haben wir über den ball gesagt" leaves `den ball gesagt` as the query;
+`countPublishedMatching` uses `websearch_to_tsquery`, which ANDs its terms, so that stray
+participle would have required the word "gesagt" to appear in the message and returned nothing.
+`extractQuery` strips a small set of trailing participles. English needs none of this, because
+its archive phrases end in "about" and the topic is already last.
+
+**AND THE ARCHIVE GETS A SLASH COMMAND**, which it never had. Consent has `/publish` behind its
+natural phrasing; the archive had nothing, so narrowing the trigger would have left a member
+who could not remember the wording with no route at all. `/search <query>` states where to look
+by being a command, so it cannot lose to the web or the knowledge base for a word, and it sits
+beside `/help` before the guard that keeps command-shaped text out of the conversational path.
+A bare `/search` says what to look for rather than claiming not to understand, because she
+understood perfectly and was given nothing.
+
+**THE HELP TEXT WAS A PROMISE AND IT BECAME FALSE.** It read `*search ...* - look through what
+the group has made public`, which is exactly the form that stopped working: it taught the one
+phrasing the change removes. A help line that teaches a broken form is worse than no help line,
+so it now names the command and the natural question. The model resolver's own SEARCH
+description carries the same bar, because a model told only "a request to search the archive"
+would keep claiming SEARCH for a bare verb and the seam would honour it.
 
 ### D-178 - The preview was not the problem; reading pages instead of using them was
 

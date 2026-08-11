@@ -80,6 +80,10 @@ export const PERSONA_KEYS = [
   'refuseThirdParty', // briefing §5 — {name}
   'status', // briefing §5 — {total} {public}
   'searchResult', // briefing §5 — {n} {query}
+  // CCB-S5-026. A bare '/search' with nothing after it. Its own line because 'I did not
+  // understand' is the one thing that is NOT true: she understood perfectly and was given
+  // nothing to look for.
+  'searchNoQuery',
   'notUnderstood', // briefing §5
   // CCB-S4-027 - the model was asked to talk and could not. NOT notUnderstood: saying
   // "I did not catch that" when the truth is "my words were not available" is a small
@@ -174,6 +178,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   undoNotRevocation: 'consent',
   status: 'status',
   searchResult: 'search',
+  searchNoQuery: 'search',
   notUnderstood: 'notUnderstood',
   conversationUnavailable: 'conversation',
   // Sent as part of the retort message, so it shares the retort's category. Classifying
@@ -476,6 +481,8 @@ const PERSONA_EN: PersonaStrings = {
     'here with me.',
   searchResult:
     '🔍 I found {n} moments where this group spoke of {query}. Shall I bring them to you?',
+  searchNoQuery:
+    '🔍 Tell me what to look for and I will go through what this room has said: */search glass slipper*.',
   notUnderstood:
     '🕯️ I did not quite catch that. Did you wish to publish, to withdraw, or to know what I keep ' +
     'of yours?',
@@ -606,6 +613,9 @@ const PERSONA_DE: PersonaStrings = {
   searchResult:
     '🔍 Ich habe {n} Momente gefunden, in denen diese Gruppe über {query} sprach. Soll ich sie ' +
     'dir bringen?',
+  searchNoQuery:
+    '🔍 Sag mir, wonach ich suchen soll, dann gehe ich durch, was hier gesagt wurde: ' +
+    '*/search glaeserner schuh*.',
   notUnderstood:
     '🕯️ Das habe ich nicht ganz erfasst. Möchtest du veröffentlichen, widerrufen, oder wissen, ' +
     'was ich von dir bewahre?',

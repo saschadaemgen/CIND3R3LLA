@@ -321,9 +321,57 @@ async function main(): Promise<void> {
     'German "was hast du über mich" → STATUS',
     (await r('was hast du über mich')).intent === 'STATUS',
   );
-  const searchResult = await r('search for pizza');
-  check('"search for pizza" → SEARCH', searchResult.intent === 'SEARCH');
+  // ── THE ARCHIVE IS EXPLICIT-ONLY (CCB-S5-026) ─────────────────────────────
+  //
+  // This asserted that "search for pizza" reaches the archive, and it deliberately no longer
+  // does: a bare search verb says nothing about where to look, so it falls through to
+  // conversation where the knowledge base is consulted. The assertion is inverted rather
+  // than deleted, because "it stopped reaching the archive" is the change and a check that
+  // simply stopped mentioning it would leave the change unproven.
+  const searchResult = await r('search the archive for pizza');
+  check('"search the archive for pizza" → SEARCH', searchResult.intent === 'SEARCH');
   check('SEARCH carries the query slot', searchResult.slots.query === 'pizza');
+  check(
+    '"search for pizza" no longer reaches the archive, because it names no place',
+    (await r('search for pizza')).intent === 'UNKNOWN',
+    (await r('search for pizza')).intent,
+  );
+  check(
+    'and neither does a bare "find"',
+    (await r('find the good bits')).intent === 'UNKNOWN',
+    (await r('find the good bits')).intent,
+  );
+
+  // The natural forms that must keep working, in both languages. German is the load-bearing
+  // half: `suche nach` is going, and without these the capability would survive in English
+  // and quietly vanish for German members.
+  for (const [phrase, expected] of [
+    ['what did we say about the glass slipper', 'the glass slipper'],
+    ['did anyone mention the pumpkin', 'the pumpkin'],
+    ['search the chat for midnight', 'midnight'],
+    ['have we talked about the ball', 'the ball'],
+  ] as const) {
+    const hit = await r(phrase);
+    check(`"${phrase}" → SEARCH`, hit.intent === 'SEARCH', hit.intent);
+    check(`  and its query is "${expected}"`, hit.slots.query === expected, hit.slots.query ?? '');
+  }
+  for (const [phrase, expected] of [
+    ['durchsuche das archiv nach kutsche', 'kutsche'],
+    ['suche im archiv nach mitternacht', 'mitternacht'],
+    ['was haben wir über den ball gesagt', 'den ball'],
+    ['hat jemand über den schuh geschrieben', 'den schuh'],
+  ] as const) {
+    const hit = await r(phrase);
+    check(`"${phrase}" → SEARCH`, hit.intent === 'SEARCH', hit.intent);
+    // The trailing participle is stripped: `websearch_to_tsquery` ANDs its terms, so a
+    // stray "gesagt" would require that word in the message and return nothing.
+    check(`  and its query is "${expected}"`, hit.slots.query === expected, hit.slots.query ?? '');
+  }
+  check(
+    'German "suche nach kutsche" no longer reaches the archive either',
+    (await r('suche nach kutsche')).intent === 'UNKNOWN',
+    (await r('suche nach kutsche')).intent,
+  );
   check('"what can you do" → HELP', (await r('what can you do')).intent === 'HELP');
   check('"undo that" → UNDO', (await r('undo that')).intent === 'UNDO');
   check('gibberish → UNKNOWN', (await r('flurble wibbet')).intent === 'UNKNOWN');
@@ -581,7 +629,9 @@ async function main(): Promise<void> {
   );
 
   coolDown();
-  const search = await say('Cinderella search for pizza');
+  // Explicit-only since CCB-S5-026: the phrasing has to name the archive. Driven end to end
+  // through the engine, so this proves the whole path and not only the resolver.
+  const search = await say('Cinderella search the archive for pizza');
   check('search answers with a count', search.replies[0]?.includes('I found 2 moments') === true);
   check('search echoes the query', search.replies[0]?.includes('pizza') === true);
 
@@ -1664,6 +1714,43 @@ async function main(): Promise<void> {
   check(
     'the bare /help slash is answered',
     slashHelp.handled && (slashHelp.replies[0]?.length ?? 0) > 100,
+  );
+
+  // ── /search IS THE FALLBACK THE ARCHIVE HAD NONE OF (CCB-S5-026) ──────────
+  //
+  // The natural-language trigger is explicit-only now, and unlike consent, which has
+  // /publish behind it, the archive had no command at all. These drive the real path: a
+  // slash command states where to look by being one, so it can never lose to the web or
+  // the knowledge base for a word.
+  coolDown();
+  const slashSearch = await say('/search pizza');
+  check(
+    '/search <query> reaches the archive and answers with a count',
+    // The SHAPE, not a fixed number: consent state has moved by this point in the harness,
+    // so the count is whatever is published now. What is being proven is that the command
+    // reaches the archive path at all.
+    slashSearch.handled && /I found \d+ moments/.test(slashSearch.replies[0] ?? ''),
+    slashSearch.replies[0]?.slice(0, 60) ?? '(silence)',
+  );
+  check(
+    '  and it echoes the query it was given',
+    slashSearch.replies[0]?.includes('pizza') === true,
+  );
+  coolDown();
+  const bareSlash = await say('/search');
+  check(
+    'a bare /search asks what to look for rather than claiming not to understand',
+    bareSlash.handled && (bareSlash.replies[0]?.includes('what to look for') === true),
+    bareSlash.replies[0]?.slice(0, 60) ?? '(silence)',
+  );
+  // MUTATION: the command must not be reachable as ordinary conversation, or the guard that
+  // keeps command-shaped text out of the conversational path has a hole in it.
+  coolDown();
+  const notACommand = await say('Cinderella tell me about /search');
+  check(
+    'MUTATION: the word /search inside a sentence does not run the command',
+    !(notACommand.replies[0]?.includes('I found 2 moments') === true),
+    notACommand.replies[0]?.slice(0, 50) ?? '(silence)',
   );
 
   coolDown();

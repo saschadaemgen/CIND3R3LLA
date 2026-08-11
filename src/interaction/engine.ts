@@ -639,6 +639,30 @@ export class InteractionEngine {
       );
       return true;
     }
+    // ── `/search <query>`: THE UNAMBIGUOUS ROUTE TO THE ARCHIVE (CCB-S5-026) ──
+    //
+    // The natural-language trigger is explicit-only now, and it is the ONLY route the
+    // archive had: unlike consent, which has `/publish` behind it, a member who could not
+    // remember the phrasing had nothing to fall back on. This is that fallback, and it
+    // resolves nothing: a slash command states where to look by being one, so it never
+    // competes with the web or the knowledge base for a word.
+    //
+    // Placed beside `/help` and before the slash guard below, for the same reason: command
+    // shaped text never reaches the conversational path.
+    const slashSearch = /^\/search(?:\s+(\S.*))?$/i.exec(msg.text.trim());
+    if (slashSearch) {
+      this.handledCategory = 'search';
+      const searchLang = this.replyLanguage(msg, s, msg.text, undefined, this.now());
+      const query = (slashSearch[1] ?? '').trim();
+      if (!query) {
+        // A bare `/search` is a member who knows the command and not the shape of it.
+        await this.reply(msg, s, searchLang, 'searchNoQuery', {});
+        return true;
+      }
+      const found = await countPublishedMatching(this.deps.db, query);
+      await this.reply(msg, s, searchLang, 'searchResult', { n: found, query });
+      return true;
+    }
     if (msg.text.trimStart().startsWith('/')) return false;
 
     const now = this.now();

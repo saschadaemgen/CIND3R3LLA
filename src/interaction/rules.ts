@@ -231,23 +231,83 @@ const LEXICON: LexEntry[] = [
     ],
     keywords: ['status', 'statistik', 'statistiken', 'zahlen'],
   },
+  // ── THE ARCHIVE IS EXPLICIT-ONLY, LIKE THE WEB (CCB-S5-026) ────────────────
+  //
+  // Every phrase here must SAY WHERE: the archive, the chat, the group, or the group's own
+  // past in a form that can mean nothing else. There are NO keywords, and that is the whole
+  // change: a bare `search` or `find` anywhere in a sentence used to score toward the
+  // archive, and `search for` / `suche nach` claimed any request to look for anything.
+  //
+  // This completes CCB-S4-041 rather than reversing it. That briefing took `search for` OUT
+  // of the web list with the reason that "a bare search verb is not a statement about where
+  // to look", and applied the principle to one side only. It is not a statement about the
+  // archive either. What is left over now falls to conversation, which is where the
+  // knowledge base is consulted, so the three lookups stop competing for the same words.
+  //
+  // The test for admission is the one the web list already passes: `google` contains no "web"
+  // and names the place beyond doubt. `what did we say about` contains no "archive" and names
+  // this group's own history beyond doubt. Literal keywords are not the standard; being
+  // unmistakable about WHERE is.
   {
     intent: 'SEARCH',
     lang: 'en',
     phrases: [
       'search the archive for',
-      'look through the archive for',
-      'search for',
-      'look for',
       'search the archive',
+      'search the chat archive',
+      'search the chat history',
+      'search the chat',
+      'search the group',
+      'search this group',
+      'look through the archive for',
+      'look through the archive',
+      'look in the archive',
+      // Named by meaning rather than by the word "archive", which is what members type.
+      'what did we say about',
+      'what did anyone say about',
+      'what has been said about',
+      'did we talk about',
+      'have we talked about',
+      'did anyone mention',
+      'has anyone mentioned',
+      'did anyone post',
+      'has anyone posted',
     ],
-    keywords: ['search', 'find'],
+    keywords: [],
   },
   {
     intent: 'SEARCH',
     lang: 'de',
-    phrases: ['durchsuche das archiv nach', 'suche im archiv nach', 'suche nach', 'such nach'],
-    keywords: ['suche', 'suchen', 'finde', 'finden', 'durchsuche'],
+    // GERMAN NEEDS MORE OF THESE, NOT FEWER. `suche nach` is the ordinary way to say it and
+    // it is going, so without natural replacements the capability would survive in English
+    // and quietly disappear for German members. Every phrase is CONTIGUOUS, because
+    // `findWindow` matches a token window: German separable constructions like
+    // "hat jemand X erwähnt" cannot be a pattern, so the forms below all put the topic last.
+    phrases: [
+      'durchsuche das archiv nach',
+      'durchsuche das archiv',
+      'suche im archiv nach',
+      'suche im archiv',
+      'such im archiv',
+      'such mal im archiv',
+      'durchsuche die gruppe',
+      'durchsuche den chat',
+      'durchsuche den verlauf',
+      'suche in der gruppe',
+      'suche im chat',
+      'suche im verlauf',
+      // The natural spoken forms. The topic follows and a participle usually trails it,
+      // which `extractQuery` strips: `websearch_to_tsquery` ANDs its terms, so a stray
+      // "gesagt" would require that word to appear in the message and return nothing.
+      'was haben wir über',
+      'was haben wir hier über',
+      'was wurde hier über',
+      'was wurde über',
+      'haben wir über',
+      'hat jemand über',
+      'hat hier jemand über',
+    ],
+    keywords: [],
   },
   {
     intent: 'HELP',
@@ -894,6 +954,30 @@ function findTargetName(text: string, tokens: Token[]): string | undefined {
 }
 
 /** Everything after the search keyword, minus a leading `for` / `nach`. */
+/**
+ * The verbs German puts at the END of the sentence, which are not part of the topic.
+ *
+ * "was haben wir über den scheduler GESAGT" leaves `den scheduler gesagt` as the query, and
+ * `countPublishedMatching` uses `websearch_to_tsquery`, which ANDs its terms: the archive
+ * would then have to contain the word "gesagt" for any result at all. So the trailing verb
+ * is dropped. English needs none of this, because its archive phrases end in "about" and the
+ * topic is last (CCB-S5-026).
+ */
+const TRAILING_VERBS = new Set([
+  'gesagt',
+  'geschrieben',
+  'geschickt',
+  'erwähnt',
+  'erwaehnt',
+  'gesprochen',
+  'besprochen',
+  'gepostet',
+  'geredet',
+  'diskutiert',
+  'erzählt',
+  'erzaehlt',
+]);
+
 function extractQuery(text: string, tokens: Token[], m: Match): string | undefined {
   const rest = tokens.slice(m.end);
   const first = rest[0];
@@ -901,8 +985,14 @@ function extractQuery(text: string, tokens: Token[], m: Match): string | undefin
   const skip = first.norm === 'for' || first.norm === 'nach' || first.norm === 'about' ? 1 : 0;
   const from = rest[skip];
   if (!from) return undefined;
+  // Trailing verbs come off the END, one or more of them, before the text is sliced: the
+  // query runs to the last token that is part of the topic.
+  let last = rest.length - 1;
+  while (last >= skip && TRAILING_VERBS.has(rest[last]?.norm ?? '')) last--;
+  const to = rest[last];
+  if (!to || last < skip) return undefined;
   const q = text
-    .slice(from.start)
+    .slice(from.start, to.end)
     .replace(/["“”„«»]/g, '')
     .trim();
   return q || undefined;
