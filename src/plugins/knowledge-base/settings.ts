@@ -127,3 +127,37 @@ export function normalizeKnowledge(raw: unknown): KnowledgeSettings {
       : d.trigger,
   };
 }
+
+/**
+ * The phrases that count as asking her to consult what she was given.
+ *
+ * DETERMINISTIC AND INSPECTABLE, on the web search precedent: a list a person can read and a
+ * check can drive, never a judgement the model makes. Only consulted when the trigger is
+ * `explicit`; on `always` the relevance floor is what decides.
+ *
+ * German beside English because the group is bilingual and a control that worked in one
+ * language would be a control that silently did nothing for half the members.
+ */
+export const EXPLICIT_PHRASES: readonly string[] = Object.freeze([
+  'your notes',
+  'your document',
+  'your documents',
+  'your material',
+  'check your',
+  'consult your',
+  'look in your',
+  'what were you given',
+  'what you were given',
+  'deinen unterlagen',
+  'deine unterlagen',
+  'deinen dokumenten',
+  'deine dokumente',
+  'schau in deine',
+  'sieh in deine',
+]);
+
+/** True when a message explicitly asks her to consult the store. */
+export function asksForDocuments(text: string): boolean {
+  const t = text.toLowerCase();
+  return EXPLICIT_PHRASES.some((phrase) => t.includes(phrase));
+}

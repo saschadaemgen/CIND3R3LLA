@@ -32,6 +32,14 @@
   function wire(form) {
     var input = form.querySelector('input[type="file"]');
     var payload = form.querySelector('input[name="imageData"]');
+    // CCB-S5-022: the knowledge base uploads TEXT through this same path, and its server
+    // route needs the filename to decide the format. Optional, so the two image pages that
+    // do not carry the field are untouched.
+    var nameField = form.querySelector('input[data-upload-name]');
+    // What the ready line says. The image pages say the bytes are re-encoded, which is true
+    // for them and false for a text document, so the page supplies its own sentence.
+    var readyNote = form.getAttribute('data-upload-ready') ||
+      ' is ready. It is re-encoded on the server.';
     var status = form.querySelector('[data-image-upload-status]');
     var submit = form.querySelector('button[type="submit"]');
     if (!input || !payload || !submit) return;
@@ -46,6 +54,7 @@
     input.addEventListener('change', function () {
       var file = input.files && input.files[0];
       payload.value = '';
+      if (nameField) nameField.value = '';
       submit.disabled = true;
       if (!file) {
         if (status) status.textContent = idle;
@@ -72,9 +81,10 @@
           return;
         }
         payload.value = result.slice(comma + 1);
+        if (nameField) nameField.value = file.name;
         submit.disabled = false;
         if (status) {
-          status.textContent = file.name + ' is ready. It is re-encoded on the server.';
+          status.textContent = file.name + readyNote;
         }
       };
       reader.readAsDataURL(file);

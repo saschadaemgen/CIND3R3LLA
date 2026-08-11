@@ -29,7 +29,11 @@ import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
 import { setLogLevel } from '../src/log.js';
 import { Embedder } from '../src/knowledge/embed.js';
-import { KnowledgeService, checksumOf } from '../src/knowledge/service.js';
+import {
+  KnowledgeService,
+  checksumOf,
+  singleConnectionTransaction,
+} from '../src/knowledge/service.js';
 import { deleteDocument, setGrant, upsertDocument } from '../src/db/knowledge.js';
 import { normalizeKnowledge } from '../src/plugins/knowledge-base/settings.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
@@ -141,7 +145,12 @@ async function main(): Promise<void> {
 
   const embedder = new Embedder({ config: { baseUrl: AI.baseUrl, timeoutMs: 120_000 } });
   const settings = normalizeKnowledge({});
-  const service = new KnowledgeService({ db, embedder, settings: () => settings });
+  const service = new KnowledgeService({
+    db,
+    embedder,
+    settings: () => settings,
+    transaction: singleConnectionTransaction(db),
+  });
 
   const started = Date.now();
   const doc = await upsertDocument(db, {

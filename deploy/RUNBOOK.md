@@ -31,6 +31,12 @@ npm ci
 npm run build          # tsc + Tailwind/htmx assets
 
 # 3) PostgreSQL: least-privilege role + owned database
+#
+# pgvector FIRST. Migration 052 runs `CREATE EXTENSION vector` for the knowledge base
+# (CCB-S5-022), and the extension has to be INSTALLED ON THE SERVER before any migration
+# runs: without it `node dist/db/migrate.js` fails at 052 and the deploy stops there.
+# Additive, and it touches no neighbouring database.
+sudo apt-get install -y postgresql-16-pgvector   # match your server's major version
 DB_PW="$(openssl rand -hex 24)"
 sudo -u postgres psql -c "CREATE ROLE cinderella LOGIN PASSWORD '${DB_PW}';"
 sudo -u postgres psql -c "CREATE DATABASE cinderella OWNER cinderella;"
@@ -192,6 +198,9 @@ The manual equivalent, if you need to run a step by hand:
 cd /opt/cinderella
 git pull            # (needs a deploy key; else use the bundle above)
 npm ci && npm run build
+# ONE-OFF, before the first deploy that carries migration 052 (CCB-S5-022): the knowledge
+# base needs pgvector on the server, and the migration fails without it.
+#   sudo apt-get install -y postgresql-16-pgvector
 env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.js
 systemctl restart cinderella   # sessions survive this now
 ```

@@ -148,8 +148,8 @@ exist twice** (017, 018, 019), because the parallel-chat AI work reused numbers 
 CCB-attributed work had already taken. The runner keys `schema_migrations` on the **full
 filename**, so all six apply exactly once and nothing is broken — but the number is a label
 rather than an ordinal, **no applied migration may be renamed**, and new migrations allocate
-from the highest number on disk plus one (currently **052**, since 051 landed with the per-bot
-plugin overrides). See **D-069** and the appendix.
+from the highest number on disk plus one (currently **054**, since 053 landed with the knowledge
+base controls). See **D-069** and the appendix.
 
 > Note: `CLAUDE.md`'s migrations list labels 004 the "moderation gate"; the file itself is headed "Cinderella admin views support — Season 0, Stage 5" (`migrations/004_moderation.sql:1`) and its concrete effect is adding `media_error` and folding `rejected` into the publish views. It implements the takedown gate in the views but is not exclusively about moderation.
 
@@ -3521,3 +3521,53 @@ Each divergence below is also noted inline at the relevant section. In every cas
 4. **Migration runner invocation.** `CLAUDE.md` gives `node dist/db/migrate.js`; `package.json:23` and `src/index.ts:49` point operators at `npm run migrate` (`tsx src/db/migrate.ts`). Same runner, different invocation (compiled vs `tsx`).
 
 5. **Migration numbers are not unique.** Three numbers exist twice — `017_jobs.sql` / `017_cinderella_profiles.sql`, `018_capture_events.sql` / `018_runtime_policy_decisions.sql`, `019_formatted_text.sql` / `019_bot_onboarding.sql` — because the parallel-chat AI work reused numbers the CCB-attributed work had already taken. The runner keys on the **full filename**, so all six apply exactly once and nothing is broken, but the number cannot be read as an ordinal and **no applied migration file may be renamed**. See **D-069**.
+
+## 44. The knowledge base (CCB-S5-022, D-176; its controls CCB-S5-023, D-177)
+
+Documents the operator supplies, so she can answer from material she was never trained on.
+Code in [`src/knowledge/`](../src/knowledge/) (the store machinery, deliberately not under a
+plugin because long-term per-member memory will reuse it) and
+[`src/plugins/knowledge-base/`](../src/plugins/knowledge-base/) (the plugin surface).
+Migrations **052** (store) and **053** (controls).
+
+**Verbatim, and structurally so.** A chunk is a half-open RANGE into the source and its body is
+`source.slice(start, end)`; nothing concatenates, so no code path can add a character. No
+summary, no model-written artefact, and the contextual prefix is DERIVED from the title,
+heading path and position. The evidence and the two defects that forced the offset rewrite are
+in D-176.
+
+**Hybrid retrieval, one statement.** `searchChunks` runs Postgres FTS and pgvector cosine over
+a `scoped` CTE that is the only place the per-bot rule lives, so a chunk the bot cannot read
+cannot even affect the ranks of one it can. Every candidate carries a cosine score, including
+the ones only the keyword search found, because the floor is applied to that one calibrated
+number.
+
+**Fuse, floor, budget, in that order.** Weighted reciprocal rank fusion (`retrieval.ts`, pure);
+then the relevance floor on cosine, below which NOTHING is retrieved; then the budget, which
+drops whole chunks and never truncates. The order is load-bearing: a budget with room in it
+must not be able to pull in an irrelevant chunk.
+
+**Fenced and attributed.** Passages ride in the USER message inside `KNOWLEDGE_FENCE`
+(`<<<REFERENCE-DOCUMENT>>>`, its own marker, never the search one), with four registry rules
+selected only when passages are attached. The source line is written by the application
+(D-137); a registry rule tells her not to write one.
+
+**Per bot.** The plugin's `enabled` is per bot through CCB-S5-021's mechanism, which needed one
+inventory row and no new machinery. The document GRANT is a row in
+`cinderella_kb_document_bots`, where absence means NOT GIVEN, deliberately the inverse of the
+plugin overrides.
+
+**Ingest is a queue job** (`knowledge.ingest`, bulk lane), because embedding is ~660 ms a chunk.
+`replaceChunks` runs inside a REQUIRED injected transaction runner: production passes
+`withTransaction`, harnesses pass the single-connection form, and the console's service throws
+rather than writing chunks through a pool.
+
+**Console**: `/plugins/knowledge-base` (documents, grants, every setting, and the three controls
+that deliberately do not exist) and `/plugins/knowledge-base/diagnostics` (a question, and every
+candidate with its keyword score, cosine score, weight, fused score and outcome). This page
+carries the bot switcher, unlike the other plugin pages, because the grants really are per bot.
+
+**Staleness is derived** from `ingest_signature`, not flagged. A stale document stays
+retrievable and is badged, with a one-click rebuild; see D-177 for why both alternatives were
+rejected.
+

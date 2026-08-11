@@ -24,6 +24,24 @@ export interface KbDocument {
   ingestError: string | null;
   ingestedAt: string | null;
   createdAt: string;
+  /** Multiplies the fused retrieval score. Order only, never membership (CCB-S5-023). */
+  weight: number;
+  /** The ingest settings the stored chunks were cut under. NULL predates the column. */
+  ingestSignature: string | null;
+}
+
+/**
+ * TIMESTAMPTZ comes back as a `Date` from both node-postgres and PGlite, never as a string.
+ * Typing it as a string compiled fine and threw `d.ingestedAt.slice is not a function` the
+ * first time the console rendered a row, which is the D-162 lesson in its smallest form: the
+ * type said one thing, the driver did another, and only pressing the page found it.
+ */
+function iso(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString();
+  // Narrowed rather than String()d: the column is a timestamp, so anything that is neither a
+  // Date nor a string is a driver surprise worth seeing as null rather than as [object Object].
+  return typeof value === 'string' ? value : null;
 }
 
 interface DocRow {
@@ -36,8 +54,10 @@ interface DocRow {
   state: DocumentState;
   chunk_count: number;
   ingest_error: string | null;
-  ingested_at: string | null;
-  created_at: string;
+  ingested_at: Date | string | null;
+  created_at: Date | string;
+  weight: number;
+  ingest_signature: string | null;
 }
 
 const toDoc = (r: DocRow): KbDocument => ({
@@ -50,12 +70,15 @@ const toDoc = (r: DocRow): KbDocument => ({
   state: r.state,
   chunkCount: Number(r.chunk_count),
   ingestError: r.ingest_error,
-  ingestedAt: r.ingested_at,
-  createdAt: r.created_at,
+  ingestedAt: iso(r.ingested_at),
+  createdAt: iso(r.created_at) ?? '',
+  weight: Number(r.weight),
+  ingestSignature: r.ingest_signature,
 });
 
 const DOC_COLUMNS = `id, title, source_name, content_type, byte_size, checksum, state,
-                     chunk_count, ingest_error, ingested_at, created_at`;
+                     chunk_count, ingest_error, ingested_at, created_at, weight,
+                     ingest_signature`;
 
 /** Every document, newest first. The console's list. */
 export async function listDocuments(db: Queryable): Promise<KbDocument[]> {
@@ -129,7 +152,7 @@ export async function setDocumentState(
   db: Queryable,
   id: number,
   state: DocumentState,
-  detail?: { chunkCount?: number; error?: string | null },
+  detail?: { chunkCount?: number; error?: string | null; ingestSignature?: string },
 ): Promise<void> {
   await db.query(
     `UPDATE cinderella_kb_documents
@@ -137,9 +160,28 @@ export async function setDocumentState(
             chunk_count = COALESCE($3, chunk_count),
             ingest_error = $4,
             ingested_at = CASE WHEN $2 = 'ready' THEN now() ELSE ingested_at END,
+            -- Recorded ONLY on the transition to ready, and only from what the ingest
+            -- actually used. Writing it on any other transition would claim that chunks
+            -- match settings they were never cut under (CCB-S5-023).
+            ingest_signature = CASE WHEN $2 = 'ready' THEN $5 ELSE ingest_signature END,
             updated_at = now()
       WHERE id = $1`,
-    [id, state, detail?.chunkCount ?? null, detail?.error ?? null],
+    [id, state, detail?.chunkCount ?? null, detail?.error ?? null, detail?.ingestSignature ?? null],
+  );
+}
+
+/** The operator's ordering thumb on one document (CCB-S5-023). */
+export async function setDocumentWeight(
+  db: Queryable,
+  id: number,
+  weight: number,
+): Promise<void> {
+  // Clamped here as well as by the CHECK, so the operator gets a stored value rather than a
+  // constraint violation from a form that posted something odd.
+  const bounded = Math.min(10, Math.max(0.01, Number.isFinite(weight) ? weight : 1));
+  await db.query(
+    `UPDATE cinderella_kb_documents SET weight = $2, updated_at = now() WHERE id = $1`,
+    [id, bounded],
   );
 }
 
@@ -212,20 +254,19 @@ export async function replaceChunks(
   documentId: number,
   chunks: readonly { ord: number; body: string; contextPrefix: string; embedding: number[] }[],
 ): Promise<void> {
-  await db.query('BEGIN');
-  try {
-    await db.query(`DELETE FROM cinderella_kb_chunks WHERE document_id = $1`, [documentId]);
-    for (const chunk of chunks) {
-      await db.query(
-        `INSERT INTO cinderella_kb_chunks (document_id, ord, body, context_prefix, embedding)
-         VALUES ($1, $2, $3, $4, $5::vector)`,
-        [documentId, chunk.ord, chunk.body, chunk.contextPrefix, toVectorLiteral(chunk.embedding)],
-      );
-    }
-    await db.query('COMMIT');
-  } catch (error) {
-    await db.query('ROLLBACK');
-    throw error;
+  // NO BEGIN/COMMIT HERE. This runs inside a transaction the CALLER opened on a handle that
+  // is really one connection, because it used to open one itself through a plain `Queryable`
+  // and that is not a transaction against `pg.Pool`: every statement checks out a different
+  // connection, so the BEGIN stranded a connection mid-transaction, the DELETE auto-committed
+  // on another, and a failed INSERT rolled back nothing. A re-ingest that failed half way
+  // destroyed the previous chunk set permanently. See `KnowledgeService`'s `transaction` dep.
+  await db.query(`DELETE FROM cinderella_kb_chunks WHERE document_id = $1`, [documentId]);
+  for (const chunk of chunks) {
+    await db.query(
+      `INSERT INTO cinderella_kb_chunks (document_id, ord, body, context_prefix, embedding)
+       VALUES ($1, $2, $3, $4, $5::vector)`,
+      [documentId, chunk.ord, chunk.body, chunk.contextPrefix, toVectorLiteral(chunk.embedding)],
+    );
   }
 }
 
@@ -250,6 +291,7 @@ interface CandidateRow {
   keyword_rank: number | null;
   vector_score: number | null;
   vector_rank: number | null;
+  document_weight: number | null;
 }
 
 /**
@@ -282,7 +324,7 @@ export async function searchChunks(
   const { rows } = await db.query<CandidateRow>(
     `WITH scoped AS (
        SELECT c.id, c.document_id, c.ord, c.body, c.context_prefix, c.embedding, c.tsv,
-              d.title
+              d.title, d.weight
          FROM cinderella_kb_chunks c
          JOIN cinderella_kb_documents d
            ON d.id = c.document_id AND d.state = 'ready'
@@ -319,7 +361,8 @@ export async function searchChunks(
             kw.rank                                AS keyword_rank,
             -- Computed for EVERY candidate, not only the ones the vector search returned.
             1 - (s.embedding <=> $3::vector)       AS vector_score,
-            vec.rank                               AS vector_rank
+            vec.rank                               AS vector_rank,
+            s.weight                               AS document_weight
        FROM scoped s
        LEFT JOIN kw  ON kw.id  = s.id
        LEFT JOIN vec ON vec.id = s.id
@@ -338,9 +381,9 @@ export async function searchChunks(
     vectorScore: Number(r.vector_score ?? -1),
     keywordRank: r.keyword_rank === null ? null : Number(r.keyword_rank),
     vectorRank: r.vector_rank === null ? null : Number(r.vector_rank),
-    // The per-document weight is CCB-S5-023's control; neutral until it exists, and the
-    // seam is here so adding it is a column and a select rather than a reshaped model.
-    documentWeight: 1,
+    // The operator's per-document thumb (CCB-S5-023). Neutral at 1; it multiplies the
+    // FUSED score, so it reorders and can never lift a chunk over the relevance floor.
+    documentWeight: Number(r.document_weight ?? 1),
   }));
 }
 

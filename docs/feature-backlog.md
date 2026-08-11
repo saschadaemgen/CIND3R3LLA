@@ -243,6 +243,14 @@ The history below records the pre-CCB-S2-003 state.
       inventory saying which is which is data in `src/plugins/scope.ts`. **The knowledge base
       below inherits this shape**: enablement and the documents it is given are per bot, its
       index and credentials are not.
+- [x] **Knowledge base (CCB-S5-022, D-176; controls CCB-S5-023, D-177)** — documents the
+      operator uploads, chunked VERBATIM (no model-written artefacts), embedded with
+      nomic-embed-text, retrieved by hybrid keyword + vector search with a calibrated
+      relevance floor, a hard prompt budget and an application-written source line. Granted
+      per bot. Migrations 052 and 053; needs pgvector on the server.
+      **Long-term per-member memory is the same machinery over different material**, and the
+      shape it should follow is written down in D-176; what it adds is consent, which is why
+      it is its own work.
 - [x] **Price lookups, rebuilt (CCB-S3-004 revised)** — three provider adapters
       (CoinMarketCap, CoinGecko, Dexscreener) in an ordered chain with automatic failover;
       symbols resolved lazily then PINNED in `asset_mappings` and never silently

@@ -26,7 +26,13 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import type { Queryable } from '../src/db/pool.js';
 import { setLogLevel } from '../src/log.js';
-import { chunkDocument, CHUNK_DEFAULTS, ingestSettingsDiffer } from '../src/knowledge/chunk.js';
+import {
+  chunkDocument,
+  CHUNK_DEFAULTS,
+  ingestSettingsDiffer,
+  ingestSignature,
+  INGEST_SETTING_KEYS,
+} from '../src/knowledge/chunk.js';
 import {
   retrieve,
   attributionFor,
@@ -34,11 +40,17 @@ import {
   type Candidate,
 } from '../src/knowledge/retrieval.js';
 import { Embedder, EMBEDDING_DIMENSIONS, DOCUMENT_PREFIX, QUERY_PREFIX } from '../src/knowledge/embed.js';
-import { KnowledgeService, checksumOf, contentTypeFor } from '../src/knowledge/service.js';
+import {
+  KnowledgeService,
+  checksumOf,
+  contentTypeFor,
+  singleConnectionTransaction,
+} from '../src/knowledge/service.js';
 import {
   deleteDocument,
   listDocuments,
   searchChunks,
+  setDocumentWeight,
   setGrant,
   upsertDocument,
 } from '../src/db/knowledge.js';
@@ -128,36 +140,103 @@ async function main(): Promise<void> {
     embedImpl: (inputs) => Promise.resolve(inputs.map((t) => fakeEmbed(t))),
   });
   let settings = normalizeKnowledge({});
-  const service = new KnowledgeService({ db, embedder, settings: () => settings });
+  const service = new KnowledgeService({
+    db,
+    embedder,
+    settings: () => settings,
+    // PGlite is one connection, so BEGIN/COMMIT on this handle really is a transaction.
+    transaction: singleConnectionTransaction(db),
+  });
 
   /* ── 1. What is stored is what went in ──────────────────────────────────── */
 
   console.log('\n1. The store holds the source, verbatim');
 
+  // ── THIS ASSERTION USED TO BE VACUOUS, AND THAT IS WHY IT IS WRITTEN LIKE THIS ──
+  //
+  // It compared each chunk's FIRST LINE against the source and squashed all whitespace
+  // before comparing order. Both defects an adversarial read later found - injected
+  // separators and a wrong heading path - were invisible to it, and it printed
+  // "EVERY chunk body is a substring of the source" over a document where two of three
+  // bodies were not. It is an EXACT substring test now, over several document shapes.
+  /** Built by joining lines, so no escape in this file can go wrong the way one just did. */
+  const doc = (...lines: string[]): string => lines.join(String.fromCharCode(10));
+  const SHAPES: [string, string][] = [
+    ['the scheduler notes', DOC_A],
+    ['two sections', doc('# Scheduler', '', 'x'.repeat(600), '', '# Media', '', 'y'.repeat(600))],
+    [
+      'three sections',
+      doc('# A', '', 'a'.repeat(300), '', '# B', '', 'b'.repeat(300), '', '# C', '', 'c'.repeat(300)),
+    ],
+    ['one long paragraph', Array.from({ length: 900 }, (_, i) => `word${String(i)}`).join(' ')],
+    ['a run with no spaces at all', `${'A'.repeat(50)} ${'B'.repeat(4000)}`],
+    ['only headings', doc('# One', '## Two', '### Three', '')],
+    ['empty', ''],
+    ['heading depth jump', doc('# Top', '', 'p'.repeat(300), '', '### Deep', '', 'q'.repeat(300))],
+  ];
+
+  for (const [label, text] of SHAPES) {
+    const cs = chunkDocument({ title: 'Notes', body: text }, CHUNK_DEFAULTS);
+    const notSub = cs.filter((c) => !text.includes(c.body));
+    check(
+      `${label}: every chunk body is an EXACT substring of the source`,
+      notSub.length === 0,
+      notSub.length > 0 ? `${String(notSub.length)}/${String(cs.length)} are not` : `${String(cs.length)} chunk(s)`,
+    );
+    check(
+      `  ${label}: nothing exceeds the ceiling`,
+      cs.every((c) => c.body.length <= CHUNK_DEFAULTS.maxChars),
+      cs.length === 0 ? 'no chunks' : `longest ${String(Math.max(...cs.map((c) => c.body.length)))}`,
+    );
+  }
+
+  // The no-space case is its own check because it is the one that matters for this corpus:
+  // a line break injected inside an identifier defeats the exact-match retrieval the keyword
+  // half of the hybrid exists for.
+  const runChunks = chunkDocument(
+    { title: 'Notes', body: 'A'.repeat(50) + ' ' + 'B'.repeat(4000) },
+    CHUNK_DEFAULTS,
+  );
+  check(
+    'a long unbroken token is never broken by an injected newline',
+    runChunks.every((c) => !/B\s+B/.test(c.body)),
+  );
+
+  // The heading path must be the chunk's OWN section. This is the defect where every chunk in
+  // a document inherited the first heading, and both halves of retrieval then indexed each
+  // chunk under a section it was not in.
+  const threeSections = chunkDocument(
+    {
+      title: 'Notes',
+      body: doc(
+        '# Alpha', '', 'a'.repeat(300), '',
+        '# Beta', '', 'b'.repeat(300), '',
+        '# Gamma', '', 'c'.repeat(300),
+      ),
+    },
+    CHUNK_DEFAULTS,
+  );
+  const paths = threeSections.map((c) => c.headingPath);
+  check(
+    'each chunk is filed under the section it opens, not the first one',
+    new Set(paths).size === paths.length && paths.includes('Gamma'),
+    paths.join(' | '),
+  );
+  check(
+    'and a heading depth jump leaves no empty element in the path',
+    chunkDocument(
+      { title: 'Notes', body: doc('# Top', '', 'p'.repeat(300), '', '### Deep', '', 'q'.repeat(300)) },
+      CHUNK_DEFAULTS,
+    ).every((c) => !c.headingPath.includes(' >  ') && !c.headingPath.startsWith(' > ')),
+  );
+
   const chunks = chunkDocument({ title: 'Scheduler', body: DOC_A }, CHUNK_DEFAULTS);
   check('a document produces chunks', chunks.length > 0, `${String(chunks.length)} chunk(s)`);
   check(
-    'EVERY chunk body is a substring of the source',
-    chunks.every((c) => DOC_A.includes(c.body.trim().split('\n')[0] ?? '')),
+    'the chunks together cover the whole document',
+    chunks.map((c) => c.body).join('').replace(/\s+/g, '').length >=
+      DOC_A.replace(/\s+/g, '').length,
   );
-  // The load-bearing form: strip whitespace from both and the concatenation must cover the
-  // source. Overlap means the chunks are longer than the document, never shorter.
-  const squash = (t: string): string => t.replace(/\s+/g, '');
-  const joined = squash(chunks.map((c) => c.body).join(''));
-  const source = squash(DOC_A);
-  check(
-    'and the chunks together cover the whole document',
-    joined.length >= source.length,
-    `${String(joined.length)} chars of chunk against ${String(source.length)} of source`,
-  );
-  let covered = true;
-  let cursor = 0;
-  for (const c of chunks) {
-    const at = source.indexOf(squash(c.body).slice(0, 40), Math.max(0, cursor - 400));
-    if (at < 0) covered = false;
-    else cursor = at;
-  }
-  check('and they appear in order, nothing reordered or invented', covered);
   check(
     'the context line is derived, naming the document and the heading',
     chunks[0]?.contextPrefix.includes('Scheduler') === true,
@@ -386,6 +465,156 @@ async function main(): Promise<void> {
   check('markdown and text are accepted, and a PDF is not',
     contentTypeFor('a.md') === 'text/markdown' && contentTypeFor('a.txt') === 'text/plain' &&
     contentTypeFor('a.pdf') === null);
+
+  /* ── 6b. EVERY CONTROL REACHES THE RETRIEVAL PATH ───────────────────────── */
+
+  console.log('\n6b. Every control the console offers is actually consulted');
+
+  // ── WHY THIS SECTION EXISTS ────────────────────────────────────────────────
+  //
+  // `trigger` shipped normalised, persisted, audited, inventoried and rendered, and read by
+  // NOTHING: `off` and `explicit` both behaved exactly like `always`. An adversarial read
+  // found it; no check would have, because every other assertion here drives the default.
+  // That is the D-162 shape - a control a check can drive is not a control an operator can
+  // use - and this section is the guard: each control is set to a value whose effect is
+  // decidable, and the effect is asserted.
+  let calls = 0;
+  const countingEmbedder = new Embedder({
+    config: { baseUrl: 'x', timeoutMs: 1 },
+    embedImpl: (inputs) => {
+      calls++;
+      return Promise.resolve(inputs.map((t) => fakeEmbed(t)));
+    },
+  });
+  // ── WHY THIS SECTION LOWERS THE FLOOR ─────────────────────────────────────
+  //
+  // The fake embedder has real cosine BEHAVIOUR (texts sharing words are closer) but not
+  // nomic's absolute SCALE, so the shipped 0.55 rejects everything here. The floor's real
+  // calibration is a measurement against the production model and lives in the live check
+  // and in `retrieval.ts`. This section is about whether each control is CONSULTED, so it
+  // starts from a floor that admits candidates and varies one control at a time.
+  const BASE = { ...KNOWLEDGE_DEFAULTS, minScore: -1 };
+  let tuned = normalizeKnowledge(BASE);
+  const tunedService = new KnowledgeService({
+    db,
+    embedder: countingEmbedder,
+    settings: () => tuned,
+    transaction: singleConnectionTransaction(db),
+  });
+  const ASK = 'what happens when a command names an explicit user id';
+
+  const baseline = await tunedService.query(reader, ASK);
+  check(
+    'CONTROL: at the defaults the question retrieves something',
+    baseline.passages.length > 0,
+    `${String(baseline.passages.length)} passage(s)`,
+  );
+
+  tuned = normalizeKnowledge({ ...BASE, trigger: 'off' });
+  calls = 0;
+  const off = await tunedService.query(reader, ASK);
+  check('trigger=off retrieves nothing', off.passages.length === 0);
+  check(
+    '  and costs no embedding call at all, which is the point of it',
+    calls === 0,
+    `${String(calls)} call(s)`,
+  );
+
+  tuned = normalizeKnowledge({ ...BASE, trigger: 'explicit' });
+  const implicit = await tunedService.query(reader, ASK);
+  const explicit = await tunedService.query(reader, `check your notes: ${ASK}`);
+  check('trigger=explicit ignores an ordinary question', implicit.passages.length === 0);
+  check(
+    '  and answers one that asks her to look, so it is not simply off',
+    explicit.passages.length > 0,
+    `${String(explicit.passages.length)} passage(s)`,
+  );
+
+  tuned = normalizeKnowledge({ ...BASE, minScore: 0.999 });
+  check(
+    'minScore reaches the path: an impossible floor retrieves nothing',
+    (await tunedService.query(reader, ASK)).passages.length === 0,
+  );
+
+  tuned = normalizeKnowledge({ ...BASE, maxChunks: 1 });
+  check(
+    'maxChunks reaches the path',
+    (await tunedService.query(reader, ASK)).passages.length === 1,
+  );
+
+  // A budget that admits SOME but not all, rather than one that admits nothing: zero
+  // passages would satisfy "fewer than baseline" against a budget check that rejected
+  // everything unconditionally.
+  tuned = normalizeKnowledge({ ...BASE, budgetChars: 400 });
+  const tight = await tunedService.query(reader, ASK);
+  check(
+    'budgetChars reaches the path, admitting some and not all',
+    tight.outcome.charsUsed <= 400 &&
+      tight.passages.length > 0 &&
+      tight.passages.length < baseline.passages.length,
+    `${String(tight.outcome.charsUsed)} chars, ${String(tight.passages.length)} of ${String(baseline.passages.length)} passage(s)`,
+  );
+
+  tuned = normalizeKnowledge({ ...BASE, candidatesPerSearch: 1 });
+  check(
+    'candidatesPerSearch reaches the path',
+    (await tunedService.query(reader, ASK)).outcome.candidates.length <
+      baseline.outcome.candidates.length,
+  );
+
+  // The two weights change ORDER. Proven by flipping them to opposite extremes over the same
+  // candidate set and showing the top chunk changes, which is the only decidable effect a
+  // fusion weight has.
+  // Compared over the WHOLE candidate set rather than the top one: a chunk that tops both
+  // lists scores the same under either weight, so asserting on the leader alone would have
+  // been an assertion that passed against a fusion ignoring its weights entirely.
+  const scoresUnder = async (kw: number, vec: number): Promise<string> => {
+    tuned = normalizeKnowledge({ ...BASE, keywordWeight: kw, vectorWeight: vec });
+    const r = await tunedService.query(reader, 'differentActiveUser apiListGroups');
+    return r.outcome.candidates
+      .map((c) => `${String(c.chunkId)}=${c.finalScore.toFixed(5)}`)
+      .join(',');
+  };
+  const kwHeavy = await scoresUnder(10, 0);
+  const vecHeavy = await scoresUnder(0, 10);
+  check(
+    'the keyword and vector weights reach the fusion and change the scores',
+    kwHeavy !== vecHeavy && kwHeavy.length > 0,
+    `${kwHeavy} vs ${vecHeavy}`,
+  );
+
+  // The per-document weight. Same question, one document pushed up, and the fused score of
+  // its chunks must move while the cosine score does NOT, because a weight must never be able
+  // to lift something over the floor.
+  tuned = normalizeKnowledge(BASE);
+  const beforeWeight = await tunedService.query(reader, ASK);
+  await setDocumentWeight(db, a.id, 5);
+  const afterWeight = await tunedService.query(reader, ASK);
+  const findScore = (r: typeof beforeWeight, docId: number): number =>
+    r.outcome.candidates.find((c) => c.documentId === docId)?.finalScore ?? 0;
+  const findCosine = (r: typeof beforeWeight, docId: number): number =>
+    r.outcome.candidates.find((c) => c.documentId === docId)?.vectorScore ?? 0;
+  check(
+    'the per-document weight reaches the fused score',
+    findScore(afterWeight, a.id) > findScore(beforeWeight, a.id),
+    `${findScore(beforeWeight, a.id).toFixed(5)} -> ${findScore(afterWeight, a.id).toFixed(5)}`,
+  );
+  check(
+    'and it does NOT touch the cosine score, so it can never lift a chunk over the floor',
+    Math.abs(findCosine(afterWeight, a.id) - findCosine(beforeWeight, a.id)) < 1e-9,
+  );
+  await setDocumentWeight(db, a.id, 1);
+
+  // The ingest settings, through the signature the staleness is derived from.
+  for (const key of INGEST_SETTING_KEYS) {
+    const changed = { ...KNOWLEDGE_DEFAULTS } as Record<string, unknown>;
+    changed[key] = key === 'contextualPrefix' ? false : Number(KNOWLEDGE_DEFAULTS[key]) + 37;
+    check(
+      `the ingest setting "${key}" changes the signature staleness is derived from`,
+      ingestSignature(normalizeKnowledge(changed)) !== ingestSignature(KNOWLEDGE_DEFAULTS),
+    );
+  }
+  tuned = normalizeKnowledge(BASE);
 
   /* ── 7. Mutations ───────────────────────────────────────────────────────── */
 

@@ -50,7 +50,7 @@ import { describeMediaEncryption } from './media/at-rest.js';
 import { sampleEncryptedOriginal } from './media/at-rest-check.js';
 import { makeConsentHandler } from './consent/commands.js';
 import type { CapturedMessage } from './capture/message.js';
-import { assertDbReachable, closePool, getPool } from './db/pool.js';
+import { assertDbReachable, closePool, getPool, withTransaction } from './db/pool.js';
 import { markInterruptedMediaReceipts, setMemberCategory } from './db/messages.js';
 import { SettingsService } from './settings/service.js';
 import { SecurityService } from './security/settings.js';
@@ -83,6 +83,9 @@ import {
   warmModerationRules,
 } from './moderation/service.js';
 import { PluginService } from './plugins/service.js';
+import { KnowledgeService, setKnowledgeService } from './knowledge/service.js';
+import { Embedder } from './knowledge/embed.js';
+import { KNOWLEDGE_BASE_ID } from './plugins/knowledge-base/plugin.js';
 import { CryptoPriceService } from './plugins/crypto-prices/service.js';
 import { providerKeyStatus } from './plugins/crypto-prices/settings.js';
 import { CRYPTO_PRICES_ID } from './plugins/crypto-prices/plugin.js';
@@ -173,6 +176,7 @@ interface BotGraphDeps {
   plugins: PluginService;
   prices: CryptoPriceService;
   webSearch: WebSearchService;
+  knowledge: KnowledgeService;
   host: RuntimeHost;
 }
 
@@ -379,6 +383,14 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // line of defence rather than the first. The service holds no chat client, so
     // the only thing that can come back through here is text.
     webSearch: () => (plugins.isEnabledFor(botProfileId, WEB_SEARCH_ID) ? webSearch : null),
+    // Null when the knowledge base is off FOR THIS BOT. For a plugin that contributes no
+    // intent this IS the absent-capability property: nothing is embedded, nothing is
+    // searched, and no passage reaches the model. Read live, so a console toggle takes
+    // effect on the next message.
+    knowledge: () =>
+      plugins.isEnabledFor(botProfileId, KNOWLEDGE_BASE_ID) && deps.knowledge
+        ? deps.knowledge
+        : null,
     priceSettings: () => plugins.getCryptoPrices(),
     // Presentation is the engine's decision (CCB-S3-003); this is only the
     // transport. Both this and the slash-command path go through the same send,
@@ -486,6 +498,24 @@ async function startCaptureWorker(
       settings: () => plugins.getCryptoPrices(),
     });
     const webSearch = new WebSearchService({ settings: () => plugins.getWebSearch() });
+    // ── WHAT SHE WAS GIVEN TO READ (CCB-S5-022, D-176) ────────────────────
+    //
+    // Deployment-wide, like the market data and the search provider, and for the same
+    // reason: the store, its index and the embedding model are one of each. What is PER BOT
+    // is which documents a bot was granted, and that is a filter inside the query rather
+    // than a second store.
+    //
+    // Registered process-wide as well, because the ingest QUEUE JOB has only a document id
+    // and the console is built before the bot starts.
+    const knowledge = new KnowledgeService({
+      db: getPool(),
+      embedder: new Embedder({ config: loadLocalAiConfig() }),
+      settings: () => plugins.getKnowledge(),
+      // A REAL transaction on a dedicated client. `db` above is the pool, where BEGIN and
+      // COMMIT issued as separate queries land on different connections and protect nothing.
+      transaction: withTransaction,
+    });
+    setKnowledgeService(knowledge);
     // Registered so the Web Search page can show its counters and its last failure without
     // anybody reading the journal (CCB-S4-042).
     setWebSearchService(webSearch);
@@ -511,7 +541,9 @@ async function startCaptureWorker(
         // this closes it.
         plugins.refreshFor(id),
       ]);
-      graphs.push(buildBotGraph(bot, { cfg, interaction, plugins, prices, webSearch, host }));
+      graphs.push(
+        buildBotGraph(bot, { cfg, interaction, plugins, prices, webSearch, knowledge, host }),
+      );
 
       // ── WHAT THIS BOT WILL ACTUALLY WAKE ON (CCB-S5-018) ─────────────────
       //

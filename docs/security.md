@@ -432,6 +432,18 @@ tightening later would reach only the bots nobody had touched. The database CHEC
 `cinderella_plugin_overrides` refuses a per-bot row for either, and the application refuses it
 first with the inventory's own reason.
 
+**Operator documents are fenced too (CCB-S5-022, D-176).** The knowledge base retrieves
+passages from files the operator uploaded and puts them in the model's prompt. They ride in the
+USER message inside their own marker (`<<<REFERENCE-DOCUMENT>>>`, distinct from the web-search
+and chat-history fences so the model can tell the three claims apart), never in the system
+prompt, under four constitutional registry rules that are selected only when passages are
+attached. The fence is NOT relaxed because the operator wrote the document: an exception carved
+for trust is one somebody widens later, and a document is a file, so the operator wrote it
+without having written every sentence in it. Retrieved text is bounded by the same 2400
+characters web search uses, and the source line is written by the application, so she cannot
+cite a document she was not given. Nothing retrieved can cause an action: the port returns text
+and document titles and holds no capability.
+
 **Outbound calls (CCB-S3-004).** The price feature is the instance's only egress. It sends
 canonical asset ids and a currency code to the configured provider and nothing else — no
 member id, no message text, no group identity. Responses are not trusted: a bad status, a

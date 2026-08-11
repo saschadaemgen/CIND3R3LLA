@@ -31,6 +31,15 @@ import { setOverrideRecorded } from '../src/db/prompt-rule-overrides.js';
 import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { PluginService } from '../src/plugins/service.js';
 import { WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
+import { KNOWLEDGE_BASE_ID } from '../src/plugins/knowledge-base/plugin.js';
+import {
+  KnowledgeService,
+  checksumOf,
+  setKnowledgeService,
+  singleConnectionTransaction,
+} from '../src/knowledge/service.js';
+import { Embedder, EMBEDDING_DIMENSIONS } from '../src/knowledge/embed.js';
+import { setGrant, upsertDocument } from '../src/db/knowledge.js';
 import { SecurityService } from '../src/security/settings.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
@@ -304,6 +313,73 @@ async function main(): Promise<void> {
   const plugins = await PluginService.load(db);
   await plugins.setEnabled(WEB_SEARCH_ID, true, 'admin-preview');
   await plugins.setEnabledForBot(supportBotId, WEB_SEARCH_ID, false, 'admin-preview');
+
+  // ── A KNOWLEDGE BASE WITH SOMETHING IN IT (CCB-S5-022/023) ──────────────
+  //
+  // Two documents, one granted to the primary and one to neither, so the page shows the
+  // three grant states and the diagnostics page has something to score. Ingested with the
+  // REAL chunker and a deterministic stand-in embedder, so the preview needs no Ollama and
+  // the chunk counts on the page are the counts the real chunker produces.
+  await plugins.setEnabled(KNOWLEDGE_BASE_ID, true, 'admin-preview');
+  const previewEmbed = (text: string): number[] => {
+    const v = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
+    for (const token of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+      let h = 0;
+      for (let i = 0; i < token.length; i++) h = (h * 31 + token.charCodeAt(i)) >>> 0;
+      v[h % EMBEDDING_DIMENSIONS] = (v[h % EMBEDDING_DIMENSIONS] ?? 0) + 1;
+    }
+    const norm = Math.sqrt(v.reduce((a, b) => a + b * b, 0)) || 1;
+    return v.map((x) => x / norm);
+  };
+  const knowledge = new KnowledgeService({
+    db,
+    embedder: new Embedder({
+      config: { baseUrl: 'http://127.0.0.1:11434', timeoutMs: 1000 },
+      embedImpl: (inputs) => Promise.resolve(inputs.map((t) => previewEmbed(t))),
+    }),
+    settings: () => plugins.getKnowledge(),
+    transaction: singleConnectionTransaction(db),
+  });
+  setKnowledgeService(knowledge);
+  const KB_DOCS: [string, string][] = [
+    [
+      'The Active User Scheduler',
+      [
+        '# The Active User Scheduler',
+        '',
+        'Every SimpleX command issued by any hosted bot goes through the ActiveUserScheduler.',
+        'It serializes them, because the core has one active user at a time.',
+        '',
+        '## An explicit user id is not an exemption',
+        '',
+        'apiListGroups takes a user id and the core CHECKS it against the active user,',
+        'refusing with differentActiveUser when they differ. Naming a user makes a command',
+        'refusable, not unmisroutable.',
+      ].join(String.fromCharCode(10)),
+    ],
+    [
+      'Media at rest',
+      [
+        '# Media at rest',
+        '',
+        'Originals are encrypted with AES-256-GCM under a dedicated MEDIA_SECRET.',
+        'Rotating that secret destroys the archive: there is no key history.',
+      ].join(String.fromCharCode(10)),
+    ],
+  ];
+  for (const [title, text] of KB_DOCS) {
+    const stored = await upsertDocument(db, {
+      title,
+      sourceName: `${title.toLowerCase().replace(/[^a-z]+/g, '-')}.md`,
+      contentType: 'text/markdown',
+      body: text,
+      checksum: checksumOf(text),
+    });
+    await knowledge.ingest(stored.id);
+    // Only the FIRST document is granted, and only to the primary: the page has to show
+    // "given", "not given" and the per-bot difference at once.
+    if (title.startsWith('The Active')) await setGrant(db, stored.id, previewBotId, true);
+  }
 
   const app = buildServer({
     db,

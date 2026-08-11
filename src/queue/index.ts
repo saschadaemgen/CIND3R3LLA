@@ -8,6 +8,7 @@ import type { Queryable } from '../db/pool.js';
 import { QueueWorker } from './worker.js';
 import { getJobHandler, registerJobHandler } from './registry.js';
 import { RECITAL_JOB, handleRecitalBeat } from './jobs/recital.js';
+import { KNOWLEDGE_INGEST_JOB, knowledgeIngestHandler } from './jobs/knowledge-ingest.js';
 import { enqueueJob } from './store.js';
 import { DEFAULT_QUEUE_CONFIG, type EnqueueOptions, type JobLane, type QueueConfig } from './types.js';
 import {
@@ -84,6 +85,12 @@ export function registerBuiltinJobs(): void {
   // and for a recital that means a reading that opened and never went on.
   if (!getJobHandler(RECITAL_JOB)) {
     registerJobHandler(RECITAL_JOB, handleRecitalBeat);
+  }
+  // Chunking and embedding a document (CCB-S5-022). MUST be registered for the same reason:
+  // an unregistered type is never claimed, so an uploaded document would sit `pending` for
+  // ever while the console showed it queued and nothing anywhere said why.
+  if (!getJobHandler(KNOWLEDGE_INGEST_JOB)) {
+    registerJobHandler(KNOWLEDGE_INGEST_JOB, knowledgeIngestHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }

@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 174 decisions</strong> — newest first. Highest allocated: <strong>D-175</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 176 decisions</strong> — newest first. Highest allocated: <strong>D-177</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-177 | Every control is consulted, or it is not a control | IMPLEMENTED |
+| D-176 | Store the text, not what a model made of it | IMPLEMENTED |
 | D-175 | Capability is per bot; the credential, the bill and the safety bound are not | IMPLEMENTED |
 | D-174 | A green `npm audit` describes the lockfile, and reachability decides urgency | IMPLEMENTED |
 | D-173 | Nothing reads the primary flag, and the one bot it could rename refuses the boot | IMPLEMENTED |
@@ -204,6 +206,134 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-177 - Every control is consulted, or it is not a control
+
+**Status: IMPLEMENTED** (CCB-S5-023, migration 053). The knobs the knowledge base needs, and
+the page that makes them adjustable by evidence rather than by feel.
+
+**THE DIAGNOSTICS PAGE IS THE DELIVERABLE.** `/plugins/knowledge-base/diagnostics` takes a
+question and shows every candidate with its keyword score and rank, its cosine score and rank,
+the document weight, the fused score, and whether it cleared the floor, made the budget or ran
+past the chunk limit. Every number on the settings page is unknowable in advance, and the one
+that mattered most was shipped wrong: without the scores being visible there was no way to
+discover that a floor of 0.45 sat inside the unrelated band (D-176).
+
+**PER BOT VERSUS SHARED, and it is almost all shared.** The grants are per bot, which is the
+product. Every setting is deployment-wide, and the reason is that they are properties of ONE
+CORPUS: the chunking decides what is in the single store, and the fusion weights decide how
+that store is searched. What differs between bots is which documents they were given, and the
+control for "this document should outrank that one" is the per-document weight, which is finer
+than a per-bot slider would have been.
+
+**THE PER-DOCUMENT WEIGHT MULTIPLIES THE FUSED SCORE AND NOTHING ELSE.** It changes ORDER and
+never membership, because the relevance floor is on cosine similarity and the weight does not
+touch it. That separation is deliberate: a weight that could drag an irrelevant chunk over the
+floor would be a control for defeating the one guarantee the feature makes, and
+`verify:knowledge` asserts both halves.
+
+**STALENESS IS DERIVED, AND A STALE DOCUMENT STAYS RETRIEVABLE.** Each document records the
+ingest settings its chunks were actually cut under; stale is the stored signature differing
+from the current one, recomputed on every render, so it cannot drift the way a flag would. On
+an ingest change the console says how many documents are now stale, badges them, and offers a
+one-click rebuild. Auto re-ingest was rejected because it would spend minutes of GPU on every
+slider nudge; hiding stale chunks was rejected because it would switch the knowledge base off
+the moment somebody touched a setting. A stale chunk is not wrong, it is the operator's
+verbatim text cut to a different length, and the honest response to that is to show it.
+
+**THREE CONTROLS DELIBERATELY DO NOT EXIST, and the page says so with the reason**, on the
+precedent of the Moderation page's arming note. A RECENCY weight, because there is no honest
+date: the only dates stored are when a document was uploaded and when it was last ingested, and
+the second moves whenever a chunking setting changes, so the slider would re-rank the corpus
+because somebody adjusted the chunk size. A RERANKER, because Ollama has no rerank endpoint
+(D-176). PER-BOT fusion weights, per the corpus argument above.
+
+**AND THE CHECK THE BRIEFING ASKED FOR FOUND A REAL ONE.** `verify:knowledge` section 6b sets
+every control to a value whose effect is decidable and asserts the effect. It exists because
+`trigger` shipped normalised, persisted, audited, inventoried and rendered, and read by
+nothing: `off` and `explicit` both behaved exactly like `always`. That is D-162's shape - a
+control a check can drive is not a control an operator can use - and no other assertion would
+ever have caught it, because they all drive the default.
+
+### D-176 - Store the text, not what a model made of it
+
+**Status: IMPLEMENTED** (CCB-S5-022, migration 052). A knowledge base over documents the
+operator supplies, so she can answer from material nobody else has in this shape.
+
+**VERBATIM CHUNKS, NO EXTRACTION, AND THE EVIDENCE IS DECISIVE.**
+[arXiv 2601.00821](https://arxiv.org/abs/2601.00821) held model, retriever, reranker and judge
+constant and varied ONLY the stored representation: verbatim chunks beat LLM-extracted
+artifacts by 15.9 points on LoCoMo (43.9 vs 28.0) and 22.0 on LongMemEval-S (67.4 vs 45.4), and
+the extraction pipeline did not beat naive retrieval on accuracy at all. The stated mechanism
+is lossy distillation rather than structure. So there is no table here for anything a model
+wrote, and the contextual prefix is DERIVED from the title, heading path and position rather
+than generated, for the same reason plus the cost of one generation per chunk on every
+re-ingest. The failure extraction produces is the invisible kind: it looks like it works.
+
+**AND "VERBATIM" IS STRUCTURAL, NOT ASPIRATIONAL, on the second attempt.** The first
+implementation concatenated blocks and broke its own rule twice: rejoining an overlap carry
+inserted separators the source did not have, which put a line break inside a long identifier
+and defeated exactly the exact-match retrieval hybrid search exists for; and the heading path
+was captured under a condition that could never fire once an overlap was carried, so every
+chunk in a document inherited the FIRST heading and both halves of retrieval indexed each chunk
+under a section it was not in. A chunk is now a half-open RANGE and the body is
+`source.slice(start, end)`, so no code path can add a character. Both defects were found by an
+adversarial read that executed the module, and the harness's own headline assertion had been
+passing over them because it compared only first lines and squashed whitespace.
+
+**HYBRID, FLOORED, BUDGETED, ATTRIBUTED.** Postgres FTS and pgvector cosine, fused by weighted
+reciprocal rank because `ts_rank` and cosine are not comparable and never become comparable.
+The relevance floor is on cosine ALONE, because it is the one calibrated number; below it
+nothing is retrieved and she says she has nothing rather than delivering the least-bad chunk.
+The budget is 2400 characters, the same number web search uses, because it is the same
+quantity. The source line is written by the application (D-137).
+
+**THE FLOOR WAS MEASURED, AND THE GUESS WAS WRONG.** At 0.45 a live run answered "what is the
+boiling point of mercury" from the model and printed "From what you gave me: The Active User
+Scheduler" underneath it. Measured against nomic-embed-text on this corpus: relevant 0.62-0.75,
+unrelated 0.39-0.43, a different topic from the same project 0.49. It is 0.55.
+
+**WHAT THE HARDWARE DECIDED.** `nomic-embed-text` v1.5, Apache-2.0, 768 dimensions, chosen on a
+licence check and a VRAM measurement rather than on a leaderboard: with qwen3:32b pinned the
+card has 825 MiB free, and the embedder occupies 0.32 GB alongside it and leaves the reply
+model resident. `bge-m3` (MIT) and `qwen3-embedding:0.6b` are both around a gigabyte and would
+have evicted it. Query embedding is ~120 ms warm and ~800 ms cold; ingest is ~660 ms a chunk,
+which is why it runs on the durable queue rather than in a console request.
+
+**NO RERANKER, and the reason is the runtime rather than the technique.** Ollama 0.32.6 has no
+rerank endpoint: `/api/rerank` returns 404, and a reranker driven through `/api/embed` returns
+embeddings from the wrong layer, which is worse than none because it looks like one. Serving
+one means a second inference service on a GPU with 733 MiB free. The seam is in `retrieve()`.
+
+**PGVECTOR, AND WHAT IT COSTS.** `@electric-sql/pglite-pgvector` in the harnesses, which is why
+all 51 PGlite constructions register it, and `postgresql-16-pgvector` on the server, installed
+BEFORE the migration or the deploy fails at 052. A `real[]` column with cosine in SQL would
+have needed no extension and works fine at this corpus size; it was rejected for what comes
+next, because long-term per-member memory is the same machinery over every message a group ever
+sent, where a sequential scan is untenable.
+
+**AND THE TRANSACTION WAS NOT ONE.** `replaceChunks` issued BEGIN/COMMIT through a plain
+`Queryable`, which is a real transaction against PGlite (one connection) and is NOT one against
+`pg.Pool`, where every statement checks out a different connection: a failed re-ingest would
+have destroyed the document's previous chunks permanently while rolling back nothing. The
+transaction runner is now a REQUIRED dependency, so production passes `withTransaction`, the
+harnesses pass the single-connection form, and a pool-backed caller that forgets does not
+compile.
+
+**PER BOT ON D-175's PATTERN, WITH ONE DELIBERATE INVERSION.** The store, the index and the
+embedding model are shared; the GRANT is per bot. Absence of a grant means NOT GIVEN, which is
+the opposite of the plugin overrides where absence means inherit, because there is no
+deployment-wide document set to inherit and a default would hand every future bot the
+operator's notes.
+
+**WHAT A FUTURE STORE SHOULD FOLLOW**, which is the question the briefing actually asked. Store
+the source verbatim and keep the whole of it, so the store can be rebuilt without re-uploading.
+Derive anything that helps retrieval rather than generating it. Fence what comes back as
+untrusted, in the user message, with its OWN marker. Put a calibrated floor on the one
+calibrated number and let it decide, rather than always returning the best available. Write the
+attribution in the application. Make what is given per subject and the infrastructure shared.
+Long-term per-member memory lands on all seven; what it adds is consent, which is why it is not
+this briefing.
 
 ### D-175 - Capability is per bot; the credential, the bill and the safety bound are not
 

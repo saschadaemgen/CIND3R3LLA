@@ -265,6 +265,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   (D-126) and the incoming contact requests (D-127). This tree still never drives the
   SDK: the actions live in `bot/runtime/admin-actions.ts` and hand the RESULT here, and
   the event listener records what the core reported; unconsolidated, D-068),
+  `knowledge/` (**the knowledge base store**, CCB-S5-022/023, D-176/D-177: `chunk.ts` cuts a
+  document into half-open RANGES so a chunk body is `source.slice()` and verbatim is
+  structural rather than aspirational, `retrieval.ts` fuses / floors / budgets, `embed.ts` is
+  the nomic-embed-text transport, `service.ts` the orchestration. Deliberately NOT under
+  `plugins/`, because long-term per-member memory is the same machinery over different
+  material; the plugin surface is `plugins/knowledge-base/`),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
 - `migrations/` — 001 messages/links · 002 consent+views · 003 admin · 004
   moderation gate · 005 deletion provenance · 006 webauthn + TOTP · 007 admin
@@ -392,7 +398,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **052**, since 051 landed with the per-bot plugin overrides). Stated as a rule
+  (currently **054**, since 053 landed with the knowledge base controls). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -531,6 +537,27 @@ out of the DATABASE constraint and compares it to the code, because the duplicat
 is deliberate and the drift would not be. `verify:two-names` drives the real `detectAddress`,
 because the defect was never that the settings object had one wake word but that both bots woke
 on it; its mutation puts a bot back on the shared value and shows both waking again),
+`verify:knowledge` (she reads what he gives her, CCB-S5-022/023: that what is stored is what
+went in, asserted as an EXACT substring over eight document shapes including a 4000-character
+run with no spaces and a heading depth jump; that a removed or re-ingested document leaves no
+chunk behind; that retrieved text cannot exceed its budget at any settings and that no chunk is
+ever truncated to fit; that the relevance floor decides and below it she is handed NOTHING; that
+a document granted to one bot is invisible to another in SQL rather than by filtering
+afterwards; and that passages reach the model fenced and never in the system prompt.
+**Section 6b is the one to keep**: it sets EVERY control the console offers to a value whose
+effect is decidable and asserts the effect, because `trigger` shipped normalised, persisted,
+audited, inventoried and rendered, and read by nothing, so `off` and `explicit` both behaved
+exactly like `always`. No other assertion would have caught it, because they all drive the
+default. Mutation-proven on the two failures the briefing names.
+Two of its checks exist because they were once VACUOUS: the verbatim assertion compared only
+each chunk's first line and squashed whitespace before comparing order, and it printed
+"EVERY chunk body is a substring of the source" over a document where two of three were not.
+`npm run verify:knowledge-live` drives all four cases against the production model, ingesting
+with the real embedder: a question answered from a real document with its attribution, one no
+document covers, the same question with the document removed, and a bot without the capability.
+It needs Ollama and is not in the offline set. Read its output rather than its exit code: the
+relevance floor was corrected from 0.45 to a measured 0.55 because a green run printed a
+document name under an answer about the boiling point of mercury),
 `verify:plugin-scope` (different bots, different capabilities, CCB-S5-021: the inventory placing
 every plugin setting, the database CHECK agreeing with it, inheritance leaving the existing
 deployment alone, and above all the ABSENT-CAPABILITY property PER BOT, asserted at all three
