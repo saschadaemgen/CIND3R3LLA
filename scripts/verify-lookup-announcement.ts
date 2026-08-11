@@ -523,15 +523,30 @@ async function main(): Promise<void> {
     kbFailed.announced && kbFailed.sent.length >= 2,
     `sent ${String(kbFailed.sent.length)}`,
   );
+  // THE LINE MOVED AND THE GUARANTEE DID NOT (CCB-S5-031, D-186).
+  //
+  // This asserted `searchUnavailable`, "I could not look that up just now", and that was the
+  // sentence being sent. Reaching this branch means `announcedLookup` is true, which on this
+  // path happens only once the knowledge base has come back HOLDING PASSAGES, so the lookup
+  // demonstrably ran and demonstrably found something; what failed was the wording. The old
+  // line told the member the opposite of what happened.
+  //
+  // Updated rather than loosened, and the check above is untouched: the guarantee is that an
+  // announcement is never left over silence, and it still is. What changed is which true
+  // thing she says. Same treatment CCB-S5-026 and CCB-S5-027 gave their inherited checks.
   check(
-    '  with the honest line, which does not answer from training data instead',
-    kbFailed.sent.some((t) => /could not look that up/i.test(t)),
+    '  with the honest line, which says the WORDING failed rather than the lookup',
+    kbFailed.sent.some((t) => /lost the words/i.test(t)),
+  );
+  check(
+    '  and never claims it could not look it up, which is what it used to say',
+    !kbFailed.sent.some((t) => /could not look that up/i.test(t)),
   );
 
   // POSITIVE CONTROL: the honest line must not appear when nothing went wrong.
   check(
     'and a successful lookup does NOT carry it',
-    !kbHit.sent.some((t) => /could not look that up/i.test(t)),
+    !kbHit.sent.some((t) => /lost the words|could not look that up/i.test(t)),
   );
 
   // A model failure with NO announcement stays silent, which is the pre-existing behaviour
