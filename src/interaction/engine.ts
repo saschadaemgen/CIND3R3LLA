@@ -3687,6 +3687,25 @@ export class InteractionEngine {
      */
     let body = spoken ?? '';
 
+    if (page) {
+      const framing = spoken !== null && sceneVoiceUsable(spoken) ? spoken.trim() : '';
+      body = [
+        framing,
+        renderBookPage({
+          ...page,
+          german: lang.toLowerCase().startsWith('de'),
+        }),
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+    }
+    // MOVED AFTER THE PAGE (CCB-S5-025). The page branch REASSIGNS `body`, so an attribution
+    // appended before it was discarded, and that mattered more once the knowledge base started
+    // announcing itself: she would say the answer was in the operator's documents and then show
+    // no document, contradicting herself inside one exchange. The ordinary path could never do
+    // that - `KnowledgeService.query` derives the passages and the sources from the same
+    // `outcome.selected`, so they are non-empty together - and this was the one branch that
+    // could, by throwing the line away rather than by never building it.
     // ── THE SOURCE LINE IS PRINTED, NOT WRITTEN (CCB-S5-022, D-137) ────────
     //
     // Same shape as the search sources and the law page: application-owned text appended
@@ -3701,18 +3720,6 @@ export class InteractionEngine {
 ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
         sources: knowledgeSources.join(', '),
       })}`;
-    }
-    if (page) {
-      const framing = spoken !== null && sceneVoiceUsable(spoken) ? spoken.trim() : '';
-      body = [
-        framing,
-        renderBookPage({
-          ...page,
-          german: lang.toLowerCase().startsWith('de'),
-        }),
-      ]
-        .filter(Boolean)
-        .join('\n\n');
     }
 
     const sent = await this.replyWithText(msg, s, lang, body, 'conversation');

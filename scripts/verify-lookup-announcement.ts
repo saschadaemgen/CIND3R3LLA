@@ -33,6 +33,7 @@
  * it shipped. Section 6 pins the corrected semantics and mutation-proves them.
  */
 
+import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import type { Queryable } from '../src/db/pool.js';
@@ -53,6 +54,7 @@ import {
   type LookupKind,
 } from '../src/interaction/lookup-announcement.js';
 import { renderPromptRule } from '../src/interaction/prompt-rules.js';
+import { attributionFor } from '../src/knowledge/retrieval.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import type { AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { setLogLevel } from '../src/log.js';
@@ -609,6 +611,76 @@ async function main(): Promise<void> {
     '  and gets no answer either, so nothing is left hanging',
     spentRun.sent.length === 0,
     `sent ${String(spentRun.sent.length)}`,
+  );
+
+  /* ── 6b. The announcement and the attribution agree ─────────────────────── */
+
+  console.log('\n6b. She never says she read his documents and then names none');
+
+  // THE HAZARD, stated plainly: the holding line fires when passages clear the floor, and if
+  // the source line under the answer were gated on anything else, one exchange would
+  // contradict itself - she announces that the answer is in his documents, then shows no
+  // document. That is the specific failure the three-way distinction was supposed to prevent.
+  //
+  // It cannot happen on the ordinary path, and the reason is structural rather than careful:
+  // `KnowledgeService.query` derives BOTH from the same `outcome.selected`, so passages and
+  // sources are non-empty together or empty together. This asserts that equivalence over the
+  // real retrieval module rather than trusting the reading.
+  for (const n of [0, 1, 3]) {
+    const selected = Array.from({ length: n }, (_, k) => ({
+      documentId: k + 1,
+      documentTitle: `doc-${String(k + 1)}.md`,
+      body: `passage ${String(k + 1)}`,
+    }));
+    const sources = attributionFor({
+      candidates: [],
+      selected,
+      charsUsed: 0,
+      emptyBecauseOfFloor: false,
+    } as never);
+    check(
+      `  ${String(n)} passage(s) selected gives ${n === 0 ? "no" : "an"} attribution`,
+      (selected.length > 0) === (sources.length > 0),
+    );
+  }
+
+  // And end to end: what the member actually receives.
+  const attributed = await drive({
+    text: 'Cinderella what does the handbook say about pancakes?',
+    knowledgePassages: [{ text: 'Pancakes are cooked on a griddle.' }],
+    knowledgeSources: ['handbook.md'],
+  });
+  check(
+    'she announced, and the answer names the document she was handed',
+    attributed.announced &&
+      attributed.sent.some((t) => t.includes('handbook.md')),
+    attributed.sent.join(' | ').slice(0, 90),
+  );
+  // POSITIVE CONTROL: the attribution is not simply always present.
+  check(
+    '  and an answer she was handed nothing for names nothing',
+    !kbMiss.sent.some((t) => t.includes('handbook.md')),
+  );
+
+  // THE ONE BRANCH THAT COULD CONTRADICT, read from the source because it is an ORDER
+  // dependency and no reachable-from-here input drives it: a law-page answer REASSIGNS `body`,
+  // so an attribution appended before it was thrown away. The ordinary path cannot contradict
+  // itself, since passages and sources come from one `outcome.selected`; this branch could,
+  // by discarding a line it had already built. The fix is an ordering, so the guard is too.
+  const engineSource = readFileSync(
+    new URL('../src/interaction/engine.ts', import.meta.url),
+    'utf8',
+  );
+  const pageRebuild = engineSource.indexOf(
+    'const framing = spoken !== null && sceneVoiceUsable(spoken)',
+  );
+  const sourceAppend = engineSource.indexOf(
+    'if (knowledgeSources.length > 0 && spoken !== null)',
+  );
+  check(
+    'the source line is appended AFTER the page rebuild, so a page answer keeps it',
+    pageRebuild > 0 && sourceAppend > 0 && sourceAppend > pageRebuild,
+    `page at ${String(pageRebuild)}, attribution at ${String(sourceAppend)}`,
   );
 
   /* ── 7. The mutations ───────────────────────────────────────────────────── */
