@@ -290,6 +290,15 @@ async function main(): Promise<void> {
     // save correctly writes no deviation for them and asserting on one would pass against an
     // implementation that wrote nothing at all. The per-bot key in this section is the wake
     // word, which is also the one an operator would notice going wrong.
+    // CAPTURED BEFORE THE SAVE (CCB-S5-030). This asserted bot A held NO wake-word row, which
+    // was true before migration 056 backfilled one for every existing bot so the new derived
+    // fallback could not move anything on its own. The guarantee under test is that a save on
+    // one bot does not touch another, so it is now asserted as UNCHANGED rather than as absent,
+    // which is both the real property and independent of what the backfill leaves behind.
+    const wakeBefore = async (id: number): Promise<unknown> =>
+      (await listSettingOverridesForBot(db, id)).find((o) => o.key === 'wakeWord')?.value;
+    const botABefore = await wakeBefore(botA);
+
     const page = await get('/interaction/addressing');
     await app.inject({
       method: 'POST',
@@ -305,8 +314,8 @@ async function main(): Promise<void> {
     check('a save on the selected bot reaches THAT bot', (await wakeOf(botB)) === 'Morty', String(await wakeOf(botB)));
     check(
       '  MUTATION: and the other bot is untouched, which is the failure this guards',
-      (await wakeOf(botA)) === undefined,
-      `bot A wake override: ${String(await wakeOf(botA))}`,
+      (await wakeOf(botA)) === botABefore,
+      `bot A: ${String(botABefore)} -> ${String(await wakeOf(botA))}`,
     );
     check(
       "  and bot A still reads the shared wake word rather than bot B's new one",

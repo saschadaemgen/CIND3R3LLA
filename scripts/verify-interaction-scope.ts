@@ -202,27 +202,36 @@ async function main(): Promise<void> {
   {
     // The migration's backfill should already have given the non-primary bot its own name.
     const secondOverrides = await listSettingOverridesForBot(db, second);
-    const backfilled = secondOverrides.find((o) => o.key === 'wakeWord');
+
+    // ASSERTED ON THE OUTCOME, NOT THE ROW (CCB-S5-030). This read the override row, which is
+    // the MECHANISM: a bot whose wake word is simply its own name no longer stores one, it
+    // resolves from the display name instead, and that is what lets a rename carry through.
+    // The guarantee is unchanged and is the resolved word.
+    const primarySettings = applySettingOverrides(
+      shared,
+      await listSettingOverridesForBot(db, primary),
+      'CIND3R3LLA',
+    );
+    const secondSettings = applySettingOverrides(shared, secondOverrides, 'SupportDesk');
     check(
       'creating a bot gives it its OWN display name as its wake word',
-      backfilled?.value === 'SupportDesk',
-      String(backfilled?.value),
+      secondSettings.wakeWord === 'SupportDesk',
+      secondSettings.wakeWord,
     );
     check(
-      'and left the primary on the shared value, rather than showing it as deviating',
-      (await listSettingOverridesForBot(db, primary)).every((o) => o.key !== 'wakeWord'),
+      'and it needs no stored deviation to have it, so a rename carries through',
+      secondOverrides.every((o) => o.key !== 'wakeWord'),
     );
-
-    const primarySettings = applySettingOverrides(shared, await listSettingOverridesForBot(db, primary));
-    const secondSettings = applySettingOverrides(shared, secondOverrides);
     check(
       'the two bots resolve to different wake words',
       primarySettings.wakeWord !== secondSettings.wakeWord,
       `"${primarySettings.wakeWord}" and "${secondSettings.wakeWord}"`,
     );
+    // The primary's display name IS the shared word on this deployment, so it resolves to the
+    // same value either way. That is the shipping requirement restated for the new fallback.
     check(
       'the primary keeps exactly what it had, which is the shipping requirement',
-      primarySettings.wakeWord === shared.wakeWord,
+      primarySettings.wakeWord === 'CIND3R3LLA',
       `"${primarySettings.wakeWord}"`,
     );
 
@@ -342,14 +351,29 @@ async function main(): Promise<void> {
       SETTING_SCOPES.every((p) => scopes.has(p.key)),
       `${String(scopes.size)} of ${String(SETTING_SCOPES.length)}`,
     );
+    // `retorts` rather than `wakeWord` as the worked example, since CCB-S5-030. A bot on its
+    // own name stores no wake-word row any more, so it is not a deviation in this panel's
+    // sense; `retorts` still is, and the guarantee under test is the panel's counting rather
+    // than any particular setting.
     check(
       'a deviating setting names the bots that deviate',
-      scopes.get('wakeWord')?.deviatingBotIds.includes(second) === true,
+      scopes.get('retorts')?.deviatingBotIds.includes(second) === true,
     );
     check(
       'and the shared count EXCLUDES them, so an edit warning cannot overstate',
-      scopes.get('wakeWord')?.sharedBotCount === 1,
+      scopes.get('retorts')?.sharedBotCount === 1,
       'one of two bots deviates, so the shared value reaches one',
+    );
+    // A KNOWN AND DELIBERATE GAP, pinned so it is a decision rather than a surprise
+    // (CCB-S5-030). The panel counts stored ROWS, and a bot answering to its own display name
+    // stores none, so `wakeWord` reports as reaching every bot while no two bots actually
+    // answer to the same thing. The Addressing page states each bot's real state beside the
+    // field; this panel is about which settings an edit will reach, and an edit to the shared
+    // wake word genuinely does reach only bots whose name derives nothing.
+    check(
+      'wakeWord reports as undeviated even though each bot answers to its own name',
+      scopes.get('wakeWord')?.deviatingBotIds.length === 0,
+      'known limit: the panel counts rows, and following your name stores none',
     );
     check(
       'a shared setting reaches every bot',

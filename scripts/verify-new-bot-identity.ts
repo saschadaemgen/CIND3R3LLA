@@ -298,9 +298,14 @@ async function main(): Promise<void> {
   check('the first bot may take the shared default, which is the ordinary case', first > 0);
   {
     const overrides = await listSettingOverridesForBot(db, first);
+    // CCB-S5-030 CHANGED THE BASELINE, not the guarantee. The guarantee is still "do not pin
+    // a bot that has not deviated". What counts as not deviating used to be "equals the shared
+    // word" and is now "equals what its own display name derives", because that is what an
+    // absent row falls back to. This bot is displayed as CIND3R3LLA and was given the wake
+    // word "Cinderella", which is a real choice and is therefore stored.
     check(
-      '  and stores no wake-word deviation for it, so a later shared edit still reaches it',
-      !overrides.some((o) => o.key === 'wakeWord'),
+      '  and stores a deviation, because "Cinderella" is not what "CIND3R3LLA" derives',
+      overrides.some((o) => o.key === 'wakeWord'),
     );
   }
 
@@ -380,8 +385,19 @@ async function main(): Promise<void> {
   section('4. The three retort states are told apart, because silence looks identical');
 
   const shared = normalizeInteraction({});
-  const facts = (o: { key: string; value: unknown }[], avatar: string | null = null, link: string | null = null) =>
-    botIdentity({ avatarPath: avatar, contactAddressLink: link, overrides: o.map((x) => ({ ...x, botProfileId: second })), shared });
+  const facts = (
+    o: { key: string; value: unknown }[],
+    avatar: string | null = null,
+    link: string | null = null,
+    displayName = 'Rick Sanchez',
+  ) =>
+    botIdentity({
+      avatarPath: avatar,
+      contactAddressLink: link,
+      overrides: o.map((x) => ({ ...x, botProfileId: second })),
+      shared,
+      displayName,
+    });
 
   check(
     'OWN: an override with lines in it',
@@ -399,13 +415,31 @@ async function main(): Promise<void> {
     '  and NONE is not reported as own, which would show a silent feature as healthy',
     facts([{ key: 'retorts', value: { en: [] } }]).retortCount === 0,
   );
+  // THREE STATES SINCE CCB-S5-030, and the third is the one the boolean could not say. A bot
+  // whose word was pinned at creation reported "its own" in green, which is exactly what an
+  // operator sees on a bot that has silently stopped following its name.
   check(
-    'the wake word reads as the shared default when the bot has no deviation',
-    facts([]).wakeWordIsOwn === false && facts([]).wakeWord === shared.wakeWord,
+    'with no deviation the wake word FOLLOWS the display name',
+    facts([]).wakeWordSource === 'name' && facts([]).wakeWord === 'Rick Sanchez',
+    facts([]).wakeWord,
   );
   check(
-    '  and as its own when it has one',
-    facts([{ key: 'wakeWord', value: 'Sanchez' }]).wakeWordIsOwn === true,
+    '  and is not the shared default, which is another bot name',
+    facts([]).wakeWord !== shared.wakeWord,
+  );
+  check(
+    '  it reads as the operator own when there is a deviation',
+    facts([{ key: 'wakeWord', value: 'Sanchez' }]).wakeWordSource === 'own',
+  );
+  check(
+    '  and falls back to the shared default only when the name derives nothing',
+    facts([], null, null, 'a').wakeWordSource === 'shared' &&
+      facts([], null, null, 'a').wakeWord === shared.wakeWord,
+  );
+  // The panel needs what the name WOULD give, or "set by you" is not actionable.
+  check(
+    '  and it reports what following the name would give instead',
+    facts([{ key: 'wakeWord', value: 'Sanchez' }]).wakeWordFromName === 'Rick Sanchez',
   );
   check('a face is reported when there is one', facts([], 'bot-avatar-x.jpg').hasFace);
   check('  and not when there is not', !facts([]).hasFace);
@@ -588,7 +622,13 @@ async function main(): Promise<void> {
   // The bot on the shared default must READ as being on it, which is the honest state and
   // the one an operator has to be able to see.
   const onFirst = await pageFor(first);
-  check('a bot on the shared default says so rather than showing it as its own', onFirst.includes('the shared default'));
+  // It reads as the operator's own now rather than as the shared default, because it IS: the
+  // word was chosen and differs from what the name derives. The state that matters for this
+  // page is that it does not claim to follow a name it does not follow.
+  check(
+    'a bot with a chosen wake word says so rather than claiming to follow its name',
+    onFirst.includes('set by you') && !onFirst.includes('follows its name'),
+  );
   check('  and points at where to fix it', onFirst.includes('/interaction/addressing?bot='));
 
   /* ── 7 ─────────────────────────────────────────────────────────────────── */

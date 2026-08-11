@@ -129,8 +129,12 @@ async function main(): Promise<void> {
     {
       slug: 'cinderella',
       displayName: 'CIND3R3LLA',
-      // Asked for at creation since CCB-S5-009. This one takes the shared default, which is
-      // the ordinary case for a first bot and writes no override.
+      // Asked for at creation since CCB-S5-009. This said "takes the shared default ... and
+      // writes no override", which stopped being true at CCB-S5-030: the baseline is now what
+      // the DISPLAY NAME derives, not the shared value, and `Cinderella` is not `CIND3R3LLA`,
+      // so this bot DOES get a row and the console shows it as set by hand. That is useful
+      // here and is left deliberately: with `SupportDesk` below following its own name, the
+      // preview seeds one bot in each of the two states.
       wakeWord: 'Cinderella',
       enabled: true,
       createAddress: true,
