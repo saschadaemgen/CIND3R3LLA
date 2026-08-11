@@ -57,9 +57,13 @@ import {
   describeSettingScopes,
   readPath,
   retortsForBot,
+  wakeWordForNewBot,
+  wakeWordState,
+  type WakeWordState,
   type SettingScopeView,
 } from '../../interaction/setting-scope.js';
 import {
+  botDisplayName,
   clearSettingOverride,
   listAllSettingOverrides,
   listSettingOverridesForBot,
@@ -493,6 +497,51 @@ function bodyString(body: Record<string, unknown>, key: string): string {
  * deviating bots named, and a count on the edit warning. Same three, same words, same
  * colours: an operator who has learned to read one page should not have to learn a second.
  */
+/**
+ * Which of the two states this bot's wake word is in, said plainly (CCB-S5-030).
+ *
+ * The operator renamed a bot and it went on answering to its old name. The value being wrong
+ * was half the problem; the other half was that nothing anywhere said so, and the page showed
+ * the stale word with no hint that it had stopped tracking the name above it.
+ *
+ * So the page states the state, always, in both directions. "Follows the display name" is as
+ * worth printing as "the operator chose this": a bot that silently agrees today is a bot the
+ * operator can rename tomorrow without wondering.
+ */
+function wakeWordStateNote(state: WakeWordState | null): SafeHtml {
+  if (state === null) return html``;
+
+  if (state.derived) {
+    return html`<p class="mt-1 text-xs text-emerald-700">
+      Follows the display name. Rename this bot and its wake word follows.
+    </p>`;
+  }
+
+  // The interesting case, and the one the operator hit. Naming the value it WOULD have is what
+  // turns "this is custom" into something actionable: it is exactly what to type to hand the
+  // bot back to its own name.
+  const matches =
+    state.fromDisplayName !== null &&
+    state.fromDisplayName.toLocaleLowerCase() === state.word.toLocaleLowerCase();
+
+  if (matches) {
+    return html`<p class="mt-1 text-xs text-slate-500">
+      Set by you. It happens to match the display name today, but it will not follow a rename.
+      Save it again to hand it back to the name.
+    </p>`;
+  }
+
+  return html`<p class="mt-1 text-xs text-amber-700">
+      Set by you, and it does not follow the display name.
+      ${state.fromDisplayName === null
+        ? html`This bot's display name yields no usable wake word, so a custom one is the only
+          option.`
+        : html`This bot answers to <strong>${state.word}</strong>, not to
+          <strong>${state.fromDisplayName}</strong>. If it was renamed and should follow, save
+          <strong>${state.fromDisplayName}</strong> here.`}
+    </p>`;
+}
+
 function scopePanel(
   section: string,
   scopes: Map<string, SettingScopeView>,
@@ -663,13 +712,31 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       // The save path already read the rows and already carried this reasoning in a comment
       // next to it. The two halves of one page disagreeing about where the truth lives is
       // the defect; they agree now.
+      // The selected bot's own rows, kept rather than consumed, because the wake word state
+      // below is told from whether a row EXISTS and not from the resolved value (CCB-S5-030).
+      const ownOverrides =
+        selectedBotId === null ? [] : await listSettingOverridesForBot(ctx.db, selectedBotId);
+      const selectedName =
+        selectedBotId === null
+          ? null
+          : (bots.find((b) => b.id === selectedBotId)?.displayName ?? null);
       const s =
         selectedBotId === null
           ? interaction.get()
           : applySettingOverrides(
               interaction.get(),
-              await listSettingOverridesForBot(ctx.db, selectedBotId),
+              ownOverrides,
+              // THE DISPLAY NAME, for the same reason this block reads the rows rather than
+              // the cache: the reply path now resolves an absent wake word from the bot's own
+              // name, and a page resolving it from the shared value would print one word while
+              // the bot answered to another. That is the disagreement the comment above is
+              // about, one setting further on.
+              selectedName ?? undefined,
             );
+      const wakeState =
+        selectedBotId === null || selectedName === null
+          ? null
+          : wakeWordState(interaction.get(), ownOverrides, selectedName);
 
       const notice = req.query.tested
         ? html`<div
@@ -722,6 +789,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <code>/unpublish</code> do nothing and say nothing (CCB-S3-031).
                   </p>
                   ${labelled('Wake word', textField('wakeWord', s.wakeWord), 'Her name. Rename her for your community — small typos in it are still understood.')}
+                  ${wakeWordStateNote(wakeState)}
                   ${labelled('Greeting prefixes', textField('greetings', s.greetings.join(', ')), 'Comma separated. Allowed in front of the wake word and stripped before the instruction.')}
                   ${saveButton()}
                 `,
@@ -1429,6 +1497,9 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
          * way round.
          */
         const normalized = normalizeInteraction(next);
+        // What this bot's wake word would be if it followed its own name (CCB-S5-030). Null
+        // when nothing usable derives, in which case the shared value stays the baseline.
+        const derivedWake = wakeWordForNewBot((await botDisplayName(ctx.db, targetBot)) ?? '');
         let written = 0;
         let cleared = 0;
         for (const placement of SETTING_SCOPES) {
@@ -1440,7 +1511,28 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
             placement.key === 'retorts'
               ? retortsForBot(next['retorts'], normalized)
               : readPath(normalized, placement.key);
-          if (JSON.stringify(submitted) === JSON.stringify(readPath(shared, placement.key))) {
+          // WHAT COUNTS AS "NO DEVIATION" DIFFERS FOR THE WAKE WORD (CCB-S5-030).
+          //
+          // Every other setting falls back to the SHARED value, so submitting the shared value
+          // means "I have not deviated" and the row goes. The wake word falls back to the
+          // bot's own DISPLAY NAME, so the value meaning "I have not deviated" is the one
+          // derived from that name. Comparing against the shared value here would keep a row
+          // for every bot whose wake word is its own name, which is every bot, and freeze it
+          // at today's spelling exactly as creation used to.
+          //
+          // Case-insensitively, matching how detectAddress and wakeWordTakenBy compare: a word
+          // differing only in case is the same word and should not pin a bot to it.
+          const baseline =
+            placement.key === 'wakeWord' && derivedWake !== null
+              ? derivedWake
+              : readPath(shared, placement.key);
+          const unchanged =
+            placement.key === 'wakeWord'
+              ? typeof submitted === 'string' &&
+                typeof baseline === 'string' &&
+                submitted.toLocaleLowerCase() === baseline.toLocaleLowerCase()
+              : JSON.stringify(submitted) === JSON.stringify(baseline);
+          if (unchanged) {
             if (await clearSettingOverride(ctx.db, targetBot, placement.key)) cleared++;
           } else {
             await setSettingOverride(ctx.db, targetBot, placement.key, submitted);

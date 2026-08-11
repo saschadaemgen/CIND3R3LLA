@@ -1219,9 +1219,11 @@ function identityPanel(profile: BotOnboardingProfile, identity: BotIdentityFacts
         <dt>Answers to</dt>
         <dd>
           <strong>${identity.wakeWord}</strong>
-          ${identity.wakeWordIsOwn
-            ? badge('its own', 'green')
-            : badge('the shared default', 'amber')}
+          ${identity.wakeWordSource === 'name'
+            ? badge('follows its name', 'green')
+            : identity.wakeWordSource === 'own'
+              ? badge('set by you', 'slate')
+              : badge('the shared default', 'amber')}
         </dd>
       </div>
       <div>
@@ -1243,13 +1245,22 @@ function identityPanel(profile: BotOnboardingProfile, identity: BotIdentityFacts
         </dd>
       </div>
     </dl>
-    ${identity.wakeWordIsOwn
-      ? null
-      : html`<p class="setup-inline-note" data-tone="warning">
-          This bot has no wake word of its own, so it answers to the deployment default and
-          cannot be told apart from any other bot on it. Set one on the
-          <a href="/interaction/addressing?bot=${String(profile.id)}">Addressing page</a>.
-        </p>`}
+    ${identity.wakeWordSource === 'shared'
+      ? html`<p class="setup-inline-note" data-tone="warning">
+          This bot has no wake word of its own and its display name yields none, so it answers
+          to the deployment default and cannot be told apart from any other bot on it. Set one
+          on the <a href="/interaction/addressing?bot=${String(profile.id)}">Addressing page</a>.
+        </p>`
+      : identity.wakeWordSource === 'own' &&
+          identity.wakeWordFromName !== null &&
+          identity.wakeWordFromName.toLocaleLowerCase() !== identity.wakeWord.toLocaleLowerCase()
+        ? html`<p class="setup-inline-note" data-tone="warning">
+            This bot answers to <strong>${identity.wakeWord}</strong>, which you set, and NOT to
+            its display name. If it was renamed and should follow, save
+            <strong>${identity.wakeWordFromName}</strong> on the
+            <a href="/interaction/addressing?bot=${String(profile.id)}">Addressing page</a>.
+          </p>`
+        : null}
     ${identity.retortSource === 'own'
       ? null
       : html`<p class="setup-inline-note" data-tone="warning">
@@ -1637,6 +1648,10 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
             contactAddressLink: selected.contactAddressLink,
             overrides: await listSettingOverridesForBot(ctx.db, selected.id),
             shared: ctx.interaction.get(),
+            // So the panel can tell "follows its name" from "on the shared default"
+            // (CCB-S5-030). Without it the two are indistinguishable and the panel reports
+            // the pessimistic one.
+            displayName: selected.displayName,
           })
         : null;
 
