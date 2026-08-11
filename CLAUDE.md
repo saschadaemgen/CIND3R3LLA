@@ -97,6 +97,18 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   through `ActiveUserScheduler`, whatever it carries. The sentence appeared three times and
   produced three bare call sites, so **correct the reasoning and not only the code**: reasoning
   is what propagates.
+- **A bar that lives only in a prompt is not a bar** (standing rule, D-183). This has now been
+  established twice in two days and produced six routing collisions across the season. An intent
+  whose explicitness requirement is written into the model's own description will be claimed for
+  things it cannot serve, and the seam will honour the claim, because the only thing the seam
+  validates is the catalog. The archive got its deterministic predicate in CCB-S5-027; LOOKUP
+  kept a sentence in a prompt and produced the worst defect of the season a day later. **When a
+  lane states a bar, the bar is a predicate over the text or it does not exist.** The same
+  applies to what a rule tells her about honesty: three new constitutional rules reduced invented
+  provenance from most runs to four in six, which is a real improvement and is not a guarantee,
+  so the thing that holds must always be the deterministic half.
+  **And check the comment above the list**: the one over the LOOKUP phrases asserted an invariant
+  the list already violated and named a check that did not exist.
 - **Anything the application appends to her words becomes, through memory, an example of how
   she writes** (standing rule, D-180). She produced a forged knowledge-base source line in
   production, in the application's own format, naming a document the real line one row below it
@@ -265,7 +277,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   for every hosted bot. A cache miss fails CLOSED, unlike the interaction settings, because a
   capability answered from the shared states is a bot doing what the operator forbade it),
   `price/`
-  (amount parsing + number formatting), `settings/`,
+  (amount parsing + number formatting). **`plugins/web-search/relevance.ts` is the measured
+  floor** (CCB-S5-028, D-183): pure cosine scoring of every result against the question with the
+  same embedder the knowledge base uses, floored at 0.70, which was MEASURED by
+  `npm run calibrate:search-relevance` because the knowledge base's 0.55 would have admitted the
+  two pages that caused the briefing. Below the bar nothing reaches the model and the reply is
+  the application's; an embedder that cannot answer fails CLOSED. `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
   SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
@@ -629,6 +646,23 @@ in the offline set. Read its output rather than its exit code: the voice is the 
 check can assert it. **Section 8 is CCB-S5-027's** (D-182): a slash command names no bot, so
 exactly one now answers it, and the election is driven through the REAL engine and the REAL
 consent handler rather than left as a computable predicate, which is D-162's lesson),
+`verify:lookup-honesty` (what reaches her from a lookup and what she may say about it,
+CCB-S5-028, D-183: that a question naming no request to go and look is downgraded whichever
+resolver claimed it, that results below the measured floor never reach the model, that an
+embedder which cannot answer hands over NOTHING rather than the unjudged, and that no source
+line can stand under an answer that used nothing. The two mutations the briefing asked for by
+name are both here: the floor set to zero lets the production results through again, and a model
+declaring `[0, 1]` on a rejected set still gets no line because it was never shown one. Every
+negative has a positive control beside it, because a floor that refused everything passes every
+assertion about refusing.
+`npm run verify:lookup-honesty-live` drives the operator's exact question end to end against the
+real model and the real embedder, plus a knowledge question and a question nothing answers.
+**Read its output rather than its exit code**, and read the MEASURED counts at the end: the
+application-decided guarantees are asserted, and the model's own honesty is measured at 5 of 6
+saying the results do not cover it and 4 of 6 inventing a provenance anyway. Its fabrication
+patterns were widened after a green run reported 0 of 3 on three answers that all invented one),
+`calibrate:search-relevance` is where the floor's number comes from, and it is not a check: it
+prints the four bands and what each candidate floor would admit,
 `verify:protected-text` (the lines the application writes and she may not, CCB-S5-027, D-180:
 that the protected set is DERIVED from the persona rather than listed, that a forgery is removed
 whether it stands on its own line or is tacked onto the end of a sentence, that a draft she was

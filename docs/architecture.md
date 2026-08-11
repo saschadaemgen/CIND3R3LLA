@@ -3632,3 +3632,53 @@ found through the `sharedKey` that already made co-tenancy detectable. Consulted
 `/unpublish`. An unknown shared key or an unknown group answers YES, because a consent command
 must never go unanswered. The unelected bot still reports the message as handled so its
 category is written. Double ARCHIVING is unchanged (D-083).
+
+
+## 51. The relevance bar, and the last lane's gate (CCB-S5-028, D-183)
+
+### 51.1 Three lookups, three deterministic bars
+
+`rules.ts` exports `namesTheArchive` and `asksToLookItUp`, both built from the same `PATTERNS`
+the rule engine scores. `resolver.ts` holds them in one table (`EXPLICIT_ONLY`) and applies it
+at the seam; `ollama-resolver.ts` applies the same predicates beside its consent guard, where
+the override is counted for the console. A claim the text does not support becomes UNKNOWN,
+which is conversation, which is where the knowledge base is consulted.
+
+**The knowledge base contributes no intent and has one call site**, inside free conversation. It
+is the residue of the dispatch, so any lane that wrongly claims a question removes it from the
+running. That is why these bars are what protect it, and why it is not itself in the table.
+
+### 51.2 The floor
+
+`src/plugins/web-search/relevance.ts` is pure: `cosine`, `searchRelevanceText`,
+`applyRelevanceFloor`, and `SEARCH_RELEVANCE_FLOOR = 0.70`. `WebSearchService.judge` embeds the
+query and the sanitised results with the same `nomic-embed-text` the knowledge base uses (one
+batched call each, on a 15 s timeout rather than the ingest job's two-minute floor) and drops
+everything below the bar before the results ever reach a prompt.
+
+| outcome | what happened | what she says |
+|---|---|---|
+| `no-results` | the provider returned nothing usable | `searchEmpty` |
+| `nothing-relevant` | results came back, none cleared the floor | `searchIrrelevant` |
+| `unjudged` | results came back, the embedder did not answer | `searchUnchecked` |
+
+All three are application-written and deterministic: the model is not called, so there is
+nothing to argue into an answer. `npm run calibrate:search-relevance` is where the number comes
+from; the Web Search page shows the floor, the count refused for irrelevance and the last
+judged search's scores.
+
+### 51.3 What the registry says now
+
+Migration 054 adds the `has-no-web-results` condition and splits
+`task.conversation.no-action-claimed` on it, because that sentence was false in every lookup
+prompt and shipped there anyway. `task.conversation.only-looked-here` tells the lookup case the
+truth. Three constitutional grounding rules follow D-156's spine-first ordering:
+`grounding.may-reason` (446), `grounding.no-invented-provenance` (447),
+`grounding.no-verdict-on-unseen` (448). Two web-fence rules cover the surviving band:
+`web.fence.say-when-it-does-not-answer` and `web.fence.rejected-is-not-used`.
+
+### 51.4 Attribution
+
+Structural below the floor: no results in the request means no `usedResults` field in the
+schema, so no declaration and no line. Above the floor it rests on the model's declaration,
+measured good but not reliable. See D-183 for the numbers.

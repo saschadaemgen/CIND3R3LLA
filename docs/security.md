@@ -1140,6 +1140,18 @@ the model's reading of a result. Five injections were planted in real result set
 including a forged operator command to publish everything. The same fence design is what conversation
 memory reuses above, which is why the two are described in the same terms.
 
+**And a result that is about something else never reaches the model** since CCB-S5-028 (D-183,
+architecture §51.2). Untrusted text was fenced, bounded and made incapable of causing anything,
+and none of that asks whether it has anything to do with the question. Two university pages
+about human-subjects research ethics were handed over as evidence for a question about a
+messaging protocol, and the answer that came back invented a technical position, invented a
+provenance for it, and wore the application's own source line. Every result is now scored
+against the question with the in-process embedder and dropped below a MEASURED cosine floor of
+0.70; the knowledge base's 0.55 would not have caught it, which is why it was measured rather
+than copied. An embedder that cannot answer fails CLOSED, so an outage hands over nothing rather
+than handing over the unjudged. Below the floor she is given nothing, the reply is
+application-written, and no source line can exist because there is nothing to declare.
+
 **A lookup she would refuse never reaches a provider** since CCB-S4-042 (D-145, architecture
 §37.1). The pre-search gate runs before the query, so a refusable request makes no outbound
 request at all: nothing leaves the process, and no stranger's text enters the prompt. It is a

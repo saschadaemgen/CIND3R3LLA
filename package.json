@@ -115,7 +115,10 @@
     "verify:plugin-scope": "tsx scripts/verify-plugin-scope.ts",
     "verify:plugin-scope-live": "tsx scripts/verify-plugin-scope-live.ts",
     "verify:protected-text": "tsx scripts/verify-protected-text.ts",
-    "verify:archive-search": "tsx scripts/verify-archive-search.ts"
+    "verify:archive-search": "tsx scripts/verify-archive-search.ts",
+    "calibrate:search-relevance": "tsx scripts/calibrate-search-relevance.ts",
+    "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
+    "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"
   },
   "dependencies": {
     "@electric-sql/pglite-pgvector": "0.0.5",

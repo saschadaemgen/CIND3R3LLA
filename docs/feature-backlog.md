@@ -696,6 +696,30 @@ because nothing was built to switch off.
       Note `capture_events.payload` (migration 018) has **no production writer yet**, so its shape can
       still be defined in domain terms for free.
 
+## Left open by CCB-S5-028, deliberately
+
+- [ ] **Answer from the web and say she also has material on it.** CCB-S5-028 decided that the
+      knowledge base does NOT pre-empt an explicit "look up X" on a document match (D-183): a
+      score that routes a question into a corpus would be the first gate in this tree that
+      CREATES a claim rather than removing one, and D-143 and D-179 both settled that naming
+      the place outranks a topic match. The honest shapes are (a) answer from the web and
+      mention she has material, or (b) say what she was given and offer to look. Silent
+      substitution is not one of them. Needs a decision about which, plus a `lookup` prompt
+      case carrying the `has-knowledge` rules and a re-baseline of `verify:prompt-identity`.
+- [ ] **The adjacent band.** The relevance floor separates "about something else" from "about
+      this", and cannot separate "same field, does not answer it" from "answers it": the gap
+      between the lowest relevant result and the highest adjacent one was 0.0066. Those results
+      reach the model, and whether she then says "this does not cover it" rests on a prompt rule
+      that was measured working 5 times in 6. A cross-encoder reranker is the technique that
+      would close it and Ollama still has no rerank endpoint (D-176); the seam is
+      `applyRelevanceFloor`.
+- [ ] **A source line still rests on the model's declaration above the floor.** Measured good
+      (8/8 empty for irrelevant results, 4/4 correct for relevant ones) and not reliable (1/6
+      declared sources under an explicit refusal). Nothing structural can close that while the
+      only party who knows what an answer drew on is the party writing it.
+
+---
+
 ## Left open by CCB-S5-027, deliberately
 
 Three things the briefing's fixes name and do not build. Each is written down because the

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 181 decisions</strong> — newest first. Highest allocated: <strong>D-182</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 182 decisions</strong> — newest first. Highest allocated: <strong>D-183</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-183 | Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it | IMPLEMENTED |
 | D-182 | A slash command names no bot, so exactly one answers it | IMPLEMENTED |
 | D-181 | The archive answers only when it was named, and a count is a count | IMPLEMENTED |
 | D-180 | The application owns the facts, and memory taught her to forge them | IMPLEMENTED |
@@ -211,6 +212,107 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-183 - Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it
+
+**Status: IMPLEMENTED** (CCB-S5-028, migration 054). The worst defect of the season, and worse
+than the forged attribution of D-180, because here the REAL attribution made a fabrication look
+verified. Asked which of two contradictory statements about his own protocol was correct, she
+answered with a technical position she had no basis for, invented a provenance for it
+("analyzing the protocol's behavior in edge cases and comparing it to actual implementation
+logs"), declared the operator's documentation outdated, sent him to his own GitHub repository
+to confirm it, and the application printed `research.uoregon.edu, hrpp.research.virginia.edu`
+underneath. The word "protocol" had matched.
+
+**THE ROUTING, AND THE PATTERN BEHIND SIX OF THEM.** The rule engine returns UNKNOWN for that
+question, measured, so the model resolver claimed LOOKUP and the seam honoured it. LOOKUP was
+**the last lookup lane whose bar existed only as prose in the model's own intent description**,
+which is exactly what D-181 had just recorded as not working, one intent along. `asksToLookItUp`
+is now the deterministic bar, built from the same `PATTERNS`, applied beside the consent guard
+where the override is counted and again at the seam where it survives a new resolver. The two
+bars sit in one table, because the second took six production misroutes to arrive and a table
+makes the third somebody's entry rather than somebody's oversight.
+
+**AND THE COMMENT ABOVE THE PHRASE LIST WAS FALSE IN BOTH HALVES.** It claimed every LOOKUP
+phrase must "SAY web, online, internet or google" and that `verify:interaction` caught it. Six
+phrases name no place (`look up`, `find out about`, `can you look`, ...) and no check anywhere
+mentioned LOOKUP. A stated invariant, a named check that does not exist, and a list already
+violating it. The real bar is **asking her to GO AND LOOK**, and the comment now says so.
+
+**WHY THE KNOWLEDGE BASE LOSES EVERY COLLISION.** It contributes NO intent and is consulted at
+exactly ONE call site, inside free conversation. It is RESIDUE: it gets what every other lane
+declined. So an intent that wrongly claims a question does not answer it in the wrong place, it
+removes the knowledge base from the running entirely, and nothing says so.
+
+**SHOULD IT BE CONSULTED BEFORE WEB SEARCH? NO, AND THE ROUTING FIX IS WHY.** A question that
+does not ask her to leave the building now stays in it, which is the whole of the observed
+defect. Pre-empting an explicit "look up X" with a document match would invert the one lever a
+member has, and D-143 and D-179 both settled that naming the place outranks a topic match.
+It would also be a new KIND of gate: every deterministic gate in this tree can only REMOVE a
+claim, and a score that routes a question into a corpus creates one. Answering from the web
+while saying she also has material on it is the honest version and is in the backlog.
+
+**THE FLOOR IS MEASURED, AND THE KNOWLEDGE BASE'S NUMBER WOULD NOT HAVE CAUGHT THIS.** No
+provider returns a score and rank is not relevance: the two pages were ranked 1 and 2. The
+signal is the `nomic-embed-text` embedder already in the building, one batched call for the
+results and one for the query, floored on raw cosine exactly as the knowledge base is.
+`npm run calibrate:search-relevance` measured six queries and 27 results in four bands:
+relevant 0.7592-0.8383, adjacent 0.5813-0.7526, word-match 0.4674-0.7091, unrelated
+0.3780-0.5738. **The two production results score 0.5813 and 0.5538, both ABOVE the knowledge
+base's 0.55**, so copying that number across would have shipped, passed every check, and
+admitted the exact result set that caused this. The floor is **0.70**: every relevant result
+survives, both production results are rejected with 0.12 of margin.
+
+It does NOT separate "same field, does not answer it" from "answers it" - the gap there is
+0.0066 - and no threshold on this signal would without dropping real answers. That band belongs
+to the rule below, not to the floor, and both are needed.
+
+**A LEXICAL OVERLAP CHECK WAS REJECTED, and the reason is the defect.** Query and results shared
+the word "protocol". A term-overlap test passes that case with room to spare: it would have
+looked like a safety net while admitting the exact failure it was built for.
+
+**UNJUDGED FAILS CLOSED.** No embedder, or an embedder that does not answer, means nothing
+reaches the model and she says she could not check what she found. That is a third honest
+sentence rather than a collapse into "I found nothing", which would be false about the
+internet. The alternative, passing results through unscored and loudly, was considered and
+rejected: an outage is exactly when nobody is watching, and it would reopen the defect.
+
+**WHY THE FENCES DID NOT CATCH IT, AND WHAT THE PROMPT WAS ACTUALLY SAYING.**
+`prompt.no-unsupplied-claims` is constitutional, in every lane, always, and was in that prompt.
+It enumerates "memories, personal knowledge, facts, or actions", and a claim about METHOD reads
+as none of them to a model moving quickly. Worse, the shipped lookup prompt CONTRADICTED
+ITSELF: a lookup runs in `mode: 'conversation'`, so it carried
+`task.conversation.no-action-claimed` - *"You have taken no action and looked nothing up"* - in
+the same prompt as the search results it was told to answer from. Verified in the shipped
+baseline. The one true provenance was the one forbidden, and inventing a different one
+satisfies both instructions. Migration 054 splits that rule on a new `has-no-web-results`
+condition and tells the lookup case the truth instead.
+
+**THE NEW RULES ARE SPINE FIRST (D-156).** She may hold a view and reason out loud; she may not
+dress reasoning up as findings; and she may not pass judgement on material she was not shown.
+Three constitutional rules, ordered so the permission is read before the prohibition.
+
+**AND THEY ARE NOT ENOUGH, MEASURED.** With the two irrelevant results handed straight to
+`qwen3:32b`: before, 1 run in 3 stated a position and invented a provenance. After, 5 of 6 said
+the results do not cover it and **4 of 6 still attached an invented provenance**. That is
+D-156's own finding arriving again, and it is the reason this decision rests on the floor rather
+than on the rules. The rules are the second layer, for the adjacent band the floor cannot close.
+
+**ATTRIBUTION: WHAT IS STRUCTURAL AND WHAT IS NOT.** Below the floor there are no `webResults`
+in the request, so the schema carries no `usedResults` field, so nothing can be declared and no
+line can be built. That is structural and it closes the observed failure completely. Above the
+floor it rests on the model's declaration, which was measured being **good** (8 of 8 empty for
+irrelevant results, 4 of 4 correct for relevant ones) and **not reliable** (1 of 6 declared
+sources under an explicit refusal). One rule now states that reading a result and rejecting it
+is not using it. A model can always claim a result it ignored, and this entry says so rather
+than implying otherwise.
+
+**TWO THINGS THIS BRIEFING'S OWN WORK BROKE AND FIXED.** A rule naming the `usedResults` field
+put the literal string `UsedResults: []` into her prose in two runs of six; it no longer names
+the field, and the protected-text guard catches the shape. And the live check's fabrication
+patterns reported 0 of 3 on three answers that all invented a provenance, because none used a
+verb the list had: the patterns were widened from a green run, which is the `verify:self-claims`
+lesson repeating.
 
 ### D-182 - A slash command names no bot, so exactly one answers it
 
