@@ -4,6 +4,7 @@
  * No production database, network, or SimpleX runtime is used.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -97,7 +98,13 @@ async function main(): Promise<void> {
   check('client changes one step at a time', client.includes('showStep'));
   check('client filters the list', client.includes('data-setup-list-item'));
   check('wizard styles exist', css.includes('.setup-dialog'));
-  check('asset copier publishes wizard client', copier.includes('admin-setup-wizard.js'));
+// Asserts the PUBLISHED FILE rather than a line in the copier (CCB-S5-024). The copier
+// globs `assets/*.js` now, and a check on its source would have gone red for a change
+// that made forgetting a script impossible.
+  check(
+    'asset copier publishes wizard client',
+    existsSync(new URL('../public/assets/admin-setup-wizard.js', import.meta.url)),
+  );
   check(
     'mega navigation explains SimpleX AI bots',
     html.includes('Create and configure SimpleX AI bots with a guided assistant.'),

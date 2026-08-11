@@ -5,6 +5,7 @@
  * and never sends a SimpleX message or touches production.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
@@ -307,7 +308,10 @@ async function main(): Promise<void> {
     modelCatalogClient.includes('data-model-target') &&
       modelCatalogClient.includes('applyFilters') &&
       modelCatalogCss.includes('CIND3R3LLA Model Catalog') &&
-      assetCopier.includes('admin-model-catalog.js'),
+// Asserts the PUBLISHED FILE rather than a line in the copier (CCB-S5-024). The copier
+// globs `assets/*.js` now, and a check on its source would have gone red for a change
+// that made forgetting a script impossible.
+      existsSync(new URL('../public/assets/admin-model-catalog.js', import.meta.url)),
   );
 
   const routingPage = await app.inject({ method: 'GET', url: '/ai/routing', headers: authed });

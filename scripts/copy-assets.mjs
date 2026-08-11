@@ -1,7 +1,7 @@
 // Copies vendored front-end assets (htmx) into public/assets/.
 // Runs as part of `npm run assets`. No CDN dependencies — everything is
 // served same-origin under the admin console's strict CSP.
-import { copyFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,40 +24,18 @@ const webauthnSrc = join(
 );
 copyFileSync(webauthnSrc, join(outDir, 'webauthn-browser.js'));
 
-// Our own auth glue.
-copyFileSync(join(root, 'assets', 'auth.js'), join(outDir, 'auth.js'));
-copyFileSync(
-  join(root, 'assets', 'admin-navigation.js'),
-  join(root, 'public', 'assets', 'admin-navigation.js'),
-);
-copyFileSync(
-  join(root, 'assets', 'admin-effects.js'),
-  join(root, 'public', 'assets', 'admin-effects.js'),
-);
-copyFileSync(
-  join(root, 'assets', 'admin-setup-wizard.js'),
-  join(root, 'public', 'assets', 'admin-setup-wizard.js'),
-);
-copyFileSync(
-  join(root, 'assets', 'admin-access-control.js'),
-  join(root, 'public', 'assets', 'admin-access-control.js'),
-);
-copyFileSync(
-  join(root, 'assets', 'admin-model-catalog.js'),
-  join(root, 'public', 'assets', 'admin-model-catalog.js'),
-);
-copyFileSync(
-  join(root, 'assets', 'admin-personality.js'),
-  join(root, 'public', 'assets', 'admin-personality.js'),
-);
-// One uploader, two pages (CCB-S5-007): the recital's chapter images and the bot avatars.
-copyFileSync(
-  join(root, 'assets', 'admin-image-upload.js'),
-  join(root, 'public', 'assets', 'admin-image-upload.js'),
-);
+// ── OUR OWN SCRIPTS: EVERY ONE, NOT A LIST SOMEBODY MAINTAINS (CCB-S5-024) ──
+//
+// This was ten explicit copyFileSync calls, and adding a script meant remembering to add an
+// eleventh. The knowledge base upload shipped with its script missing from the page AND from
+// this list, and a script that is not copied 404s at exactly the moment it is needed, in
+// silence, because nothing on the page reports a missing defer script.
+//
+// A glob cannot be forgotten. Vendored assets stay explicit above, because they come out of
+// node_modules under different names and there is nothing to enumerate.
+const ownScripts = readdirSync(join(root, 'assets')).filter((f) => f.endsWith('.js'));
+for (const name of ownScripts) {
+  copyFileSync(join(root, 'assets', name), join(outDir, name));
+}
 
-console.log(
-  'copied htmx.min.js, webauthn-browser.js, auth.js, admin-effects.js, admin-navigation.js, ' +
-    'admin-setup-wizard.js, admin-access-control.js, admin-model-catalog.js, ' +
-    'admin-personality.js, admin-image-upload.js -> public/assets/',
-);
+console.log(`copied htmx.min.js, webauthn-browser.js and ${ownScripts.length} own script(s) -> public/assets/`);

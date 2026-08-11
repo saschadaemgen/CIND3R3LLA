@@ -620,12 +620,19 @@ export function registerNav(): void {
           label: 'Overview',
           icon: icon('plugin'),
         },
-        ...listPlugins().map((plugin) => ({
-          key: `plugin:${plugin.id}`,
-          href: plugin.adminPath,
-          label: plugin.name,
-          icon: icon('plugin'),
-        })),
+        // A plugin whose page lives elsewhere in the nav is NOT listed again here
+        // (CCB-S5-024). The knowledge base is a plugin because that is how it inherited the
+        // per-bot mechanism; an operator looks for it under AI Control, and two entries
+        // pointing at one page is the console following the implementation instead of the
+        // use. It still appears on the Plugins LIST, with its switch, linking here.
+        ...listPlugins()
+          .filter((plugin) => plugin.livesUnderNav === undefined)
+          .map((plugin) => ({
+            key: `plugin:${plugin.id}`,
+            href: plugin.adminPath,
+            label: plugin.name,
+            icon: icon('plugin'),
+          })),
       ],
     },
     {

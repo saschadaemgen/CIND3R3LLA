@@ -34,6 +34,20 @@ export interface PluginDefinition {
   intents: readonly Intent[];
   /** Admin page path. */
   adminPath: string;
+  /**
+   * The nav key under which this plugin's page ALREADY appears, when it lives somewhere
+   * other than the Plugins submenu (CCB-S5-024).
+   *
+   * Set it and the sidebar stops listing the plugin a second time; the Plugins LIST still
+   * shows it, because "does this capability exist and is it on for this bot" is a question
+   * about plugins wherever the page happens to live.
+   *
+   * The knowledge base is the first: it is a plugin because that is how it inherited the
+   * per-bot mechanism for one inventory row, and an operator looks for knowledge under
+   * knowledge. Where a thing APPEARS should follow how it is used; only the implementation
+   * needed it to be a plugin.
+   */
+  livesUnderNav?: string;
 }
 
 const definitions = new Map<string, PluginDefinition>();

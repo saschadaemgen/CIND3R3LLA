@@ -161,7 +161,6 @@ async function main(): Promise<void> {
     ['/ai/personality', 'AI Personality'],
     ['/ai/privacy', 'AI Privacy and Safety'],
     ['/ai/providers', 'AI Providers'],
-    ['/ai/knowledge', 'AI Knowledge and RAG'],
     ['/ai/testing', 'AI Testing and Compare'],
     ['/ai/audit', 'AI Audit'],
   ] as const;
@@ -262,12 +261,24 @@ async function main(): Promise<void> {
       providers.body.includes('Disabled'),
   );
 
+  // ── /ai/knowledge IS THE KNOWLEDGE BASE NOW (CCB-S5-024) ──────────────────
+  //
+  // This asserted the PLACEHOLDER: "More than 50 SimpleX analysis", "RAG enabled: No". That
+  // page described the feature as absent, and it was replaced by the feature. Asserting the
+  // roadmap copy would now be asserting that the thing is still missing, so the check moved
+  // to what the page has to be: the real console, under its real nav key, with the upload
+  // form that the operator actually needs.
   const knowledge = await app.inject({ method: 'GET', url: '/ai/knowledge', headers });
+  check('knowledge page renders', knowledge.statusCode === 200);
   check(
-    'knowledge page exposes private training roadmap',
-    knowledge.body.includes('More than 50 SimpleX analysis') &&
-      knowledge.body.includes('RAG enabled') &&
-      knowledge.body.includes('No'),
+    'and it is the knowledge base rather than a roadmap about one',
+    knowledge.body.includes('Knowledge Base') &&
+      knowledge.body.includes('name="documentText"') &&
+      !knowledge.body.includes('More than 50 SimpleX analysis'),
+  );
+  check(
+    'and it loads the script its upload form is written for',
+    knowledge.body.includes('admin-document-upload.js'),
   );
 
   resetAiRuntimeForTests();

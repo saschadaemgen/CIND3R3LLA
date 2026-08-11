@@ -3,8 +3,8 @@
  *
  * Three surfaces, and the third is the point of the other two:
  *
- *   /plugins/knowledge-base              documents, grants, and every setting
- *   /plugins/knowledge-base/diagnostics  a question, and exactly what would be retrieved
+ *   /ai/knowledge              documents, grants, and every setting
+ *   /ai/knowledge/diagnostics  a question, and exactly what would be retrieved
  *
  * ── WHY THIS PAGE CARRIES THE BOT SWITCHER AND THE OTHER PLUGIN PAGES DO NOT ─
  *
@@ -154,7 +154,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   /* ── The main page ───────────────────────────────────────────────────────── */
 
   app.get<{ Querystring: { saved?: string; error?: string; note?: string; bot?: string } }>(
-    '/plugins/knowledge-base',
+    '/ai/knowledge',
     async (req, reply) => {
       const csrf = req.session?.csrfToken ?? '';
       const botProfiles = await listBotOnboardingProfiles(db);
@@ -238,24 +238,49 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
             'Add a document',
             html`<form
               method="post"
-              action="/plugins/knowledge-base/upload"
+              action="/ai/knowledge/upload"
               class="flex flex-col gap-3"
-              data-image-upload
-              data-upload-ready=" is ready. It is stored verbatim; nothing rewrites it."
+              data-document-upload
             >
               <input type="hidden" name="_csrf" value="${csrf}" />
-              <input type="hidden" name="imageData" data-upload-payload value="" />
-              <input type="hidden" name="fileName" data-upload-name value="" />
+              <input type="hidden" name="fileName" data-document-name value="" />
               ${field(
                 'Title',
                 html`<input name="title" class="${INPUT}" placeholder="What this document is" />`,
                 'Shown to you here, and printed under an answer she draws from it. Left blank, the filename is used.',
               )}
               <label class="flex flex-col gap-1 text-sm">
-                <span class="font-medium text-slate-700">File</span>
-                <input type="file" name="file" accept=".md,.markdown,.txt,.text" class="text-sm" />
-                <span class="text-xs text-slate-500" data-image-upload-status>
-                  Markdown or plain text, up to ${fmtBytes(MAX_DOCUMENT_BYTES)}.
+                <span class="font-medium text-slate-700">Choose a file (optional)</span>
+                <input
+                  type="file"
+                  accept=".md,.markdown,.txt,.text"
+                  class="text-sm"
+                  data-document-file
+                />
+                <span class="text-xs text-slate-500" data-document-status>
+                  Markdown or plain text, up to ${fmtBytes(MAX_DOCUMENT_BYTES)}. Choosing one
+                  fills the box below, where you can see exactly what will be stored.
+                </span>
+              </label>
+              <noscript>
+                <p class="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  The file chooser needs JavaScript to read a file into the box below. Paste the
+                  document in directly instead: that box is the field this page actually sends,
+                  and the upload works without any script.
+                </p>
+              </noscript>
+              <label class="flex flex-col gap-1 text-sm">
+                <span class="font-medium text-slate-700">Document text</span>
+                <textarea
+                  name="documentText"
+                  rows="10"
+                  data-document-text
+                  class="${INPUT} font-mono text-xs"
+                  placeholder="Paste the document here, or choose a file above and it will appear in this box."
+                ></textarea>
+                <span class="text-xs text-slate-500">
+                  This is the field that is sent and stored, verbatim. Nothing is hidden: what
+                  is in this box is what she will be able to read.
                 </span>
               </label>
               ${save('Upload and ingest')}
@@ -287,7 +312,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                         a store cut two ways is a store nobody can reason about.
                         <form
                           method="post"
-                          action="/plugins/knowledge-base/reingest-all"
+                          action="/ai/knowledge/reingest-all"
                           class="mt-2"
                         >
                           <input type="hidden" name="_csrf" value="${csrf}" />
@@ -342,7 +367,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                             ? null
                             : html`<form
                                 method="post"
-                                action="/plugins/knowledge-base/${String(d.id)}/grant"
+                                action="/ai/knowledge/${String(d.id)}/grant"
                                 class="flex items-center gap-1"
                               >
                                 <input type="hidden" name="_csrf" value="${csrf}" />
@@ -384,7 +409,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                               </form>`}
                           <form
                             method="post"
-                            action="/plugins/knowledge-base/${String(d.id)}/weight"
+                            action="/ai/knowledge/${String(d.id)}/weight"
                             class="flex items-end gap-2"
                           >
                             <input type="hidden" name="_csrf" value="${csrf}" />
@@ -409,7 +434,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                           </form>
                           <form
                             method="post"
-                            action="/plugins/knowledge-base/${String(d.id)}/reingest"
+                            action="/ai/knowledge/${String(d.id)}/reingest"
                           >
                             <input type="hidden" name="_csrf" value="${csrf}" />
                             <button
@@ -421,7 +446,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                           </form>
                           <form
                             method="post"
-                            action="/plugins/knowledge-base/${String(d.id)}/delete"
+                            action="/ai/knowledge/${String(d.id)}/delete"
                           >
                             <input type="hidden" name="_csrf" value="${csrf}" />
                             <button
@@ -448,7 +473,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
             'Retrieval',
             html`<form
               method="post"
-              action="/plugins/knowledge-base/settings"
+              action="/ai/knowledge/settings"
               class="flex flex-col gap-4"
             >
               <input type="hidden" name="_csrf" value="${csrf}" />
@@ -519,7 +544,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
             'Ingest',
             html`<form
               method="post"
-              action="/plugins/knowledge-base/settings"
+              action="/ai/knowledge/settings"
               class="flex flex-col gap-4"
             >
               <input type="hidden" name="_csrf" value="${csrf}" />
@@ -614,7 +639,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
         </div>
 
         <p class="mt-4 text-sm">
-          <a class="underline" href="/plugins/knowledge-base/diagnostics"
+          <a class="underline" href="/ai/knowledge/diagnostics"
             >Open the retrieval diagnostics</a
           >
           to see exactly what a question would retrieve, with every score.
@@ -624,10 +649,15 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
       reply.type('text/html');
       return page({
         title: 'Knowledge Base',
-        active: `plugin:${KNOWLEDGE_BASE_ID}`,
+        active: 'ai:knowledge',
         csrfToken: csrf,
         body,
-        botSwitcher: { ...selection, returnTo: '/plugins/knowledge-base' },
+        // THE SCRIPT THE FORM IS WRITTEN FOR. Its absence was the defect: scripts are
+        // included per page through `head`, this page never asked for one, and the form
+        // carried a hook nothing implemented. `verify:knowledge` now refuses any page whose
+        // markup uses an upload hook without loading the script that implements it.
+        head: html`<script src="/assets/admin-document-upload.js" defer></script>`,
+        botSwitcher: { ...selection, returnTo: '/ai/knowledge' },
       });
     },
   );
@@ -635,7 +665,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   /* ── Diagnostics ─────────────────────────────────────────────────────────── */
 
   app.get<{ Querystring: { q?: string; bot?: string } }>(
-    '/plugins/knowledge-base/diagnostics',
+    '/ai/knowledge/diagnostics',
     async (req, reply) => {
       const csrf = req.session?.csrfToken ?? '';
       const botProfiles = await listBotOnboardingProfiles(db);
@@ -670,7 +700,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
         )}
         ${card(
           'Ask what she would find',
-          html`<form method="get" action="/plugins/knowledge-base/diagnostics" class="flex flex-col gap-3">
+          html`<form method="get" action="/ai/knowledge/diagnostics" class="flex flex-col gap-3">
             <input
               name="q"
               value="${question}"
@@ -812,30 +842,53 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
       reply.type('text/html');
       return page({
         title: 'Retrieval diagnostics',
-        active: `plugin:${KNOWLEDGE_BASE_ID}`,
+        active: 'ai:knowledge',
         csrfToken: csrf,
         body,
-        botSwitcher: { ...selection, returnTo: '/plugins/knowledge-base/diagnostics' },
+        botSwitcher: { ...selection, returnTo: '/ai/knowledge/diagnostics' },
       });
     },
   );
 
   /* ── Writes ──────────────────────────────────────────────────────────────── */
 
-  const back = (q = ''): string => `/plugins/knowledge-base${q}`;
+  const back = (q = ''): string => `/ai/knowledge${q}`;
   const fail = (message: string): string =>
     back(`?error=${encodeURIComponent(message)}`);
 
   app.post<{ Body: Record<string, unknown> }>(
-    '/plugins/knowledge-base/upload',
+    '/ai/knowledge/upload',
+    // A document is text, and text is bulky once form-encoded, so this one route takes a
+    // larger body than the console's default. Set here rather than globally: nothing else on
+    // this surface has any business accepting megabytes.
+    { bodyLimit: 12 * 1024 * 1024 },
     async (req, reply) => {
       const body = req.body ?? {};
-      const encoded = typeof body['imageData'] === 'string' ? body['imageData'] : '';
+      // THE VISIBLE FIELD, not a hidden one. The previous version read a hidden base64 field
+      // that only a script could fill, and that script was never loaded on this page: the
+      // field was empty, the form submitted happily, and the operator was told to choose a
+      // file he had plainly chosen. See `admin-document-upload.js`.
+      const text = typeof body['documentText'] === 'string' ? body['documentText'] : '';
       const filename = typeof body['fileName'] === 'string' ? body['fileName'] : '';
       const title = (typeof body['title'] === 'string' ? body['title'] : '').trim();
-      if (!encoded) return reply.redirect(fail('No file was read. Choose one and try again.'));
 
-      const contentType = contentTypeFor(filename || title || '.md');
+      if (text.trim() === '') {
+        // TRUTHFUL, AND IT DOES NOT BLAME THE OPERATOR. "Choose one and try again" sent him
+        // to repeat the one thing that had already worked. This says what actually arrived
+        // and what to do, and it reads correctly whether he chose nothing, chose a file the
+        // browser could not read, or has JavaScript switched off.
+        return reply.redirect(
+          fail(
+            'No document text arrived, so nothing was stored. If you chose a file, your ' +
+              'browser did not read it into the text box: paste the document into that box ' +
+              'directly, which is the field this page sends.',
+          ),
+        );
+      }
+
+      // The format follows the filename when the chooser supplied one, and is markdown
+      // otherwise: pasted text has no extension to read, and both accepted types are text.
+      const contentType = filename ? contentTypeFor(filename) : 'text/markdown';
       if (contentType === null) {
         return reply.redirect(
           fail(
@@ -845,30 +898,23 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
         );
       }
 
-      let text: string;
-      try {
-        const bytes = Buffer.from(encoded, 'base64');
-        if (bytes.byteLength > MAX_DOCUMENT_BYTES) {
-          return reply.redirect(
-            fail(`That file is ${fmtBytes(bytes.byteLength)}, over the ${fmtBytes(MAX_DOCUMENT_BYTES)} limit.`),
-          );
-        }
-        text = bytes.toString('utf8');
-        // A NUL byte means this is not text, whatever the extension said. Refused rather
-        // than stored, because a binary file stored as text produces chunks that look like
-        // text and retrieve like noise, and it would also make the row unsearchable by grep
-        // for anybody reading a dump of it later.
-        if (text.includes('\u0000')) {
-          return reply.redirect(
-            fail('That file contains binary data rather than text, so it was not stored.'),
-          );
-        }
-      } catch {
-        return reply.redirect(fail('That file could not be decoded.'));
+      const byteLength = Buffer.byteLength(text, 'utf8');
+      if (byteLength > MAX_DOCUMENT_BYTES) {
+        return reply.redirect(
+          fail(
+            `That document is ${fmtBytes(byteLength)}, over the ` +
+              `${fmtBytes(MAX_DOCUMENT_BYTES)} limit. Nothing was stored.`,
+          ),
+        );
       }
-
-      if (text.trim() === '') {
-        return reply.redirect(fail('That file is empty, so there would be nothing to retrieve.'));
+      // A NUL byte means this is not text, whatever the extension said. Refused rather than
+      // stored, because binary stored as text produces chunks that look like text and
+      // retrieve like noise, and it would make the row unsearchable by grep for anybody
+      // reading a dump of it later.
+      if (text.includes('\u0000')) {
+        return reply.redirect(
+          fail('That document contains binary data rather than text, so it was not stored.'),
+        );
       }
 
       try {
@@ -899,7 +945,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   );
 
   app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
-    '/plugins/knowledge-base/:id/grant',
+    '/ai/knowledge/:id/grant',
     async (req, reply) => {
       const id = Number.parseInt(req.params.id, 10);
       const rawBot = (req.body ?? {})['botProfileId'];
@@ -919,7 +965,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   );
 
   app.post<{ Params: { id: string }; Body: Record<string, unknown> }>(
-    '/plugins/knowledge-base/:id/weight',
+    '/ai/knowledge/:id/weight',
     async (req, reply) => {
       const id = Number.parseInt(req.params.id, 10);
       const rawWeight = (req.body ?? {})['weight'];
@@ -942,7 +988,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   };
 
   app.post<{ Params: { id: string } }>(
-    '/plugins/knowledge-base/:id/reingest',
+    '/ai/knowledge/:id/reingest',
     async (req, reply) => {
       const id = Number.parseInt(req.params.id, 10);
       if (!Number.isSafeInteger(id)) return reply.redirect(fail('No document was named.'));
@@ -951,7 +997,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
     },
   );
 
-  app.post('/plugins/knowledge-base/reingest-all', async (req, reply) => {
+  app.post('/ai/knowledge/reingest-all', async (req, reply) => {
     const settings = plugins.getKnowledge();
     const current = ingestSignature(settings);
     const stale = (await listDocuments(db)).filter(
@@ -964,7 +1010,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   });
 
   app.post<{ Params: { id: string } }>(
-    '/plugins/knowledge-base/:id/delete',
+    '/ai/knowledge/:id/delete',
     async (req, reply) => {
       const id = Number.parseInt(req.params.id, 10);
       if (!Number.isSafeInteger(id)) return reply.redirect(fail('No document was named.'));
@@ -983,7 +1029,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
   );
 
   app.post<{ Body: Record<string, unknown> }>(
-    '/plugins/knowledge-base/settings',
+    '/ai/knowledge/settings',
     async (req, reply) => {
       const body = req.body ?? {};
       const section = typeof body['section'] === 'string' ? body['section'] : '';

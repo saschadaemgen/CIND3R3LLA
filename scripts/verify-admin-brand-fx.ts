@@ -4,6 +4,7 @@
  * No database, network, SimpleX transport, or production service is used.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { registerNav } from '../src/web/server.js';
@@ -120,8 +121,10 @@ async function main(): Promise<void> {
   console.log('\n4. Build integration');
   check(
     'asset copier publishes the effects script',
-    copier.includes("assets', 'admin-effects.js") &&
-      copier.includes("public', 'assets', 'admin-effects.js"),
+// Asserts the PUBLISHED FILE rather than a line in the copier (CCB-S5-024). The copier
+// globs `assets/*.js` now, and a check on its source would have gone red for a change
+// that made forgetting a script impossible.
+    existsSync(new URL('../public/assets/admin-effects.js', import.meta.url)),
   );
 
   console.log('\n=== RESULTS ===');

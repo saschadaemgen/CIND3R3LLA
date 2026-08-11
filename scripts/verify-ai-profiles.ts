@@ -5,6 +5,7 @@
  * invitation link, message send, consent action, or production database is used.
  */
 
+import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
@@ -363,7 +364,10 @@ async function main(): Promise<void> {
   check(
     'Access Control styles and asset publishing exist',
     accessControlCss.includes('CIND3R3LLA access control workspace') &&
-      assetCopier.includes('admin-access-control.js'),
+// Asserts the PUBLISHED FILE rather than a line in the copier (CCB-S5-024). The copier
+// globs `assets/*.js` now, and a check on its source would have gone red for a change
+// that made forgetting a script impossible.
+      existsSync(new URL('../public/assets/admin-access-control.js', import.meta.url)),
   );
   check(
     'profile and groups are visible',

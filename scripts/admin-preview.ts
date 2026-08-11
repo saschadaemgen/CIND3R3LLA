@@ -41,6 +41,7 @@ import {
 import { Embedder, EMBEDDING_DIMENSIONS } from '../src/knowledge/embed.js';
 import { setGrant, upsertDocument } from '../src/db/knowledge.js';
 import { SecurityService } from '../src/security/settings.js';
+import { startQueue } from '../src/queue/index.js';
 import type { Queryable } from '../src/db/pool.js';
 import type { AdminConfig, Config } from '../src/config.js';
 
@@ -258,6 +259,8 @@ async function main(): Promise<void> {
     }
   }
 
+
+
   const adminCfg: AdminConfig = {
     adminPort: PORT,
     adminUsername: 'operator',
@@ -380,6 +383,30 @@ async function main(): Promise<void> {
     // "given", "not given" and the per-bot difference at once.
     if (title.startsWith('The Active')) await setGrant(db, stored.id, previewBotId, true);
   }
+
+  // ── THE PREVIEW STARTS COLD (CCB-S5-024, D-178) ──────────────────────────
+  //
+  // Seeding runs in the same process that then serves, so every per-bot cache is WARM by the
+  // time the first request arrives: the seed wrote through the services, and the services
+  // remember. Production is the opposite. It boots, and the first request an operator makes
+  // is the first read of everything.
+  //
+  // That difference shipped a defect: the Interaction page rendered SHARED values under a
+  // bot's name on a cold cache, and the preview could never show it, because in the preview
+  // the cache was never cold. So the seeding ends by dropping what it warmed.
+  //
+  // This does not make the preview equal to production - see D-178 for what it still cannot
+  // show - but it removes one whole class of "worked here, failed there" rather than leaving
+  // it as a caveat nobody remembers at the moment they are looking at a green page.
+  plugins.invalidate();
+
+  // ── THE QUEUE RUNS HERE TOO (CCB-S5-024, D-178) ──────────────────────────
+  //
+  // Without it an uploaded document sat at `pending` for ever and the preview could show
+  // that a document was STORED but never that it was INGESTED, which is most of what the
+  // page is about. A preview that stops one step short of the thing being verified is a
+  // preview that produces confident, incomplete evidence.
+  await startQueue({ db });
 
   const app = buildServer({
     db,

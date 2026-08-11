@@ -1958,35 +1958,6 @@ function providersBody(snapshot: AiRuntimeSnapshot): SafeHtml {
   </div>`;
 }
 
-function knowledgeBody(snapshot: AiRuntimeSnapshot): SafeHtml {
-  return html`<div class="grid gap-4 lg:grid-cols-2">
-    ${card(
-      'Private knowledge status',
-      definitionList([
-        ['RAG enabled', 'No'],
-        ['Indexed documents', '0'],
-        ['Embedding model', 'Not configured'],
-        ['Vector store', 'Not configured'],
-        ['Source citations', 'Not configured'],
-        ['Room access policy', 'Not configured'],
-        ['External indexing', 'Disabled'],
-        ['Current reply model', snapshot.routing.replyModel],
-      ]),
-    )}
-    ${card(
-      'Planned training corpus',
-      html`<ul class="space-y-2 text-sm text-slate-700">
-        <li>More than 50 SimpleX analysis and reverse-engineering protocols.</li>
-        <li>Approved session and workflow documentation.</li>
-        <li>CIND3R3LLA behavior, personality, and response policy documents.</li>
-        <li>Project architecture, security boundaries, and operational procedures.</li>
-        <li>Explicit source permissions before any document enters the index.</li>
-        <li>Local retrieval by default with visible source attribution.</li>
-      </ul>`,
-    )}
-  </div>`;
-}
-
 function testingBody(snapshot: AiRuntimeSnapshot, csrf: string): SafeHtml {
   return html`<div class="grid gap-4 lg:grid-cols-2">
     ${card(
@@ -2178,19 +2149,11 @@ export function registerAi(app: FastifyInstance, ctx: ViewContext): void {
     );
   });
 
-  app.get<{ Querystring: AiPageQuery }>('/ai/knowledge', async (req, reply) => {
-    const snapshot = aiRuntimeSnapshot();
-    reply.type('text/html');
-    return renderAiPage(
-      'AI Knowledge and RAG',
-      'Private training sources, future retrieval controls, index status, and source permissions.',
-      'ai:knowledge',
-      req.session?.csrfToken ?? '',
-      req.query,
-      snapshot,
-      knowledgeBody(snapshot),
-    );
-  });
+  // `/ai/knowledge` IS THE KNOWLEDGE BASE NOW (CCB-S5-024). This was a placeholder page
+  // describing "future retrieval controls", laid out when the menu was; the real thing lands
+  // on it rather than beside it, and `src/web/views/knowledge.ts` registers the route.
+  // Removing the placeholder rather than leaving it behind a second URL is the point: two
+  // pages about knowledge is the duplication this move exists to end.
 
   app.get<{ Querystring: AiPageQuery }>('/ai/testing', async (req, reply) => {
     const snapshot = aiRuntimeSnapshot();

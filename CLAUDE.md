@@ -64,6 +64,20 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   exposure to every directory added after it. So when a source tree is added, walk the
   standing checks and decide **per check** whether it now applies, rather than assuming the
   green run means covered.
+- **Rendering a page is not verifying it** (standing rule, D-178). Four defects in one week worked
+  in the local admin preview and failed on the host, and THREE of them were not preview
+  limitations at all: the preview could have shown every one, and would have, if the control had
+  been operated instead of the markup read. The sharpest case was reproducible in the preview in
+  one expression - the upload form carried a script's hook, `[...document.scripts]` did not
+  contain that script, the submit button was live because nothing had disabled it, and a real
+  file left the field at zero bytes. "Verified in the browser" had meant FETCHED in the browser.
+  So a control is verified when it has been **operated and its effect observed**: the click made,
+  the file chosen, the form submitted, the state read back. Nothing less may be reported as
+  verified, whatever it was done in. And four things the preview genuinely cannot show must be
+  driven on the host first: database privileges and extensions (PGlite is a superuser, which hid
+  the pgvector failure), pool semantics (PGlite is one connection, which hid a non-transaction),
+  the SimpleX core, and nginx with its body limits. The preview now starts with cold caches, runs
+  the queue, and cannot lose a script from `assets/`.
 - **A control that a check can drive is not a control an operator can use** (standing rule,
   D-162). Every harness here drives routes and reads markup, and none of them can see that a
   rendered control is invisible, unreachable or inert. The avatar Upload button had correct

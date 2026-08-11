@@ -43,5 +43,15 @@ export const knowledgeBasePlugin = definePlugin({
   defaultEnabled: false,
   // See the header: knowing something is not an intent a member can ask for.
   intents: [],
-  adminPath: '/plugins/knowledge-base',
+  // ── WHERE IT APPEARS IS NOT WHAT IT IS (CCB-S5-024) ──────────────────────
+  //
+  // It stays a plugin, because that is how it got the per-bot switch, the console's
+  // three-state control, the audit entry and the absent-capability property for one
+  // inventory row. But it SHOWS UP under AI Control, beside the model and the memory
+  // settings, because an operator looks for knowledge under knowledge and not under
+  // plugins. The Plugins list still carries it, pointing here rather than duplicating the
+  // controls: whether a capability exists and is on for this bot is a plugin question
+  // wherever its page lives.
+  adminPath: '/ai/knowledge',
+  livesUnderNav: 'ai:knowledge',
 });

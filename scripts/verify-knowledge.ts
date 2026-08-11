@@ -21,6 +21,7 @@
  *   npx tsx scripts/verify-knowledge.ts
  */
 
+import { readdir, readFile } from 'node:fs/promises';
 import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import { loadMigrationFiles } from '../src/db/migrate.js';
@@ -729,6 +730,74 @@ async function main(): Promise<void> {
     'CONTROL: with pgvector present the same migration applies cleanly',
     equippedSaid === '',
     equippedSaid.slice(0, 90),
+  );
+
+  /* ── 9. A form's script is on the form's page ───────────────────────────── */
+
+  console.log('\n9. No form depends on a script its page does not load');
+
+  // ── THE DEFECT THIS IS THE GUARD FOR ──────────────────────────────────────
+  //
+  // The upload form carried `data-image-upload`, a hook implemented by
+  // `assets/admin-image-upload.js`. Scripts are included PER PAGE through `page({ head })`,
+  // and the knowledge page never asked for one. So the hook was inert: the hidden field it
+  // was supposed to fill stayed empty, the form submitted happily, and the route told the
+  // operator to choose a file he had plainly chosen. Nothing threw, because there was no
+  // script there to throw.
+  //
+  // Same shape as the required field a script was supposed to fill, and as the Upload button
+  // with no `:disabled` styling: markup that reads correctly and behaves inertly. A static
+  // sweep cannot see behaviour, but it CAN see that a page using a hook does not load the
+  // file implementing it, which is exactly what went wrong.
+  const viewsDir = new URL('../src/web/views/', import.meta.url);
+  const hooks: { attribute: string; script: string }[] = [
+    { attribute: 'data-image-upload', script: 'admin-image-upload.js' },
+    { attribute: 'data-document-upload', script: 'admin-document-upload.js' },
+  ];
+  const viewFiles = (await readdir(viewsDir)).filter((f) => f.endsWith('.ts'));
+  let offenders = 0;
+  for (const file of viewFiles) {
+    const source = await readFile(new URL(file, viewsDir), 'utf8');
+    for (const hook of hooks) {
+      if (!source.includes(hook.attribute)) continue;
+      const loadsIt = source.includes(hook.script);
+      if (!loadsIt) offenders++;
+      check(
+        `${file} uses ${hook.attribute} and loads ${hook.script}`,
+        loadsIt,
+        loadsIt ? '' : 'the hook is inert on this page',
+      );
+    }
+  }
+  check('no view uses an upload hook without loading its script', offenders === 0);
+  // MUTATION: the sweep must be able to see an offender, or it passes over anything.
+  const inertPage = 'form data-document-upload -- and no script tag anywhere';
+  check(
+    'MUTATION: the sweep catches a page that uses the hook and loads nothing',
+    inertPage.includes('data-document-upload') && !inertPage.includes('admin-document-upload.js'),
+    'which is what knowledge.ts looked like before this briefing',
+  );
+
+  // AND THE UPLOAD CANNOT REPORT SUCCESS WITHOUT CONTENT. The route reads the VISIBLE
+  // textarea, so this asserts the field the form sends is the field the route reads: the
+  // previous pair disagreed silently, which is the whole defect.
+  const viewSource = await readFile(new URL('knowledge.ts', viewsDir), 'utf8');
+  check(
+    'the upload form sends a visible textarea, not a hidden field only a script can fill',
+    viewSource.includes('name="documentText"') && viewSource.includes('<textarea'),
+  );
+  check(
+    'and the route reads that same field',
+    viewSource.includes("body['documentText']"),
+  );
+  check(
+    'the empty-content message says what arrived rather than blaming the operator',
+    viewSource.includes('No document text arrived') &&
+      !viewSource.includes('No file was read. Choose one and try again.'),
+  );
+  check(
+    'and the form works with no script at all, so it says so where a script would be needed',
+    viewSource.includes('<noscript>'),
   );
 
   console.log(

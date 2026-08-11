@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 176 decisions</strong> — newest first. Highest allocated: <strong>D-177</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 177 decisions</strong> — newest first. Highest allocated: <strong>D-178</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-178 | The preview was not the problem; reading pages instead of using them was | IMPLEMENTED |
 | D-177 | Every control is consulted, or it is not a control | IMPLEMENTED |
 | D-176 | Store the text, not what a model made of it | IMPLEMENTED |
 | D-175 | Capability is per bot; the credential, the bill and the safety bound are not | IMPLEMENTED |
@@ -206,6 +207,69 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-178 - The preview was not the problem; reading pages instead of using them was
+
+**Status: IMPLEMENTED** (CCB-S5-024, no migration). Four things in one week worked in the local
+admin preview and failed on the real host. The briefing asked what the preview would have to
+do to be evidence. The honest answer is uncomfortable and is the point of this entry.
+
+**THREE OF THE FOUR WERE NOT PREVIEW LIMITATIONS.** They were verification limitations, and
+the preview could have shown every one of them.
+
+| What failed | Could the preview have shown it? |
+|---|---|
+| The slug derivation never ran, leaving a required field empty on a hidden step | Yes, by completing the wizard |
+| The avatar Upload button was inert with no `:disabled` styling (D-162) | Yes, by pressing it |
+| The upload form's script was never loaded on its page (this briefing) | Yes, by choosing a file |
+| The Interaction page showed shared values on a cold cache | **No** - the preview seeded in-process, so nothing was ever cold |
+
+This one is the sharpest case. It was reproducible in the preview in a single expression:
+`[...document.scripts].some(s => s.src.includes('admin-image-upload'))` returned **false**,
+the submit button was live because nothing had disabled it, and a genuine `File` in a genuine
+`change` event left the hidden field at zero bytes. The preview knew all of it. Nobody asked.
+
+What actually happened each time was that "verified in the browser" meant **rendered** in the
+browser: the page was fetched, its markup or text was read, and the reading was reported as
+verification. Markup is evidence about markup. It is never evidence about behaviour, which is
+what D-162 already said and what kept being violated anyway, including by the very harness
+written to enforce it.
+
+**SO THE RULE IS ABOUT THE ACT, NOT THE ENVIRONMENT.** A control is verified when it has been
+**operated** and its **effect observed** - the click made, the file chosen, the form submitted,
+the resulting state read back. Anything short of that is not verification and must not be
+reported as such, whatever it was done in.
+
+**WHAT THE PREVIEW GENUINELY CANNOT SHOW**, and therefore what must be driven on the host
+before anything depending on it is called verified:
+
+- **Database privileges and extensions.** PGlite runs as a superuser. `CREATE EXTENSION vector`
+  succeeded in every harness and failed on production, where the application role is
+  deliberately not a superuser (D-176's correction).
+- **Connection-pool semantics.** PGlite is ONE connection, so `BEGIN`/`COMMIT` issued through a
+  plain handle is a real transaction there and is not one against `pg.Pool`. That hid a
+  data-loss bug until an adversarial read found it by reasoning rather than by running.
+- **The SimpleX core**, and everything reached through it.
+- **nginx, TLS and proxy limits**, including request body size, which no local run exercises.
+- **systemd, the environment file and the deployed revision.**
+
+**AND THREE THINGS WERE CHANGED SO THE PREVIEW IS CLOSER TO EVIDENCE** rather than left as a
+caveat nobody remembers while looking at a green page:
+
+1. **It starts cold.** Seeding now drops the caches it warmed, so the first request reads what
+   production's first request reads. That removes the one failure class the preview genuinely
+   could not show.
+2. **The queue runs.** An uploaded document previously sat at `pending` for ever, so the
+   preview could show that a document was stored but never that it was ingested - stopping one
+   step short of the thing being verified, which is how confident incomplete evidence is made.
+3. **Assets cannot be forgotten.** `copy-assets.mjs` globbed `assets/*.js` instead of listing
+   ten files by hand. The missing script in this briefing was missing from the page AND from
+   that list, and a script that is not copied 404s in silence at the moment it is needed.
+
+**AND ONE CHECK NOW CATCHES THE CLASS**, because the class is what recurs: `verify:knowledge`
+sweeps every view for an upload hook and fails if the page using it does not load the script
+that implements it. A static sweep cannot see behaviour, but it can see a page asking for
+something nothing gives it, which is precisely what shipped.
 
 ### D-177 - Every control is consulted, or it is not a control
 
