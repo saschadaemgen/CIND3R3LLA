@@ -539,8 +539,13 @@ const MEMBER_CATEGORY_FOR_INTENT: Record<string, MemberCategory | null> = {
  * Replies that may be reworded freely because they cannot change consent or
  * execute an action. Consent, undo, and action outcomes deliberately stay on
  * their deterministic strings.
+ *
+ * Exported for `verify:name-guard` only (CCB-S5-031). Membership is not something a
+ * behavioural test can see: `personalizedBody` falls back to the deterministic draft when
+ * the model fails, so a key wrongly added here produces the right text anyway and the fault
+ * only shows on the day the model succeeds and rewords a line it should not touch.
  */
-const AI_PERSONALIZED_KEYS = new Set<PersonaKey>([
+export const AI_PERSONALIZED_KEYS = new Set<PersonaKey>([
   'status',
   'searchResult',
   'notUnderstood',
@@ -2184,8 +2189,17 @@ export class InteractionEngine {
     // refusal shipped the domains.
     const answer = await this.wordLookupAnswer(msg, s, lang, personalize, outcome.results);
 
+    // THE SAME CORRECTION, ONE LANE OVER (CCB-S5-031). Every way the search itself can fail
+    // returned above, with its own line: no results, nothing above the floor, nothing
+    // judgeable, the provider down. Reaching here means results came back and cleared the
+    // relevance floor, so `wordLookupAnswer` returning null is the WORDING failing and
+    // nothing else. `searchUnavailable` claimed the lookup had failed, which by this point
+    // in the function is the one thing that cannot have happened.
+    //
+    // Fixed in both places rather than only in the one that was reported, because a defect
+    // whose reasoning applies twice and is corrected once comes back (D-171).
     if (!answer) {
-      await this.reply(msg, s, lang, 'searchUnavailable', {});
+      await this.reply(msg, s, lang, 'searchNoWords', {});
       return true;
     }
 
@@ -3661,11 +3675,21 @@ export class InteractionEngine {
       // out is the hanging announcement CCB-S4-038 exists to prevent, and it reaches this
       // branch: `spoken` is null on every guard rejection and every transport failure.
       //
-      // `searchUnavailable` is the existing honest line for exactly this, in both
-      // languages, and it does NOT answer from training data instead. Not bypassed and not
-      // uncounted: this one IS the reply, so it takes the allowance the announcement left.
+      // ── AND IT SAYS WHICH HALF FAILED (CCB-S5-031) ───────────────────────
+      //
+      // This was `searchUnavailable`, "I could not look that up just now", and reaching this
+      // branch means the opposite: `announcedLookup` is only true when the knowledge base
+      // came back holding passages, so the lookup demonstrably RAN and demonstrably found
+      // something. What failed was the wording, either in the model or in one of this
+      // application's own guards throwing her answer away.
+      //
+      // Telling a member the lookup failed when it succeeded is worse than the guard it
+      // serves: it sends them away from a question the archive can actually answer, and it
+      // is the same class of small untruth the count and the relevance floor were corrected
+      // for. `searchNoWords` states the true half. Not bypassed and not uncounted: this one
+      // IS the reply, so it takes the allowance the announcement left.
       if (announcedLookup) {
-        await this.reply(msg, s, lang, 'searchUnavailable', {});
+        await this.reply(msg, s, lang, 'searchNoWords', {});
         return true;
       }
       return false;

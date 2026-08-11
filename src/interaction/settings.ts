@@ -134,6 +134,11 @@ export const PERSONA_KEYS = [
   // not answer. Deliberately NOT collapsed into either line above: she did find things, and
   // she did not find nothing, and the honest statement is that she could not check them.
   'searchUnchecked',
+  // CCB-S5-031. The lookup RAN and came back with something, and the reply was then lost:
+  // the model failed, or this application's own guard threw her answer away. Distinct from
+  // every line above because those all describe the lookup failing, and saying one of them
+  // here tells the member the opposite of what happened.
+  'searchNoWords',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -206,6 +211,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchEmpty: 'lookup',
   searchIrrelevant: 'lookup',
   searchUnchecked: 'lookup',
+  searchNoWords: 'lookup',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -476,6 +482,16 @@ const PERSONA_EN: PersonaStrings = {
   searchUnchecked:
     '🌫️ I looked, but I could not check whether any of it was actually about your question, ' +
     'so I am leaving it alone rather than guessing.',
+  // CCB-S5-031. THE LOOKUP WORKED AND THE WORDING DID NOT, which is a different fact from
+  // every line above it. This is said when she announced a lookup, the lookup ran and came
+  // back with something, and then the reply was lost: the model failed, or one of this
+  // application's own guards threw her answer away. `searchUnavailable` was being said here
+  // and it states the opposite of what happened, which is worse than the guard it serves.
+  // Deterministic on purpose, and not in AI_PERSONALIZED_KEYS: this line exists because
+  // wording failed, so wording it through the same path is the one thing it must not do.
+  searchNoWords:
+    '🤐 I did the looking and found something, and then lost the words for it. Ask me again ' +
+    'and I will have another go.',
   // CCB-S4-042. No search ran, so this says she will not, rather than that she could not.
   searchRefused:
     '🚫 I am not searching the web for that. Ask me something else.',
@@ -635,6 +651,10 @@ const PERSONA_DE: PersonaStrings = {
   searchUnchecked:
     '🌫️ Ich habe nachgeschaut, konnte aber nicht pruefen, ob davon ueberhaupt etwas zu ' +
     'deiner Frage gehoert. Dann lasse ich es lieber, statt zu raten.',
+  // CCB-S5-031. Siehe die englische Fassung: nachgeschlagen wurde, formuliert nicht.
+  searchNoWords:
+    '🤐 Ich habe nachgeschaut und etwas gefunden, und dann sind mir die Worte dafuer ' +
+    'abhanden gekommen. Frag mich noch mal, dann nehme ich einen neuen Anlauf.',
   searchRefused:
     '🚫 Dafuer suche ich nicht im Netz. Frag mich was anderes.',
   rulesNoElimination:
