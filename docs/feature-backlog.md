@@ -720,6 +720,35 @@ because nothing was built to switch off.
 
 ---
 
+## Left open by CCB-S5-031, deliberately — the name guard's other half
+
+D-186 fixed the MATCHING and the reporting. Two questions about the rule itself were held back
+on the operator's instruction, and they are the ones that decide whether the guard is right at
+all rather than merely accurate.
+
+- [ ] **Strip rather than reject.** A reply that genuinely contains the member's name is a true
+      match, and rejecting it costs the member the whole answer to punish a decoration.
+      [`protected-text.ts`](../src/interaction/protected-text.ts) already refused that trade for
+      forged source lines and STRIPS instead, and `unresolvedPlaceholder` rejects for a reason
+      that does not apply here: stripping a leaked `{name}` leaves a hole in a sentence, while
+      removing a vocative leaves a sentence. The counterargument is that a name can appear
+      mid-clause where removal reads as a grammatical error, so this needs the excerpts the new
+      Diagnostics card collects before it can be decided. **This is the fix for the production
+      rejection that D-186 explicitly does not address.**
+- [ ] **Whether the rule should exist in this form.** She is never handed the sender's display
+      name; it reaches her only through conversation memory, where `speakerOf` renders every
+      message as `<displayName>: <text>`. The application shows her the name on every line and
+      then destroys her reply for using it, which is D-180's shape a second time. The
+      alternatives are to fence the names out of what she is shown, to accept that she may
+      address a member by name, or to keep the guard. Nothing here should be changed until
+      `npm run calibrate:name-usage` has been run against the production model, because the
+      whole question is how often it actually fires.
+- [ ] **Four characters is a proxy, not a line.** No length separates a short name from an
+      ordinary word, and the floor buys the common case at the cost of leaving members with
+      very short display names unguarded. Revisit with the calibration and the card's counts.
+
+---
+
 ## Left open by CCB-S5-030, deliberately — the three siblings of the rename defect
 
 D-185 made a bot's wake word follow its display name. Renaming a bot touches three other things

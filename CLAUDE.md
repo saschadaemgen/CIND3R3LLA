@@ -293,7 +293,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `generateOllamaReply` before every other guard, history is stripped before it reaches the
   prompt, and `knowledgePassages` carries text with no document NAME to cite. `forgery-log.ts`
   counts every strip for the Diagnostics page, because stripping is a fallback that hides a
-  fault by design), `plugins/` (plugin
+  fault by design.
+  **`blocked-name-log.ts` is the same shape for the guard that goes the other way** (CCB-S5-031,
+  D-186): `blockedLiterals` REJECTS a reply containing the speaking member's display name, which
+  used to be a bare substring test, so a member called `In` or `Al` lost every answer she wrote to
+  an ordinary preposition and the only trace was a `log.debug`. It is a whole-word Unicode match
+  with a four-character floor now, and every rejection is counted with the matched name, an
+  excerpt, and whether the member got a fallback line or nothing at all. **Whether a TRUE match
+  should be stripped rather than rejected is still open**, deliberately, and the count exists so
+  that decision is taken against numbers), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
   deployment** (CCB-S5-021, D-175). Exactly two are per bot, both of them `enabled`, and the

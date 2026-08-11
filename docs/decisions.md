@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 184 decisions</strong> — newest first. Highest allocated: <strong>D-185</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 185 decisions</strong> — newest first. Highest allocated: <strong>D-186</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-186 | A member's name is matched as a word, and a reply thrown away is counted rather than logged | IMPLEMENTED |
 | D-185 | A wake word with no row of its own follows the display name, so a rename carries through | IMPLEMENTED |
 | D-184 | She says she is going to look, for all three lookups, and the threshold is measured rather than shipped | IMPLEMENTED |
 | D-183 | Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it | IMPLEMENTED |
@@ -214,6 +215,58 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-186 - A member's name is matched as a word, and a reply thrown away is counted rather than logged
+
+**Status: IMPLEMENTED** (CCB-S5-031, no migration). `blockedLiterals: [msg.senderDisplayName]`
+rejects a whole reply whose prose contains the display name of the member currently speaking.
+Three things about that were wrong, and a fourth is deliberately left alone.
+
+**THE MATCH WAS A BARE SUBSTRING.** No word boundary, no minimum length, so a member calling
+themselves `In`, `Al`, `Ed` or `A` had every reply she wrote destroyed, in both languages, for
+containing an ordinary preposition. The match is now a whole word through Unicode lookarounds
+rather than `\b`, which is ASCII-only in JavaScript and would have behaved differently for
+`Jürgen` than for `Jurgen`, and it fails CLOSED to the old substring test if the pattern will
+not compile, per D-164.
+
+**THE FLOOR IS FOUR CHARACTERS AND IT IS A PROXY, WHICH IS WORTH STATING.** A boundary alone
+does not fix it: `art`, `ill`, `ore`, `max` and `in` are all standalone words, and no threshold
+separates `Sam`, which she probably should not say, from `Art`, which she cannot avoid saying.
+Four rather than three because **the costs are not symmetric**: over-rejecting destroys an
+answer the member never learns existed, while under-rejecting means she says a name once, in a
+group where that member is named on every message. The residual is stated rather than hidden,
+in the code and on the console: a display name of three characters or fewer is not guarded at
+all. `npm run calibrate:name-usage` is what the number should be revisited against.
+
+**A REJECTION WAS A `log.debug` INSIDE A CATCH**, one level quieter than the log nobody reads.
+This is a fallback that hides a fault by design, which is the shape CCB-S3-023 settled, so it
+is now counted on Interaction -> Diagnostics with the matched name and an excerpt, because a
+bare number cannot be judged. **The cost is recorded as well as the count**, derived from the
+one fact the request already carries: a caller with a deterministic draft falls back to it and
+the member gets a plainer sentence, while free conversation supplies an empty draft and the
+rejection costs the member the whole answer. Those are different failures and one number for
+both would hide the expensive one. Deliberately NOT a `status.error`: CCB-S3-023 escalates for
+the paths that lose a guarantee, and this loses a sentence, so alerting on it would be the
+noise the same rule warns about.
+
+**AND TWO CALL SITES STATED THE OPPOSITE OF WHAT HAPPENED.** Both answered with
+`searchUnavailable`, "I could not look that up just now", at a point where the lookup
+demonstrably ran: in free conversation `announcedLookup` is only true once the knowledge base
+came back holding passages, and in the web lane every way a search can fail has already
+returned with its own line. What failed in both was the WORDING, in the model or in this
+application's own guard. `searchNoWords` says so, deterministically, because a line reached
+because wording failed must not be worded through the path that just failed. **Fixed in both
+places rather than the one that was reported**, which is D-171: a defect whose reasoning
+applies twice and is corrected once comes back.
+
+**WHAT THIS DOES NOT FIX, AND THE CHECK SAYS SO.** The production rejection the operator was
+watching names a twelve-character member; that reply contained the name, so it is a true match
+and the boundary changes nothing about it. Whether a true match should STRIP rather than reject,
+as `protected-text.ts` already decided for forged source lines, is a separate decision with its
+own briefing. The count exists so that decision can be taken against numbers, and the excerpt
+exists so the likeliest cause can be read off the card: memory renders every message as
+`<displayName>: <text>`, so the application shows her the name on every line of history and
+then rejects her for using it, which is D-180's lesson in a second place.
 
 ### D-185 - A wake word with no row of its own follows the display name, so a rename carries through
 

@@ -874,6 +874,21 @@ must survive a free rewrite exactly, so counts and prices cannot drift, and `blo
 values such as a sender's display name out of generated text. Two modes: `free` rewrites the draft,
 `locked` writes only a short lead and the application appends the deterministic text unchanged.
 
+**`blockedLiterals` matches a WHOLE WORD with a floor on its length** (CCB-S5-031, D-186). It was
+a bare case-insensitive substring test, so a member calling themselves `In`, `Al`, `Ed` or `A` had
+every reply she wrote rejected for containing an ordinary preposition, in both languages, and
+nobody was told because the rejection was a `log.debug` inside a catch. The boundary is built from
+Unicode lookarounds rather than `\b`, which is ASCII-only in JavaScript and would treat a member
+named `Jürgen` differently from one named `Jurgen`, and it fails closed to the old substring test
+if the pattern will not compile (D-164). `MIN_BLOCKED_NAME_CHARS` is four, which is a proxy rather
+than a clean line and is documented as one: a name shorter than that cannot be told from ordinary
+vocabulary, and the asymmetry decides it, because over-rejecting destroys an answer the member
+never learns existed while under-rejecting means she says a name once. Every rejection is recorded
+in `blocked-name-log.ts` and shown on Interaction -> Diagnostics with the matched name, an excerpt
+and, separately, whether the caller had a deterministic draft to fall back to or the answer was
+lost outright. Whether a TRUE match should be stripped rather than rejected is deliberately still
+open; see the feature backlog.
+
 **The seam validates a second time, independently** (`interaction/resolver.ts`). `resolveIntent`
 re-sanitises whatever the active resolver returned against the active catalog, clamps confidence
 into 0..1, and treats an invented intent, an out-of-range confidence **or a thrown error** as
