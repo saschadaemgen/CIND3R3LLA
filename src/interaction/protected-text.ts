@@ -153,6 +153,34 @@ export const SHIPPED_ATTRIBUTION_OPENERS: readonly string[] = [
   'Quellen:',
 ];
 
+/**
+ * An attribution word followed by an actual citation, ANYWHERE in a line (CCB-S5-028).
+ *
+ * ── WHY THE LINE-START RULE WAS NOT ENOUGH ───────────────────────────────────
+ *
+ * D-180 put the openers above at line start only, with the stated reason that `sources:`
+ * inside a sentence is prose and cutting a sentence in half at it would be worse than the
+ * defect. That reasoning is still right, and it left a hole that a live run against
+ * `qwen3:32b` walked through on the first attempt, one run in four:
+ *
+ *   `...superseding older examples showing explicit SUB. Sources: [1](https://...), [2](...)`
+ *
+ * One line, prose first, the citation tacked on after a full stop. Not at the start of
+ * anything, so nothing caught it, and the application then printed its own line underneath.
+ *
+ * ── THE DISCRIMINATOR IS THE PAYLOAD, NOT THE WORD ───────────────────────────
+ *
+ * What makes it an attribution rather than prose is what FOLLOWS the colon: a markdown link
+ * or a bare URL. "I have no sources: I am guessing" is prose and stays prose, because no
+ * citation follows it. That is a shape ordinary writing does not have, so it can be matched
+ * mid-line without the risk the openers carry.
+ *
+ * The cut takes everything from the word to the end of the line, which is where a citation
+ * list ends.
+ */
+const ATTRIBUTION_PAYLOAD =
+  /(?:sources?|quellen?|referenzen?|refs?|links?|usedresults)\s*:\s*(?=\[|<?https?:\/\/)/iu;
+
 /** What {@link markersFromTemplates} found, and what it could not make a marker of. */
 export interface DerivedMarkers {
   /** Longest first, so the most specific match wins when two overlap. */
@@ -240,6 +268,10 @@ export function stripProtectedLines(
       const hit = pattern.exec(line);
       if (hit && (cut === -1 || hit.index < cut)) cut = hit.index;
     }
+    // A citation tacked onto the end of a sentence (CCB-S5-028). Checked before the
+    // line-start openers because it can match earlier in the same line.
+    const payload = ATTRIBUTION_PAYLOAD.exec(line);
+    if (payload && (cut === -1 || payload.index < cut)) cut = payload.index;
     if (cut === -1 && atStart.some((pattern) => pattern.test(line))) cut = 0;
 
     if (cut === -1) {

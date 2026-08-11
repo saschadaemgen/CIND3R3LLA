@@ -83,6 +83,7 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-nicknames',
   'has-clock',
   'has-web-results',
+  'has-no-web-results',
   'has-knowledge',
   'has-history',
   'has-no-history',
@@ -249,6 +250,11 @@ export function conditionHolds(
       return context.hasClock;
     case 'has-web-results':
       return context.hasWebResults;
+    // The other half of the pair (CCB-S5-028). It exists because one sentence, "you have
+    // taken no action and looked nothing up", was true in every conversation and FALSE in
+    // every lookup, and shipped in both. See migration 054.
+    case 'has-no-web-results':
+      return !context.hasWebResults;
     case 'has-knowledge':
       return context.hasKnowledge;
     case 'has-history':
