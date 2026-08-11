@@ -117,6 +117,8 @@
     "verify:protected-text": "tsx scripts/verify-protected-text.ts",
     "verify:archive-search": "tsx scripts/verify-archive-search.ts",
     "calibrate:search-relevance": "tsx scripts/calibrate-search-relevance.ts",
+    "verify:lookup-announcement": "tsx scripts/verify-lookup-announcement.ts",
+    "verify:lookup-announcement-live": "tsx scripts/verify-lookup-announcement-live.ts",
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
     "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"
   },

@@ -167,7 +167,7 @@ const CONDITIONING_STEMS = [
 /**
  * Match a stem plus up to four more letters, on Unicode letter boundaries.
  *
- * NOT `` AND NOT WHOLE WORDS, and both halves of that were learned the hard way.
+ * NOT `\b` AND NOT WHOLE WORDS, and both halves of that were learned the hard way.
  *
  * Whole words under-catch, because these languages inflect: the list held
  * `strukturiert` and the model wrote `strukturiere`, so the recitation slipped through as
@@ -175,7 +175,7 @@ const CONDITIONING_STEMS = [
  * strukturiere", which reads as "I enjoy and structure my coffee"). A German or Romance
  * word list that matches only the citation form is a list that mostly does not fire.
  *
- * `` is the wrong boundary, because it is ASCII-derived: `cálido` behaves
+ * `\b` is the wrong boundary, because it is ASCII-derived: `\bcálido\b` behaves
  * unpredictably around the accented letter. `(?<![\p{L}])` is the boundary that means
  * what it says in every language this generator writes.
  *

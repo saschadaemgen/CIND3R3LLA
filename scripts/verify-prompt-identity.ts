@@ -61,6 +61,7 @@ import {
   type BotPersonality,
   type CurrentTime,
 } from '../src/interaction/personality.js';
+import { lookupBrief, type LookupKind } from '../src/interaction/lookup-announcement.js';
 import {
   NOTHING_IN_SCOPE,
   PROMPT_RULE_TIERS,
@@ -138,6 +139,8 @@ interface Case {
   ruleInvocations?: string;
   /** She is handing over to a page the application prints (CCB-S5-005). */
   lawPage?: boolean;
+  /** Which lookup the holding line is covering for (CCB-S5-025). */
+  lookupKind?: LookupKind;
 }
 
 /**
@@ -228,7 +231,14 @@ const CASES: Case[] = [
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'retort.full', mode: 'retort', personality: personality(), identity: IDENTITY_FULL, now: NOW },
   { id: 'retort.dials-high', mode: 'retort', personality: personality({ sharpness: 10, verbosity: 10 }), identity: IDENTITY_FULL, now: NOW },
-  { id: 'searching.full', mode: 'searching', personality: personality(), identity: IDENTITY_FULL, now: NOW },
+  // CCB-S5-025. The searching lane is pinned ONCE PER LOOKUP, not once, because the place she
+  // is going is now a placeholder the application fills rather than a word in the rule. A
+  // single case would render that placeholder EMPTY and byte-pin a prompt no member can ever
+  // cause, which is what the first run of this check did: it compared a holding line with the
+  // destination missing and reported the lane as covered.
+  { id: 'searching.web', mode: 'searching', personality: personality(), identity: IDENTITY_FULL, now: NOW, lookupKind: 'web' },
+  { id: 'searching.archive', mode: 'searching', personality: personality(), identity: IDENTITY_FULL, now: NOW, lookupKind: 'archive' },
+  { id: 'searching.knowledge', mode: 'searching', personality: personality(), identity: IDENTITY_FULL, now: NOW, lookupKind: 'knowledge' },
   { id: 'free.command-rewrite', mode: 'free', personality: personality(), identity: IDENTITY_FULL, now: NOW },
   { id: 'locked.command-lead', mode: 'locked', personality: personality(), identity: IDENTITY_FULL, now: NOW },
   {
@@ -281,6 +291,7 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.moreInArea !== undefined ? { moreInArea: testCase.moreInArea } : {}),
     ...(testCase.ruleInvocations ? { ruleInvocations: testCase.ruleInvocations } : {}),
     ...(testCase.lawPage ? { lawPage: true } : {}),
+    ...(testCase.lookupKind ? { lookupBrief: lookupBrief(testCase.lookupKind) } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),

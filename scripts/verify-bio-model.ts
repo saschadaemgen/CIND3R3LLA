@@ -362,7 +362,7 @@ section('Model output is sanitised and validated before it can be read');
     validateBio('Curious gardener who binds books badly.', base) === null);
 
   // A REGRESSION GATE ON THE CHECK ITSELF. The first version of this validator built its
-  // regex with `` inside a template literal, which is U+0008 backspace rather than a
+  // regex with `\b` inside a template literal, which is U+0008 backspace rather than a
   // word boundary. It read correctly, type-checked, and matched nothing, so it gated
   // nothing and a 53-bio run went out unfiltered. A check that silently does nothing is
   // worse than no check, because the harness reports it as passing.
@@ -388,7 +388,7 @@ section('Model output is sanitised and validated before it can be read');
     validateBio('I work for a large organisation. Bread needs a warm oven.', base) === null,
     '"organisation" is not "organised"');
 
-  // The accented case is why the boundary is a Unicode lookaround rather than , which
+  // The accented case is why the boundary is a Unicode lookaround rather than \b, which
   // is ASCII-derived and behaves unpredictably next to an accented letter.
   check('accented stems match on Unicode letter boundaries',
     validateBio('Persona cálida y sociable.', base) === 'recites-traits');

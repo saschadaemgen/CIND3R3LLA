@@ -109,6 +109,33 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   so the thing that holds must always be the deterministic half.
   **And check the comment above the list**: the one over the LOOKUP phrases asserted an invariant
   the list already violated and named a check that did not exist.
+- **A constant measured on one machine is a guess about every other one** (standing rule, D-184).
+  The lookup announcement needed to know how long a reply takes to write, so the first build
+  measured it and shipped the number. Measured properly afterwards, with the transport's OWN
+  request shape, the two models this repository ships defaults for were **three times apart**
+  (`qwen3:32b` ~138 characters a second, `qwen3.5:9b` ~414), and the operator's own production
+  figure matched neither, because production is different hardware again. The constant would
+  have announced a one second wait on one deployment and sat silently through a sixteen second
+  one on another, and every check would have stayed green, because the checks would have been
+  written against the constant. **A number that describes the environment is read from the
+  environment**, and here it cost one integer on a meter that was already recording the times.
+  The same question applies to any figure taken on the development box: latency, throughput,
+  model behaviour, VRAM. Measure it where it runs, or carry it as a fallback that the running
+  system replaces.
+- **A dead detector and a clean repository look exactly the same** (standing rule, D-184).
+  Three safety patterns in this tree held a `U+0008` BACKSPACE where a word boundary was meant,
+  written by a shell heredoc that turns the two characters into one byte, invisible in every
+  terminal. Two of them ARE the CCB-S3-031 guarantee that consent copy never claims destruction
+  over retained content; the third carries a comment saying a match "is worth failing over".
+  None could ever match, all three passed for their whole lives, and the same byte had already
+  done the same thing once in CCB-S4-015. `verify:searchable` looked only for NUL, which blinds
+  grep LOUDLY; this byte kills a pattern QUIETLY, which is worse, and it now scans every control
+  byte outside tab, newline and carriage return. Two lessons beyond the byte. **A negative
+  assertion needs a positive control**, or it is indistinguishable from a broken one, which is
+  why every repaired detector here is now driven against text that must trip it. And **a check
+  that never ran never had its LOGIC reviewed either**: repairing the consent regex turned
+  `verify:interaction` red on copy that was CORRECT, and per D-111 the verifier was fixed and
+  the strings were left alone.
 - **Anything the application appends to her words becomes, through memory, an example of how
   she writes** (standing rule, D-180). She produced a forged knowledge-base source line in
   production, in the application's own format, naming a document the real line one row below it

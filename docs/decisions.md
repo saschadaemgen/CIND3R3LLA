@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 182 decisions</strong> — newest first. Highest allocated: <strong>D-183</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 183 decisions</strong> — newest first. Highest allocated: <strong>D-184</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-184 | She says she is going to look, for all three lookups, and the threshold is measured rather than shipped | IMPLEMENTED |
 | D-183 | Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it | IMPLEMENTED |
 | D-182 | A slash command names no bot, so exactly one answers it | IMPLEMENTED |
 | D-181 | The archive answers only when it was named, and a count is a count | IMPLEMENTED |
@@ -212,6 +213,82 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-184 - She says she is going to look, for all three lookups, and the threshold is measured rather than shipped
+
+**Status: IMPLEMENTED** (CCB-S5-025, migration 055). CCB-S4-038 gave web search a holding line
+with one hard rule: she may never say she is looking something up when she is not. Season 5
+gave her two more lookups, the archive and the knowledge base, and neither said anything.
+
+**THE THREE ARE DISTINGUISHED, AND THE DISTINCTION IS DATA.** The attribution already tells a
+member afterwards which lookup answered (`From the web:` against `From what you gave me:`), so
+one line covering all three would have contradicted the line under the answer, which is worse
+than no line at all. Each kind supplies a one-sentence BRIEF; the searching-lane rules keep
+owning the form. Migration 055 moves the destination out of three rule texts into a
+`{{lookupBrief}}` placeholder. The third rewording is the one that mattered: the lane told her
+to say she does not have this in her own head, which is true of the web and the archive and
+FALSE of the operator's documents, and left alone it would have contradicted the knowledge
+brief inside the same prompt.
+
+**THE ARCHIVE BRIEF IS CONSENT-EXACT.** `countPublishedMatching` reads `published_messages`,
+derived from the `consent` table. A first draft said "everything its members have said here",
+which would have had her claim to search messages nobody opted in to publish, in the product
+where that is the legal backbone. The correction then overshot: spelling the consent model out
+made a live run answer with a description of consent and never mention looking at all, so the
+qualifier is now the single word `published` and carries no clause to expand on. A brief is a
+situation, not a subject to write about.
+
+**THE THRESHOLD IS FIVE SECONDS AND THE RATE IS MEASURED.** The operator's instinct was to key
+this on how long the lookup takes; measurement says the lookup is milliseconds and the wait is
+how long her reply takes to WRITE, which the verbosity dial already bounds. The first build
+then shipped a generation rate as a constant, and that was wrong in a way worth recording: on
+one machine, same prompt shape, same `reasoning_effort: 'none'`, `qwen3:32b` wrote at ~138
+characters a second and `qwen3.5:9b` at ~414. Both are shipped defaults, they are three times
+apart, and the operator's own production figure of a 16.4 second reply matches neither, because
+production is different hardware again. A constant would have announced a one second wait on
+one deployment and sat silently through a sixteen second one on another. The rate is now read
+from her own replies by the queue meter that was already recording the times, as a median, and
+null until three are in - which reads as "announce", because a cold process is the slowest it
+will ever be.
+
+**BYPASSING THE LIMITER WAS NOT WHAT CCB-S4-038 THOUGHT IT WAS.** That briefing's own comment
+said the announcement bypasses the limiter so that a lookup costs exactly one unit of
+allowance, and named the alternative failure precisely: "the announcement goes out, consumes
+the last of the allowance, and the ANSWER is the message that gets dropped". `bypassLimit`
+skips the check and still calls `noteReply`, so the announcement took a slot and the failure it
+described was the behaviour it shipped. On the two new paths it would have been worse, because
+web search has its own per-member budget behind it and neither of these does. Fixed with
+`ReplyOptions.uncounted` (bypass AND do not record, used by the holding line and nothing else)
+and `ConversationState.wouldAllowReply` (a read-only peek, so a member whose answer would be
+dropped is not told she is looking, which is also what bounds the uncounted send).
+
+**AND THREE THINGS ONLY A LIVE RUN SHOWED.** The model answering the announcement with the
+transport's own JSON envelope, which would have reached a member as visible `{"status":...}`;
+the consent-model essay above; and a detector in this briefing's own live check that matched
+nothing. All three were found in runs that were green on everything asserted.
+
+**WHILE FIXING THAT LAST ONE, THREE DEAD DETECTORS TURNED UP.** The pattern held a U+0008
+BACKSPACE where a word boundary was meant, written by a shell heredoc that turned two
+characters into one byte. `DESTRUCTION_WORDS` and `DESTRUCTION_WORDS_DE` in `verify:interaction`
+are the CCB-S3-031 guarantee that consent copy never claims destruction over retained content,
+and `MUTE_THREAT` in `verify:moderation-live` has a comment saying a match "is worth failing
+over". None of them could ever match, and the same byte did the same thing once before in
+CCB-S4-015. `verify:searchable` only looked for NUL, which blinds grep loudly; this byte kills
+a pattern quietly, which is worse. It now scans for every control byte outside tab, newline and
+carriage return, and proves the point rather than asserting it: a regex holding the byte is
+shown matching nothing while the intended one matches.
+
+Repairing `DESTRUCTION_WORDS` turned `verify:interaction` red on copy that is CORRECT - "Nothing
+more will be destroyed unless you ask me to delete them ... I am keeping them for you" - because
+a check that never ran never had its logic exercised either. Per D-111 the verifier was
+corrected and the strings were left alone: a message about retained content may say "destroy";
+what it may not do is leave a member believing their words are gone. The predicate is now that
+a mention of destruction must sit beside a statement of retention, with positive controls
+proving both halves are alive.
+
+Also fixed in passing: the locked branch of `generateOllamaReply` returned without setting
+`callOk`, so every SUCCESSFUL locked-mode call (`priceAmbiguous`, `status`) was booked as a
+failure in the model queue meter and shown to the operator as one.
 
 ### D-183 - Web search gets a measured floor, the last lane gets its gate, and a source line means the answer used it
 
@@ -4471,7 +4548,7 @@ run rendered as the last run. Under the old condition this stopped after eight s
 **Two of my own checks were caught by mutation-proving in this briefing**, which is worth
 recording as evidence the practice earns its cost: a "button disabled" assertion that
 matched the words "Backup running" in the progress card title and so passed with the
-button left enabled, and, in CCB-S4-015, a regex whose `` had become U+0008. Both were
+button left enabled, and, in CCB-S4-015, a regex whose `\b` had become U+0008. Both were
 green and both were inert.
 
 **Owed on the VPS:** that the real `.path` and request units perform this sequence under
@@ -5345,7 +5422,7 @@ inflected form walked through: the list held `strukturiert` and the model wrote
 harness. Now stem matching on Unicode letter boundaries, bounded to four trailing letters
 so `organis` reaches `organised` but stops short of `organisation`.
 
-**THREE ESCAPING FAULTS IN ONE FUNCTION, none of which failed a check.** `` in a
+**THREE ESCAPING FAULTS IN ONE FUNCTION, none of which failed a check.** `\b` in a
 template literal is U+0008 and matched nothing. Whole-word matching then under-caught every
 inflection. And `[\p{L}]` in a plain template literal silently became the character class
 `[p{L}]`, matching braces and the letters p and L, which still looked close enough to
@@ -5385,7 +5462,7 @@ reported "language does not follow the name's culture" defect **for this path ou
 the run afterwards wrote Spanish, Dutch, French and German from origins with no pools.
 
 **A CHECK THAT SILENTLY DID NOTHING, which is worse than no check.** The recitation gate was
-built as ``new RegExp(`${w}`)`` inside a template literal, where `` is U+0008
+built as ``new RegExp(`\b${w}\b`)`` inside a template literal, where `\b` is U+0008
 backspace rather than a word boundary. It read correctly, type-checked, gated nothing, and
 53 bios shipped unfiltered while the harness reported green. Found by running the validator
 against the actual output rather than by reading it, and now gated on itself: the harness

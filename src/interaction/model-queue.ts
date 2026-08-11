@@ -54,6 +54,15 @@ export interface ModelCallRecord {
    */
   waitedMs: number;
   ok: boolean;
+  /**
+   * How many characters the call produced, when it produced any (CCB-S5-025).
+   *
+   * Absent on a failure, on a call whose reply was rejected by a guard, and on any caller
+   * that does not report it. Present only so {@link ModelQueueMeter.observedCharsPerSecond}
+   * can answer how fast this deployment actually writes, which is the one thing the
+   * lookup announcement needs and the one thing no shipped constant can know.
+   */
+  replyChars?: number;
 }
 
 export interface BotModelStats {
@@ -90,6 +99,17 @@ const WINDOW_MINUTES = 15;
 const WINDOW_MS = WINDOW_MINUTES * 60_000;
 /** Enough to cover the window at a busy rate without growing without bound. */
 const MAX_RECORDS = 2000;
+
+/**
+ * How many replies must be in the window before {@link ModelQueueMeter.observedCharsPerSecond}
+ * will answer (CCB-S5-025).
+ *
+ * Three, because the FIRST reply after a restart is unrepresentative by a wide margin: it
+ * pays for loading the model, which measured 3 to 8 seconds against sub-second warm calls.
+ * Answering from one sample would peg the rate at the slowest reading this process ever
+ * takes and then hold it for fifteen minutes.
+ */
+const MIN_RATE_SAMPLES = 3;
 
 function emptyStats(botProfileId: number | null): BotModelStats {
   return {
@@ -140,7 +160,7 @@ export class ModelQueueMeter {
   }
 
   /** End a call, recording what it cost and how much of that was waiting. */
-  finish(id: number, ok: boolean): void {
+  finish(id: number, ok: boolean, replyChars?: number): void {
     const p = this.pending.get(id);
     if (p === undefined) return;
     this.pending.delete(id);
@@ -166,6 +186,7 @@ export class ModelQueueMeter {
       queuedBehind,
       waitedMs: waited,
       ok,
+      ...(ok && typeof replyChars === 'number' && replyChars > 0 ? { replyChars } : {}),
     });
     if (this.records.length > MAX_RECORDS) this.records.splice(0, this.records.length - MAX_RECORDS);
     this.slotFreeAt = Math.max(this.slotFreeAt, at);
@@ -187,6 +208,59 @@ export class ModelQueueMeter {
       if (o.startedAt < startedAt) return Math.max(latest - startedAt, 0);
     }
     return latest - startedAt;
+  }
+
+  /**
+   * How fast this deployment actually writes, in characters a second, or null if it has
+   * not written enough yet to say (CCB-S5-025).
+   *
+   * ── WHY THIS IS MEASURED AND NOT A CONSTANT ────────────────────────────────
+   *
+   * The lookup announcement is worth sending only when the member is going to be kept
+   * waiting, and the wait is dominated by how long her reply takes to WRITE rather than by
+   * the lookup, which is milliseconds. So the decision needs a generation rate. The first
+   * build of this shipped one as a constant, measured on one model on one machine, and that
+   * was wrong in a way worth recording: measured on the same box, the same prompt shape and
+   * the same `reasoning_effort: 'none'` the transport sends, `qwen3:32b` wrote at ~138
+   * characters a second and `qwen3.5:9b` at ~414. Both are models this repository ships a
+   * default for, they are THREE TIMES apart, and the operator's own production figure of a
+   * 16.4 second reply matches neither, because production is different hardware again.
+   *
+   * A constant would therefore have made her announce a two second wait on one deployment
+   * and stay silent through a sixteen second one on another. There is no number that is
+   * right for a deployment this code has never run on, so it is read from her own replies
+   * instead. It costs one integer per call on a meter that was already recording the times.
+   *
+   * ── WHAT IT MEASURES ───────────────────────────────────────────────────────
+   *
+   * Wall clock, including prefill and any queue wait, because that is the silence the
+   * member actually sits through. The MEDIAN rather than the mean, so one reply that queued
+   * behind another bot does not drag the estimate down for the next hour.
+   *
+   * Returns null until {@link MIN_RATE_SAMPLES} replies are in the window. A caller with no
+   * reading should announce rather than stay quiet: a cold process is the slowest this will
+   * ever be, since the first call also pays for loading the model, which was 3 to 8 seconds
+   * of the measurements above.
+   */
+  observedCharsPerSecond(): number | null {
+    const at = this.now();
+    this.prune(at - WINDOW_MS);
+    const rates: number[] = [];
+    for (const r of this.records) {
+      const chars = r.replyChars;
+      if (chars === undefined) continue;
+      const ms = r.finishedAt - r.startedAt;
+      // A call the clock recorded as instantaneous cannot produce a rate, and dividing by
+      // it would produce Infinity and silence every announcement from then on.
+      if (ms <= 0) continue;
+      rates.push(chars / (ms / 1000));
+    }
+    if (rates.length < MIN_RATE_SAMPLES) return null;
+    rates.sort((a, b) => a - b);
+    const mid = rates.length >> 1;
+    return rates.length % 2 === 1
+      ? (rates[mid] as number)
+      : ((rates[mid - 1] as number) + (rates[mid] as number)) / 2;
   }
 
   /** Drop records older than the window. Called before every read. */

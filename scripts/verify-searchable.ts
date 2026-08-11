@@ -77,6 +77,34 @@ function nulOffset(bytes: Buffer): number {
   return bytes.indexOf(0);
 }
 
+/**
+ * The OTHER control bytes, which do not blind grep but do something quieter and worse
+ * (CCB-S5-025).
+ *
+ * A NUL makes a file invisible to search, which is loud once you know to look. A U+0008
+ * BACKSPACE written into a regex where \b was meant makes the pattern match NOTHING, and a
+ * detector that matches nothing passes forever. Three had already reached this repository:
+ * `DESTRUCTION_WORDS` and `DESTRUCTION_WORDS_DE` in `verify:interaction`, which are the
+ * CCB-S3-031 guarantee that consent copy never claims destruction over retained content, and
+ * `MUTE_THREAT` in `verify:moderation-live`, whose own comment says a match "is worth failing
+ * over". None of them could ever match. The decision log records the same byte doing the same
+ * thing once before, in CCB-S4-015.
+ *
+ * It happens because a shell heredoc or a JavaScript string literal turns the two characters
+ *  and b into one byte, so the source LOOKS right in a terminal that renders 0x08 as nothing
+ * at all. Cheap to scan for, invisible otherwise.
+ *
+ * TAB, newline and carriage return are legitimate; everything else below 0x20 is not.
+ */
+function controlOffset(bytes: Buffer): number {
+  for (let i = 0; i < bytes.length; i++) {
+    const c = bytes[i] as number;
+    if (c === 9 || c === 10 || c === 13) continue;
+    if (c < 32) return i;
+  }
+  return -1;
+}
+
 function main(): void {
   console.log('\n1. No tracked text file is invisible to search');
 
@@ -112,6 +140,38 @@ function main(): void {
     console.log(`         Write the escape as source text instead of pasting the byte.`);
   }
 
+  /* ── Control bytes that do not blind grep, but kill a pattern ───────────── */
+
+  console.log('\n1b. No tracked text file carries a stray control byte');
+
+  const control: { path: string; at: number; byte: number; context: string }[] = [];
+  for (const file of files) {
+    const bytes = readFileSync(file);
+    const at = controlOffset(bytes);
+    if (at < 0) continue;
+    control.push({
+      path: relative(ROOT, file).split(sep).join('/'),
+      at,
+      byte: bytes[at] as number,
+      context: bytes
+        .subarray(Math.max(0, at - 60), at + 20)
+        .toString('utf8')
+        .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '<CTRL>')
+        .replace(/s+/g, ' '),
+    });
+  }
+  check(
+    'no file carries a control byte, which silently kills the pattern it lands in',
+    control.length === 0,
+    control.length === 0 ? `${files.length} scanned` : `${control.length} offender(s)`,
+  );
+  for (const o of control) {
+    console.log(
+      `         ${o.path} at byte ${String(o.at)} (0x${o.byte.toString(16)}): ...${o.context}...`,
+    );
+    console.log('         Write the escape as source text instead of pasting the byte.');
+  }
+
   /* ── The mutation, run every time rather than described ──────────────────── */
 
   console.log('\n2. The check can go red');
@@ -123,6 +183,34 @@ function main(): void {
   const dirty = Buffer.concat([clean, Buffer.from([0]), Buffer.from('// tail\n', 'utf8')]);
   check('a clean file is accepted', nulOffset(clean) < 0);
   check('and the same file with one NUL byte is not', nulOffset(dirty) >= 0, `at ${nulOffset(dirty)}`);
+
+  // The same proof for the quieter byte, and a demonstration of what it does to a pattern:
+  // a regex holding U+0008 where a word boundary was meant matches nothing at all.
+  const withBackspace = Buffer.concat([
+    Buffer.from('const re = /', 'utf8'),
+    Buffer.from([8]),
+    Buffer.from('(gone|erased)/i;\n', 'utf8'),
+  ]);
+  check('a clean file carries no control byte', controlOffset(clean) < 0);
+  check(
+    'and one backspace byte is caught, though no NUL scan would see it',
+    controlOffset(withBackspace) >= 0 && nulOffset(withBackspace) < 0,
+  );
+  check(
+    '  and that is not pedantry: the pattern it lands in matches nothing',
+    !new RegExp(String.fromCharCode(8) + '(gone|erased)', 'i').test('it is all gone'),
+  );
+  check(
+    '  while the intended one matches',
+    new RegExp(String.fromCharCode(92) + 'b(gone|erased)', 'i').test('it is all gone'),
+  );
+
+  // Tabs and newlines are legitimate and must not be reported, or the check would fire on
+  // every file in the repository and be switched off within a day.
+  check(
+    'tabs and newlines are not control bytes for this purpose',
+    controlOffset(Buffer.from('a\tb\r\nc\n', 'utf8')) < 0,
+  );
 
   console.log(
     failures === 0

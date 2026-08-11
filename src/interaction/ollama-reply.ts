@@ -268,6 +268,16 @@ export interface AiReplyRequest {
    */
   ruleInvocations?: string;
   /**
+   * Which lookup she is about to do, as a situation rather than a line (CCB-S5-025).
+   *
+   * `searching` mode only. The searching-lane rules used to name the web in their own text,
+   * which made one of the three lookups the only one that could be announced honestly; the
+   * place now arrives here and the rules keep owning the FORM. See
+   * `interaction/lookup-announcement.ts` for the three briefs and why they are not fixed
+   * strings.
+   */
+  lookupBrief?: string;
+  /**
    * This answer IS one page of the Book (CCB-S5-005, D-159).
    *
    * Present means: the application is printing the law, whole and numbered, underneath
@@ -517,6 +527,14 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
     ruleAreas: request.ruleOverview?.areas ?? '',
     moreInArea: String(request.moreInArea ?? 0),
     ruleInvocations: request.ruleInvocations ?? '',
+    // Where she is about to look (CCB-S5-025). SUPPLIED ONLY WHEN THERE IS ONE, deliberately,
+    // so that a searching prompt built without a brief THROWS in `renderPromptRule` instead of
+    // rendering a holding line with the destination missing. The caller treats a throw as "no
+    // line", which is this lane's documented behaviour when the model cannot speak, so the
+    // failure mode is silence rather than a sentence that trails off. An earlier draft
+    // defaulted it to the empty string and called the path unreachable; `verify:book` reached
+    // it within the hour.
+    ...(request.lookupBrief === undefined ? {} : { lookupBrief: request.lookupBrief }),
   };
 
   const values: Record<string, string> = {
@@ -726,6 +744,10 @@ export async function generateOllamaReply(
   // healthy queue on a deployment where every second reply was failing (CCB-S3-023).
   const call = modelQueue.start(request.botProfileId ?? null);
   let callOk = false;
+  // What the call produced, reported to the meter so it can measure how fast this
+  // deployment writes (CCB-S5-025). Set only where a reply is actually returned, so a
+  // failed or guard-rejected call contributes no rate rather than a misleading zero.
+  let callChars: number | undefined;
 
   try {
     const response = await fetchImpl(endpoint, {
@@ -830,6 +852,15 @@ export async function generateOllamaReply(
       const leaked = unresolvedPlaceholder(lead);
       if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
       const protectedText = request.deterministicDraft.trim();
+      // BOOKED AS A SUCCESS, which it was not until now. This branch returned without ever
+      // setting the flag, so every locked-mode call that WORKED was recorded as a failed
+      // one: `priceAmbiguous` and `status` are the two keys that take this path, and the
+      // admin console has been counting each of their successes against the model's failure
+      // rate. Found while adding `callChars` on the same line. A meter that reports faults
+      // where there are none is the noise the standing rule warns about, and it also made
+      // the rate below unmeasurable on this path, since a failed call reports no characters.
+      callOk = true;
+      callChars = lead.length;
       return protectedText ? `${lead}\n${protectedText}` : lead;
     }
 
@@ -855,6 +886,7 @@ export async function generateOllamaReply(
     if (hasWebResults) request.onSourcesUsed?.(completion.usedResults);
 
     callOk = true;
+    callChars = reply.length;
     return reply;
   } catch (error) {
     if (controller.signal.aborted) {
@@ -863,6 +895,6 @@ export async function generateOllamaReply(
     throw error;
   } finally {
     clearTimeout(timeout);
-    modelQueue.finish(call, callOk);
+    modelQueue.finish(call, callOk, callChars);
   }
 }

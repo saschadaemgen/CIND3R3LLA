@@ -3682,3 +3682,125 @@ truth. Three constitutional grounding rules follow D-156's spine-first ordering:
 Structural below the floor: no results in the request means no `usedResults` field in the
 schema, so no declaration and no line. Above the floor it rests on the model's declaration,
 measured good but not reliable. See D-183 for the numbers.
+
+## 52. She says she is going to look (CCB-S5-025, D-184)
+
+CCB-S4-038 gave web search a holding line: one short sentence, worded by the model in her own
+voice rather than a persona template, sent before the search so the member is not left staring
+at nothing for six seconds. It had one hard rule, and it is the rule the whole feature stands
+on: she may **never** say she is looking something up when she is not.
+
+Season 5 gave her two more lookups. The archive search reads `published_messages`; the
+knowledge base reads the operator's documents. Neither announced anything, so a member asking
+either got the same silence web search used to give.
+
+### 52.1 Three lookups, three briefs, one form
+
+The searching lane named the web in three of its five rules, which is correct for one of three
+lookups and false for the other two. Migration 055 moves the DESTINATION out of the rule text
+and into a `{{lookupBrief}}` placeholder the application fills; the rules keep what they were
+always for, which is the FORM (one short line, her own voice, promise nothing, no capability
+talk). `src/interaction/lookup-announcement.ts` holds the three briefs.
+
+The third rewording is the load-bearing one. As shipped the lane told her to say she *does not
+have this in her own head*, which is true of the web and of the archive and **false** of the
+knowledge base: those documents are hers. Left alone it would have contradicted the knowledge
+brief inside the same prompt.
+
+| kind | brief | where it sits |
+|---|---|---|
+| web | she does not have it; she is going out to search | BEFORE the search, which is the slow part |
+| archive | she is going back through this group's **published** archive | BEFORE the count, which nothing can still refuse |
+| knowledge | she already has it, in the operator's documents, and is reading | AFTER retrieval |
+
+The archive wording is consent-exact rather than decorative. `countPublishedMatching` queries
+`published_messages`, which is derived from the `consent` table, so a brief promising
+"everything its members have said here" would have had her claim to search messages nobody
+opted in to publish. A first draft said exactly that.
+
+Knowledge announces **after** retrieval because it is the only lookup that can come back with
+nothing. Retrieval is milliseconds, so waiting for it adds no silence and buys a guarantee no
+wording could: she claims to be reading his documents only while holding passages from them.
+Below the relevance floor she says nothing, which matches the answer, because the same
+emptiness suppresses the attribution.
+
+### 52.2 The threshold, and why the rate is measured rather than shipped
+
+The operator's instinct was to key this on how long the LOOKUP takes. Measurement says
+otherwise and changes the answer: retrieval is milliseconds, and the wait is how long her reply
+takes to WRITE, which the verbosity dial already bounds.
+
+    seconds = replyCharBudget(verbosity) / charsPerSecond
+
+`ANNOUNCE_THRESHOLD_SECONDS` is **5**, and it is stated as a judgement about people rather than
+about this deployment: roughly where a silence in a live group stops reading as thinking and
+starts reading as being ignored.
+
+The rate is not a constant, and the first build of this got that wrong. Measured on one machine
+with the transport's own request shape (`reasoning_effort: 'none'`), four warm runs each:
+
+| model | measured | verbosity 5 | announces from |
+|---|---|---|---|
+| `qwen3:32b` | ~138 chars/s | 3.6 s | verbosity 7 |
+| `qwen3.5:9b` | ~414 chars/s | 1.2 s | never |
+
+Three times apart, both are shipped defaults, and neither matches the operator's own production
+figure of a 16.4 second reply, because production is different hardware again. So the rate is
+read from her own replies: `ModelQueueMeter.observedCharsPerSecond()` takes the MEDIAN over the
+window, from a meter that was already recording the times. Null until three replies are in,
+which `shouldAnnounce` reads as YES, because a process with no readings has just started and
+the first call also pays for loading the model.
+
+Web is exempt and always announces: its lookup is a network round trip no dial predicts.
+
+### 52.3 The allowance, and what CCB-S4-038's comment always meant
+
+The web announcement was sent with `bypassLimit`, documented as making "a lookup cost exactly
+one unit of allowance" because otherwise "the announcement goes out, consumes the last of the
+allowance, and the ANSWER is the message that gets dropped".
+
+`bypassLimit` skips the *check* and still calls `noteReply`, so the announcement consumed a
+slot and the failure that comment described was the behaviour it shipped. On the archive and
+knowledge paths it would have been worse: web search has its own per-member budget behind it,
+and those two have none.
+
+Two changes, in one place:
+
+- `ReplyOptions.uncounted` — bypass **and** do not record. Only the holding line uses it; every
+  other exempt message is a real reply carrying a real outcome and still counts.
+- `ConversationState.wouldAllowReply` — a read-only peek. `announceLookup` asks first and stays
+  silent when the answer would be dropped, so a member over their limit gets neither, and the
+  uncounted send is bounded by the same limiter as everything else.
+
+### 52.4 Closing the loop
+
+A holding line over a silence is the failure the rule exists to prevent, and both new paths
+could reach it. Free conversation returns silence on any model failure, and the archive count
+can throw. Both now answer with `searchUnavailable`, the existing honest line in both
+languages, which does not answer from training data instead.
+
+One more, found only by reading a live run: at high sharpness the model answered the knowledge
+announcement with `{"status":"searching","message":"Access denied. ..."}`, the transport's own
+envelope, which would have reached a member as visible JSON. This lane is the likeliest place
+for it because its deterministic draft is EMPTY, so there is no shape to copy. A line that
+opens with `{` or `[` is treated as nothing rather than unwrapped: the honest reading of a
+reply in the wrong format is that the model did not produce one, and silence is already what
+this lane does then.
+
+### 52.5 What guards it
+
+`verify:lookup-announcement` covers the projection, the measured rate, the briefs, the
+invariant per kind, the loop closing, and the allowance. Five mutations are proven to turn it
+red, including one that restores the shipped counting defect and shows the member receiving the
+holding line and no answer.
+
+Its section 6 exists twice over: the first draft asserted the allowance against
+`ConversationState` directly, the mutation stayed green, and it had to be rewritten to drive
+the real engine. That is D-162 again - a property a check can compute is not the property an
+operator experiences.
+
+`npm run verify:lookup-announcement-live` prints twelve lines (three lookups, two sharpness
+settings, two runs) and measures how many actually said she was looking. **Read its output**:
+the JSON leak, the archive brief that made her explain the consent model instead of announcing,
+and a detector of my own that matched nothing were all found in runs that were green on
+everything asserted.

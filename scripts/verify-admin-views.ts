@@ -1120,7 +1120,7 @@ async function main(): Promise<void> {
   );
   check(
     'backup: no invented cinder colour survives anywhere on the page',
-    // Plain substring, NOT a regex. The first attempt used  written through a
+    // Plain substring, NOT a regex. The first attempt used \b written through a
     // generator that turned it into U+0008, so it matched nothing and passed while the
     // defect was present: D-107's escaping lesson recurring, caught by the mutation
     // proof. No word boundary is needed to assert an absence.

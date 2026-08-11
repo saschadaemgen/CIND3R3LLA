@@ -412,6 +412,22 @@ reason and are verified in [`scripts/verify-interaction.ts`](../scripts/verify-i
 | Flooding a group through the bot | Reply rate limits per member and per chat; nickname anti-spam silence | `src/interaction/state.ts` |
 | A disabled toggle half-applying | Command-shaped text (`/…`) never enters the conversational path | `engine.ts` |
 | Silent consent changes | Consent OUTCOME replies bypass the rate limiter, so a change is never made without saying so; failures are logged and raised to the runtime status | `engine.ts` (`ReplyOptions.bypassLimit`) |
+| A lookup holding line eating the answer it announced | The line is `uncounted` as well as undroppable, so it takes no allowance; and it is only sent when the ANSWER would be allowed, so it is bounded by the same limiter as everything else | `engine.ts` (`ReplyOptions.uncounted`), `state.ts` (`wouldAllowReply`) |
+
+**Two kinds of bypass, and they are not the same (CCB-S5-025).** `bypassLimit` means "may not
+be dropped" and still RECORDS the message, which is right for every consent outcome: a member
+must be told what changed, and the telling still counts. The lookup holding line is the one
+message that is not a reply, and counting it had a consequence nobody intended - the
+announcement took a slot and the ANSWER became the message the limiter dropped, which is
+precisely the failure CCB-S4-038 documented itself as avoiding. `uncounted` is what that
+comment always meant.
+
+It is not a hole. Web search sits behind its own per-member budget, but the archive and
+knowledge-base lookups have none, so an uncounted undroppable message would otherwise be
+unbounded. `announceLookup` asks `wouldAllowReply` first - a read-only peek that consumes
+nothing - and stays silent when the answer would be dropped. A member over their limit gets
+neither the line nor the answer, which is also the honest outcome: a holding line over a
+silence is the thing the whole feature exists to prevent.
 
 **Plugin API keys (CCB-S3-004).** Provider keys are encrypted at rest with AES-256-GCM under a
 key derived from `SESSION_SECRET` via scrypt, because the `settings` table ends up in every

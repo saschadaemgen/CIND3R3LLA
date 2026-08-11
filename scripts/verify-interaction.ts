@@ -1907,8 +1907,25 @@ async function main(): Promise<void> {
   // the assertion is on the STRINGS, not on one reachable path.
   const KEPT_KEYS = ['hidden', 'alreadyHidden', 'deleteRetrying'] as const;
   const DESTRUCTION_WORDS =
-    /(gone|destroy(ed|s)?|nothing (of yours )?(is )?(left|remains)|erased|wiped)/i;
-  const DESTRUCTION_WORDS_DE = /(vernichtet|gelöscht|nichts mehr (von dir|übrig)|fort)/i;
+    /\b(gone|destroy(ed|s)?|nothing (of yours )?(is )?(left|remains)|erased|wiped)\b/i;
+  const DESTRUCTION_WORDS_DE = /\b(vernichtet|gelöscht|nichts mehr (von dir|übrig)|fort)\b/i;
+  /**
+   * WHAT IS ACTUALLY FORBIDDEN is not the vocabulary (corrected under CCB-S5-025).
+   *
+   * Repairing the two dead regexes above turned this red on `alreadyHidden` and
+   * `deleteRetrying`, and reading them showed both are CORRECT copy: "Nothing more will be
+   * destroyed unless you ask me to delete them ... I am keeping them for you" is a negation
+   * plus an explicit statement of retention, and "{held} of them did not destroy cleanly, so
+   * they are still here, hidden" is the honest report of a partial failure.
+   *
+   * So the crude test was wrong and the strings were right, which is D-111: a check that never
+   * ran never had its LOGIC exercised either, and "fixing" the copy to satisfy it would have
+   * deleted the sentences that tell a member their words are safe. A message about retained
+   * content may say "destroy"; what it may not do is leave a member believing their words are
+   * gone. The predicate: if it mentions destruction, it must ALSO say the content is kept.
+   */
+  const RETENTION_EN = /keeping them|still here|rest quietly|hidden|restore/i;
+  const RETENTION_DE = /bewahre|ruhen still|noch da|weiterhin|versteckt|zurück/i;
   const offenders: string[] = [];
   for (const lang of ['en', 'de'] as const) {
     const persona = DEFAULT_INTERACTION.persona[lang];
@@ -1916,13 +1933,27 @@ async function main(): Promise<void> {
     for (const k of KEPT_KEYS) {
       const text = persona[k];
       const re = lang === 'de' ? DESTRUCTION_WORDS_DE : DESTRUCTION_WORDS;
-      if (re.test(text)) offenders.push(`${lang}.${k}: ${text.slice(0, 90)}`);
+      const kept = lang === 'de' ? RETENTION_DE : RETENTION_EN;
+      if (re.test(text) && !kept.test(text)) offenders.push(`${lang}.${k}: ${text.slice(0, 90)}`);
     }
   }
   check(
     'no message sent while content is RETAINED claims it was destroyed or is empty',
     offenders.length === 0,
     offenders.slice(0, 2).join(' | '),
+  );
+  // POSITIVE CONTROLS, and this assertion badly needed them: both regexes above held a U+0008
+  // BACKSPACE where a word boundary was meant, so they matched nothing and the check passed for
+  // its entire life without ever running. A dead detector and a clean archive look identical.
+  check(
+    '  (the destruction detector is alive: it catches the sentence that caused CCB-S3-031)',
+    DESTRUCTION_WORDS.test('there is nothing of yours left in my archive to destroy') &&
+      DESTRUCTION_WORDS_DE.test('alles wurde vernichtet'),
+  );
+  check(
+    '  (and the retention exemption is narrow enough not to swallow everything)',
+    RETENTION_EN.test('I am keeping them for you') &&
+      !RETENTION_EN.test('there is nothing of yours left to destroy'),
   );
   for (const lang of ['en', 'de'] as const) {
     const persona = DEFAULT_INTERACTION.persona[lang];

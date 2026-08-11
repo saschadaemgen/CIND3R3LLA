@@ -79,6 +79,8 @@ import {
   type BotIdentity,
   type BotPersonality,
 } from './personality.js';
+import { lookupBrief, shouldAnnounce, type LookupKind } from './lookup-announcement.js';
+import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
 import {
@@ -446,6 +448,24 @@ interface ReplyOptions {
    * (two messages per change), so exempting them cannot be used to flood.
    */
   bypassLimit?: boolean;
+  /**
+   * Do not let this message consume the member's allowance either (CCB-S5-025).
+   *
+   * `bypassLimit` alone means "cannot be dropped", and it deliberately still CALLS
+   * `noteReply`, because every other exempt message is a real reply carrying a real
+   * outcome: a consent confirmation should not be droppable and should still be counted.
+   *
+   * The lookup holding line is the one message that is not a reply. It carries nothing but
+   * "I am looking", and counting it had a consequence nobody intended: the announcement took
+   * a slot, and the ANSWER became the message the limiter dropped. CCB-S4-038's own comment
+   * named that exact failure as the reason the announcement bypasses the limiter, and the
+   * bypass it chose did not prevent it. So this flag is what that comment always meant.
+   *
+   * It is not a hole. `announceLookup` asks {@link ConversationState.wouldAllowReply} first
+   * and stays silent when the answer would be dropped, so a member over their limit gets
+   * neither, and the announcement stays bounded by the same limiter as everything else.
+   */
+  uncounted?: boolean;
   /** Appended to the reply on its own line (the price disclaimer). */
   suffix?: string;
   /**
@@ -1106,10 +1126,43 @@ export class InteractionEngine {
           await this.reply(msg, s, lang, 'notUnderstood', {});
           return true;
         }
-        const n = await countPublishedMatching(this.deps.db, query, {
-          groupId: msg.groupId,
-          excludeGroupMsgId: msg.itemId,
-        });
+        // ── THE HOLDING LINE, ARCHIVE (CCB-S5-025) ──────────────────────────
+        //
+        // BEFORE the count, unlike the knowledge base, and the difference is honesty
+        // rather than style. Nothing can stop this search now: the query is validated
+        // three lines up and the next statement is the query itself, so a member who
+        // sees this line is a member whose search is genuinely running, which is the
+        // CCB-S4-038 condition. The count is one indexed query and costs milliseconds;
+        // what she is covering for is the reply she is about to write.
+        const announced = this.lookupAnnouncementDue('archive')
+          ? await this.announceLookup(msg, s, lang, 'archive')
+          : false;
+        let n: number;
+        try {
+          n = await countPublishedMatching(this.deps.db, query, {
+            groupId: msg.groupId,
+            excludeGroupMsgId: msg.itemId,
+          });
+        } catch (error) {
+          // CLOSING THE LOOP (CCB-S5-025). Without this the count throwing after the holding
+          // line went out leaves her having said she is going back through the archive and
+          // then saying nothing, which is the hanging announcement CCB-S4-038 exists to
+          // prevent. Surfaced rather than swallowed: the operator gets the error and the
+          // member gets the honest line rather than a number that was never counted.
+          log.error(
+            `Interaction: the archive search failed for group ${String(msg.groupId)} (${
+              error instanceof Error ? error.message : String(error)
+            }).`,
+          );
+          status.error(
+            `Archive search failed in group ${String(msg.groupId)}; the member was told it ` +
+              `could not be looked up: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          if (announced) await this.reply(msg, s, lang, 'searchUnavailable', {});
+          return true;
+        }
+        // The loop closes itself on this path: `searchResult` states the number it found,
+        // including zero, so an announcement is never left hanging over silence.
         await this.reply(msg, s, lang, 'searchResult', { n, query });
         return true;
       }
@@ -1825,6 +1878,36 @@ export class InteractionEngine {
    * announcement, and she cannot claim a source she was not given.
    */
   /**
+   * Does this lookup earn a holding line at the dials she is set to (CCB-S5-025)?
+   *
+   * The threshold is a PREDICTION, not a guess, and `lookup-announcement.ts` shows the
+   * arithmetic: the wait is dominated by how long her answer takes to WRITE, and the answer's
+   * length is bounded by the verbosity dial. So a reply that comes back in two seconds gets
+   * no announcement and one that runs to the cap does.
+   *
+   * The generation rate is MEASURED from her own recent replies rather than shipped, because
+   * the two models this repository defaults to are three times apart and production is
+   * different hardware again. Web is exempt and always announces: its lookup is a network
+   * round trip no dial predicts.
+   */
+  private lookupAnnouncementDue(kind: LookupKind): boolean {
+    // The same default `ollama-reply.ts` applies when no personality is configured, so the
+    // projection describes the reply that will actually be written rather than a dial
+    // nobody set.
+    //
+    // The RATE is read from her own recent replies rather than shipped as a constant. Two
+    // models this repository defaults to are three times apart, and production is different
+    // hardware again, so a constant would be wrong somewhere by construction. Null until the
+    // meter has seen enough, which `shouldAnnounce` reads as yes: a process with no readings
+    // has just started, and the first reply is the slowest it will ever be.
+    return shouldAnnounce(
+      kind,
+      this.deps.personality?.()?.verbosity ?? 5,
+      modelQueue.observedCharsPerSecond(),
+    );
+  }
+
+  /**
    * One short line saying she is going off to look (CCB-S4-038, D-142).
    *
    * Returns whether it was actually said, because the caller owes the member a closing
@@ -1840,13 +1923,36 @@ export class InteractionEngine {
    * dialled, so it varies with sharpness and warmth, and it is bounded far below anything
    * else so it stays a holding line.
    */
-  private async announceSearch(
+  private async announceLookup(
     msg: CapturedMessage,
     s: InteractionSettings,
     lang: string,
+    kind: LookupKind,
   ): Promise<boolean> {
     const personalize = this.personalizeForThisBot();
     if (!personalize) return false;
+
+    // ── ASK BEFORE SPEAKING (CCB-S5-025) ──────────────────────────────────────
+    //
+    // If the ANSWER is going to be dropped by the limiter, the holding line must not go out
+    // either: a member left with "give me a second" and nothing after it is worse off than
+    // one who waited in silence, which is the failure CCB-S4-038 set out to prevent and, as
+    // it turned out, did not. Read-only, so asking costs the answer nothing.
+    //
+    // This is also the bound on the two new paths. Web search has its own per-member budget
+    // behind it; the archive and the knowledge base have none, so without this an uncounted,
+    // undroppable message would be unbounded.
+    if (
+      !this.state.wouldAllowReply(
+        msg.groupId,
+        msg.senderMemberId,
+        this.now(),
+        s.replyLimitPerMember,
+        s.replyLimitPerChat,
+      )
+    ) {
+      return false;
+    }
 
     let line: string | null = null;
     try {
@@ -1856,6 +1962,10 @@ export class InteractionEngine {
             kind: 'searching',
             lang,
             memberMessage: msg.text,
+            // WHERE she is going, as a situation for her to word (CCB-S5-025). The rules
+            // own the form; this owns the place and the stance, and the two must agree,
+            // which is why the "not in my own head" line moved out of the rules in 055.
+            lookupBrief: lookupBrief(kind),
             // No draft. There is nothing the application has decided for her to rephrase:
             // the whole content of this line is "I am going to look", and the words are
             // hers.
@@ -1877,15 +1987,34 @@ export class InteractionEngine {
       );
     }
 
+    // RAW STRUCTURED OUTPUT IS NOT A LINE (CCB-S5-025). Observed in a live run at high
+    // sharpness: the model answered the knowledge announcement with
+    // `{"status":"searching","message":"Access denied. ..."}`, which would have gone to a
+    // member as visible JSON. This lane is where it can happen most easily, because it is the
+    // only one with an EMPTY deterministic draft, so there is no shape for the model to copy
+    // and it sometimes invents the transport's own envelope instead.
+    //
+    // Treated as nothing rather than repaired: unwrapping it would mean trusting whichever
+    // field looked most like prose, and the honest reading of a reply in the wrong format is
+    // that the model did not produce a line. Silence is already what this lane does then.
+    if (line && /^\s*[[{]/.test(line)) {
+      log.debug('Lookup: the model answered the announcement with structured output; ignoring it.');
+      line = null;
+    }
+
     // NO FALLBACK LINE. If the model cannot speak, she says nothing and the answer arrives
     // when it arrives. A deterministic "let me look that up" would be the canned sentence
     // this whole feature was written to avoid, and it would be the version members saw
     // every time the model was busy.
     if (!line) return false;
 
-    // `bypassLimit`, for the reason set out at the call site: the answer is what consumes
-    // a member's allowance, and the search budget is what bounds how many of these exist.
-    return this.replyWithText(msg, s, lang, line, 'lookup', { bypassLimit: true });
+    // UNCOUNTED as well as undroppable, which is what the call site's comment always meant
+    // and what the code did not do until CCB-S5-025. A lookup costs exactly one unit of a
+    // member's allowance: the answer's. The gate above is what keeps that from being a hole.
+    return this.replyWithText(msg, s, lang, line, 'lookup', {
+      bypassLimit: true,
+      uncounted: true,
+    });
   }
 
   private async answerLookup(
@@ -1923,7 +2052,7 @@ export class InteractionEngine {
     // `From the web: xnxx.com, pornhub.com, ...`.
     //
     // Nothing here reaches the provider. No announcement either: announcing a search she
-    // is not going to run would be the one thing `announceSearch` is documented never to
+    // is not going to run would be the one thing `announceLookup` is documented never to
     // do.
     //
     // The gate is deterministic and its limits are real; `lookup-gate.ts` states them.
@@ -1980,7 +2109,7 @@ export class InteractionEngine {
     // announcement goes out, consumes the last of the allowance, and the ANSWER is the
     // message that gets dropped. A member left with "let me look that up" and nothing
     // else is worse off than one who waited in silence.
-    await this.announceSearch(msg, s, lang);
+    await this.announceLookup(msg, s, lang, 'web');
 
     const outcome = await search.search(query, {
       groupId: msg.groupId,
@@ -3402,6 +3531,9 @@ export class InteractionEngine {
     //
     // Never throws outward. A store that cannot be read costs her the documents and not the
     // reply, which is the same call `recentHistory` makes about the thread.
+    // Did a holding line go out on this turn (CCB-S5-025)? Read at the silence below: a
+    // member who was told she is reading the operator's documents must not then get nothing.
+    let announcedLookup = false;
     let knowledgeSources: string[] = [];
     // TEXT ONLY (CCB-S5-027, D-180). The document names stay in `knowledgeSources`, which
     // the application prints; they are deliberately not carried into anything the model is
@@ -3419,6 +3551,24 @@ export class InteractionEngine {
             error instanceof Error ? error.message : String(error)
           }); answering without it.`,
         );
+      }
+
+      // ── THE HOLDING LINE, KNOWLEDGE BASE (CCB-S5-025) ─────────────────────
+      //
+      // AFTER retrieval, which is the opposite of the archive and of the web, and the
+      // reason is that this is the one lookup that can come back with nothing. Retrieval
+      // costs milliseconds (one embedding call, then SQL), so waiting for it buys the
+      // member no extra silence, and it buys the announcement a guarantee no wording
+      // could: she only says the answer is in the operator's documents once she is
+      // holding passages FROM those documents. Above the relevance floor there is
+      // something; below it `knowledgePassages` is empty and she says nothing, because
+      // the honest thing then is an ordinary answer with no source line, which is exactly
+      // what CCB-S5-028 built. A hanging announcement is not possible on this path.
+      //
+      // It also cannot contradict the attribution: the same emptiness that suppresses the
+      // line here suppresses `knowledgeSources` under the answer.
+      if (knowledgePassages.length > 0 && this.lookupAnnouncementDue('knowledge')) {
+        announcedLookup = await this.announceLookup(msg, s, lang, 'knowledge');
       }
     }
 
@@ -3504,6 +3654,20 @@ export class InteractionEngine {
         outcome: 'unavailable',
         latencyMs: this.now() - startedAt,
       });
+      // ── CLOSING THE LOOP (CCB-S5-025) ────────────────────────────────────
+      //
+      // Silence is the right answer here for an ordinary turn, and the wrong one when she
+      // has just said she is going to look. The model failing after the holding line went
+      // out is the hanging announcement CCB-S4-038 exists to prevent, and it reaches this
+      // branch: `spoken` is null on every guard rejection and every transport failure.
+      //
+      // `searchUnavailable` is the existing honest line for exactly this, in both
+      // languages, and it does NOT answer from training data instead. Not bypassed and not
+      // uncounted: this one IS the reply, so it takes the allowance the announcement left.
+      if (announcedLookup) {
+        await this.reply(msg, s, lang, 'searchUnavailable', {});
+        return true;
+      }
       return false;
     }
 
@@ -3706,7 +3870,9 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
     const openWindow = opts.openWindow !== false;
 
     if (opts.bypassLimit) {
-      this.state.noteReply(msg.groupId, msg.senderMemberId, now);
+      // `uncounted` is the holding line and nothing else; see the option's own
+      // documentation. Every other exempt message is a real reply and still counts.
+      if (!opts.uncounted) this.state.noteReply(msg.groupId, msg.senderMemberId, now);
     } else if (
       !this.state.allowReply(
         msg.groupId,

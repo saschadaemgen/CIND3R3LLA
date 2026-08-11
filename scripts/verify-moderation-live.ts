@@ -76,7 +76,7 @@ const DRAFT = 'Wrong name. Try the one on the door.';
  * is true in both modes. If the model embellishes it into a threat of a mute, the warning
  * has started lying about what happens next, and that is worth failing over.
  */
-const MUTE_THREAT = /(mut(e|ed|ing)|ban(ned)?|kick(ed)?|removed?)/i;
+const MUTE_THREAT = /\b(mut(e|ed|ing)|ban(ned)?|kick(ed)?|removed?)\b/i;
 
 function retortRequest(personality: BotPersonality, warning?: string): AiReplyRequest {
   return {

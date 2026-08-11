@@ -74,6 +74,7 @@ import {
 import { webSearchPlugin, WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
 import { activePluginIntents, normalizePluginStates } from '../src/plugins/registry.js';
 import { alwaysRelevant } from './relevance-stub.js';
+import { lookupBrief } from '../src/interaction/lookup-announcement.js';
 import { setLogLevel } from '../src/log.js';
 
 /**
@@ -1147,6 +1148,9 @@ async function main(): Promise<void> {
     ...request(),
     kind: 'searching',
     mode: 'searching' as const,
+    // CCB-S5-025: the searching lane now carries WHERE she is going and refuses to render
+    // without it rather than losing the destination. `announceLookup` supplies this in production.
+    lookupBrief: lookupBrief('web'),
     personality: DIALLED,
     ...over,
   });

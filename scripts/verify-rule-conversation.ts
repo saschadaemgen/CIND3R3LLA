@@ -39,6 +39,7 @@ import { DEFAULT_INTERACTION, normalizeInteraction } from '../src/interaction/se
 import { ConversationState } from '../src/interaction/state.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { seededPromptRules } from './seeded-rules.js';
+import { lookupBrief } from '../src/interaction/lookup-announcement.js';
 import { setLogLevel } from '../src/log.js';
 
 /**
@@ -228,7 +229,7 @@ async function main(): Promise<void> {
     { ...base, mode: 'conversation', nameableRules: quoted, hasWithheldRules: true } as AiReplyRequest,
     500,
   );
-  const searching = systemPrompt({ ...base, mode: 'searching' } as AiReplyRequest, 500);
+  const searching = systemPrompt({ ...base, mode: 'searching', lookupBrief: lookupBrief('web') } as AiReplyRequest, 500);
   const reason = 'a lever rather than an explanation';
   check('the rule telling her to give the real reason IS in the conversation lane', conversation.includes(reason));
   check(

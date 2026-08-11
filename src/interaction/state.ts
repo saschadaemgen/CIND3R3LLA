@@ -363,6 +363,33 @@ export class ConversationState {
   }
 
   /**
+   * Would a reply be allowed right now, WITHOUT consuming anything (CCB-S5-025)?
+   *
+   * Exists for the lookup holding line, which is not a reply: it carries no information and
+   * must never be the message that pushes the real answer over the limit. So it asks first,
+   * and is sent uncounted, which leaves the answer holding the allowance it needs.
+   *
+   * This is also what bounds it. A holding line that neither checks nor counts would be an
+   * unbounded outbound on the archive and knowledge paths, which have no equivalent of the
+   * web search budget behind them. Asking here means a member who is over their limit gets
+   * no announcement AND no answer, rather than an unbounded stream of announcements for
+   * answers the limiter is dropping.
+   */
+  wouldAllowReply(
+    groupId: number,
+    memberId: string,
+    now: number,
+    perMember: number,
+    perChat: number,
+  ): boolean {
+    const m = this.member(groupId, memberId);
+    const c = this.chat(groupId);
+    m.replies = trim(m.replies, now);
+    c.replies = trim(c.replies, now);
+    return m.replies.length < perMember && c.replies.length < perChat;
+  }
+
+  /**
    * Takes `count` reply allowances at once, or takes NONE (CCB-S4-047).
    *
    * All-or-nothing, and that is the whole point. A recital is several messages and it must

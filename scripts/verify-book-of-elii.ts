@@ -85,6 +85,9 @@ const VALUES = {
   maxChars: '500',
   fence: '<<<UNTRUSTED-WEB-CONTENT>>>',
   dialAxes: 'DIALS',
+  // CCB-S5-025. Every placeholder the registry can render needs a representative value here,
+  // or the lane probe below throws rather than reporting what moved.
+  lookupBrief: 'You are about to go and look this one up.',
 };
 
 async function main(): Promise<void> {
