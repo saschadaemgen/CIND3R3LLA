@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 192 decisions</strong> — newest first. Highest allocated: <strong>D-193</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 193 decisions</strong> — newest first. Highest allocated: <strong>D-194</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
 | D-193 | The room's name is the group's, and a control with no backend says so | IMPLEMENTED |
 | D-192 | An ended membership is not a group you are in, and the list said it was | IMPLEMENTED |
 | D-191 | The bridge's Join joins what it says it joins, and the channel path needs 7.0.0 | PARTIAL |
@@ -221,6 +222,78 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-194 - The console had no building blocks, so 26 pages each invented their own
+
+**Status: IMPLEMENTED** (CCB-S5-036). The operator reported CSS faults everywhere, modules
+flush against one another, and a bot switcher he called a disaster. The cause was structural
+rather than cosmetic and that is the whole entry: `html.ts` supplied the page shell, the
+navigation and the footer and NOTHING BELOW THAT, and `ui.ts` had six helpers, so 26 view
+files each invented their own layout and spacing was whatever the author typed that day.
+
+**THE SPACING FAULT, AT ITS ROOT.** `.admin-card` has `padding: 24px` and no margin, and
+`.admin-content` had no gap and no sibling rule. Two cards in a row therefore sat FLUSH, by
+construction, on every page with more than one section. Measured on the operator's own
+example before and after: the Channel Bridge's six cards went **0, 0, 0, 0, 0 px** to
+**22, 22, 22, 22, 22**.
+
+**THE CONTAINER OWNS THE RHYTHM, NOT THE BLOCK**, and the direction is the decision. If each
+card carried its own margin, a page that wraps one in a div, or writes a bare `<section>`,
+loses the spacing and cannot see why. With the container owning it, **omission produces
+correct output** and the fault cannot recur by forgetting.
+
+**THE VOCABULARY IS DERIVED, NOT INVENTED.** All 26 views were read and counted, and each
+component earns its place by what it replaces: `factList` (25 uses across 11 different class
+strings), `statusTiles` (16 uses across 4 BYTE-IDENTICAL CSS grid rules), `sectionHeader` (14
+uses across 7 class names, three of which already lie about where they are used), `actionForm`
+(18 uses across 4 tones). Deliberately NOT components: numbered steps (3 uses, all different
+shapes), the technical-details disclosure (4 identical uses that each cancel a different
+margin), the wizard's journey stepper (1). Three uses is a pattern only if the fourth is
+coming.
+
+The sharpest thing the inventory found is not a component at all: `ai.ts` ships **two
+different page headers in one file**, four pages of one and six of the other.
+
+**THE SWITCHER IS `<details>` PLUS ONE SUBMIT BUTTON PER BOT**, which dissolves a tension
+rather than trading against it. The old control was a native `<select>` plus a `Switch`
+button, and its doc defended the button on D-162 grounds: an auto-submitting select makes a
+control depend on JavaScript for its only function, and this console has already shipped one
+control that looked live and was inert. That reasoning was sound and the conclusion was
+avoidable. With one button per bot: pressing a name IS the submit, so there is no
+select-then-confirm; the list is ours to style, so no browser-drawn popup and no glyph jammed
+against the edge; and **no script touches it at all**, so there is no no-script path to
+describe separately - this is both, and nothing here can be inert.
+
+**ADDING A BOT IS A LINK, NOT A FOURTH NAME.** The picker acts on a single press, so an entry
+that is not a bot must not be reachable by the gesture that chooses one. It is an `<a>` below
+a rule with its own glyph: a different element and a different affordance. It carries
+`returnTo`, and creating a bot from it selects the new bot and lands back on the page it
+started from - otherwise an operator creates one and must then hunt for it to configure it.
+
+**THE WORDMARK WENT AND THE PICKER TOOK THE SPACE.** A wordmark tells an operator what he
+already knows on a private console he signed in to, while the control he reaches for most sat
+below the fold. The sidebar renders whenever there is chrome now: it required
+`children.length > 0`, and the Dashboard has none, so the console lost its spine on the first
+page anyone sees. Sign out moved in.
+
+**AND A PAGE THAT EDITS NO BOT NOW SAYS "Deployment-wide"** rather than showing nothing.
+CCB-S5-011 used the ABSENCE of the switcher to mean deployment-wide, which worked mid-sidebar
+and reads as a hole in a header slot. D-155's scope visibility is stronger stated than
+implied.
+
+**THE CLOCK** costs one `setInterval` at 1000 ms writing one text node when the minute
+changes, and nothing while the tab is hidden. The glitch is CSS, so the compositor runs it
+without waking the main thread - the distinction that matters on a machine already spending
+its cores on inference. `prefers-reduced-motion: reduce` removes it entirely and the time
+still updates, because reduced motion is a request about movement and not about information.
+
+**AND THE PREVIEW GOT A DOOR.** D-178 requires a control to be OPERATED before it is called
+verified, and the only way into the console was a password form. Three briefings in a row
+reported the browser half undone for that reason. `/preview-login` mints a session, gated on
+an environment variable only the preview script sets and registered only by that script -
+the same shape `/demo/enter` already had.
+
 ---
 
 ### D-193 - The room's name is the group's, and a control with no backend says so

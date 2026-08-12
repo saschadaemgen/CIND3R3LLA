@@ -1437,6 +1437,46 @@ wrong or already handled and are recorded here with the correction rather than t
 **Operator-owned, still open since Season 1:** register a second passkey on the YubiKey; rotate the
 break-glass password; disable break-glass once the second passkey exists.
 
+## The announcement's condition is correct BY PLACEMENT, not by design (found under CCB-S5-037)
+
+`shouldAnnounce` ([`../src/interaction/lookup-announcement.ts`](../src/interaction/lookup-announcement.ts))
+takes three arguments - the lookup KIND, the verbosity dial, and the measured characters-per-second -
+and returns whether to say "let me check that". **None of them is a statement that the member asked
+anything.** It answers "would the reply be slow enough to be worth warning about", which is a
+different question and a good one, but it is not the question the announcement's truth depends on.
+
+It is nevertheless correct today, for the knowledge lane, because of where it is CALLED:
+
+```ts
+if (knowledgePassages.length > 0 && this.lookupAnnouncementDue('knowledge')) {
+```
+
+Passages exist only when retrieval returned something above the floor, and since CCB-S5-037 retrieval
+only runs when the message has retrievable content. So the guarantee is assembled from a predicate in
+`engine.ts`, a floor in `retrieval.ts`, and an `&&` at the call site - and `shouldAnnounce` itself
+would happily announce a lookup for a heart emoji if anybody ever called it one line earlier.
+
+**This is the season's defining defect class and it is worth naming as such.** D-183: a bar that lives
+only in a prompt is not a bar. D-190: "one bot per room" was the phrase everyone remembered and the
+guarantee was about the capturing RECORD. D-192: absence of a switcher was being used to mean
+"deployment-wide". Each was a property that held by placement and was described as if it held by
+design, and each was found in production rather than by a check. This one is the same shape, caught
+before it broke rather than after, which is the only difference.
+
+**What to do about it**, for whoever touches that path next:
+
+- [ ] Move the condition INTO `shouldAnnounce` rather than relying on the caller: it should take what
+      the member actually said and refuse on its own account. The web lane returns `true`
+      unconditionally at the top of the function, which is the same hole with a different lane in it.
+- [ ] Then assert it directly - the current checks drive the engine, so they prove the composition
+      rather than the function, and a future caller that gets the order wrong would pass them.
+
+Until that is done, **the ordering in `engine.ts` is load-bearing and must not be rearranged**: moving
+the announcement above the retrieval, or reusing `shouldAnnounce` from a lane that has not already
+proven it has something, reintroduces the CCB-S5-037 defect exactly.
+
+---
+
 ## Carried into Season 5 (recorded under CCB-S5-003)
 
 The narrative is in [`../seasons/SEASON-5-HANDOVER.md`](../seasons/SEASON-5-HANDOVER.md) and the

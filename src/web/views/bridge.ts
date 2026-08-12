@@ -18,7 +18,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page, type SafeHtml } from '../html.js';
-import { badge, card, fmtDate, pageHeader } from './ui.js';
+import { badge, card, factList, fmtDate, pageHeader } from './ui.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { resolveSelectedBot } from '../selected-bot.js';
 import {
@@ -519,16 +519,20 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
 
         ${card(
           'Diagnostics and the deployment bound',
-          html`<dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-              <dt class="text-slate-500">Last tick</dt>
-              <dd>${diag.lastTickAt === null ? 'not yet this process' : fmtDate(new Date(diag.lastTickAt).toISOString())}</dd>
-              <dt class="text-slate-500">Last error</dt>
-              <dd class="${diag.lastError === null ? '' : 'text-amber-700'}">
-                ${diag.lastError === null
+          html`${factList([
+              [
+                'Last tick',
+                diag.lastTickAt === null
+                  ? 'not yet this process'
+                  : fmtDate(new Date(diag.lastTickAt).toISOString()),
+              ],
+              [
+                'Last error',
+                diag.lastError === null
                   ? 'none this process'
-                  : `${fmtDate(new Date(diag.lastError.at).toISOString())}, ${diag.lastError.where}: ${diag.lastError.message}`}
-              </dd>
-            </dl>
+                  : `${fmtDate(new Date(diag.lastError.at).toISOString())}, ${diag.lastError.where}: ${diag.lastError.message}`,
+              ],
+            ])}
             <form method="post" action="/bridge/settings" class="flex items-end gap-2">
               <input type="hidden" name="_csrf" value="${csrf}" />
               ${labelled(

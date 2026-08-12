@@ -35,9 +35,23 @@ async function main(): Promise<void> {
 
   console.log('\n1. Product and bot naming');
   check('browser title uses the product name', rendered.includes('| CIND3R3LLA</title>'));
+  // ── THE WORDMARK IS GONE, AND THAT IS THE CHANGE (CCB-S5-036, D-194) ─────
+  //
+  // It asserted the header carried "CIND3R3LLA administration". A wordmark tells an
+  // operator what he already knows on a private console he signed in to, and it occupied
+  // the most valuable space in the layout while the control he reaches for most - the bot
+  // picker - sat below the fold of the sidebar. The picker holds that space now.
+  //
+  // The PRODUCT IDENTITY is what this section is really about, and it is still asserted:
+  // the browser title and the footer both carry the name, which is checked above and
+  // below. What is asserted here is that the space went to the control.
   check(
-    'header exposes the product wordmark',
-    rendered.includes('aria-label="CIND3R3LLA administration"'),
+    'the header slot holds the bot picker, not a wordmark',
+    rendered.includes('admin-header-botslot') && rendered.includes('data-bot-switcher'),
+  );
+  check(
+    '  and the wordmark is gone from the header entirely',
+    !rendered.includes('aria-label="CIND3R3LLA administration"'),
   );
   check(
     'footer exposes the product name',

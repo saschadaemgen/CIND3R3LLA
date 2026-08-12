@@ -160,9 +160,21 @@ async function main(): Promise<void> {
       dashboardMainNavigation.includes('href="/plugins"') &&
       dashboardMainNavigation.includes('href="/settings"'),
   );
+  // ── THE DASHBOARD KEEPS THE SPINE (re-pointed under CCB-S5-036, D-194) ────
+  //
+  // This asserted the OPPOSITE: the sidebar was suppressed on the Dashboard because it had
+  // no section links to show, and "no children" was read as "nothing worth rendering". The
+  // operator's report was that the console loses its spine on the first page anyone sees,
+  // and he is right - the sidebar now also carries sign out and the clock, and the bot
+  // picker sits in the header slot above it. A section with no children contributes no
+  // links, which is a thinner sidebar rather than no sidebar.
   check(
-    'dashboard has no redundant contextual sidebar',
-    !dashboard.body.includes('data-context-sidebar'),
+    'dashboard HAS the contextual sidebar, since it carries more than section links now',
+    dashboard.body.includes('data-context-sidebar'),
+  );
+  check(
+    '  and it offers sign out, which used to live only in the header',
+    dashboard.body.includes('admin-sidebar-logout'),
   );
   check('exactly one main section is active on dashboard', activeMainCount(dashboard.body) === 1);
 

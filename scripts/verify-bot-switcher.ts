@@ -227,19 +227,38 @@ async function main(): Promise<void> {
     'and it names both bots, so switching is possible rather than merely displayed',
     (await get('/interaction/addressing')).includes('SANCH3Z'),
   );
+  // ── SCOPE IS STATED, NOT IMPLIED (re-pointed under CCB-S5-036, D-194) ────
+  //
+  // These three used to assert the prose line "Settings below apply to this bot. Shared
+  // settings say so where they appear." and the ABSENCE of the switcher on a
+  // deployment-wide page. Both were the previous design and both were deliberately
+  // changed, so this is a re-baseline rather than a loosening:
+  //
+  //   - the paragraph around the control is gone. Three lines of prose attached to a
+  //     picker is a paragraph, and the per-setting scope badges already carry the shared
+  //     versus per-bot distinction where the SETTING is, which is where it is actionable.
+  //   - absence worked as a statement while the control sat mid-sidebar. Moved into the
+  //     header slot, an empty space reads as something failing to load, so a page that
+  //     edits no single bot now SAYS "Deployment-wide".
+  //
+  // D-155's scope visibility is what is actually being guarded here, and it is stronger
+  // stated than implied: the assertion is that the page tells you its scope, not that it
+  // tells you in one particular sentence.
   check(
-    'it says the settings below belong to the selected bot',
-    (await get('/interaction/addressing')).includes('Settings below apply to this bot'),
+    'a per-bot page names the bot it is editing',
+    (await get('/interaction/addressing')).includes('Editing bot'),
   );
   check(
-    '  and does not claim everything below is per bot, since shared settings stay shared (D-155)',
-    (await get('/interaction/addressing')).includes('Shared settings say so where they appear'),
+    '  and offers the other bot, so switching is possible rather than merely displayed',
+    (await get('/interaction/addressing')).includes('admin-botpicker-option'),
   );
-
-  // A deployment-wide page must NOT carry it: the absence is information.
   check(
-    'CONTROL: a deployment-wide page has no switcher, which is the honest statement',
-    !(await get('/settings')).includes('data-bot-switcher'),
+    'CONTROL: a deployment-wide page SAYS so rather than leaving a blank (D-155)',
+    (await get('/settings')).includes('Deployment-wide'),
+  );
+  check(
+    '  and offers no bot to choose, since choosing one would be meaningless there',
+    !(await get('/settings')).includes('admin-botpicker-option'),
   );
 
   /* ── 3 ─────────────────────────────────────────────────────────────────── */

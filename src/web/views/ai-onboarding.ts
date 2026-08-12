@@ -464,6 +464,20 @@ function journey(profile: BotOnboardingProfile): SafeHtml {
   </ol>`;
 }
 
+/**
+ * The page the bot picker sent him from, if it is safe to send him back (CCB-S5-036).
+ *
+ * The same three refusals `safeReturn` makes in `select-bot.ts`, and for the same reason: a
+ * querystring is untrusted whatever rendered it, and an open redirect on an authenticated
+ * console takes a signed-in operator to a page of somebody else's choosing while everything
+ * still looks like the admin. Empty means "no round trip", which lands him here.
+ */
+function safeReturnTo(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) return '';
+  return raw;
+}
+
 function wizardDialog(
   profile: BotOnboardingProfile | null,
   csrf: string,
@@ -472,6 +486,16 @@ function wizardDialog(
   // overrides and a field that looks saved and is not is the recurring defect on this form.
   input: BotOnboardingInput & { wakeWord?: string },
   id: string,
+  /**
+   * Where to go after CREATING a bot (CCB-S5-036, D-194).
+   *
+   * The bot picker's "New bot..." entry carries the page the operator came from, and the
+   * POST handler selects the new bot and returns him there. Without this field the handler
+   * never sees it and he lands on this page instead - which is deliberate and safe, but it
+   * is not what the picker promised, and he then has to hunt for the bot he just made in
+   * order to configure it.
+   */
+  returnTo = '',
 ): SafeHtml {
   const action = profile ? 'update-profile' : 'create-profile';
   const submitLabel = profile ? 'Save AI Bot' : 'Create AI Bot';
@@ -481,6 +505,7 @@ function wizardDialog(
       <input type="hidden" name="_csrf" value="${csrf}" />
       <input type="hidden" name="action" value="${action}" />
       ${profile ? hidden('profileId', profile.id) : null}
+      ${!profile && returnTo !== '' ? hidden('returnTo', returnTo) : null}
       ${hidden('createAddress', input.createAddress)}
       ${hidden('updateAddress', input.updateAddress)}
       ${hidden('updateProfile', input.updateProfile)}
@@ -1625,7 +1650,16 @@ function capabilityReference(): SafeHtml {
 }
 
 export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): void {
-  app.get<{ Querystring: { saved?: string; error?: string; profile?: string } }>(
+  app.get<{
+    Querystring: {
+      saved?: string;
+      error?: string;
+      profile?: string;
+      /** Where the bot picker's "New bot..." entry came from (CCB-S5-036). */
+      returnTo?: string;
+      new?: string;
+    };
+  }>(
     '/ai/onboarding',
     async (req, reply) => {
       const profiles = await listBotOnboardingProfiles(ctx.db);
@@ -1774,7 +1808,8 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                     </div>
                   </div>`
             }
-            ${capabilityReference()} ${wizardDialog(null, csrf, defaults(), createDialogId)}
+            ${capabilityReference()}
+            ${wizardDialog(null, csrf, defaults(), createDialogId, safeReturnTo(req.query.returnTo))}
           </section>
         `,
       });
