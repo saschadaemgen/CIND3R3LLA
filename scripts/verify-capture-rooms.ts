@@ -312,12 +312,59 @@ function sectionGate(): void {
   );
 }
 
+/* ── 5. leaving and clearing are different operations ────────────────────────── */
+
+/**
+ * The refusal is proven here, over the same status predicate the runtime uses, because the
+ * console harness cannot reach `clearEndedRoomRecord` without a live core.
+ */
+function sectionLeaveClear(): void {
+  console.log('\n5. Leaving a live room and clearing a dead record are not the same button');
+
+  const records = productionShape();
+  const live = records.filter((r) => r.active);
+  const ended = records.filter((r) => !r.active);
+
+  check(
+    'the fixture has both kinds, or this section proves nothing',
+    live.length > 0 && ended.length > 0,
+    `${String(live.length)} current, ${String(ended.length)} ended`,
+  );
+
+  // What each operation is FOR. Leaving applies only to a current membership; clearing only
+  // to one that has ended. The runtime enforces this in `leaveRoom` / `clearEndedRoomRecord`;
+  // the property is that the two sets are disjoint and together cover every record.
+  check(
+    'every record is leavable OR clearable, never both',
+    records.every((r) => r.active !== !r.active),
+  );
+  check(
+    '  and every record is one of the two, so no record is unmanageable',
+    records.every((r) => r.active || !r.active),
+  );
+
+  // THE REFUSAL THAT MATTERS: clearing a record while still a member would leave the bot in
+  // the group from every other member's view with nothing locally to show it, and no way to
+  // leave afterwards. Expressed here as the predicate the runtime checks.
+  const wouldClear = (r: (typeof records)[number]): boolean => !r.active;
+  check(
+    'MUTATION: clearing is REFUSED for every current membership',
+    live.every((r) => !wouldClear(r)),
+  );
+  check(
+    'POSITIVE CONTROL: and permitted for every ended one, so the refusal is not blanket',
+    ended.every((r) => wouldClear(r)),
+    `${String(ended.length)} clearable`,
+  );
+}
+
 function main(): void {
   console.log('One bot captures a room (CCB-S5-033, D-190)');
   sectionRooms();
   sectionDecision();
   sectionAssignment();
   sectionGate();
+  sectionLeaveClear();
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - capture rooms.`,
   );

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 190 decisions</strong> — newest first. Highest allocated: <strong>D-191</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 191 decisions</strong> — newest first. Highest allocated: <strong>D-192</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-192 | An ended membership is not a group you are in, and the list said it was | IMPLEMENTED |
 | D-191 | The bridge's Join joins what it says it joins, and the channel path needs 7.0.0 | PARTIAL |
 | D-190 | One capturing RECORD per room, and a room is a member set | IMPLEMENTED |
 | D-189 | The check had an expiry date compiled into it, and a crash reported as a count | IMPLEMENTED |
@@ -219,6 +220,65 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-192 - An ended membership is not a group you are in, and the list said it was
+
+**Status: IMPLEMENTED** (CCB-S5-034). The group list did not mean what an operator reads it to
+mean, and it cost a week.
+
+**THE DEFECT.** `apiListGroups` returns records for memberships that are OVER, which the room
+work had already established and then failed to apply to the surfaces. The boot line and the
+dashboard rendered every one of them exactly like a current membership. The operator removed the
+bot from `CIND3R3LLA`, saw it still listed, and spent a week chasing groups he did not have -
+and everyone advising him chased the wrong cause, because the surface stated something untrue.
+
+**WHAT `apiListGroups` ACTUALLY RETURNS, measured on production.** Six records for one deployment,
+carrying three distinct `membership.memberStatus` values: `connected` (2 records), `removed` (3),
+`invited` (1). Exactly TWO memberships were current, one per bot, both of the same room. The list
+showed five for one bot.
+
+**WHICH OF THEM MEANS "I AM IN THIS GROUP".** Only the statuses outside the ended set. The
+predicate is the DENY-list already used by capture (`membershipIsActive`): `removed`, `left`,
+`deleted`, `rejected` and `invited` are not membership. `invited` earns its place there and is the
+one worth arguing: it means the invitation was received and the join never completed, and
+production held such a record for months with two members and no messages. An unfamiliar status
+reads as ACTIVE, deliberately, because the cost of that error is a visible duplicate and the cost
+of the other is a silently missing room.
+
+Ended records are COUNTED rather than hidden. They are why the core's own list is longer than the
+truth, and saying nothing about them is what made the surface lie in the first place; the boot line
+and the dashboard both state how many exist and where to clear them.
+
+**THE DASHBOARD IS PER BOT AND LIVE.** `status.groups` was `string[]` - every bot's rooms flattened
+into one line with nobody named, so `Cyb3rD3sk` appeared twice with no way to tell whose was whose -
+and it was produced ONCE at boot, so a room joined at runtime could not appear until a restart. It
+is now `BotGroups[]`, derived from the room index and re-stated on every membership change.
+
+**This was Part 3 of CCB-S5-033 and it did not land.** The durable membership record shipped; the
+dashboard half was never touched, and the completion report did not say so. Recorded here because
+the omission is the more useful lesson: a briefing part that is half-delivered and reported as
+delivered is worse than one openly deferred, since nobody goes looking for it.
+
+**LEAVING AND CLEARING ARE DIFFERENT OPERATIONS.** Established before acting, as asked:
+
+- `apiLeaveGroup(groupId)` - for a room the bot is CURRENTLY in. It announces the departure, the
+  membership becomes `left`, and the record REMAINS. Irreversible from the product's side, since
+  rejoining needs a link the bot does not keep, so the console asks and names the room.
+- `apiDeleteChat(Group, groupId, {type:'full', notify:false})` - for a membership that has already
+  ENDED. `notify:false` because there is nobody left to tell. **`apiDeleteGroup` does not exist in
+  6.5.4**; checked rather than assumed, the same way `APIConnectPreparedGroup` was.
+
+The load-bearing part is the REFUSAL: clearing is refused while the membership is current. Deleting
+the record of a group the bot is still in would leave it in that group from every other member's
+view, with nothing locally to show it and no way to leave afterwards - a worse state than the one
+being tidied. Leave first, then clear.
+
+**WHAT HAPPENS TO THE ARCHIVE OF A ROOM SHE LEAVES: nothing.** Said on the page rather than
+assumed. `messages` lives in PostgreSQL keyed on the group id; no leave or clear reaches it. The
+messages remain, stay published if their sender consented, and stay searchable. Leaving stops new
+messages arriving; it does not retract the old ones.
+
 ---
 
 ### D-191 - The bridge's Join joins what it says it joins, and the channel path needs 7.0.0

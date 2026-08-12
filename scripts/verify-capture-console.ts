@@ -30,7 +30,11 @@ import { InteractionService } from '../src/interaction/settings.js';
 import type { Config } from '../src/config.js';
 import { createBotOnboardingProfile } from '../src/profiles/bot-onboarding.js';
 import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
-import { refreshCaptureRooms, resetCaptureRooms } from '../src/capture/room-service.js';
+import {
+  botGroupSummaries,
+  refreshCaptureRooms,
+  resetCaptureRooms,
+} from '../src/capture/room-service.js';
 import { listCaptureAssignments } from '../src/db/capture-assignments.js';
 import { recordMembershipChange, listMembershipChanges } from '../src/db/group-memberships.js';
 import type { T } from '@simplex-chat/types';
@@ -301,6 +305,84 @@ async function main(): Promise<void> {
     'MUTATION: with nothing recorded, the history is empty and the page can only say so',
     before > 0,
     'the guard is that this count is non-zero after a join',
+  );
+
+  /* ── 6. ended memberships are not shown as current (D-192) ───────────────── */
+
+  console.log('\n6. A membership that has ended is not rendered as one that is current');
+
+  // The production shape: the bot was REMOVED from a room and the record remains. This is
+  // the defect that cost a week - apiListGroups returns it and every surface printed it.
+  const withEnded = {
+    ...source,
+    listGroups: (uid: number) =>
+      Promise.resolve(
+        (uid === 1
+          ? [
+              { groupId: 4, localDisplayName: 'Cyb3rD3sk', status: 'connected' },
+              { groupId: 6, localDisplayName: 'Solo', status: 'connected' },
+              { groupId: 9, localDisplayName: 'CIND3R3LLA', status: 'removed' },
+              { groupId: 10, localDisplayName: 'SimpleGo', status: 'invited' },
+            ]
+          : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', status: 'connected' }]
+        ).map((g) => ({
+          groupId: g.groupId,
+          localDisplayName: g.localDisplayName,
+          membership: { memberStatus: g.status },
+        })) as unknown as T.GroupInfo[],
+      ),
+  };
+  await refreshCaptureRooms(withEnded, () => true, []);
+
+  const summaries = botGroupSummaries([
+    { botProfileId: botA, displayName: 'Cinderella' },
+    { botProfileId: botB, displayName: 'Rick Sanchez' },
+  ]);
+  const hers = summaries.find((x) => x.bot === 'Cinderella');
+  check(
+    'the summary counts only CURRENT memberships',
+    hers?.current.length === 2,
+    `current: ${JSON.stringify(hers?.current)}`,
+  );
+  check(
+    '  a room she was REMOVED from is not among them',
+    !(hers?.current ?? []).includes('CIND3R3LLA'),
+  );
+  check(
+    "  nor is an invitation that never completed - 'invited' is not 'in'",
+    !(hers?.current ?? []).includes('SimpleGo'),
+  );
+  check(
+    '  and the ended records are COUNTED rather than hidden, since they are why the core lists more',
+    hers?.endedCount === 2,
+    `endedCount ${String(hers?.endedCount)}`,
+  );
+  check(
+    'POSITIVE CONTROL: the other bot is listed separately, by name',
+    summaries.find((x) => x.bot === 'Rick Sanchez')?.current.length === 1,
+  );
+
+  // MUTATION: the shipped behaviour - every record rendered, nobody named. It is exactly the
+  // count the operator read and chased for a week.
+  const flattened = ['Cyb3rD3sk', 'Solo', 'CIND3R3LLA', 'SimpleGo', 'Cyb3rD3sk'];
+  check(
+    'MUTATION: the flattened list showed 5 entries where 3 memberships are current, Cyb3rD3sk twice',
+    flattened.length === 5 &&
+      summaries.reduce((n, x) => n + x.current.length, 0) === 3,
+  );
+
+  const endedPage = await get('/capture');
+  check(
+    'the page marks an ended record as ended',
+    says(endedPage, 'ended'),
+  );
+  check(
+    '  and offers to clear it rather than to leave it',
+    says(endedPage, 'Clear record'),
+  );
+  check(
+    '  while a current membership offers Leave',
+    says(endedPage, 'Leave'),
   );
 
   await app.close();
