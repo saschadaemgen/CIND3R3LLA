@@ -80,6 +80,7 @@ import {
   type BotPersonality,
 } from './personality.js';
 import { lookupBrief, shouldAnnounce, type LookupKind } from './lookup-announcement.js';
+import { hasRetrievableContent } from '../knowledge/retrieval.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
@@ -3554,7 +3555,19 @@ export class InteractionEngine {
     // shown. See `AiReplyRequest.knowledgePassages` for what that buys and what it costs.
     let knowledgePassages: { text: string }[] = [];
     const knowledge = this.deps.knowledge?.() ?? null;
-    if (knowledge && this.deps.botProfileId != null) {
+    // ── NOTHING TO LOOK UP MEANS NO LOOKUP (CCB-S5-037, D-195) ────────────────
+    //
+    // BEFORE the query, not after. `knowledge.query` ran on every free-conversation message
+    // and the floor was the only thing standing between a heart emoji and a document name
+    // under her answer - and the floor is a number about a SCORE, never a statement about
+    // the message. Measured: the same emoji scored 0.540 against one corpus and 0.582
+    // against another, and two different emoji scored identically against every document,
+    // because a message with no words carries nothing to tell them apart.
+    //
+    // Gating here rather than discarding the result afterwards has a second effect worth
+    // having: a reaction no longer costs an embedding call at all, so the second model stops
+    // being invoked on the reply path for messages that were never going to use it.
+    if (knowledge && this.deps.botProfileId != null && hasRetrievableContent(msg.text)) {
       try {
         const found = await knowledge.query(this.deps.botProfileId, msg.text);
         knowledgePassages = found.passages.map((p) => ({ text: p.text }));

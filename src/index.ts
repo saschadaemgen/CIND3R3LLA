@@ -525,6 +525,13 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   // touched a setting - a value read here would have been correct at boot and wrong an hour
   // later. A bot whose capability is off captures nothing anywhere; the index answers that
   // too, so this is one question rather than two.
+  // WHY THE PER-MESSAGE READ IS SAFE COLD. `statesFor` FAILS CLOSED on a cache miss, and on
+  // this path that would not delay a message but DROP it: `shouldCapture` would answer false,
+  // `persist` would return false, and nothing would say so. The caller already awaits
+  // `plugins.refreshFor(id)` immediately before building this graph (see the boot loop), so
+  // the cache is warm before capture is listening. The per-message read stays because a
+  // console toggle must take effect without a restart; it just never runs cold.
+
   registerCapture({ chat: bot.events, fileReceiver: bot.fileReceiver }, cfg, hooks, {
     shouldCapture: (groupId) =>
       deps.plugins.isEnabledFor(botProfileId, CAPTURE_ID) && shouldCapture(botProfileId, groupId),

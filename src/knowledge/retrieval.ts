@@ -124,6 +124,54 @@ export const RETRIEVAL_DEFAULTS: Readonly<RetrievalSettings> = Object.freeze({
   budgetChars: 2400,
 });
 
+/**
+ * Is there anything in this message to look up? (CCB-S5-037, D-195.)
+ *
+ * ── WHY A FLOOR CANNOT ANSWER THIS ───────────────────────────────────────────
+ *
+ * A member sent a heart emoji. She announced a lookup, answered with small talk about
+ * emoji, and printed a document name about SS7 attacks underneath. Both the announcement
+ * and the attribution are gated on the FLOOR having admitted a passage, so the floor was
+ * the only thing between an emoji and a document name.
+ *
+ * MEASURED (`npm run calibrate:knowledge-floor`), and the number is not the point:
+ *
+ *     corpus A:  ❤️ scored 0.540 - below 0.55 by ONE HUNDREDTH, so it retrieved nothing
+ *     corpus B:  ❤️ scored 0.582 - above it, so it retrieved a document
+ *
+ * Same emoji, same model, same floor; only the documents differed. And `❤️` and `👍`
+ * scored IDENTICALLY against every document and ranked them in the same order - because a
+ * message with no words carries nothing to distinguish them, so the vector is essentially
+ * the query prefix and the result is a property of THE CORPUS, not of the message.
+ *
+ * That is why this is a predicate and not a bigger number. Raising the floor to 0.60 would
+ * have refused "media retention" at 0.647 with almost no margin, and the next document the
+ * operator uploads moves the emoji again. D-183 said it in a sentence: when a lane states a
+ * bar, the bar is a predicate over the text or it does not exist.
+ *
+ * ── WHERE THE LINE IS, AND WHY IT IS DRAWN THERE ─────────────────────────────
+ *
+ * Deliberately narrow. It refuses what provably cannot be a lookup and nothing else, because
+ * a member with a real question that this refused would be a worse defect than the one it
+ * fixes: she would answer without the documents and say nothing about why.
+ *
+ *   - NO LETTERS OR DIGITS AT ALL. An emoji, a reaction, punctuation. There is no term to
+ *     match, so there is nothing a retrieval could be about. This alone settles the
+ *     production case, and it refuses nothing that could be a question.
+ *   - FEWER THAN THREE alphanumeric characters. "ok", "ja", "👍!". Same reason.
+ *
+ * A single real word is NOT refused. "SS7" is three characters and a legitimate lookup, and
+ * the measurement shows single words landing at 0.49-0.53 where the floor already handles
+ * them. Two guards in series, each doing the part it can decide.
+ */
+const MIN_CONTENT_CHARS = 3;
+
+export function hasRetrievableContent(text: string): boolean {
+  // Unicode-aware: `\w` would count no accented letter and every underscore.
+  const alphanumeric = [...text].filter((ch) => /\p{L}|\p{N}/u.test(ch)).length;
+  return alphanumeric >= MIN_CONTENT_CHARS;
+}
+
 /** The RRF constant. See the header: the paper's value, not a measured one. */
 export const RRF_K = 60;
 

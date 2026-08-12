@@ -119,6 +119,7 @@
     "verify:archive-search": "tsx scripts/verify-archive-search.ts",
     "calibrate:name-usage": "tsx scripts/calibrate-name-usage.ts",
     "calibrate:search-relevance": "tsx scripts/calibrate-search-relevance.ts",
+    "calibrate:knowledge-floor": "tsx scripts/calibrate-knowledge-floor.ts",
     "verify:lookup-announcement": "tsx scripts/verify-lookup-announcement.ts",
     "verify:lookup-announcement-live": "tsx scripts/verify-lookup-announcement-live.ts",
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",

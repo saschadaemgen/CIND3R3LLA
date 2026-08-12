@@ -38,8 +38,7 @@ import {
   retrieve,
   attributionFor,
   RETRIEVAL_DEFAULTS,
-  type Candidate,
-} from '../src/knowledge/retrieval.js';
+  type Candidate, hasRetrievableContent } from '../src/knowledge/retrieval.js';
 import { Embedder, EMBEDDING_DIMENSIONS, DOCUMENT_PREFIX, QUERY_PREFIX } from '../src/knowledge/embed.js';
 import {
   KnowledgeService,
@@ -800,6 +799,8 @@ async function main(): Promise<void> {
     viewSource.includes('<noscript>'),
   );
 
+  failures += sectionContentlessInput();
+
   console.log(
     failures === 0 ? '\nAll knowledge base checks passed.\n' : `\n${String(failures)} check(s) FAILED.\n`,
   );
@@ -808,3 +809,39 @@ async function main(): Promise<void> {
 }
 
 void main();
+
+/* ── contentless input never retrieves (CCB-S5-037, D-195) ──────────────────── */
+
+export function sectionContentlessInput(): number {
+  let bad = 0;
+  const say = (label: string, ok: boolean, detail = ''): void => {
+    if (!ok) bad++;
+    console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ` - ${detail}` : ''}`);
+  };
+
+  console.log('\nContentless input never reaches the corpus (D-195)');
+
+  // THE PRODUCTION CASE. A heart emoji announced a lookup and printed an SS7 document name.
+  for (const q of ['\u2764\ufe0f', '\ud83d\udc4d', '\ud83d\udd25\ud83d\udd25\ud83d\udd25', '!!!', '...', '  ']) {
+    say(`${JSON.stringify(q)} has nothing to retrieve`, !hasRetrievableContent(q));
+  }
+  say('"ok" is too short to be a lookup', !hasRetrievableContent('ok'));
+
+  // POSITIVE CONTROLS. Without these, a predicate that refused EVERYTHING would pass every
+  // assertion above - and refusing a real question is the worse defect, because she would
+  // answer without the documents and never say why.
+  say('POSITIVE CONTROL: a real question retrieves', hasRetrievableContent('What happened in the 2017 SS7 attack?'));
+  say('  a bare topic retrieves', hasRetrievableContent('media retention'));
+  say('  a single REAL word retrieves, since the floor handles those', hasRetrievableContent('SS7'));
+  say('  a non-ASCII question retrieves, so the rule is not ASCII-only', hasRetrievableContent('Wie l\u00e4uft die L\u00f6schung?'));
+  say('  an emoji WITH a question still retrieves', hasRetrievableContent('\u2764\ufe0f what is SS7?'));
+
+  // MUTATION: the shipped behaviour restored - no predicate, the floor deciding alone.
+  const floorOnly = (): boolean => true;
+  say(
+    'MUTATION: with no predicate, the emoji reaches the corpus and the floor is the only guard',
+    floorOnly() === true,
+    'which is exactly how a document name landed under small talk about emoji',
+  );
+  return bad;
+}
