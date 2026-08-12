@@ -444,6 +444,44 @@ async function main(): Promise<void> {
     maxRepeats: 3,
   });
 
+  // ── ONE CLOCK, OR THE CHECK HAS AN EXPIRY DATE (D-189) ────────────────────
+  //
+  // `created_at` is the only column the cadence anchors on that the DATABASE stamps
+  // (migration 057, `DEFAULT now()`), so an inserted mapping is born at REAL wall-clock
+  // time while every fixture and the injected service clock descend from the frozen
+  // `NOW`. `dueBy` reads `lastSentAt ?? createdAt` (cadence.ts), so the instant real time
+  // passed `NOW` the anchor sat in the FUTURE and nothing was ever due again: no
+  // announcement, no forward row, no age-out suppression, and the loop mutation's
+  // "it re-bridged" assertion false because nothing was bridged at all.
+  //
+  // That is exactly what happened. This harness was committed at 09:26 UTC with `NOW`
+  // pinned to 12:00 UTC the same day; it was green for two and a half hours and has been
+  // red ever since, permanently, on every machine and every future date.
+  //
+  // Pinned rather than un-freezing `NOW`: a frozen clock is what makes the run
+  // deterministic, and `new Date()` would only move the expiry rather than remove it.
+  await db.query(`UPDATE cinderella_bridge_mappings SET created_at = $2 WHERE id = $1`, [
+    mappingId,
+    MAPPING.createdAt,
+  ]);
+
+  // The assertion that keeps it that way. It is not decoration: this exact drift is what
+  // turned six checks red and hid the whole summary behind a crash, and nothing announced
+  // it, because a harness that stops exercising its subject looks identical to a passing
+  // one until you read the lines.
+  {
+    const anchor = await db.query<{ created_at: string | Date }>(
+      `SELECT created_at FROM cinderella_bridge_mappings WHERE id = $1`,
+      [mappingId],
+    );
+    const stored = new Date(anchor.rows[0]?.created_at ?? 0).getTime();
+    check(
+      'the harness is HERMETIC: the mapping the cadence anchors on carries the frozen clock, not the wall clock',
+      stored === MAPPING.createdAt.getTime(),
+      `stored ${new Date(stored).toISOString()}, expected ${MAPPING.createdAt.toISOString()}`,
+    );
+  }
+
   const calls: PortCall[] = [];
   let clock = NOW;
   // ONE port for the whole run. An earlier draft built a fresh fake per
@@ -621,9 +659,15 @@ async function main(): Promise<void> {
   );
   check('the forward is recorded', fwd.rows[0]?.kind === 'featured');
   {
+    // `?? {}` is the difference between a FAILED CHECK and a DEAD RUN (D-189). With no
+    // row, `origin` was undefined and `origin['v']` threw an uncaught TypeError out of
+    // `main()`: the process died mid-section, the remaining sections never ran, and the
+    // summary line was never printed. So the harness reported neither its failures nor a
+    // count, and a reader who scrolled to the bottom saw a stack trace where the verdict
+    // belongs. A missing row is an assertion this harness should FAIL, not choke on.
     const origin = (typeof fwd.rows[0]?.origin === 'string'
       ? JSON.parse(fwd.rows[0].origin)
-      : fwd.rows[0]?.origin) as Record<string, unknown>;
+      : (fwd.rows[0]?.origin ?? {})) as Record<string, unknown>;
     check(
       '  with the STRUCTURED origin: versioned, keyed on the link, named, timed',
       origin['v'] === 1 &&
@@ -779,10 +823,27 @@ async function main(): Promise<void> {
       : `\n${String(failures)} CHECK(S) FAILED.`,
   );
   await pg.close();
-  process.exit(failures === 0 ? 0 : 1);
+  // `exitCode`, not `exit()` (D-189). `process.exit` tears the process down without
+  // waiting for stdout to drain, and stdout to a PIPE is asynchronous, so the summary
+  // this harness just wrote can be discarded before it is read - which is precisely the
+  // shape of a check that reports something other than what it found.
+  process.exitCode = failures === 0 ? 0 : 1;
 }
 
 main().catch((err: unknown) => {
+  // A CRASH IS NOT A PASS, AND IT IS NOT A FAILURE COUNT EITHER (D-189).
+  //
+  // This used to print the stack and exit, so a throw anywhere in `main` produced a run
+  // with no verdict at all: sections after the throw never ran, the summary was never
+  // written, and a reader scrolling to the bottom found a stack trace where the count
+  // belongs. That is how six red checks were reported as "2 CHECK(S) FAILED" by anyone
+  // reading a truncated tail. The run says what it is now: incomplete, with the count it
+  // had reached, and never a number that looks like a complete result.
   console.error(err);
-  process.exit(1);
+  console.error(
+    `\nRUN INCOMPLETE - the harness threw before finishing. ${String(failures)} check(s) had ` +
+      `already failed; the sections after the throw did NOT run, so this is not a count of ` +
+      `what is wrong.`,
+  );
+  process.exitCode = 1;
 });
