@@ -268,13 +268,12 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                   </tbody>
                 </table>`}
             <div class="mb-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <strong>Joining a channel is not built yet.</strong> It needs the SimpleX 7.0.0
-              core and this deployment runs 6.5.4: the core requires a prepared-group command
-              that the installed SDK does not expose, so pasting a channel link here is refused
-              with that explanation rather than attempted. A channel this bot is ALREADY in
-              bridges normally, and everything else on this page works. What changes with 7.0.0
-              is that this box will join a channel link. Until then, add the bot to the channel
-              from your own SimpleX client and press Refresh from the core.
+              <strong>Joining a channel is not built yet.</strong> Pasting a channel link here
+              is refused with that explanation rather than attempted. The core itself CAN do
+              it: this deployment's core already carries the prepared-group command, and what
+              is missing is the wrapper on our side. A channel this bot is ALREADY in bridges
+              normally, and everything else on this page works. Until it is built, add the bot
+              to the channel from your own SimpleX client and press Refresh from the core.
             </div>
             <div class="flex flex-wrap gap-3">
               <form method="post" action="/bridge/connect" class="flex grow gap-2">

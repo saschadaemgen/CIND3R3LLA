@@ -447,8 +447,13 @@ export interface ChannelJoinResult {
  * Channel joining is not built yet (D-191, D-193).
  *
  * Its own class rather than a generic failure: this is not a fault in the deployment, it is a
- * capability that needs the 7.0.0 core, and the page says so plainly instead of showing the
- * core's own unactionable refusal.
+ * capability that is not built, and the page says so plainly instead of showing the core's
+ * own unactionable refusal.
+ *
+ * CORRECTED under CCB-S5-038: this said the capability "needs the 7.0.0 core". That was
+ * established false by reading both packages - 7.0.0 adds no SDK method at all (52 in each,
+ * `api.d.ts` byte-identical) and does not wrap the command either. The command exists in the
+ * core ALREADY INSTALLED; only the wrapper is missing.
  */
 export class ChannelJoinUnavailableError extends Error {
   constructor(message: string) {
@@ -542,11 +547,11 @@ export async function connectBotToChannel(
       // succeed.
       if (relays.length > 0) {
         throw new ChannelJoinUnavailableError(
-          `Joining a channel needs the SimpleX 7.0.0 core and this deployment runs 6.5.4, so ` +
-            `this cannot work yet${named ? ` for "${named}"` : ''}. The core requires the ` +
-            `prepared-group command, which the installed SDK does not expose. Nothing was ` +
-            `joined and nothing was changed. A channel the bot is ALREADY in still bridges ` +
-            `normally; this is only about joining a new one.`,
+          `Joining a channel is not built yet${named ? ` (this link is for "${named}")` : ''}. ` +
+            `The core CAN do it: it exposes the prepared-group command and this deployment's ` +
+            `core already carries it. What is missing is on our side, and it is small. ` +
+            `Nothing was joined and nothing was changed. A channel the bot is ALREADY in ` +
+            `bridges normally; this is only about joining a new one.`,
         );
       }
 

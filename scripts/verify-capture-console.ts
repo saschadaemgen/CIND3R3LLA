@@ -439,9 +439,15 @@ async function main(): Promise<void> {
     'the bridge page says channel joining is not built yet',
     says(bridgePage, 'Joining a channel is not built yet'),
   );
+  // RE-POINTED under CCB-S5-038 (D-196). This asserted the page NAMED THE VERSION - it
+  // required the string "7.0.0" - which pinned a claim that turned out to be false: the
+  // command exists in the core already installed and no upgrade unblocks it. So the guard
+  // is inverted. The page must say what is missing without blaming a version, because a
+  // wrong reason on an operator-facing page is what sent him to wait for a release that
+  // would not have helped.
   check(
-    '  naming the version that changes it',
-    says(bridgePage, '7.0.0'),
+    '  saying what is missing WITHOUT blaming a version',
+    says(bridgePage, 'the wrapper on our side') && !says(bridgePage, '7.0.0'),
   );
   check(
     '  and what to do meanwhile',
