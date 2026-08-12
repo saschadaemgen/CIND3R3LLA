@@ -45,6 +45,11 @@ export const REPLY_CATEGORIES = [
   // OUTSIDE the group, so an operator deciding whether it belongs in a consent-first
   // public archive is making a different decision from the rest of these.
   'lookup',
+  // CCB-S5-032: a channel post the bridge forwarded into the group. The content is the
+  // operator's own announcement, forwarded verbatim with an application-written
+  // attribution; no member consent is involved on either side, which is exactly why it
+  // is its own switch rather than riding on any of the above.
+  'bridge',
 ] as const;
 export type ReplyCategory = (typeof REPLY_CATEGORIES)[number];
 
@@ -189,6 +194,11 @@ export const DEFAULT_ARCHIVE: ArchiveSettings = {
     // entirely. A consent-first archive of what members said is not the obvious home for
     // a summary of somebody else's web page, so this is a deliberate opt-in.
     lookup: false,
+    // Excluded by default (CCB-S5-032): a forwarded channel announcement is the
+    // operator's content, not a member's, and whether his announcements belong on the
+    // public archive is his decision to take deliberately - likely the day the website's
+    // activity stream wants them, which is the consumer this category exists for.
+    bridge: false,
   },
 };
 
@@ -205,6 +215,10 @@ export const CATEGORY_LABELS: Record<ReplyCategory, { label: string; help: strin
   lookup: {
     label: 'Web search answers',
     help: 'Excluded by default: answers she built from web search results, plus the line she says when she could not look something up. The wording is the model own and the material came from outside the group.',
+  },
+  bridge: {
+    label: 'Channel announcements',
+    help: 'Excluded by default: channel posts the bridge forwarded into the group, verbatim, with their attribution. They are the operator content rather than any member words, so publishing them is a separate decision.',
   },
   conversation: {
     label: 'Free conversation',
