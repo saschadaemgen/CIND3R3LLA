@@ -43,7 +43,7 @@ import {
   DEFAULT_MESSAGE_COUNT,
   DIGEST_SUMMARY_CAP,
 } from '../../plugins/channel-bridge/cadence.js';
-import { bridgeDiagnostics } from '../../plugins/channel-bridge/bridge-log.js';
+import { bridgeDiagnostics, noteBridgeError } from '../../plugins/channel-bridge/bridge-log.js';
 import { CHANNEL_BRIDGE_ID } from '../../plugins/channel-bridge/plugin.js';
 import { applyPluginOverrides } from '../../plugins/scope.js';
 import { isPluginEnabled } from '../../plugins/registry.js';
@@ -52,6 +52,9 @@ import {
   connectBotToChannel,
   discoverBotChannels,
 } from '../../bot/runtime/admin-actions.js';
+import { describeChatError } from '../../bot/runtime/chat-error.js';
+import { log } from '../../log.js';
+import { status } from '../status.js';
 import { writeAudit } from '../../db/audit.js';
 
 const INPUT_CLS = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
@@ -515,6 +518,51 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
     return `/bridge?bot=${encodeURIComponent(bot)}&${extra}`;
   };
 
+  /**
+   * What a failed runtime action tells the operator (CCB-S5-018, D-171).
+   *
+   * ── WHY THIS EXISTS RATHER THAN A CATCH BLOCK PER ROUTE ─────────────────────
+   *
+   * Both of this page's runtime actions shipped catching `err.message`, which for the
+   * SDK's `ChatAPIError` is the literal string "Chat command error (see chatError
+   * property)" - the detail is on `.chatError` and the message is a pointer to it. So
+   * Join and Refresh rendered the SAME sentence for ANY core failure, and because
+   * neither route logged, the journal held nothing to compare it against. The operator
+   * reported it as an error with no error in it, for the third time.
+   *
+   * `describeChatError` was written for exactly this in CCB-S5-018 and was wired into
+   * the runtime layer only: it had TWO call sites in the whole tree, `core.ts` and
+   * `index.ts`, and NONE in the console - which is the surface an operator actually
+   * reads. That is the D-105 shape again: the describer existed, the rule held, and the
+   * newest source tree did not inherit it.
+   *
+   * THREE SURFACES, one story, because each answers a different question:
+   *   - the LOG carries the whole payload, with the bot named, for `journalctl`;
+   *   - `status.error` puts it on the dashboard, per CCB-S3-023: this is the plugin
+   *     path and a failed Join or Refresh loses a capability the operator asked for;
+   *   - `noteBridgeError` fills this page's own "Last error" card, which said
+   *     "none this process" through both failures.
+   *
+   * The BANNER gets a bounded version. A `chatError` payload is unbounded JSON and the
+   * banner is reached through a redirect querystring, so the whole thing would ride a
+   * URL past what nginx will accept; the log is where the untruncated copy lives, and
+   * the banner says so rather than quietly ending mid-object.
+   */
+  const BANNER_MAX = 300;
+
+  const reportActionFailure = (where: string, botProfileId: number | null, err: unknown): string => {
+    const detail = describeChatError(err);
+    log.error(`bridge console: ${where} failed`, {
+      botProfileId,
+      error: detail,
+    });
+    status.error(`Channel bridge: ${where} failed: ${detail}`);
+    noteBridgeError(`console:${where}`, err);
+    return detail.length > BANNER_MAX
+      ? `${detail.slice(0, BANNER_MAX)}... (full detail in the server log)`
+      : detail;
+  };
+
   app.post<{ Body: Record<string, unknown> }>('/bridge/connect', async (req, reply) => {
     const botProfileId = bodyInt(req.body, 'botProfileId');
     const link = bodyString(req.body, 'link');
@@ -526,7 +574,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       });
       return reply.redirect(back(req, 'saved=1'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = reportActionFailure('joining a channel', botProfileId, err);
       return reply.redirect(back(req, `error=${encodeURIComponent(message)}`));
     }
   });
@@ -546,7 +594,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       }
       return reply.redirect(back(req, 'saved=1'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = reportActionFailure('refreshing channels from the core', botProfileId, err);
       return reply.redirect(back(req, `error=${encodeURIComponent(message)}`));
     }
   });
@@ -599,7 +647,10 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       });
       return reply.redirect(back(req, 'saved=1'));
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      // Not a runtime action - this one is a database write - but swallowed the same
+      // way: a redirect with a message and nothing in the log. The describer returns a
+      // plain error's message verbatim, so this reads as it did and now leaves a trace.
+      const message = reportActionFailure('creating a mapping', botProfileId, err);
       return reply.redirect(back(req, `error=${encodeURIComponent(message)}`));
     }
   });

@@ -123,6 +123,7 @@
     "verify:lookup-announcement-live": "tsx scripts/verify-lookup-announcement-live.ts",
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
     "verify:bridge": "tsx scripts/verify-bridge.ts",
+    "verify:chat-errors": "tsx scripts/verify-chat-error-surfaced.ts",
     "verify:name-guard": "tsx scripts/verify-name-guard.ts",
     "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"
   },

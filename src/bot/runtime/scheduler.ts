@@ -41,6 +41,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { log } from '../../log.js';
+import { describeChatError } from './chat-error.js';
 import type { ActiveUserCore, RuntimeCounters } from './types.js';
 
 export interface SchedulerOptions {
@@ -277,6 +278,22 @@ export class ActiveUserScheduler {
       try {
         await this.core.setActiveUser(userId);
       } catch (err) {
+        // ── WHICH COMMAND FAILED, SAID OUT LOUD (CCB-S5-018) ─────────────────
+        //
+        // Every critical section may issue TWO commands: the active-user switch and the
+        // command itself. Both fail through the same SDK envelope with the same pointer
+        // message, so a caller catching this cannot tell "the profile could not be made
+        // active" from "the command was refused" - and those have different fixes. The
+        // bridge console's two failures were indistinguishable for exactly this reason.
+        //
+        // Logged and RETHROWN UNCHANGED: wrapping would hide `.chatError` from
+        // `describeChatError` at every catch site above, which is the masking
+        // CCB-S3-023 forbids and the very thing this line exists to end.
+        log.error('scheduler: could not make a profile active, so its command never ran', {
+          label,
+          userId,
+          error: describeChatError(err),
+        });
         // The tracked value is now unknowable: the core may or may not have switched
         // before failing. Anything issued next must set it explicitly.
         this.activeUserId = undefined;

@@ -8,6 +8,8 @@
  * diagnostics, not a record.
  */
 
+import { describeChatError } from '../../bot/runtime/chat-error.js';
+
 export interface BridgeTickNote {
   /** Epoch ms. */
   at: number;
@@ -44,11 +46,21 @@ export function noteBridgeTickAlive(at: number): void {
   lastTickAt = at;
 }
 
+/**
+ * The last thing that went wrong, as one line for the console's Diagnostics card.
+ *
+ * Through `describeChatError` (CCB-S5-018) rather than `error.message`: every failure
+ * on this path can be an SDK `ChatAPIError`, whose message is the literal pointer
+ * "Chat command error (see chatError property)" with the actual fault on `.chatError`.
+ * This card is one of the three surfaces an operator has, and it was printing the
+ * pointer. A non-SDK error reads exactly as it did before, so nothing is lost by
+ * routing every note through the describer.
+ */
 export function noteBridgeError(where: string, error: unknown): void {
   lastError = {
     at: Date.now(),
     where,
-    message: error instanceof Error ? error.message : String(error),
+    message: describeChatError(error),
   };
 }
 

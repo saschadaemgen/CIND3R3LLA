@@ -34,6 +34,7 @@ import {
 } from '../../media/assets.js';
 import { log } from '../../log.js';
 import { decideFaces } from '../../bot/runtime/faces.js';
+import { describeChatError } from '../../bot/runtime/chat-error.js';
 import { loadAvatarDataUri } from '../../bot/avatar.js';
 import {
   acceptContactRequest,
@@ -160,8 +161,21 @@ const JOURNEY = [
   },
 ] as const;
 
+/**
+ * What a failed onboarding step tells the operator (CCB-S5-018, D-171).
+ *
+ * Every action on this page issues a SimpleX command - create the address, accept or
+ * reject a contact request, join the invited group, apply the face - so every failure
+ * here can be an SDK `ChatAPIError`, whose `.message` is the literal pointer string
+ * "Chat command error (see chatError property)". This function used to return exactly
+ * that, on a page whose whole job is telling the operator why a step did not work.
+ *
+ * `describeChatError` returns a plain error's message verbatim, so the non-SDK
+ * refusals this page relies on (`RuntimeActionUnavailableError` and its named
+ * sentences) read exactly as they did.
+ */
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return describeChatError(error);
 }
 
 function text(value: unknown): string {

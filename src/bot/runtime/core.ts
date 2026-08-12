@@ -547,9 +547,11 @@ export class MultiProfileRuntime {
         );
       } catch (err) {
         // THE ACTUAL ERROR, not the pointer to it (CCB-S5-018). This read `err.message`,
-        // which for the SDK's `ChatCommandError` is the literal string "Chat command error
+        // which for the SDK's `ChatAPIError` is the literal string "Chat command error
         // (see chatError property)" - an instruction to inspect a property, printed on a
-        // dashboard that cannot inspect properties.
+        // dashboard that cannot inspect properties. (`ChatAPIError`, not `ChatCommandError`
+        // as this said until D-188: that class carries `.response` and a descriptive
+        // message. See `chat-error.ts`; the two are told apart by the message.)
         const message = describeChatError(err);
         log.error('runtime: could not list groups for a hosted profile', {
           simplexUserId: profile.simplexUserId,
@@ -586,7 +588,28 @@ export class MultiProfileRuntime {
     if (known !== undefined) return known;
     const chat = this.requireChat();
     for (const profile of this.hosted) {
-      const contacts = await chat.apiListContacts(profile.simplexUserId);
+      // ── THE SEVENTH CALL SITE (CCB-S5-018, D-171) ──────────────────────────
+      //
+      // This was bare. `apiListContacts` takes an EXPLICIT user id, and D-171 is that an
+      // explicit id makes a command REFUSABLE rather than unmisroutable: the core checks
+      // it against the active user and answers `differentActiveUser` when they differ.
+      // Six sites had this wrong and were corrected; this one reads its id off
+      // `this.hosted` in a LOOP, so with more than one bot hosted it could only ever have
+      // succeeded for whichever profile happened to be active and refused for the rest.
+      //
+      // The failure is worse than a wrong answer. `contactOwner` returning undefined
+      // makes `deleteChatItems` throw `UnknownGroupOwnerError`, so a consent erasure
+      // against a DIRECT chat fails for every bot but one - and it is the erasure path,
+      // where a silent partial is exactly what must not happen.
+      //
+      // Safe to schedule here: the sole caller (`deleteChatItems`) resolves the owner
+      // BEFORE opening its own critical section, so this is not a nested schedule and
+      // cannot trip the CCB-S5-015 re-entry guard.
+      const contacts = await this.scheduler.run(
+        profile.simplexUserId,
+        `listContacts:${String(profile.simplexUserId)}`,
+        () => chat.apiListContacts(profile.simplexUserId),
+      );
       this.ownership.adoptContacts(
         profile.simplexUserId,
         contacts.map((c) => c.contactId),

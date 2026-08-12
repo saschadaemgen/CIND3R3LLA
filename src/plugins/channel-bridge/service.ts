@@ -60,6 +60,7 @@ import {
   type BridgeMapping,
 } from './store.js';
 import { noteBridgeError, noteBridgeTick } from './bridge-log.js';
+import { describeChatError } from '../../bot/runtime/chat-error.js';
 
 /** The persona lines for one destination, pre-filled by the wiring. */
 export interface BridgeLines {
@@ -169,7 +170,7 @@ export async function intakeChannelPost(
         // A fault, not a choice (CCB-S3-023): the file was wanted and the fetch
         // failed, so the state says so and the console shows it. The text still
         // forwards; the announcement does not wait for bytes that may never come.
-        const message = error instanceof Error ? error.message : String(error);
+        const message = describeChatError(error);
         await setPostMedia(deps.db, inserted.id, { state: 'failed', error: message });
         log.error(
           `bridge: receiving a channel file for post ${String(inserted.id)} failed: ${message}`,
@@ -251,7 +252,13 @@ export async function runBridgeTick(deps: BridgeDeps): Promise<TickReport> {
       // a plugin path and a member-visible absence (CCB-S3-023). The one shape
       // that stays quiet is the unknown-owner refusal, which is the normal state
       // of a boot's first minute and of a group the core has not listed yet.
-      const message = error instanceof Error ? error.message : String(error);
+      //
+      // Through `describeChatError` (CCB-S5-018): everything this tick does - the send,
+      // the in-place edit, the broadcast withdrawal - is an SDK command, so `.message`
+      // here is very often the pointer string and not the fault. The unknown-owner test
+      // below still works, because the describer returns a plain error's message
+      // verbatim and `UnknownGroupOwnerError` is not an SDK error.
+      const message = describeChatError(error);
       log.error(`bridge: mapping ${String(mapping.id)} failed this tick: ${message}`);
       noteBridgeError(`mapping ${String(mapping.id)}`, error);
       if (!message.includes('does not belong to any hosted bot')) {

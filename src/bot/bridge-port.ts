@@ -19,6 +19,7 @@
 
 import type { T } from '@simplex-chat/types';
 import { log } from '../log.js';
+import { describeChatError } from './runtime/chat-error.js';
 
 export interface BridgeSentMessage {
   itemId: number | null;
@@ -89,10 +90,13 @@ export function sdkBridgePort(runtime: BridgeRuntimePort): BridgeSendPort {
           ]),
         );
       } catch (error) {
+        // `describeChatError`, not `.message` (CCB-S5-018): this is an SDK send and the
+        // fallback to text-only HIDES the fault by design, so the log line is the only
+        // record that the picture was lost and why.
         log.error(
-          `bridge: sending a file into group ${String(groupId)} failed (${
-            error instanceof Error ? error.message : String(error)
-          }); forwarding the text without it.`,
+          `bridge: sending a file into group ${String(groupId)} failed (${describeChatError(
+            error,
+          )}); forwarding the text without it.`,
         );
         return firstSent(await runtime.sendGroupTextAsOwner(groupId, caption));
       }

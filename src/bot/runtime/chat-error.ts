@@ -3,8 +3,8 @@
  *
  * ── THE DEFECT THIS EXISTS FOR ───────────────────────────────────────────────
  *
- * The SDK's `ChatCommandError` has the message "Chat command error (see chatError property)"
- * and puts the useful part on `.chatError`. Every catch site in this repository did
+ * The SDK throws the message "Chat command error (see chatError property)" and puts the
+ * useful part on a property. Every catch site in this repository did
  * `err instanceof Error ? err.message : String(err)`, so what reached the operator's
  * dashboard was, verbatim:
  *
@@ -14,6 +14,22 @@
  * An instruction to look at a property, on a surface that cannot look at properties. The
  * operator reported it as an error with no error in it, and he was right: the message names
  * where the answer is and then does not go there.
+ *
+ * ── TWO CLASSES, AND THE MESSAGE TELLS THEM APART (corrected, CCB-S5-018) ────
+ *
+ * This header used to say the pointer message belongs to `ChatCommandError`. It does not,
+ * and both halves of that sentence were wrong: `ChatCommandError` (the SDK's `api.ts`) puts
+ * its detail on `.response` and has NO `.chatError` at all, and its messages are DESCRIPTIVE
+ * strings written per call site ("error listing groups", "error getting connect plan").
+ *
+ * The pointer message comes from `ChatAPIError` (the SDK's `core.ts`), thrown by
+ * `chatSendCmd` when the addon answers a top-level `{"error": <ChatError>}` envelope, with
+ * that envelope on `.chatError`.
+ *
+ * The distinction is worth stating because it is free evidence: seeing the POINTER text
+ * proves the core refused the command outright, rather than answering something the typed
+ * wrapper did not expect. Reasoning is what propagates (D-171), and a reader who believes
+ * the wrong class cannot read that signal.
  *
  * ── WHY IT DUCK-TYPES INSTEAD OF IMPORTING THE SDK ───────────────────────────
  *
@@ -31,7 +47,7 @@
  * different place.
  */
 
-/** The shape the SDK throws. Duck-typed on purpose; see above. */
+/** Both shapes the SDK throws (`ChatAPIError`, `ChatCommandError`). Duck-typed; see above. */
 interface ChatCommandErrorish {
   message?: unknown;
   chatError?: unknown;

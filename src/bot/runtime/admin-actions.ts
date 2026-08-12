@@ -41,6 +41,7 @@ import { log } from '../../log.js';
 import type { T } from '@simplex-chat/types';
 import type { Queryable } from '../../db/pool.js';
 import { applyProfileUpdate, type HostedBot, type RuntimeHost } from './host.js';
+import { describeChatError } from './chat-error.js';
 import { flushAvatarToGroups } from '../avatar.js';
 
 /** The live runtime, when one is running. Absent in harnesses and scripts. */
@@ -454,10 +455,53 @@ export async function connectBotToChannel(
   );
   const planText = JSON.stringify(plan).slice(0, 200);
 
-  // The plan says this profile already holds the connection: joining again
-  // would either error or fork, so the honest answer is "nothing to do".
-  if (planText.includes('known') || planText.includes('connecting')) {
-    return { plan: planText, connected: false };
+  // ── THE PLAN IS READ BY TAG, NOT BY SUBSTRING (D-188) ─────────────────
+  //
+  // This asked whether a 200-character truncation of stringified JSON CONTAINED
+  // "known" or "connecting". Three things were wrong with that, all of them the
+  // masking CCB-S3-023 forbids:
+  //
+  //   1. `ConnectionPlan` has an `error` variant, `{type:'error', chatError}`, and it
+  //      arrives inside a SUCCESSFUL `connectionPlan` response - so the SDK returns it
+  //      happily. It contains neither substring, so the core saying "I cannot plan this
+  //      link" fell through to the connect below and the operator was told `connected:
+  //      true`. The core's stated refusal was discarded, unlogged.
+  //   2. The link comes back from `apiConnectPlan` carrying the group's own DISPLAY
+  //      NAME. A channel called "connecting" would make Join answer "nothing to do"
+  //      forever, and the name is not ours to control.
+  //   3. `noRelays` and `updateRequired` are real refusals that also fell through.
+  //
+  // Read by tag. `groupLink` is the shape a channel plans as (a channel IS a group
+  // with relays; there is no channel variant), so its inner plan is what decides.
+  if (plan.type === 'error') {
+    throw new RuntimeActionUnavailableError(
+      `The core could not plan that link, so nothing was joined: ${describeChatError({
+        chatError: plan.chatError,
+      })}`,
+    );
+  }
+  if (plan.type === 'groupLink') {
+    const inner = plan.groupLinkPlan.type;
+    if (inner === 'known' || inner === 'ownLink' || inner === 'connectingConfirmReconnect' || inner === 'connectingProhibit') {
+      // Already held, or ours: joining again would error or fork.
+      return { plan: planText, connected: false };
+    }
+    if (inner === 'noRelays' || inner === 'updateRequired') {
+      throw new RuntimeActionUnavailableError(
+        inner === 'noRelays'
+          ? 'That channel link names no relays, so this bot cannot receive its posts. Nothing was joined.'
+          : 'That channel link needs a newer SimpleX core than this deployment runs. Nothing was joined.',
+      );
+    }
+  }
+
+  // A prepared link is what `apiConnect` sends. Without one the command collapses to
+  // "/_connect <userId>", which is byte-identical to the CREATE-AN-INVITATION-LINK
+  // command: a join would silently become an address creation. Refused by name instead.
+  if (prepared === undefined || prepared === null) {
+    throw new RuntimeActionUnavailableError(
+      'The core planned that link but returned nothing to connect with, so nothing was joined.',
+    );
   }
 
   await bot.runScheduled('channel:join', () => chatOf().apiConnect(simplexUserId, false, prepared));
