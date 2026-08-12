@@ -365,6 +365,12 @@ export function registerNav(): void {
           icon: icon('messages'),
         },
         {
+          key: 'capture',
+          href: '/capture',
+          label: 'Capture',
+          icon: icon('messages'),
+        },
+        {
           key: 'consent',
           href: '/consent',
           label: 'Consent',

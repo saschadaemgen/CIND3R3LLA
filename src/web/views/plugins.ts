@@ -44,6 +44,8 @@ import {
   ENABLED_KEY,
   PLUGIN_SETTING_SCOPES,
 } from '../../plugins/scope.js';
+import { captureCounts } from '../../capture/room-service.js';
+import { CAPTURE_ID } from '../../plugins/capture/plugin.js';
 import { isPluginEnabled, listPlugins } from '../../plugins/registry.js';
 import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
 import { webSearchDiagnostics } from '../../plugins/web-search/service.js';
@@ -375,6 +377,20 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
                             'slate',
                           )}
                     </p>
+                    ${def.id === CAPTURE_ID && selectedBotId !== null
+                      ? html`<p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                          <strong>"On" here means this bot MAY capture, not that it does.</strong>
+                          One room has exactly one capturing bot, so in a room two bots share
+                          only one of them records it and the other is on and quiet. This bot is
+                          currently capturing
+                          <strong
+                            >${String(captureCounts(selectedBotId).capturing)} of
+                            ${String(captureCounts(selectedBotId).rooms)}</strong
+                          >
+                          room(s) it is in. Which bot records which room is on the
+                          <a class="underline" href="/capture">Capture page</a>.
+                        </p>`
+                      : ''}
                   </div>
                   ${selectedBotId === null
                     ? html`<p class="text-sm text-slate-500">

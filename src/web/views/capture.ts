@@ -85,7 +85,7 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
       reply.type('text/html');
       return page({
         title: 'Capture',
-        active: 'messages',
+        active: 'capture',
         csrfToken: csrf,
         body: html`
           ${pageHeader(
@@ -108,10 +108,20 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
 
           ${card(
             'Rooms',
-            html`<p class="mb-3 text-sm text-slate-500">
+            html`<div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <strong>Two different things, and both are shown here.</strong>
+                The <em>capability</em> (on the
+                <a class="underline" href="/plugins">Plugins</a> page) means a bot MAY capture.
+                The <em>assignment</em> means it DOES, in one particular room. A room has exactly
+                one capturing bot, so in a room two bots share, both can have the capability on
+                and only one of them records it. That is not a fault and it is why "on for both"
+                and "Cinderella is capturing it" are both true at once.
+              </div>
+              <p class="mb-3 text-sm text-slate-500">
                 A room is one real group. It can appear more than once in the core - once per bot
                 that is in it, and once more for a membership that ended - so the rows below are
-                grouped by the members they share rather than by name.
+                grouped by the members they share rather than by name. The name shown is the
+                group's own, not the core's local alias.
               </p>
               ${rooms.length === 0
                 ? html`<p class="text-sm text-slate-500">No rooms known yet.</p>`
