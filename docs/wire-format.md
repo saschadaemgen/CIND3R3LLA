@@ -539,8 +539,8 @@ nothing private ever reaches the public archive.
 | **Messaging** | | | |
 | Send text / image / video / voice / file / link | usable | `apiSendMessages` + `ComposedMessage{msgContent,fileSource}` (`a:198`, `t ComposedMessage`) | already used for her replies |
 | Formatting (single-delimiter markup, colour map) | usable | documented §3b, §3d | already used |
-| Edit her own message | usable | `apiUpdateChatItem` (`a:213`) | correct a wrong price/answer in place instead of re-sending |
-| Delete her own message | usable | `apiDeleteChatItems` with `CIDeleteMode` (`a:218`) | retract a mistaken reply |
+| Edit her own message | **used** (CCB-S5-032) | `apiUpdateChatItem` (`a:213`), wired as `updateGroupItemAsOwner` | the bridge propagates a channel edit into the copy in place |
+| Delete her own message | **used** (CCB-S5-032) | `apiDeleteChatItems` with `CIDeleteMode.Broadcast`, wired as `deleteGroupItemsBroadcastAsOwner` (Internal mode was already the consent-erasure path) | the bridge withdraws a deleted channel post from the group, for everyone |
 | Reply / quote | usable | `apiSendTextMessage(…, inReplyTo)` (`a:203`); already used | pairing answers to questions in-chat |
 | Forward | **core-only** | no `apiForward*` in the SDK; the core knows forwarding (error `invalidForward`, `t:890`) — reachable only by a raw `sendChatCmd` string | re-post an archived item; low priority |
 | **Reactions** | | | |

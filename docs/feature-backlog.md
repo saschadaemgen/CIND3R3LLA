@@ -720,6 +720,35 @@ because nothing was built to switch off.
 
 ---
 
+## Left open by CCB-S5-032, deliberately — what the bridge hands the site, and what it does not build
+
+The channel bridge (D-187) was scoped to the group side. Four things are recorded rather than
+built, the first two explicitly for the operator to settle in the site repository's chat before
+either side commits.
+
+- [ ] **The structured origin's shape needs the site's countersignature.** The bridge stores
+      `{ v: 1, source, channelKey, channelName, postedAt, sharedMsgId }` on every forward, and
+      the console filters by `channelKey`, so the shape is proven fit for the question the
+      activity stream will ask. GUESSED, and flagged per the briefing: whether the site prefers
+      the raw channel link over the hashed `channelKey`, the field names themselves, and whether
+      it wants the source post's text or her rendered announcement (the archive row joined via
+      `cinderella_bridge_forwards.message_id` carries the announcement). Getting this wrong after
+      both sides ship is a migration in two repositories; settle it in the site chat first.
+- [ ] **Onward publication is a row, not a rewrite.** When the activity stream and the blog
+      arrive, a new destination must be a `bridge_forwards`-shaped record joined to a published
+      row, never a second forwarding pipeline. The 'bridge' publication category (migration 057,
+      excluded by default) is the switch that day; nothing else should need schema.
+- [ ] **Bridge media has no retention sweep.** Re-hosted channel files accumulate under
+      `BRIDGE_MEDIA_ROOT`, bounded per file by `maxFileBytes` and by nothing over time. Resolved
+      posts' files could be swept after their last live copy is withdrawn; that needs a decision
+      about whether a withdrawn announcement's media should survive for the site's later use,
+      which is exactly the onward-publication question, so it waits with it.
+- [ ] **The tick does not run per-second cadences and does not pretend to.** The tick sweeps
+      every minute, so a cadence is granular to the minute; the console's minimum interval is 1.
+      Stated here because a sub-minute expectation would read as the bridge being late.
+
+---
+
 ## Left open by CCB-S5-031, deliberately — the name guard's other half
 
 D-186 fixed the MATCHING and the reporting. Two questions about the rule itself were held back

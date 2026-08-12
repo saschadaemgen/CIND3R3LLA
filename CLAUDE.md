@@ -304,9 +304,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   that decision is taken against numbers), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
-  deployment** (CCB-S5-021, D-175). Exactly two are per bot, both of them `enabled`, and the
-  other eighteen are deployment-wide: the credential, the upstream quota, the cache and the
-  untrusted-text ceilings. The catalog a bot can be asked for is built per bot by
+  deployment** (CCB-S5-021, D-175). The per-bot settings are the `enabled` switches, one per
+  plugin (four since the channel bridge: crypto prices, web search, knowledge base, channel
+  bridge - this line said "exactly two" until CCB-S5-032 and had been stale since the
+  knowledge base made it three); everything else is deployment-wide: the credential, the
+  upstream quota, the cache, the untrusted-text ceilings and the bridge's storage bound. The
+  catalog a bot can be asked for is built per bot by
   `capabilitiesFor` and carried in `IntentContext`, where it is REQUIRED: it was module state
   in `intent.ts`, which is one catalog for the process and therefore one set of capabilities
   for every hosted bot. A cache miss fails CLOSED, unlike the interaction settings, because a
@@ -317,7 +320,25 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   same embedder the knowledge base uses, floored at 0.70, which was MEASURED by
   `npm run calibrate:search-relevance` because the knowledge base's 0.55 would have admitted the
   two pages that caused the briefing. Below the bar nothing reaches the model and the reply is
-  the application's; an embedder that cannot answer fails CLOSED. `settings/`,
+  the application's; an embedder that cannot answer fails CLOSED.
+  **`plugins/channel-bridge/` is the channel bridge** (CCB-S5-032, D-187): a channel post
+  becomes a standing announcement brought into a group on a cadence, per bot. A channel
+  surfaces as a group whose items carry direction `channelRcv` WITH NO MEMBER, so a channel
+  post can never travel the consent path and has its own parser (`parseChannelPost` beside
+  `parseGroupMessage`, exclusive by direction) and its own tables (migration 057). `cadence.ts`
+  is pure (whichever-trigger-first, the age window, the digest that accounts for every pending
+  post), `loop.ts` is pure (a source must be a known channel and a destination must not be one,
+  so the mapping graph cannot cycle; the send-readback refuses the bridge's own product
+  arriving back), `origin.ts` is the structured origin the website will filter by
+  (`channelKey` derived from the channel LINK, stable across a rename). NO model is anywhere
+  on the path: posts forward VERBATIM under application-written persona attribution. Her
+  announcements archive under the 'bridge' category, EXCLUDED by default. Media re-hosts at
+  intake (relays expire ~48h) under `BRIDGE_MEDIA_ROOT`, a SIBLING of MEDIA_ROOT (the
+  destruction sweeper walks that whole tree), plaintext with the reasoning in security §16.
+  The transport is `bot/bridge-port.ts` (recital-port pattern, plus in-place edit and
+  BROADCAST delete, a separate runtime method from the Internal-mode consent erasure so no
+  caller defaults into the wrong scope); the rhythm is `bridge.tick`, a self-chaining queue
+  job with a minute-bucket key so boot seeds collapse into a live chain. `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
   SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
@@ -477,7 +498,13 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   exactly the picture it has, because the primary has no upload and falls back to the file the
   operator already set. The bytes are not here; the path is, as with the media tree and the
   chapter images. A configured path that cannot be read is a FAULT that leaves that bot's profile
-  alone, never a quiet fallback to the deployment's face; see D-161).
+  alone, never a quiet fallback to the deployment's face; see D-161) ·
+  057 the channel bridge (five tables - the channels a bot knows, the mappings with their
+  per-mapping cadences and the CHECK that a mapping with no trigger is unrepresentable, the
+  posts keyed by the source's shared message id, the forward log with its STRUCTURED origin
+  jsonb, and the suppression record - plus the 'bridge' publication category as a view
+  replacement, the 013/027/033 pattern, shipped EXCLUDED. **A channel post has no member**, so
+  these tables are deliberately outside `messages` and outside every consent view; see D-187).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -485,7 +512,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **057**, since 056 landed with the wake word following the display name). Stated as a rule
+  (currently **058**, since 057 landed with the channel bridge). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -698,6 +725,16 @@ saying the results do not cover it and 4 of 6 inventing a provenance anyway. Its
 patterns were widened after a green run reported 0 of 3 on three answers that all invented one),
 `calibrate:search-relevance` is where the floor's number comes from, and it is not a check: it
 prints the four bands and what each candidate floor would admit,
+`verify:bridge` (the channel bridge, CCB-S5-032, D-187: the two parsers proven exclusive in
+both directions with positive controls, the cadence's whichever-comes-first at both orderings,
+the age window, the repeat cap, dismissal, the digest proven to ACCOUNT for every pending post,
+the quiet case sending and recording nothing, the loop guard's refusals and its send-readback
+driven end to end, the suppression invariant provable as SQL, the whole composition through a
+fake port with the structured origin asserted field by field, edits recomposing in place,
+deletions broadcast-withdrawing, and NO model on the path asserted structurally. The two
+briefing-named mutations are proven in-script AND by breaking the source: the readback bypassed
+re-bridges the bridge's own product, the record skipped turns the invariant red, and a third -
+the trigger composition inverted to whichever-comes-last - turns eight checks red),
 `verify:protected-text` (the lines the application writes and she may not, CCB-S5-027, D-180:
 that the protected set is DERIVED from the persona rather than listed, that a forgery is removed
 whether it stands on its own line or is tacked onto the end of a sentence, that a draft she was

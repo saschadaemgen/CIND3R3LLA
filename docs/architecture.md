@@ -3839,3 +3839,42 @@ settings, two runs) and measures how many actually said she was looking. **Read 
 the JSON leak, the archive brief that made her explain the consent model instead of announcing,
 and a detector of my own that matched nothing were all found in runs that were green on
 everything asserted.
+
+## 53. The channel bridge (CCB-S5-032, D-187)
+
+A SimpleX channel post becomes a standing announcement the bot brings into a group on a
+cadence, per bot, as a plugin. The full reasoning is D-187; this section is the map.
+
+**The seam.** A channel surfaces as a group whose received items carry direction
+`channelRcv`, a variant with NO fields: no member, no name, no role. `parseChannelPost`
+(src/bot/parse.ts) is a second parser beside `parseGroupMessage`, exclusive with it by
+direction, so a channel post can never enter capture, consent or the engine, and a member
+message can never enter the bridge. The intake (`plugins/channel-bridge/intake.ts`) registers
+per hosted bot on the same event source capture uses, listening to the same four events, and
+routes by that direction; media is received through the bot's own FileReceiver into
+`BRIDGE_MEDIA_ROOT` (a sibling of MEDIA_ROOT, refused inside it, plaintext - see D-187 and
+docs/security.md).
+
+**The tree.** `plugins/channel-bridge/`: `cadence.ts` (PURE: whichever-trigger-first,
+the age window, the repeat cap, the digest that accounts for every pending post, and the
+definition of a suppression), `loop.ts` (PURE: the mapping refusals that make a cycle
+unrepresentable, with operator-readable sentences), `origin.ts` (PURE: the structured origin,
+`channelKey` derived from the channel link so a rename cannot move it), `store.ts` (migration
+057's five tables), `service.ts` (orchestration: intake, the tick, propagation; no model
+anywhere on the path, asserted structurally by `verify:bridge`), `settings.ts` (one
+deployment-wide bound: `maxFileBytes`), `bridge-log.ts` (in-memory diagnostics), and the
+console at `web/views/bridge.ts`. The transport is `bot/bridge-port.ts` on the recital-port
+pattern - group-id based, owner-resolved, null while nothing hosts - returning the sent item
+id and shared message id, which the recital never needed: the first is what edit and
+withdrawal propagation act through (`updateGroupItemAsOwner`, `deleteGroupItemsBroadcastAsOwner`
+in `bot/runtime/core.ts`, both new, the broadcast delete deliberately a separate method from
+the Internal-mode consent erasure), the second is the loop guard's readback.
+
+**The rhythm.** `bridge.tick` is a self-chaining queue job with a MINUTE-BUCKET idempotency
+key (`queue/jobs/bridge.ts`): the varying key keeps the chain alive (the recital's lesson) and
+makes chains self-collapsing (a boot seed lands on a live chain's own next key and dedupes into
+it). `bridge.propagate` carries an edit or withdrawal to every live copy by RECOMPOSITION.
+Her announcements are archived at the send site under `bot_category = 'bridge'`, excluded from
+publication by default (migration 057 replaces `bot_publish_settings`, the 013/027/033
+pattern); `cinderella_bridge_forwards.message_id` joins the archived row for the day the
+website's activity stream reads it.

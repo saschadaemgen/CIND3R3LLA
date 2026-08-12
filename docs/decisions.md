@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 185 decisions</strong> — newest first. Highest allocated: <strong>D-186</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 186 decisions</strong> — newest first. Highest allocated: <strong>D-187</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-187 | A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror | IMPLEMENTED |
 | D-186 | A member's name is matched as a word, and a reply thrown away is counted rather than logged | IMPLEMENTED |
 | D-185 | A wake word with no row of its own follows the display name, so a rename carries through | IMPLEMENTED |
 | D-184 | She says she is going to look, for all three lookups, and the threshold is measured rather than shipped | IMPLEMENTED |
@@ -215,6 +216,97 @@ This has gone wrong twice.
 ---
 ---
 ---
+
+### D-187 - A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror
+
+**Status: IMPLEMENTED** (CCB-S5-032, migration 057). The bot closes the gap between running a
+SimpleX channel and running a group: a channel post becomes a standing announcement the bot
+brings into the group on a rhythm the operator sets, per bot, as a plugin (D-175).
+
+**WHAT A CHANNEL ACTUALLY IS, on the INSTALLED SDK.** The briefing's premise that channels were
+invisible to 6.5.4 was wrong: the search had been run in the wrapper package, and every channel
+primitive lives in `@simplex-chat/types` (0.8.0) - `GroupType.Channel`, `SimplexLinkType.Channel`,
+the `relay`/`author` roles, `GroupInfo.useRelays`, and above all `CIDirection.ChannelRcv`. A
+channel surfaces as a GROUP whose received items carry direction `channelRcv`, and that variant
+has NO FIELDS: no memberId, no name, no role. That one fact shapes the whole design, and it is a
+decision here rather than a discovery later: **a channel post cannot travel the consent path**,
+because consent is keyed per member and there is no member. It never enters `messages`, never
+publishes, and is parsed by its own `parseChannelPost` beside `parseGroupMessage` - two exclusive
+parsers, so the wrong world is unrepresentable rather than re-checked by every consumer. What CAN
+publish is her forwarded ANNOUNCEMENT, her own message like any other, captured under the new
+'bridge' category, which ships EXCLUDED (the 013/027/033 view-replacement pattern, applied by 057).
+The 7.0.0 upgrade adds no channel capability (its `@simplex-chat/types` 0.10.3 carries the same
+six channel references) and was split into its own briefing rather than folded in.
+
+**THE CADENCE, four decisions reported as required.** (1) When to post: interval or member-message
+count, WHICHEVER COMES FIRST - the operator's phrasing, and the only composition that keeps both
+settings meaningful, since whichever-comes-last makes the smaller one a dead control. Due-ness is
+measured from the last send, so a quiet group hears a fresh post on the next sweep rather than
+waiting out an interval that already elapsed. (2) How far back: `maxAgeHours` per mapping, default
+24, applied to REPEATS as well, so a post cannot start fresh and be repeated into staleness.
+(3) What stops a post: repeats exhausted (`maxRepeats`, default 3), aged out, or dismissed from
+the console - and dismissal RESOLVES at the next tick so there is one writer of resolutions, with
+the console showing the in-between state so the click has a visible effect (D-162). (4) Several
+pending: a DIGEST, one message per tick - newest in full, up to four older as excerpts OLDEST
+first so nothing starves, the rest COUNTED in a stated remainder line. A post that only ever
+appeared in the count has not been announced and spends no repeat. The quiet case sends nothing
+and records nothing: quiet is not suppression. **A suppression is a post that stops with ZERO
+announcements**, and it always writes a record (`cinderella_bridge_suppressions`); the invariant
+is SQL-provable and `verify:bridge` mutation-proves both named guarantees - a bridged message
+re-bridged when the readback is bypassed, a suppression caught when the record is skipped.
+
+**THE LOOP MARKER IS STRUCTURAL, NOT TEXTUAL.** Anything in the message text a member can forge
+or strip by quoting, so the marker is two facts held where members cannot reach. First, the
+mapping graph cannot represent a cycle: a source must be a KNOWN CHANNEL (a database FK, filled by
+evidence - the intake - or by the core's own group-type report) and a destination must NOT be one,
+so every edge is channel to group and no edge leaves a group. Second, the bridge recognises its
+own sends: every forward records its sent shared message id, and an arriving channel post matching
+one is refused with a 'loop-refused' suppression record - which covers a bridge OUTSIDE this
+deployment re-injecting our announcement. The stated limit: a foreign bridge that REWRITES our
+announcement into a new message is indistinguishable from a genuine post, and no marker any bridge
+could carry survives a rewrite by a party that wants it gone.
+
+**THE STRUCTURED ORIGIN, and what a future destination must satisfy.** The rendered attribution
+is application-written persona copy (guarded by the protected-text derivation the day it shipped),
+appended verbatim per D-137/D-180, and never worded by a model - in fact NO model is anywhere on
+the bridge path: a post is forwarded verbatim, which is the security property the briefing asked
+to have stated (the only untrusted-text residue is that her announcement enters her own
+conversation memory like everything she says, behind D-147's fence). But a rendered line cannot be
+filtered, so every forward stores `origin` as JSONB:
+`{ v: 1, source: 'simplex-channel', channelKey, channelName, postedAt, sharedMsgId }`.
+`channelKey` is derived from the channel LINK (`link:<sha256-16>`), the only identity that is
+stable across a rename AND portable across deployments; the profile-local fallback
+(`local:<bot>:<group>`) is honest about being one. The console's forward log filters by
+`channelKey` - operated, which is the fitness proof the briefing wanted before the site depends on
+the field. **What a future destination (the activity stream, the blog) must satisfy: a
+destination is a ROW (`cinderella_bridge_forwards.message_id` joins her archived row), never a
+rewrite; it groups and filters by `channelKey`, renders `channelName`, sorts by `postedAt`, and
+treats `v` as the shape's version.** GUESSED, for the operator to settle in the site chat: the
+hash-of-link key derivation (the site may prefer the raw link), the field names, and whether the
+site wants the announcement text or the source post text (the archive row carries the former).
+
+**EDITS FOLLOW IN PLACE; DELETIONS WITHDRAW FOR EVERYONE; MEDIA IS FETCHED ON ARRIVAL.** An edit
+propagates by RECOMPOSITION of every live copy (`apiUpdateChatItem`, first wired here), because
+the copy is the application's utterance, one authoritative copy per group beats a correction post
+doubling the volume the cadence bounds, and SimpleX clients mark edits natively. A deletion
+broadcast-deletes the copy (a new runtime method, deliberately separate from the Internal-mode
+consent erasure so no caller can pick the wrong scope by defaulting); a digest containing other
+live posts is recomposed without the withdrawn one instead. Media: relays keep files ~48h and a
+repeat can outlive that, so bytes are fetched at intake through the bot's own FileReceiver and
+kept under `BRIDGE_MEDIA_ROOT` - a SIBLING of MEDIA_ROOT, refused inside it, because the
+destruction sweeper walks that whole tree matching id-shaped names; and PLAINTEXT, deliberately,
+because the at-rest encryption protects member privacy and a channel post is the operator's own
+broadcast, already readable by every relay that carried it. The cost is stated: a duplicate copy
+of every channel file, bounded by the one deployment-wide setting (`maxFileBytes`, default 25 MiB);
+an over-bound or failed fetch forwards the text with the omission shown on the console
+('too-large' / 'failed' are states, never silent gaps).
+
+**WHAT COULD NOT BE PROVEN LOCALLY, said plainly.** The SimpleX core is on D-178's host-only
+list: whether a real relay delivers posts as `channelRcv` through this event path, and the join
+handshake for a `/c#` link, are proven on the host at deploy. Everything else was driven locally:
+the whole composition through a fake port, the console operated control by control, and three
+source mutations (the readback bypassed, the record skipped, the trigger composition inverted)
+each turning the harness red.
 
 ### D-186 - A member's name is matched as a word, and a reply thrown away is counted rather than logged
 

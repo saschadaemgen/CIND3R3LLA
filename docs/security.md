@@ -1619,3 +1619,31 @@ version off `node_modules` and, for anything that matters, read the patched code
 build-time dependency with no reachable call site are three different facts wearing the same
 severity badge. The first two questions are always `npm ls <pkg> --omit=dev` and "does anything
 here call it".
+
+## 16. The channel bridge: untrusted text with no model near it (CCB-S5-032, D-187)
+
+A channel post is text the application did not write, arriving from a construct whose
+authorship the bot cannot verify beyond the channel it came through. Three properties hold.
+
+**No model on the path.** A bridged post is forwarded VERBATIM: no summarising, no rewording,
+no model call anywhere in `plugins/channel-bridge/`. There is therefore nothing for a hostile
+channel post to instruct - the fences that protect the model (D-141 search results, D-147
+history, D-176 knowledge documents) are not needed here because the model is never asked.
+`verify:bridge` asserts the absence structurally. The one residue: her forwarded announcement
+is her own message, so it enters her conversation memory like everything she says, behind the
+same D-147 fence as member text - a channel post full of instructions is no more privileged
+there than a member typing the same words.
+
+**No consent semantics, and no path to acquire them.** A `channelRcv` item carries no member,
+so a channel post cannot enter `messages` and cannot publish; it lives in the bridge's own
+tables. Her forwarded announcement CAN publish - it is her message - under the 'bridge'
+category, which ships excluded; publication is one deliberate switch on the Archive page.
+
+**Not end-to-end encrypted, said on the console rather than in a document nobody reads.**
+Channel content is relay-mediated; relay operators can read what they forward, a deliberate
+SimpleX trade of content secrecy for participation privacy. The bridge page states this in
+bold at the top. It is also why the bridge's re-hosted media tree (`BRIDGE_MEDIA_ROOT`, a
+sibling of MEDIA_ROOT so the destruction sweeper never walks it) is PLAINTEXT: the at-rest
+encryption (D-075) protects member privacy, and a channel file is the operator's own broadcast
+that every carrying relay could already read. Encrypting it would spend the hot path on a
+secrecy the content never had.
