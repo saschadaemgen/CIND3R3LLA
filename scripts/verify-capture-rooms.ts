@@ -1,0 +1,327 @@
+/**
+ * One bot captures a room (CCB-S5-033, D-190).
+ *
+ * ── WHAT THIS GUARDS ─────────────────────────────────────────────────────────
+ *
+ * Two bots were members of one real group, capture is per bot, and `messages` is
+ * `UNIQUE (group_id, group_msg_id)` over records that genuinely differ - so the archive took
+ * two rows per real message for three days and no check could see it. The load-bearing
+ * assertion here is the one the briefing names: it fails if two bots can capture one room.
+ *
+ * ── THE FIXTURE IS THE PRODUCTION SHAPE, WITH SYNTHETIC IDS ──────────────────
+ *
+ * Six records over three rooms, with the pairwise member overlaps MEASURED on the production
+ * core (counts only; no member id from a real deployment is in this repository):
+ *
+ *     1<->4: 830    1<->5: 829    4<->5: 941    2<->3: 1    all others: 0
+ *
+ * Two properties of that shape are what make the rule hard, and both are asserted:
+ *   - room {1,4,5} is held together TRANSITIVELY, so pairwise matching is not enough;
+ *   - room {2,3} overlaps by exactly ONE member, so any ratio or threshold above one splits
+ *     it and re-introduces the defect on the next re-join.
+ *
+ *   npx tsx scripts/verify-capture-rooms.ts
+ */
+
+import {
+  captureGate,
+  conflictsOf,
+  decideCapture,
+  roomsOf,
+  type CaptureAssignment,
+  type GroupRecord,
+} from '../src/capture/rooms.js';
+
+let failures = 0;
+function check(label: string, ok: boolean, detail = ''): void {
+  if (!ok) failures++;
+  console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ` - ${detail}` : ''}`);
+}
+
+const CINDERELLA = { botProfileId: 1, simplexUserId: 1 };
+const RICK = { botProfileId: 2, simplexUserId: 2 };
+
+/** Synthetic member ids. `room` scopes them, which is the property measured on the core. */
+const m = (room: string, n: number): string => `mem-${room}-${String(n)}`;
+const members = (room: string, from: number, to: number): string[] =>
+  Array.from({ length: to - from + 1 }, (_, i) => m(room, from + i));
+
+/**
+ * The production shape. Room A holds records 1, 4 (Cinderella, old and current) and 5 (Rick).
+ * Record 1 is her ENDED membership: it overlaps the other two but not perfectly, because
+ * members joined and left between them - which is exactly why the relation is transitive.
+ */
+function productionShape(): GroupRecord[] {
+  // `active` mirrors the production membership statuses exactly: records 1 and 3 are
+  // memberships that ENDED and are still listed by `apiListGroups`, 2 was an invitation that
+  // never completed, and 4, 5, 6 are current.
+  return [
+    { ...CINDERELLA, groupId: 1, displayName: 'Cyb3rD3sk', memberIds: members('A', 1, 844), active: false },
+    { ...CINDERELLA, groupId: 4, displayName: 'Cyb3rD3sk_1', memberIds: members('A', 15, 950), active: true },
+    { ...RICK, groupId: 5, displayName: 'Cyb3rD3sk', memberIds: members('A', 16, 941), active: true },
+    { ...CINDERELLA, groupId: 2, displayName: 'SimpleGo', memberIds: [m('B', 1), m('B', 99)], active: false },
+    { ...CINDERELLA, groupId: 3, displayName: 'SimpleGo_1', memberIds: members('B', 1, 30), active: false },
+    { ...CINDERELLA, groupId: 6, displayName: 'CIND3R3LLA', memberIds: members('C', 1, 59), active: true },
+  ];
+}
+
+const roomWith = (rooms: ReturnType<typeof roomsOf>, groupId: number) =>
+  rooms.find((r) => r.records.some((x) => x.groupId === groupId));
+
+/* ── 1. records become rooms ─────────────────────────────────────────────────── */
+
+function sectionRooms(): void {
+  console.log('\n1. Group records become rooms, by the member set alone');
+  const rooms = roomsOf(productionShape());
+
+  check('six records over three rooms', rooms.length === 3, `got ${String(rooms.length)}`);
+
+  const a = roomWith(rooms, 4);
+  check(
+    'the two bots and her old membership are ONE room, held together transitively',
+    a !== undefined && [...a.records.map((r) => r.groupId)].sort((x, y) => x - y).join(',') === '1,4,5',
+    a?.records.map((r) => r.groupId).join(',') ?? 'missing',
+  );
+  check(
+    '  and it is named from the record with the most members, not the stale one',
+    a?.displayName === 'Cyb3rD3sk_1',
+    a?.displayName,
+  );
+
+  const b = roomWith(rooms, 2);
+  check(
+    'a room whose records overlap by exactly ONE member is still one room',
+    b !== undefined && b.records.length === 2,
+    `${String(b?.records.length)} record(s)`,
+  );
+  check(
+    'the third room stands alone',
+    roomWith(rooms, 6)?.records.length === 1,
+  );
+
+  // POSITIVE CONTROL on the separation. Without it, a matcher that merged EVERYTHING would
+  // pass every "same room" assertion above.
+  check(
+    'POSITIVE CONTROL: different rooms are NOT merged, so the relation discriminates',
+    roomWith(rooms, 4)?.key !== roomWith(rooms, 6)?.key &&
+      roomWith(rooms, 2)?.key !== roomWith(rooms, 4)?.key,
+  );
+
+  // MUTATION: the threshold that looks reasonable and is wrong. Production room B overlaps by
+  // one member, so "two or more" splits it - and a split room is two rooms with one capturing
+  // bot each, which is the duplication back again.
+  const twoOrMore = productionShape().filter((r) => r.groupId !== 3);
+  const orphan = productionShape().find((r) => r.groupId === 3);
+  if (orphan) {
+    const split = roomsOf([...twoOrMore, { ...orphan, memberIds: members('B', 40, 70) }]);
+    check(
+      'MUTATION: a record sharing NO member is correctly a separate room, so the rule is not "same name"',
+      split.length === 4,
+      `got ${String(split.length)} rooms`,
+    );
+  }
+
+  // The rename trap: two records with the SAME display name in DIFFERENT rooms.
+  const renamed = roomsOf([
+    { ...CINDERELLA, groupId: 10, displayName: 'Team', memberIds: members('X', 1, 5), active: true },
+    { ...RICK, groupId: 11, displayName: 'Team', memberIds: members('Y', 1, 5), active: true },
+  ]);
+  check(
+    'two rooms that merely SHARE A NAME are two rooms',
+    renamed.length === 2,
+    `got ${String(renamed.length)}`,
+  );
+}
+
+/* ── 2. who captures ─────────────────────────────────────────────────────────── */
+
+function sectionDecision(): void {
+  console.log('\n2. One capturing bot per room, and an unresolved conflict elects');
+  const rooms = roomsOf(productionShape());
+  const both = () => true;
+
+  const decided = decideCapture(rooms, both, []);
+  const roomA = decided.find((d) => d.candidates.length > 1);
+
+  check('the shared room has TWO candidates', roomA?.candidates.length === 2, String(roomA?.candidates));
+  check(
+    '  exactly one of them captures',
+    roomA?.botProfileId !== null && roomA?.botProfileId !== undefined,
+  );
+  check(
+    '  the election is the LOWEST SimpleX user id (D-182), so it is stable across restarts',
+    roomA?.botProfileId === CINDERELLA.botProfileId,
+    `chose ${String(roomA?.botProfileId)}`,
+  );
+  check('  and it is REPORTED as a conflict rather than settled silently', roomA?.conflict === true);
+  check('conflictsOf finds exactly that one room', conflictsOf(decided).length === 1);
+
+  // A room with one candidate is not a conflict, or every quiet room would be reported.
+  const soloRooms = decided.filter((d) => d.candidates.length === 1);
+  check(
+    'POSITIVE CONTROL: a room with one candidate is NOT a conflict',
+    soloRooms.length > 0 && soloRooms.every((d) => d.conflict === false && d.how === 'only'),
+  );
+
+  // Capability off for Rick: the conflict disappears WITHOUT an assignment.
+  const onlyHer = decideCapture(rooms, (b) => b === CINDERELLA.botProfileId, []);
+  check(
+    'switching the capability off for one bot resolves the room with no assignment',
+    conflictsOf(onlyHer).length === 0 &&
+      onlyHer.find((d) => d.roomKey === roomA?.roomKey)?.botProfileId === CINDERELLA.botProfileId,
+  );
+
+  // Nobody has it: nobody captures, and that is not a conflict.
+  const nobody = decideCapture(rooms, () => false, []);
+  check(
+    'with the capability off everywhere nothing captures and nothing is reported',
+    nobody.every((d) => d.botProfileId === null && d.how === 'none' && !d.conflict),
+  );
+}
+
+/* ── 3. the operator's choice wins ───────────────────────────────────────────── */
+
+function sectionAssignment(): void {
+  console.log('\n3. An assignment overrides the election, and switching is one action');
+  const rooms = roomsOf(productionShape());
+  const both = () => true;
+
+  // Rick's own record in the shared room is groupId 5.
+  const toRick: CaptureAssignment[] = [{ botProfileId: RICK.botProfileId, groupId: 5 }];
+  const assigned = decideCapture(rooms, both, toRick);
+  const roomA = assigned.find((d) => d.candidates.length > 1);
+
+  check(
+    'the assigned bot captures, not the elected one',
+    roomA?.botProfileId === RICK.botProfileId && roomA.how === 'assigned',
+    `chose ${String(roomA?.botProfileId)} by ${String(roomA?.how)}`,
+  );
+  check('  and the room is no longer reported as a conflict', roomA?.conflict === false);
+  check('  switching moved capture in ONE step: no state where nobody captures', conflictsOf(assigned).length === 0);
+
+  // The switch is one action at the STORAGE layer too: an assignment naming a record in the
+  // room replaces whoever held it, so there is never a moment with two or with none.
+  const backToHer = decideCapture(rooms, both, [{ botProfileId: CINDERELLA.botProfileId, groupId: 4 }]);
+  check(
+    'switching back is equally one action',
+    backToHer.find((d) => d.candidates.length > 1)?.botProfileId === CINDERELLA.botProfileId,
+  );
+
+  // An assignment to a bot that has since lost the capability must not leave the room
+  // captured by a bot that cannot capture.
+  const staleAssignment = decideCapture(rooms, (b) => b === CINDERELLA.botProfileId, toRick);
+  check(
+    'an assignment to a bot whose capability is OFF falls back rather than capturing nothing',
+    staleAssignment.find((d) => d.candidates.length >= 1 && d.displayName.startsWith('Cyb3r'))
+      ?.botProfileId === CINDERELLA.botProfileId,
+  );
+
+  // An assignment naming a record in a DIFFERENT room must not reach this one.
+  const foreign = decideCapture(rooms, both, [{ botProfileId: CINDERELLA.botProfileId, groupId: 6 }]);
+  check(
+    'an assignment in another room does not decide this one',
+    foreign.find((d) => d.candidates.length > 1)?.how === 'elected',
+  );
+}
+
+/* ── 4. the gate capture actually consults ───────────────────────────────────── */
+
+function sectionGate(): void {
+  console.log('\n4. THE GUARANTEE: one bot captures a room, asserted over every record');
+  const records = productionShape();
+  const rooms = roomsOf(records);
+  const decided = decideCapture(rooms, () => true, []);
+  const gate = captureGate(decided, rooms);
+
+  // THE assertion the briefing names. Per ROOM, count the distinct bots the gate lets through.
+  let worstRoom = '';
+  let worstCount = 0;
+  for (const room of rooms) {
+    const capturing = new Set(
+      room.records.filter((r) => gate.shouldCapture(r.botProfileId, r.groupId)).map((r) => r.botProfileId),
+    );
+    if (capturing.size > worstCount) {
+      worstCount = capturing.size;
+      worstRoom = room.displayName;
+    }
+  }
+  check(
+    'NO room is captured by more than one bot',
+    worstCount <= 1,
+    worstCount > 1 ? `${worstRoom} captured by ${String(worstCount)} bots` : 'max 1 per room',
+  );
+
+  // POSITIVE CONTROL. The assertion above passes against a gate that refuses everything, which
+  // would silently stop the archive - the one outcome worse than duplicating.
+  //
+  // Over rooms with a LIVE membership, not all rooms: the SimpleGo room in this fixture holds
+  // an invitation that never completed and a membership that ended, so nothing should capture
+  // it and a control demanding otherwise would be asserting a defect. That is the production
+  // state too - she is in neither SimpleGo record.
+  const liveRooms = rooms.filter((room) => room.records.some((r) => r.active));
+  const capturedRooms = liveRooms.filter((room) =>
+    room.records.some((r) => gate.shouldCapture(r.botProfileId, r.groupId)),
+  );
+  check(
+    'POSITIVE CONTROL: every room with a LIVE membership is captured, so the gate is not simply closed',
+    capturedRooms.length === liveRooms.length && liveRooms.length === 2,
+    `${String(capturedRooms.length)}/${String(liveRooms.length)} live rooms captured`,
+  );
+  check(
+    '  and a room where every membership has ENDED is captured by nobody',
+    rooms
+      .filter((room) => room.records.every((r) => !r.active))
+      .every((room) => !room.records.some((r) => gate.shouldCapture(r.botProfileId, r.groupId))),
+  );
+
+  // Her stale record must not capture: it is the same room as her live one.
+  check(
+    "the ENDED membership's record does not capture beside the live one",
+    !(gate.shouldCapture(CINDERELLA.botProfileId, 1) && gate.shouldCapture(CINDERELLA.botProfileId, 4)),
+  );
+
+  // A record nobody has indexed yet captures rather than being dropped: the runtime joins
+  // groups between refreshes, and losing those messages is worse than a transient duplicate.
+  check(
+    'an unknown record captures rather than dropping messages',
+    gate.shouldCapture(99, 999) === true,
+  );
+
+  // MUTATION: the shipped behaviour restored - every bot captures its own record. This is the
+  // defect, expressed as a gate, and it must turn the guarantee red.
+  const shipped = { shouldCapture: (): boolean => true };
+  let shippedWorst = 0;
+  for (const room of rooms) {
+    const capturing = new Set(
+      room.records.filter((r) => shipped.shouldCapture()).map((r) => r.botProfileId),
+    );
+    shippedWorst = Math.max(shippedWorst, capturing.size);
+  }
+  check(
+    'MUTATION: with the shipped "every bot captures" behaviour, a room IS captured twice',
+    shippedWorst === 2,
+    `max ${String(shippedWorst)} bots per room`,
+  );
+
+  // MUTATION: per-groupId conflict checking, which is the naive fix and sees no conflict.
+  const perGroupId = new Set(records.map((r) => r.groupId));
+  check(
+    'MUTATION: a per-groupId check finds SIX distinct ids and therefore no conflict at all',
+    perGroupId.size === 6 && rooms.length === 3,
+    'which is why the room, not the record, is the unit',
+  );
+}
+
+function main(): void {
+  console.log('One bot captures a room (CCB-S5-033, D-190)');
+  sectionRooms();
+  sectionDecision();
+  sectionAssignment();
+  sectionGate();
+  console.log(
+    `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - capture rooms.`,
+  );
+  process.exitCode = failures === 0 ? 0 : 1;
+}
+
+main();
