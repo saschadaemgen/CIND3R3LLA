@@ -122,6 +122,7 @@
     "verify:lookup-announcement": "tsx scripts/verify-lookup-announcement.ts",
     "verify:lookup-announcement-live": "tsx scripts/verify-lookup-announcement-live.ts",
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
+    "verify:bridge": "tsx scripts/verify-bridge.ts",
     "verify:name-guard": "tsx scripts/verify-name-guard.ts",
     "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"
   },
