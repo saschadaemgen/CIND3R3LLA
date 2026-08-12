@@ -1799,6 +1799,15 @@ start, which means there is no runtime to hand the views when they are registere
 The web layer gets **operations returning plain data, never the `ChatApi`**. A request
 handler holding a chat handle is one import away from issuing an unscheduled command.
 
+**What it does NOT get for free is a readable error** (D-188). Every action in this
+table can fail with the SDK's `ChatAPIError`, whose message is the pointer string "Chat command
+error (see chatError property)" and whose detail is on `.chatError`. `describeChatError` was
+written for exactly that in CCB-S5-018 and was wired into the RUNTIME layer only - two call sites,
+`core.ts` and `index.ts`, and none in the console - so both consoles that call into this seam
+flattened their errors with `err.message` and showed the pointer. Both go through the describer
+now, and both log; `npm run verify:chat-errors` is the guard, and it also asserts on the AST that
+every SDK call in this file and in `core.ts` is lexically inside a scheduled callback (D-171).
+
 | Step | Route | What it does |
 |---|---|---|
 | Create address | `POST /ai/onboarding` `action=create-address` | `apiGetUserAddress` first, `apiCreateUserAddress` only if there is nothing there, both through the scheduler, both carrying an explicit `userId` so neither can execute as another profile |
@@ -3512,6 +3521,14 @@ for the life of the process.
 Abandoning may leave the core to finish the command later, so a message can be lost. One lost
 message against every message is the trade, and it is stated in the code.
 
+**Which of the two commands failed is now said out loud** (D-188). A critical section
+may issue TWO commands: the active-user switch that opens it, and the command itself. Both fail
+through the same SDK envelope with the same pointer message, so a caller catching one cannot tell
+"this profile could not be made active" from "this command was refused" - and those have different
+fixes. `critical()` now logs the label, the user id and `describeChatError(err)` when
+`setActiveUser` throws, and **rethrows the original object unchanged**: wrapping it would hide
+`.chatError` from every catch site above, which is the masking CCB-S3-023 forbids.
+
 ### 49.2 The three ways a reply stops
 
 Between the model returning and the group receiving, and all three now loud:
@@ -3869,6 +3886,20 @@ id and shared message id, which the recital never needed: the first is what edit
 withdrawal propagation act through (`updateGroupItemAsOwner`, `deleteGroupItemsBroadcastAsOwner`
 in `bot/runtime/core.ts`, both new, the broadcast delete deliberately a separate method from
 the Internal-mode consent erasure), the second is the loop guard's readback.
+
+**The console's two runtime actions, and what they used to hide** (D-188). Join
+(`connectBotToChannel`) and Refresh (`discoverBotChannels`) are the only controls on this page that
+reach the core. Both shipped catching `err.message`, so both answered any core failure with the
+SDK's pointer string and neither logged, which produced two indistinguishable failures and an empty
+journal - the read-only Refresh included. They go through `describeChatError` now and report on
+three surfaces: `log.error` for the untruncated payload, `status.error` because a lost capability on
+the plugin path belongs on the dashboard (CCB-S3-023), and `noteBridgeError` for this page's own
+"Last error" card, which read "none this process" through both failures. The banner gets a
+300-character copy and says so, because a `chatError` payload is unbounded JSON reached through a
+redirect querystring. Join additionally READS THE PLAN BY TAG rather than by substring: a
+`ConnectionPlan` of type `error` arrives inside a successful response, and matching
+`JSON.stringify(plan).includes('known')` meant the core's refusal fell through to the connect and
+the operator was told it had worked.
 
 **The rhythm.** `bridge.tick` is a self-chaining queue job with a MINUTE-BUCKET idempotency
 key (`queue/jobs/bridge.ts`): the varying key keeps the chain alive (the recital's lesson) and

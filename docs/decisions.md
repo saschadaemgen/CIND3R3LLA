@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 186 decisions</strong> — newest first. Highest allocated: <strong>D-187</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 187 decisions</strong> — newest first. Highest allocated: <strong>D-188</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-188 | The describer was built for the operator and wired only into the runtime, so the newest console reinvented the blank | IMPLEMENTED |
 | D-187 | A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror | IMPLEMENTED |
 | D-186 | A member's name is matched as a word, and a reply thrown away is counted rather than logged | IMPLEMENTED |
 | D-185 | A wake word with no row of its own follows the display name, so a rename carries through | IMPLEMENTED |
@@ -215,6 +216,94 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-188 - The describer was built for the operator and wired only into the runtime, so the newest console reinvented the blank
+
+**Status: IMPLEMENTED** (`verify:chat-errors`; no briefing id, this came from an operator bug
+report rather than a dispatch). The bridge console answered both of its runtime actions, Join and
+Refresh, with the same sentence and left the journal empty:
+
+    Chat command error (see chatError property)
+
+`describeChatError` exists precisely so that string never reaches an operator (D-171, CCB-S5-018).
+It was not covering this path, and the reason is the whole entry: **it had TWO call sites in the
+tree, `core.ts` and `index.ts`, and NONE in the console.** CCB-S5-018 fixed the layer where the
+defect was reported and not the layer where operators read errors, so the fix did not travel, and
+four briefings later a new page reimplemented `err instanceof Error ? err.message : String(err)`
+three times in one file. That is D-105 again with a describer in place of a check: the tool
+existed, the rule held, the new source tree did not inherit it, and nothing announced it.
+
+**THE TWO SDK CLASSES, because the repository had them the wrong way round.** The pointer message
+belongs to `ChatAPIError` (the SDK's `core.ts`), thrown by `chatSendCmd` when the addon answers a
+top-level `{"error": <ChatError>}` envelope, carrying that envelope on `.chatError`. It does NOT
+belong to `ChatCommandError` (the SDK's `api.ts`), which carries `.response` and whose messages are
+descriptive per call site ("error listing groups"). `chat-error.ts`'s own header, `core.ts:551` and
+this file all said otherwise. The distinction is free evidence rather than pedantry: seeing the
+POINTER text proves the core refused the command outright rather than answering something the typed
+wrapper did not expect, and a reader holding the wrong class cannot read that signal. D-171's
+closing line is "correct the reasoning and not only the code", so the comments were corrected too.
+Measured, not reasoned: the installed classes were driven through the installed describer, and all
+six shapes come out right, `differentActiveUser` included.
+
+**WHAT THE UNWRAP IS AND IS NOT.** It is not the fix for the failure; it is the only way to see the
+failure. The core's answer was intact on the object arriving at the catch - nothing between the
+addon and the redirect wraps or strips it - and the console threw it away. Three surfaces now carry
+it, because each answers a different question: the LOG holds the untruncated payload for
+`journalctl`; `status.error` puts it on the dashboard, per CCB-S3-023, since this is the plugin path
+and a failed Join loses a capability the operator asked for; and `noteBridgeError` fills the bridge
+page's own "Last error" card, which read "none this process" through both failures. The BANNER gets
+a bounded copy and says so: a `chatError` payload is unbounded JSON reached through a redirect
+querystring, so the whole of it would ride a URL past what nginx accepts.
+
+**THE MISROUTING AUDIT, and what it found where it was not looking.** Neither failing path has a
+bare call: `connectBotToChannel` schedules both its commands and `discoverBotChannels` goes through
+the single scheduled `listGroups` that D-171 consolidated to. So the bridge added no ninth site.
+But the sweep that consolidated `apiListGroups` did not look at the sibling method beside it, and
+`contactOwner` was issuing `apiListContacts(profile.simplexUserId)` **bare, in a loop over every
+hosted profile**. Same class, same file, adjacent lines, added by CCB-S5-001 after the D-155 sweep
+and before the D-171 one. With more than one bot hosted it could only ever have succeeded for
+whichever profile happened to be active - and it feeds the DIRECT-chat consent erasure, where
+returning `undefined` makes the erasure throw for every other bot. Scheduled now.
+
+**WHICH COMMAND FAILED, said out loud.** A critical section may issue two commands: the active-user
+switch and the command itself. Both fail through the same envelope with the same pointer message,
+so a caller cannot tell "this profile could not be made active" from "this command was refused",
+and those have different fixes. The scheduler now logs the label and the described error when
+`setActiveUser` throws, and **rethrows the original unchanged** - wrapping it would hide
+`.chatError` from every catch site above, which is the masking CCB-S3-023 forbids and the exact
+thing this entry exists to end.
+
+**AND THE JOIN PATH WAS TREATING A REFUSAL AS PERMISSION.** Found while reading the SDK contract:
+`ConnectionPlan` has an `error` variant that arrives inside a SUCCESSFUL response, so the SDK
+returned it happily; the guard was `JSON.stringify(plan).slice(0, 200).includes('known')`, which an
+error plan does not match, so the core saying "I cannot plan this link" fell through to the connect
+and the operator was told `connected: true`. Two more hazards on the same line: `noRelays` and
+`updateRequired` are real refusals that also fell through, and the substring test ran against
+attacker-influenced group display names, so a channel called "connecting" would answer "nothing to
+do" forever. Read by tag now, with `noRelays` and `updateRequired` getting their own sentences, and
+a missing prepared link refused by name rather than degrading into `/_connect <userId>` - which is
+byte-identical to the command that CREATES an invitation link.
+
+**The guard is `npm run verify:chat-errors`**, and it is a regression guard rather than the
+verification (D-162): it cannot see that a control is reachable or that a sentence is legible. What
+it decides is that the describer extracts against the INSTALLED SDK's own shapes, that no console
+issuing a core command flattens with the bare idiom, and - on the AST rather than by grep, because
+"inside a scheduled callback" is structural - that every SDK call in the command layer is scheduled,
+with `apiSetActiveUser` and the three boot-time resolution calls named individually as exemptions so
+a fourth cannot hide behind them. Mutation-proven by restoring both shipped defects, each of which
+turns it red at the exact line. Every negative has a positive control beside it, because "no bare
+idiom found" passes against a scan that reads no files and "every call is scheduled" passes against
+a matcher that finds none.
+
+**THE ROOT CAUSE IS NOT IN THIS ENTRY**, deliberately. It is one press of the button away on the
+host and no longer a guess: the logged `errorType` names it. `differentActiveUser` means a seventh
+instance and a scheduler whose tracked id is lying; `userUnknown` or `noActiveUser` means the stored
+`simplex_user_id` or the `/_user` switch, shared by every per-bot console action rather than by the
+bridge; `exception` or `internalError` on Refresh alone means `apiListGroups` materialising every
+group into one response, which its own SDK doc warns about and which would then move
+`discoverBotChannels` to the paginated `apiGetChats`.
+
 ---
 
 ### D-187 - A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror
