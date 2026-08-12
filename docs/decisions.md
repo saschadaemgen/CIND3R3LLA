@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 193 decisions</strong> — newest first. Highest allocated: <strong>D-194</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 194 decisions</strong> — newest first. Highest allocated: <strong>D-195</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
 | D-193 | The room's name is the group's, and a control with no backend says so | IMPLEMENTED |
 | D-192 | An ended membership is not a group you are in, and the list said it was | IMPLEMENTED |
@@ -222,6 +223,53 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-195 - A message with nothing to look up does not look anything up
+
+**Status: IMPLEMENTED** (CCB-S5-037). A member sent a heart emoji. She announced a lookup,
+answered with small talk about emoji, and printed "From what you gave me: SS7 Attack Notable
+Incidents and Regulatory Response" beneath it. The answer had nothing to do with SS7.
+
+**ONE CAUSE, TWO FAILED GUARANTEES.** `knowledge.query` ran on EVERY free-conversation
+message with no condition on whether the member had asked anything, and both the announcement
+and the attribution are gated on `knowledgePassages.length > 0` - that is, on the FLOOR having
+admitted a passage. So the floor was the only thing between an emoji and a document name, and
+a floor is a number about a SCORE, never a statement about the message.
+
+**MEASURED, and the number is not the point** (`npm run calibrate:knowledge-floor`):
+
+    corpus A:  the emoji scored 0.540 - one hundredth BELOW the 0.55 floor
+    corpus B:  the emoji scored 0.582 - above it, and it retrieved a document
+
+Same emoji, same model, same floor; only the documents differed. And the decisive
+observation: `❤️` and `👍` scored IDENTICALLY against every document and ranked them in the
+same order, because a message with no words carries nothing to tell them apart. The vector is
+essentially the query prefix, so **the result is a property of the CORPUS, not of the
+message**.
+
+That is why no number fixes it. Raising the floor to 0.60 would refuse "media retention" at
+0.647 with almost no margin, and the next document the operator uploads moves the emoji again.
+D-183 said it in a sentence: when a lane states a bar, the bar is a predicate over the text or
+it does not exist.
+
+**THE PREDICATE IS DELIBERATELY NARROW.** No letters or digits at all, or fewer than three
+alphanumeric characters. It refuses what provably cannot be a lookup and nothing else, because
+refusing a real question is the WORSE defect: she would answer without the documents and never
+say why. "SS7" still retrieves, and the measurement shows single words landing at 0.49-0.53
+where the floor already handles them. Two guards in series, each deciding the part it can.
+
+**Gated BEFORE the query**, which has a second effect worth having: a reaction no longer costs
+an embedding call, so the second model stops being invoked on the reply path for messages that
+were never going to use it.
+
+**THE COUPLING THAT REMAINS IS BACKLOGGED RATHER THAN FIXED.** `shouldAnnounce` takes the
+lookup kind, the verbosity dial and characters-per-second, and none of those says the member
+asked anything; it is correct only because it sits downstream of `knowledgePassages.length > 0`.
+That is a property holding by placement and described as if it held by design - this season's
+defining defect class, after D-183, D-190 and D-192 - and the ordering in `engine.ts` is
+recorded as load-bearing in the backlog.
+
 ---
 
 ### D-194 - The console had no building blocks, so 26 pages each invented their own
