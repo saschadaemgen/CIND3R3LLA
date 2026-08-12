@@ -104,13 +104,17 @@ async function main(): Promise<void> {
       Promise.resolve(
         (uid === 1
           ? [
-              { groupId: 4, localDisplayName: 'Cyb3rD3sk', status: 'connected' },
-              { groupId: 6, localDisplayName: 'Solo', status: 'connected' },
+              // The LOCAL alias carries the core's _1 disambiguator while the shared profile
+              // says what the group is called. Without this the "no _1 on the page" assertion
+              // would be vacuous - there would be no _1 anywhere to leak.
+              { groupId: 4, localDisplayName: 'Cyb3rD3sk_1', profile: 'Cyb3rD3sk', status: 'connected' },
+              { groupId: 6, localDisplayName: 'Solo', profile: 'Solo', status: 'connected' },
             ]
-          : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', status: 'connected' }]
+          : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', profile: 'Cyb3rD3sk', status: 'connected' }]
         ).map((g) => ({
           groupId: g.groupId,
           localDisplayName: g.localDisplayName,
+          groupProfile: { displayName: g.profile },
           membership: { memberStatus: g.status },
         })) as unknown as T.GroupInfo[],
       ),
@@ -319,15 +323,16 @@ async function main(): Promise<void> {
       Promise.resolve(
         (uid === 1
           ? [
-              { groupId: 4, localDisplayName: 'Cyb3rD3sk', status: 'connected' },
-              { groupId: 6, localDisplayName: 'Solo', status: 'connected' },
-              { groupId: 9, localDisplayName: 'CIND3R3LLA', status: 'removed' },
-              { groupId: 10, localDisplayName: 'SimpleGo', status: 'invited' },
+              { groupId: 4, localDisplayName: 'Cyb3rD3sk_1', profile: 'Cyb3rD3sk', status: 'connected' },
+              { groupId: 6, localDisplayName: 'Solo', profile: 'Solo', status: 'connected' },
+              { groupId: 9, localDisplayName: 'CIND3R3LLA', profile: 'CIND3R3LLA', status: 'removed' },
+              { groupId: 10, localDisplayName: 'SimpleGo', profile: 'SimpleGo', status: 'invited' },
             ]
-          : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', status: 'connected' }]
+          : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', profile: 'Cyb3rD3sk', status: 'connected' }]
         ).map((g) => ({
           groupId: g.groupId,
           localDisplayName: g.localDisplayName,
+          groupProfile: { displayName: g.profile },
           membership: { memberStatus: g.status },
         })) as unknown as T.GroupInfo[],
       ),
@@ -383,6 +388,68 @@ async function main(): Promise<void> {
   check(
     '  while a current membership offers Leave',
     says(endedPage, 'Leave'),
+  );
+
+  /* ── 7. the surfaces say what they mean (D-193) ──────────────────────────── */
+
+  console.log('\n7. The name, the nav, and the two facts an operator must not have to reconcile');
+
+  // The core's local alias carries a _1 suffix from UNIQUE (user_id, local_display_name) and
+  // names nothing outside the bot's own database. The operator was shown it for a week.
+  const named = await get('/capture');
+  // NOT vacuous: the fixture's record 4 carries localDisplayName 'Cyb3rD3sk_1', so the page
+  // has a _1 available to leak and the negative half of this assertion can fail.
+  check(
+    "the room shows the GROUP'S name, and the core's _1 alias is available to leak but does not",
+    says(named, 'Cyb3rD3sk') && !says(named, 'Cyb3rD3sk_1'),
+    says(named, 'Cyb3rD3sk_1') ? 'the local alias leaked into the page' : 'group name only',
+  );
+
+  // Capture must be reachable. The page existed and the sidebar did not offer it.
+  check(
+    'Capture is in the sidebar, so the page can be reached without knowing the URL',
+    says(named, 'href="/capture"'),
+  );
+
+  // The capability and the assignment are different facts, and reading one without the other
+  // is what made "on for both" look like a defect.
+  check(
+    'the page states that the capability and the assignment are different things',
+    says(named, 'capability') && says(named, 'assignment'),
+  );
+  check(
+    '  and says a room has exactly one capturing bot',
+    says(named, 'one capturing bot'),
+  );
+
+  const pluginsPage = await get('/plugins');
+  check(
+    'the Plugins page says "on" means MAY capture rather than does',
+    says(pluginsPage, 'MAY capture, not that it does'),
+  );
+  check(
+    '  and gives the derived count, so the two facts are reconciled where they are read',
+    says(pluginsPage, 'currently capturing'),
+  );
+
+  // A control with no working backend either works or says why not. Channel joining needs
+  // 7.0.0 and the page must say so BEFORE a link is pasted, not after the core refuses.
+  const bridgePage = await get('/bridge');
+  check(
+    'the bridge page says channel joining is not built yet',
+    says(bridgePage, 'Joining a channel is not built yet'),
+  );
+  check(
+    '  naming the version that changes it',
+    says(bridgePage, '7.0.0'),
+  );
+  check(
+    '  and what to do meanwhile',
+    says(bridgePage, 'Refresh from the core'),
+  );
+  check(
+    'POSITIVE CONTROL: the group-link refusal is still offered, since it does real work',
+    says(bridgePage, 'channel link for this bot to join'),
   );
 
   await app.close();

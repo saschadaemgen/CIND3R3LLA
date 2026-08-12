@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 191 decisions</strong> — newest first. Highest allocated: <strong>D-192</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 192 decisions</strong> — newest first. Highest allocated: <strong>D-193</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-193 | The room's name is the group's, and a control with no backend says so | IMPLEMENTED |
 | D-192 | An ended membership is not a group you are in, and the list said it was | IMPLEMENTED |
 | D-191 | The bridge's Join joins what it says it joins, and the channel path needs 7.0.0 | PARTIAL |
 | D-190 | One capturing RECORD per room, and a room is a member set | IMPLEMENTED |
@@ -220,6 +221,62 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-193 - The room's name is the group's, and a control with no backend says so
+
+**Status: IMPLEMENTED** (CCB-S5-035). Three surfaces that told the operator something other
+than the truth, found by deploying the last briefing.
+
+**THE NAME WAS THE CORE'S, NOT THE GROUP'S.** The boot line and the Rooms card read
+`Cyb3rD3sk_1`. That suffix comes from `groups`' `UNIQUE (user_id, local_display_name)`: the core
+appends it when a second record wants a name already taken. It is a local disambiguator and it
+names nothing outside the bot's own SQLite. His group is called `Cyb3rD3sk`, and every record of
+it says so in `groupProfile.displayName` - measured on production, where records 1, 4 and 5 all
+carry `Cyb3rD3sk` in the shared profile while their local aliases differ.
+
+The D-190 liveness fix picked the right record and then read the wrong field off it, which is
+worth stating: a correction that lands on the right row can still take the wrong column, and the
+check that proved liveness said nothing about which name was shown.
+
+**WHEN TWO LIVE RECORDS DISAGREE ABOUT THE NAME**, the most recently updated wins.
+`groupProfile` is shared state pushed by the group's owner, so a disagreement means one bot has
+received a rename and the other has not. There is no vote to take - one copy is stale and the
+other is not - and the core's own `updatedAt` is the only evidence of which. Ties fall to the
+lowest group id, so the answer is stable rather than arbitrary. Member count is NOT the tiebreak
+and used to be: it measures how long a bot has been in the room, which is unrelated to freshness.
+
+**THE CAPABILITY AND THE ASSIGNMENT ARE DIFFERENT FACTS, and no page said so.** The Plugins page
+read "on for this bot" for both bots while the Capture page read "Cinderella is capturing it",
+and the operator reasonably concluded something was broken. Both are true: the capability means a
+bot MAY capture, the assignment means it DOES in one room, and a room has exactly one capturer.
+
+**Kept as two mechanisms, presented as one story.** Merging them was considered and rejected: a
+per-room-only model loses "this bot never captures anywhere" as a single switch, which is the
+deployment-wide answer an operator wants when adding a bot that should only answer. Instead
+neither is now shown without the other - the Plugins row for capture states that "on" means MAY
+and prints the derived `capturing N of M rooms` for that bot, and the Capture page states the
+relationship in full. If the pair proves confusing again the next step is to move the capability
+switch ONTO the Capture page rather than to merge them, so one page owns the whole question.
+
+**CHANNEL JOINING IS REFUSED BEFORE THE COMMAND, NOT AFTER.** D-191 established that
+`APIConnectPreparedGroup` is unreachable on 6.5.4; the Join box went on accepting channel links
+and letting the core answer `channel links must be connected via APIConnectPreparedGroup`, which
+is true, unactionable, and what the operator saw twice. A control with no working backend either
+works or says why it does not - this product's oldest rule - so the page now states before
+anything is pasted that channel joining needs the 7.0.0 core, that it is not built, what changes
+when it lands, and what to do meanwhile (add the bot from your own client, then Refresh from the
+core). The link is refused at plan time by its relay set rather than sent. The group-link refusal
+stays, because it still does real work.
+
+**AND THE UPGRADE IS NOW A BLOCKER, NOT AN IMPROVEMENT.** 7.0.0 was queued for signed messages
+and badges. The channel bridge has shipped and cannot join a channel, which is the one thing it
+exists for, so the upgrade is the blocker on a delivered feature. The `extract-zip` advisory is
+NOT a third argument - D-192 established 7.0.0 still carries it.
+
+**Capture was missing from the sidebar**: the page existed and could only be reached by typing
+the URL.
+
 ---
 
 ### D-192 - An ended membership is not a group you are in, and the list said it was

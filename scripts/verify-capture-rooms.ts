@@ -56,11 +56,11 @@ function productionShape(): GroupRecord[] {
   // memberships that ENDED and are still listed by `apiListGroups`, 2 was an invitation that
   // never completed, and 4, 5, 6 are current.
   return [
-    { ...CINDERELLA, groupId: 1, displayName: 'Cyb3rD3sk', memberIds: members('A', 1, 844), active: false },
-    { ...CINDERELLA, groupId: 4, displayName: 'Cyb3rD3sk_1', memberIds: members('A', 15, 950), active: true },
-    { ...RICK, groupId: 5, displayName: 'Cyb3rD3sk', memberIds: members('A', 16, 941), active: true },
+    { ...CINDERELLA, groupId: 1, displayName: 'Cyb3rD3sk', localName: 'Cyb3rD3sk', memberIds: members('A', 1, 844), active: false, updatedAt: '2026-07-18T17:58:57Z' },
+    { ...CINDERELLA, groupId: 4, displayName: 'Cyb3rD3sk', localName: 'Cyb3rD3sk_1', memberIds: members('A', 15, 950), active: true, updatedAt: '2026-08-03T19:26:11Z' },
+    { ...RICK, groupId: 5, displayName: 'Cyb3rD3sk', localName: 'Cyb3rD3sk', memberIds: members('A', 16, 941), active: true, updatedAt: '2026-08-09T12:59:57Z' },
     { ...CINDERELLA, groupId: 2, displayName: 'SimpleGo', memberIds: [m('B', 1), m('B', 99)], active: false },
-    { ...CINDERELLA, groupId: 3, displayName: 'SimpleGo_1', memberIds: members('B', 1, 30), active: false },
+    { ...CINDERELLA, groupId: 3, displayName: 'SimpleGo', localName: 'SimpleGo_1', memberIds: members('B', 1, 30), active: false, updatedAt: '2026-08-03T17:39:08Z' },
     { ...CINDERELLA, groupId: 6, displayName: 'CIND3R3LLA', memberIds: members('C', 1, 59), active: true },
   ];
 }
@@ -83,9 +83,31 @@ function sectionRooms(): void {
     a?.records.map((r) => r.groupId).join(',') ?? 'missing',
   );
   check(
-    '  and it is named from the record with the most members, not the stale one',
-    a?.displayName === 'Cyb3rD3sk_1',
+    "  and it takes the GROUP'S name, never the core's local alias with its _1 suffix",
+    a?.displayName === 'Cyb3rD3sk',
     a?.displayName,
+  );
+
+  // Two LIVE records disagreeing about the shared profile: one has received a rename and the
+  // other has not. There is no vote - one is stale - so the freshest record names the room.
+  const renameInFlight = roomsOf([
+    { ...CINDERELLA, groupId: 20, displayName: 'Old Name', localName: 'Room', memberIds: members('R', 1, 5), active: true, updatedAt: '2026-08-01T00:00:00Z' },
+    { ...RICK, groupId: 21, displayName: 'New Name', localName: 'Room_1', memberIds: members('R', 1, 5), active: true, updatedAt: '2026-08-12T00:00:00Z' },
+  ]);
+  check(
+    'when two live records disagree on the name, the most recently updated wins',
+    renameInFlight[0]?.displayName === 'New Name',
+    renameInFlight[0]?.displayName,
+  );
+  // POSITIVE CONTROL: without it, a sort that always took the LAST record would also pass.
+  const reversed = roomsOf([
+    { ...CINDERELLA, groupId: 20, displayName: 'New Name', localName: 'Room', memberIds: members('R', 1, 5), active: true, updatedAt: '2026-08-12T00:00:00Z' },
+    { ...RICK, groupId: 21, displayName: 'Old Name', localName: 'Room_1', memberIds: members('R', 1, 5), active: true, updatedAt: '2026-08-01T00:00:00Z' },
+  ]);
+  check(
+    '  POSITIVE CONTROL: and it is freshness deciding, not position',
+    reversed[0]?.displayName === 'New Name',
+    reversed[0]?.displayName,
   );
 
   const b = roomWith(rooms, 2);
