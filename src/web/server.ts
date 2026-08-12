@@ -243,6 +243,17 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
       // /demo/reset stay behind the same session check as every admin route.
       // Registered only on a demo instance, so on production this matches nothing.
       path === '/demo/enter' ||
+      // ── THE LOCAL PREVIEW'S WAY IN (CCB-S5-036, D-194) ──────────────────
+      //
+      // Same shape as `/demo/enter` above: a path that MINTS an ordinary session rather
+      // than exempting anything behind it. It is gated on an environment variable that
+      // ONLY `scripts/admin-preview.ts` sets, and the route itself is registered only by
+      // that script - so on a deployment this matches a path that does not exist.
+      //
+      // It exists because D-178 requires a control to be OPERATED before it is called
+      // verified, and the only door into the console was a password form. Three briefings
+      // in a row reported the browser half undone for that reason.
+      (path === '/preview-login' && process.env['CINDERELLA_PREVIEW'] === '1') ||
       path === '/healthz' ||
       path === '/favicon.ico' ||
       path.startsWith('/assets/') ||

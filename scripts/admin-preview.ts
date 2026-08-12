@@ -16,6 +16,7 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import argon2 from 'argon2';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
+import { SessionStore } from '../src/web/session.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { recordMediaError, updateMedia, upsertMessage } from '../src/db/messages.js';
 import { recordOptIn } from '../src/db/consent.js';
@@ -59,6 +60,8 @@ import type { AdminConfig, Config } from '../src/config.js';
 
 // `PORT` as well as `PREVIEW_PORT`, so a launcher that assigns a free port can hand one
 // over when 8788 is already taken by an older preview.
+process.env['CINDERELLA_PREVIEW'] = '1';
+
 const PORT = Number(process.env['PREVIEW_PORT'] ?? process.env['PORT']) || 8788;
 const PASSWORD = 'preview-password';
 
@@ -598,6 +601,39 @@ async function main(): Promise<void> {
     plugins,
     registerViews: registerAdminViews,
   });
+  // ── A WAY IN, FOR THE PREVIEW ONLY (CCB-S5-036, D-194) ────────────────────
+  //
+  // D-178 says a control is verified when it has been OPERATED, and D-162 says a harness
+  // cannot see what an operator sees. Both have been quoted at three briefings in a row while
+  // the console could only be opened by typing a password into a form - which is not something
+  // to do, so the browser half of "operate it" kept going undone and kept being reported as
+  // undone.
+  //
+  // This route mints a session and redirects to the dashboard. It exists ONLY in this script:
+  // it is not in `src/`, so it cannot reach a deployment, and the server it runs on binds
+  // 127.0.0.1 with a throwaway password and a throwaway session secret. The product's own
+  // login is untouched and still the only way into a real console.
+  app.get('/preview-login', async (_req, reply) => {
+    const previewSessions = new SessionStore(db, () => ({
+      idleMs: 8 * 3600000,
+      absoluteMs: 24 * 3600000,
+    }));
+    const created = await previewSessions.create('operator', 'password');
+    // `signed` because `readSession` calls `unsignCookie` and rejects anything unsigned, and
+    // `secure: false` because the preview is plain http on 127.0.0.1 - the product's own
+    // `setSessionCookie` forces `secure: true`, which a browser drops over http. Everything
+    // else matches it.
+    reply.setCookie('cinderella_session', created.id, {
+      path: '/',
+      httpOnly: true,
+      secure: false,
+      sameSite: 'strict',
+      signed: true,
+      maxAge: 8 * 3600,
+    });
+    return reply.redirect('/dashboard');
+  });
+
   await app.listen({ host: '127.0.0.1', port: PORT });
   console.log(`Admin preview: http://127.0.0.1:${PORT}  (operator / ${PASSWORD})`);
 }

@@ -5138,3 +5138,298 @@ input[type='radio'] {
   white-space: nowrap;
   border: 0;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CCB-S5-036, D-194: layout rhythm, the bot picker, the sidebar foot, the clock.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── THE SPACING FAULT, AT ITS ROOT ─────────────────────────────────────────
+   `.admin-card` has padding and no margin, and `.admin-content` had no gap or
+   sibling rule, so two cards in a row sat FLUSH - the operator's Channel Bridge
+   example, and every page with more than one section.
+
+   THE CONTAINER OWNS THE RHYTHM, not the block. That direction is the whole
+   point: if each card carried its own margin, a page author who wraps one in a
+   div, or writes a bare <section>, loses the spacing and cannot see why. With
+   the container owning it, OMISSION PRODUCES CORRECT OUTPUT and the fault
+   cannot recur by forgetting. */
+.admin-content > * + * {
+  margin-top: 22px;
+}
+
+/* A stack: the same rhythm anywhere a page groups blocks inside a card or a
+   column. Pages reach for this instead of typing a margin. */
+.admin-stack > * + * {
+  margin-top: 22px;
+}
+.admin-stack-tight > * + * {
+  margin-top: 12px;
+}
+
+/* The page header already carries its own bottom margin, so it must not take a
+   second one from the container. */
+.admin-content > .admin-page-header + * {
+  margin-top: 0;
+}
+
+/* ── THE BOT PICKER (Part 2) ────────────────────────────────────────────────
+   `<details>` plus one submit button per bot. No native <select>, so the list
+   is ours to style; no script, so nothing here can be inert. */
+.admin-header-botslot {
+  display: flex;
+  align-items: center;
+  min-width: 232px;
+  max-width: 264px;
+}
+
+.admin-botpicker {
+  position: relative;
+  width: 100%;
+}
+
+.admin-botpicker-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: var(--field);
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+.admin-botpicker-summary::-webkit-details-marker {
+  display: none;
+}
+.admin-botpicker-summary:hover {
+  border-color: var(--line-strong);
+  background: var(--surface-hover);
+}
+.admin-botpicker-summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.admin-botpicker-label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.admin-botpicker-current {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* OURS, not the browser's. The native select drew its own glyph hard against
+   the right edge and no stylesheet could reach it. */
+.admin-botpicker-chevron {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 2px;
+  border-right: 1.6px solid var(--text-muted);
+  border-bottom: 1.6px solid var(--text-muted);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 160ms ease;
+}
+.admin-botpicker[open] .admin-botpicker-chevron {
+  transform: rotate(225deg) translate(-2px, -2px);
+}
+
+.admin-botpicker-panel {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-solid);
+  box-shadow: var(--shadow-card);
+  padding: 6px;
+}
+
+.admin-botpicker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-botpicker-option {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--text-soft);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.admin-botpicker-option:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.admin-botpicker-option[aria-current='true'] {
+  background: var(--surface-active);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+/* ADDING A BOT IS NOT A FOURTH NAME IN THE LIST. A link, not a button, below a
+   rule, with its own glyph: a different element and a different affordance, so
+   the gesture that chooses a bot cannot land on it by accident. */
+.admin-botpicker-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  padding: 9px 10px 4px;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  text-decoration: none;
+}
+.admin-botpicker-add:hover {
+  color: var(--accent-strong);
+}
+.admin-botpicker-add-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.admin-botpicker-single {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+}
+.admin-botpicker-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-faint);
+  font-size: 11.5px;
+}
+
+/* ── THE SIDEBAR FOOT: SIGN OUT, THEN THE CLOCK (Parts 3 and 4) ─────────────*/
+.admin-sidebar-foot {
+  margin-top: auto;
+  padding-top: 18px;
+}
+
+.admin-sidebar-signout {
+  margin: 0 0 14px;
+}
+
+.admin-sidebar-logout {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-control);
+  background: transparent;
+  padding: 8px 11px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 140ms ease, color 140ms ease;
+}
+.admin-sidebar-logout:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+/* ── THE CLOCK ──────────────────────────────────────────────────────────────
+   Accent colour from the console's own token. The glitch is two offset copies
+   drawn by ::before / ::after from `data-text`, animated by the COMPOSITOR -
+   no per-frame JavaScript, which is what keeps it off a machine's inference
+   budget. */
+.admin-clock {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  user-select: none;
+}
+
+.admin-clock-face {
+  position: relative;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-shadow: 0 0 18px rgba(111, 210, 228, 0.28);
+}
+
+.admin-clock-face::before,
+.admin-clock-face::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  opacity: 0.75;
+}
+.admin-clock-face::before {
+  color: #ff5f7a;
+  animation: admin-clock-glitch-a 3.4s infinite steps(1);
+}
+.admin-clock-face::after {
+  color: #5fe0ff;
+  animation: admin-clock-glitch-b 2.9s infinite steps(1);
+}
+
+.admin-clock-zone {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+@keyframes admin-clock-glitch-a {
+  0%, 92%, 100% { transform: none; opacity: 0; }
+  93% { transform: translate(-2px, 1px); opacity: 0.7; }
+  95% { transform: translate(1px, -1px); opacity: 0.55; }
+  97% { transform: translate(-1px, 0); opacity: 0.6; }
+}
+@keyframes admin-clock-glitch-b {
+  0%, 90%, 100% { transform: none; opacity: 0; }
+  91% { transform: translate(2px, -1px); opacity: 0.65; }
+  94% { transform: translate(-1px, 1px); opacity: 0.5; }
+  96% { transform: translate(1px, 1px); opacity: 0.55; }
+}
+
+/* THE ANIMATION STOPS WHEN THE SYSTEM ASKS. A glitch effect is exactly the kind
+   that makes some people ill. The TIME still updates: reduced motion is a
+   request about movement, not about information. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-clock-face::before,
+  .admin-clock-face::after {
+    content: none;
+    animation: none;
+  }
+  .admin-clock-face {
+    text-shadow: none;
+  }
+  .admin-botpicker-chevron {
+    transition: none;
+  }
+}

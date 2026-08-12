@@ -1891,6 +1891,32 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           throw new Error('Unknown AI Bot Setup action.');
       }
 
+      // ── CREATED FROM THE BOT PICKER: SELECT IT AND GO BACK (CCB-S5-036) ────
+      //
+      // The picker carries `returnTo`, so creating a bot from it lands back on the page the
+      // operator started from WITH THE NEW BOT SELECTED. Otherwise he creates one and then
+      // has to hunt for it in order to configure it, which is the whole reason the entry is
+      // in the picker rather than only on this page.
+      //
+      // Same-site absolute paths only, and the same three refusals `safeReturn` makes in
+      // select-bot.ts: a form field is untrusted whatever rendered it, and an open redirect
+      // on an authenticated console takes a signed-in operator somewhere of another party's
+      // choosing while everything still looks like the admin.
+      const rawReturn = typeof body['returnTo'] === 'string' ? body['returnTo'] : '';
+      const safeBack =
+        rawReturn.startsWith('/') && !rawReturn.startsWith('//') && !rawReturn.includes('\\')
+          ? rawReturn
+          : '';
+      if (action === 'create-profile' && profileId && safeBack !== '' && req.session) {
+        try {
+          await ctx.sessions.selectBot(req.session.sessionId, profileId);
+        } catch (err) {
+          // Not fatal: the bot exists either way, and landing him on the page he came from
+          // with the old selection is better than an error over a convenience.
+          log.warn(`Console: created bot ${String(profileId)} but could not select it: ${errorMessage(err)}`);
+        }
+        return reply.redirect(safeBack);
+      }
       const selected = profileId ? `&profile=${encodeURIComponent(String(profileId))}` : '';
       return reply.redirect(`/ai/onboarding?saved=${encodeURIComponent(action)}${selected}`);
     } catch (error) {

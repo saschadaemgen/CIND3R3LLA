@@ -52,11 +52,6 @@ export function html(strings: TemplateStringsArray, ...values: Interpolatable[])
   return new SafeHtml(output);
 }
 
-function distributedWord(value: string, className: string): SafeHtml {
-  return html`<span class="${className} admin-brand-wordmark" aria-hidden="true">
-    ${Array.from(value).map((character) => html`<span>${character}</span>`)}
-  </span>`;
-}
 
 export interface PageOptions {
   title: string;
@@ -457,46 +452,140 @@ export function reportBarHtml(count: number): string {
  * page. Above the section navigation rather than below it, because it governs everything
  * below it and reading order should say so.
  *
- * ── A FORM, NOT A LINK LIST, AND NOT JAVASCRIPT ──────────────────────────────
+ * ── ONE BUTTON PER BOT, WHICH DISSOLVES THE TENSION (CCB-S5-036, D-194) ──────
  *
- * A POST that writes the session and redirects back. Links carrying `?bot=` would be a
- * one-off view rather than a choice that holds, which is a different thing and is what `?bot=`
- * still means. An auto-submitting `<select>` would make the control depend on JavaScript for
- * its only function, and this console has already shipped one control that looked live and
- * was inert (D-162); a submit button cannot be that.
+ * It was a native `<select>` plus a `Switch` button, and the doc here defended the button on
+ * D-162 grounds: an auto-submitting select makes a control depend on JavaScript for its only
+ * function, and this console has already shipped one control that looked live and was inert.
+ * That reasoning was sound and the conclusion was avoidable.
  *
- * With one bot it renders as a plain statement instead of a control. Offering a choice
- * between one option is noise, but saying whose settings these are never is.
+ * The list is now `<details>` holding a form with ONE SUBMIT BUTTON PER BOT. Every property
+ * wanted falls out of that with no script at all:
+ *
+ *   - ONE ACTION. Pressing a bot's name IS the submit. There is no select-then-confirm,
+ *     because there is nothing to confirm.
+ *   - IT LOOKS LIKE THE CONSOLE. A native select's popup is drawn by the browser and no
+ *     stylesheet can reach it; buttons are ours, and so is the disclosure arrow, which is why
+ *     the old one sat flush against the right edge.
+ *   - NO JAVASCRIPT ANYWHERE. `<details>` and form submission are native, so there is no
+ *     no-script path to describe separately: this IS the no-script path, and it is also the
+ *     scripted one. Nothing here can be inert, which is a stronger answer to D-162 than the
+ *     button was.
+ *
+ * `<details>` is already the console's disclosure primitive (the sidebar groups and the mobile
+ * menu are both built on it), so this introduces no new mechanism.
+ *
+ * ── AND ADDING A BOT IS A LINK, NOT A FOURTH NAME ────────────────────────────
+ *
+ * The picker is where an operator is already thinking about which bots exist, so it is where
+ * "make another one" belongs. The hazard is that the list now acts on a single press: an
+ * entry that is not a bot must not be reachable by the gesture that chooses one.
+ *
+ * So it is an `<a>`, not a `<button>`. Different element, different affordance, its own row
+ * below a rule, and it navigates rather than submitting. Choosing it cannot be a mis-press of
+ * choosing a bot, because it is not the same kind of thing being pressed.
+ *
+ * It carries `returnTo`, so creating a bot lands back on the page the operator started from
+ * with the new bot already selected - otherwise he creates one and then has to hunt for it to
+ * configure it.
+ *
+ * With one bot it renders as a plain statement plus that link. Offering a choice between one
+ * option is noise; saying whose settings these are never is.
  */
 function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): SafeHtml {
-  if (!sw || sw.bots.length === 0) return html``;
+  // ── OMISSION USED TO BE THE MESSAGE; NOW THE MESSAGE IS THE MESSAGE ────────
+  //
+  // A page that edits no single bot passes no switcher, and CCB-S5-011 relied on the
+  // resulting ABSENCE to say "this page is deployment-wide". That worked while the control
+  // sat mid-sidebar. In the header slot the same absence is just a hole in the layout, and an
+  // operator reads a hole as something failing to load rather than as a statement.
+  //
+  // So the scope is stated instead of implied, which is strictly more information than the
+  // blank carried and keeps D-155's scope visibility intact.
+  if (!sw) {
+    return html`<div class="admin-botpicker admin-botpicker-single" data-bot-switcher="none">
+      <span class="admin-sidebar-kicker">Scope</span>
+      <strong class="admin-botpicker-current">Deployment-wide</strong>
+    </div>`;
+  }
 
-  return html`<div class="admin-sidebar-bot" data-bot-switcher>
-    <span class="admin-sidebar-kicker">Editing bot</span>
-    ${sw.bots.length === 1
-      ? html`<strong class="admin-sidebar-bot-one">${sw.selectedName ?? 'none'}</strong>`
-      : html`<form method="post" action="/console/select-bot" class="admin-sidebar-bot-form">
-          <input type="hidden" name="_csrf" value="${csrfToken}" />
-          <input type="hidden" name="returnTo" value="${sw.returnTo}" />
-          <label class="sr-only" for="bot-switcher">Bot these settings apply to</label>
-          <select id="bot-switcher" name="botProfileId" class="admin-sidebar-bot-select">
-            ${sw.bots.map(
-              (b) =>
-                html`<option value="${String(b.id)}" ${b.id === sw.selectedId ? raw('selected') : ''}>
-                  ${b.displayName}
-                </option>`,
-            )}
-          </select>
-          <button type="submit" class="admin-sidebar-bot-go">Switch</button>
-        </form>`}
-    ${sw.fromUrl
-      ? html`<span class="admin-sidebar-bot-note"
-          >From this link, not your usual selection.</span
-        >`
-      : null}
-    <span class="admin-sidebar-bot-note">
-      Settings below apply to this bot. Shared settings say so where they appear.
-    </span>
+  const newBotHref = `/ai/onboarding?new=1&returnTo=${encodeURIComponent(sw.returnTo)}`;
+  const addLink = html`<a class="admin-botpicker-add" href="${newBotHref}">
+    <span class="admin-botpicker-add-glyph" aria-hidden="true">+</span>
+    <span>New bot...</span>
+  </a>`;
+
+  if (sw.bots.length <= 1) {
+    return html`<div class="admin-botpicker admin-botpicker-single" data-bot-switcher>
+      <span class="admin-sidebar-kicker">Editing bot</span>
+      <strong class="admin-botpicker-current">${sw.selectedName ?? 'none yet'}</strong>
+      ${addLink}
+    </div>`;
+  }
+
+  return html`<details class="admin-botpicker" data-bot-switcher>
+    <summary class="admin-botpicker-summary">
+      <span class="admin-botpicker-label">
+        <span class="admin-sidebar-kicker">Editing bot</span>
+        <strong class="admin-botpicker-current">${sw.selectedName ?? 'none'}</strong>
+      </span>
+      <span class="admin-botpicker-chevron" aria-hidden="true"></span>
+    </summary>
+    <div class="admin-botpicker-panel">
+      <form method="post" action="/console/select-bot" class="admin-botpicker-list">
+        <input type="hidden" name="_csrf" value="${csrfToken}" />
+        <input type="hidden" name="returnTo" value="${sw.returnTo}" />
+        ${sw.bots.map(
+          (b) => html`<button
+            type="submit"
+            name="botProfileId"
+            value="${String(b.id)}"
+            class="admin-botpicker-option"
+            ${b.id === sw.selectedId ? raw('aria-current="true"') : ''}
+          >
+            ${b.displayName}
+          </button>`,
+        )}
+      </form>
+      ${addLink}
+    </div>
+  </details>
+  ${sw.fromUrl
+    ? html`<span class="admin-botpicker-note">From this link, not your usual selection.</span>`
+    : null}`;
+}
+
+/**
+ * The sidebar clock (CCB-S5-036, D-194).
+ *
+ * Decoration, wanted, and built properly rather than apologetically. Three things keep it
+ * honest:
+ *
+ * ── IT COSTS ONE TIMER AND ONE TEXT WRITE A SECOND ───────────────────────────
+ *
+ * The markup is server-rendered with the current time already in it, so the clock is correct
+ * on arrival with no script at all; `admin-clock.js` only keeps it moving. There is no
+ * per-frame JavaScript: the tick is one `setInterval` at 1000 ms writing one text node, and
+ * the glitch is CSS, which the compositor runs without waking the main thread. On a machine
+ * already doing inference that distinction is the whole point - a `requestAnimationFrame`
+ * loop would take main-thread time away from everything else on the page, and this does not.
+ *
+ * ── AND IT STOPS WHEN THE SYSTEM ASKS ────────────────────────────────────────
+ *
+ * `prefers-reduced-motion: reduce` removes the glitch animation entirely in CSS. A glitch
+ * effect is exactly the kind of animation that makes some people ill, and the honest version
+ * of "glitchy" is one that is not glitchy for them. The TIME still updates: reduced motion is
+ * a request about movement, not about information.
+ *
+ * The accent colour is `--accent`, taken from the console's own tokens rather than chosen.
+ */
+function consoleClock(): SafeHtml {
+  const now = new Date();
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  return html`<div class="admin-clock" data-admin-clock aria-hidden="true">
+    <span class="admin-clock-face" data-clock-face data-text="${hh}:${mm}">${hh}:${mm}</span>
+    <span class="admin-clock-zone">UTC</span>
   </div>`;
 }
 
@@ -521,17 +610,24 @@ export function page(options: PageOptions): string {
   const chrome = options.chrome !== false;
   const activeRoot = navItems.find((item) => containsActive(item, options.active));
   const csrfToken = options.csrfToken ?? '';
+  const switcher = renderBotSwitcher(options.botSwitcher, csrfToken);
 
   const header = chrome
     ? html`<header class="admin-header" data-admin-header>
         <div class="admin-header-glow" aria-hidden="true"></div>
         <div class="admin-header-inner">
-          <a href="/dashboard" class="admin-brand" data-admin-brand>
-            <span class="admin-brand-copy" aria-label="CIND3R3LLA administration">
-              ${distributedWord('CIND3R3LLA', 'admin-brand-name')}
-              ${distributedWord('administration', 'admin-brand-subtitle')}
-            </span>
-          </a>
+          <!--
+            THE MOST-USED CONTROL, IN THE MOST VALUABLE SPACE (CCB-S5-036, D-194).
+
+            This was the "CIND3R3LLA administration" wordmark. A wordmark tells an operator
+            what he already knows on a private console he signed in to, while the bot picker -
+            the control he reaches for most - sat below the fold of the sidebar. The product
+            name is still in the footer and in every page title.
+
+            It occupies the sidebar's column width, so the picker and the sidebar under it
+            read as one column rather than two unrelated things.
+          -->
+          <div class="admin-header-botslot">${switcher}</div>
 
           <nav data-main-navigation class="admin-main-navigation">
             ${navItems.map((item) => topNavigationLink(item, options.active))}
@@ -569,28 +665,45 @@ export function page(options: PageOptions): string {
       </header>`
     : html``;
 
-  const switcher = renderBotSwitcher(options.botSwitcher, csrfToken);
 
-  const contextualSidebar =
-    chrome && activeRoot?.children && activeRoot.children.length > 0
-      ? html`<aside data-context-sidebar data-section="${activeRoot.key}" class="admin-sidebar">
-          <div class="admin-sidebar-brandline">
-            <span class="admin-sidebar-brand-icon">${activeRoot.icon}</span>
-            <div>
-              <span class="admin-sidebar-kicker">Current section</span>
-              <strong>${activeRoot.label}</strong>
-            </div>
-          </div>
-          ${switcher}
-          <nav class="admin-sidebar-nav">
-            ${activeRoot.children.map((item) => sidebarNavigationItem(item, options.active, 0))}
-          </nav>
-          <div class="admin-sidebar-meta">
-            <span class="admin-sidebar-meta-dot" aria-hidden="true"></span>
-            <span>Private control surface</span>
-          </div>
-        </aside>`
-      : html``;
+  // ── THE SIDEBAR IS THE CONSOLE'S SPINE, INCLUDING ON THE FIRST PAGE ────────
+  //
+  // It used to require `activeRoot.children.length > 0`, and the Dashboard nav item has no
+  // children - so the console lost its spine on the first page anyone sees. It renders
+  // whenever there is chrome now; a section with no children simply contributes no links,
+  // which is a thinner sidebar rather than no sidebar.
+  const contextualSidebar = chrome
+    ? html`<aside
+        data-context-sidebar
+        data-section="${activeRoot?.key ?? 'dashboard'}"
+        class="admin-sidebar"
+      >
+        ${activeRoot
+          ? html`<div class="admin-sidebar-brandline">
+              <span class="admin-sidebar-brand-icon">${activeRoot.icon}</span>
+              <div>
+                <span class="admin-sidebar-kicker">Current section</span>
+                <strong>${activeRoot.label}</strong>
+              </div>
+            </div>`
+          : null}
+        ${activeRoot?.children && activeRoot.children.length > 0
+          ? html`<nav class="admin-sidebar-nav">
+              ${activeRoot.children.map((item) => sidebarNavigationItem(item, options.active, 0))}
+            </nav>`
+          : null}
+        <div class="admin-sidebar-foot">
+          <form method="post" action="/logout" class="admin-sidebar-signout">
+            <input type="hidden" name="_csrf" value="${csrfToken}" />
+            <button type="submit" class="admin-sidebar-logout">
+              <span class="admin-resource-icon">${LOGOUT_ICON}</span>
+              <span>Sign out</span>
+            </button>
+          </form>
+          ${consoleClock()}
+        </div>
+      </aside>`
+    : html``;
 
   const document = html`<!doctype html>
     <html lang="en" class="h-full">
@@ -607,7 +720,8 @@ export function page(options: PageOptions): string {
             ? html`<script src="/assets/webauthn-browser.js" defer></script>
                 <script src="/assets/auth.js" defer></script>
                 <script src="/assets/admin-effects.js" defer></script>
-                <script src="/assets/admin-navigation.js" defer></script>`
+                <script src="/assets/admin-navigation.js" defer></script>
+                <script src="/assets/admin-clock.js" defer></script>`
             : html``
         }
         ${options.head ?? html``}
