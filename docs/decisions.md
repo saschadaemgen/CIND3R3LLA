@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 194 decisions</strong> — newest first. Highest allocated: <strong>D-195</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 195 decisions</strong> — newest first. Highest allocated: <strong>D-196</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
 | D-193 | The room's name is the group's, and a control with no backend says so | IMPLEMENTED |
@@ -225,6 +226,64 @@ This has gone wrong twice.
 ---
 ---
 
+### D-196 - 7.0.0 blocks nothing, and the channel join was never waiting on it
+
+**Status: IMPLEMENTED** (CCB-S5-038, as a correction; the upgrade is NOT done and is not
+scheduled). D-191 recorded that joining a channel needs the SimpleX 7.0.0 core, and D-193 told
+the operator to wait for it. **Both were wrong**, and the console said so to his face until
+this entry.
+
+**WHAT WAS MEASURED**, by fetching both packages and reading them rather than trusting the
+framing:
+
+- `api.d.ts` is **byte-identical** between 6.5.4 and 7.0.0;
+- the SDK exposes **exactly 52 methods in each** - none added, none removed;
+- `APIConnectPreparedGroup` is absent from `@simplex-chat/types` **0.10.3 as well as 0.8.0**;
+- `APIConnect` is unchanged in 0.10.3 (the `connTarget_` reshaping is on the separate
+  `Connect` command, which names no user);
+- the genuinely new channel commands - `APINewPublicGroup` (`/_public group`),
+  `APIAddGroupRelays`, `APIGetGroupRelays`, `APIAllowRelayGroup` - **create and manage**
+  channels. None of them joins one by link.
+
+So the upgrade does not unblock the bridge, which was the entire stated reason for doing it.
+
+**AND THE CAPABILITY WAS ALREADY THERE.** Reading the installed core rather than the wrapper:
+
+    $ strings libsimplex.so | grep -i prepared
+    'APIConnectPreparedGroup
+    'APIConnectPreparedContact
+    'CRNewPreparedChat
+
+    $ strings libsimplex.so | grep '^/_connect'
+    /_connect group #
+    /_connect contact @
+    /_connect plan
+
+The command exists in the core this deployment has been running all along, its wire form is
+`/_connect group #<groupId>`, and `sendChatCmd` takes a raw string. Nothing was ever blocked
+by a version; the wrapper was simply never written. That also explains why `preparedGroup` has
+been a field on `GroupInfo` since 0.8.0 - the type was there because the capability was.
+
+**WHY THIS ENTRY EXISTS AT ALL, rather than a quiet fix.** The wrong reason had already
+propagated into three places: D-191, D-193, and member-facing console copy telling the
+operator to wait for a version that would not have helped. That is the failure this project
+keeps recording - D-171 put it best, *reasoning is what propagates* - and the correction is
+worth more than the code change, because the code change is small and the belief was about to
+justify a native core swap under a live database holding two bot identities.
+
+**7.0.0 GOES BACK TO BEING OPTIONAL**, judged on what it actually adds: signed messages
+(`MsgVerified`), badges, and `SimplexDomain` name resolution. **No feature is blocked on it.**
+It is not an answer to the `extract-zip` advisory either - D-192 established that 7.0.0 still
+declares the same vulnerable range and that no patched version exists. Anyone reviving this
+should have a new reason, because both of the old ones are disproven and recorded here.
+
+**The channel join is briefed instead** at
+[`../seasons/briefings/CCB-S5-038-channel-join.md`](../seasons/briefings/CCB-S5-038-channel-join.md),
+on the core already installed, with the one thing that must be established before anything is
+issued: where the prepared group's id comes from. A wrong id there acts on a real group.
+
+---
+
 ### D-195 - A message with nothing to look up does not look anything up
 
 **Status: IMPLEMENTED** (CCB-S5-037). A member sent a heart emoji. She announced a lookup,
@@ -380,6 +439,10 @@ and prints the derived `capturing N of M rooms` for that bot, and the Capture pa
 relationship in full. If the pair proves confusing again the next step is to move the capability
 switch ONTO the Capture page rather than to merge them, so one page owns the whole question.
 
+**CORRECTED BY D-196:** the version this names is not the blocker. The refusal itself stays
+correct - a control with no working backend must say so - but the REASON it gave was wrong,
+and the console copy has been changed to stop citing a version.
+
 **CHANNEL JOINING IS REFUSED BEFORE THE COMMAND, NOT AFTER.** D-191 established that
 `APIConnectPreparedGroup` is unreachable on 6.5.4; the Join box went on accepting channel links
 and letting the core answer `channel links must be connected via APIConnectPreparedGroup`, which
@@ -475,6 +538,11 @@ Fixed by reading the plan rather than the label. A channel IS a group with relay
 and the refusal NAMES what was pasted (`groupSLinkData_.groupProfile.displayName`), because "that
 is not a channel link" against a link the operator cannot read is not actionable. Joining a group
 from here is still possible and now requires saying so.
+
+**CORRECTED BY D-196:** the conclusion below - that this needs 7.0.0 - is FALSE. The
+command exists in the 6.5.4 core (`/_connect group #<groupId>`); only the SDK wrapper is
+missing. The measurement is in D-196; the paragraph is left standing so the mistake is
+legible rather than tidied away.
 
 **AND THE BRIDGE HAS NEVER BEEN ABLE TO JOIN A CHANNEL.** The core is explicit:
 `{"type":"commandError","message":"channel links must be connected via APIConnectPreparedGroup"}`.
