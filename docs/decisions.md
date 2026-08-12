@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 195 decisions</strong> — newest first. Highest allocated: <strong>D-196</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 196 decisions</strong> — newest first. Highest allocated: <strong>D-197</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-197 | The channel join, on the core we already had, with the id read and never inferred | IMPLEMENTED in build, UNVERIFIED IN ANGER |
 | D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
@@ -224,6 +225,54 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-197 - The channel join, on the core we already had, with the id read and never inferred
+
+**Status: IMPLEMENTED in build, UNVERIFIED IN ANGER** (CCB-S5-038). The channel bridge shipped
+and could not join a channel. It can now, without upgrading anything.
+
+**WHAT WAS ACTUALLY MISSING.** `apiConnect` is the wrong command and the core says so by name:
+"channel links must be connected via APIConnectPreparedGroup". D-196 established that command
+is absent from the SDK at 6.5.4 AND at 7.0.0. It was never absent from the CORE. Its parser,
+read out of the installed binary, carries four adjacent commands:
+
+    /_prepare contact      -> APIPrepareContact
+    /_prepare group        -> APIPrepareGroup
+    /_connect group #      -> APIConnectPreparedGroup
+    /_join #               -> APIJoinGroup
+
+So the join is two steps - prepare, then connect the prepared group - and `sendChatCmd` takes
+a raw string, so both were reachable all along.
+
+**THE LOAD-BEARING RULE, and it is a structural property rather than a caution.**
+`/_connect group #<n>` acts on whatever group `n` names, so a wrong `n` joins a different real
+room and nothing in the console undoes it. The id therefore comes from the PREPARE response
+and from nowhere else: not from the connect plan, whose `ok` variant carries no group at all,
+and not from `apiListGroups`, whose ordering is not a promise. `preparedGroupIdOf` returns
+NULL for any answer it does not recognise and the path refuses - a refusal costs the operator
+one message, a guess costs him a group. `verify:channel-join` asserts both halves, with
+positive controls beside the negatives because a reader that always refused would satisfy
+every "does not invent an id" assertion on its own.
+
+**THE FIRST RAW COMMAND IN THIS REPOSITORY, and the seam that comes with it.** Raw commands
+live in `src/bot/`, beside the typed ones, inside a scheduled critical section, and nowhere
+else - not in a view, not in a plugin. `verify:chat-errors`' AST check already requires every
+SDK call in the command layer to be scheduled, and these are no exception: `/_connect group #`
+takes no user id, exactly like `/_join #`, so it executes as whichever profile is active
+(D-171).
+
+**A defect caught while writing it, worth recording because it is the third of its kind.** The
+first draft wrapped both steps in `runScheduled` at the call site, and both methods schedule
+INTERNALLY. That is CCB-S5-015's re-entry deadlock exactly: the inner call waits for the
+section waiting on it. Two sequential scheduled calls, never nested, which is the shape the
+plan and join above already use, and `verify:channel-join` now pins it.
+
+**WHAT COULD NOT BE VERIFIED.** The SimpleX core is one of the four things only the host can
+show (D-178). The wire strings, the id rule, the scheduling and the absence of nesting are all
+proven in build; that the core accepts these two commands in this order is proven when the
+operator joins his channel and not before.
+
 ---
 
 ### D-196 - 7.0.0 blocks nothing, and the channel join was never waiting on it

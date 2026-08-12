@@ -443,25 +443,6 @@ export interface ChannelJoinResult {
  * only boot calls it otherwise, and a group the ownership index has never seen
  * is unroutable until restart - the D-171 misrouting shape one step later.
  */
-/**
- * Channel joining is not built yet (D-191, D-193).
- *
- * Its own class rather than a generic failure: this is not a fault in the deployment, it is a
- * capability that is not built, and the page says so plainly instead of showing the core's
- * own unactionable refusal.
- *
- * CORRECTED under CCB-S5-038: this said the capability "needs the 7.0.0 core". That was
- * established false by reading both packages - 7.0.0 adds no SDK method at all (52 in each,
- * `api.d.ts` byte-identical) and does not wrap the command either. The command exists in the
- * core ALREADY INSTALLED; only the wrapper is missing.
- */
-export class ChannelJoinUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ChannelJoinUnavailableError';
-  }
-}
-
 export class NotAChannelLinkError extends Error {
   /** What the core says the link is for, when it says. */
   readonly groupName: string | null;
@@ -534,25 +515,33 @@ export async function connectBotToChannel(
       const relays = plan.groupLinkPlan.groupSLinkInfo_?.groupRelays ?? [];
       const named = plan.groupLinkPlan.groupSLinkData_?.groupProfile?.displayName;
 
-      // ── A CHANNEL LINK CANNOT BE JOINED ON THIS CORE (D-191, D-193) ───────
+      // ── A CHANNEL JOINS THROUGH THE PREPARED-GROUP PATH (CCB-S5-038, D-197) ──
       //
-      // Refused HERE, before the command, rather than letting the core answer
-      // `channel links must be connected via APIConnectPreparedGroup` - which is true, is
-      // unactionable, and is what the operator saw twice. `apiConnect` is the wrong command
-      // for a channel link and the right one, `APIConnectPreparedGroup`, is not in
-      // @simplex-chat/types 0.8.0 or simplex-chat 6.5.4 at all.
+      // `apiConnect` is the wrong command for a channel link and the core says so by name:
+      // "channel links must be connected via APIConnectPreparedGroup". That command is not in
+      // the SDK at 6.5.4 or at 7.0.0, but it IS in the core, as `/_prepare group` followed by
+      // `/_connect group #<id>`.
       //
-      // A control with no working backend either works or says why it does not. This says
-      // why, names the version that changes it, and stops sending a command that cannot
-      // succeed.
+      // TWO STEPS, AND THE ID CROSSES BETWEEN THEM ONLY ONE WAY. `prepareGroupFromLink`
+      // returns the id the core just created, and that value is passed straight to
+      // `connectPreparedGroup`. It is never taken from the PLAN above, whose `ok` variant
+      // carries no group at all, and never from `apiListGroups`, whose ordering promises
+      // nothing. A wrong id here joins a different real group and the console cannot undo it.
       if (relays.length > 0) {
-        throw new ChannelJoinUnavailableError(
-          `Joining a channel is not built yet${named ? ` (this link is for "${named}")` : ''}. ` +
-            `The core CAN do it: it exposes the prepared-group command and this deployment's ` +
-            `core already carries it. What is missing is on our side, and it is small. ` +
-            `Nothing was joined and nothing was changed. A channel the bot is ALREADY in ` +
-            `bridges normally; this is only about joining a new one.`,
-        );
+        // NOT wrapped in `runScheduled` (CCB-S5-015, D-167). Both of these schedule
+        // INTERNALLY, and scheduling from inside a critical section waits for the section
+        // that is waiting for it: the re-entry guard would throw, or without it the command
+        // would hang for the full 60 s timeout. Two sequential scheduled calls, never nested,
+        // which is the same shape the plan and join above already use.
+        const preparedGroupId = await host.runtime.prepareGroupFromLink(simplexUserId, trimmed);
+        await host.runtime.connectPreparedGroup(simplexUserId, preparedGroupId);
+        await host.runtime.refreshOwnership();
+        log.info('runtime: joined a channel through the prepared-group path', {
+          botProfileId,
+          preparedGroupId,
+          channel: named ?? 'unnamed',
+        });
+        return { plan: planText, connected: true };
       }
 
       if (relays.length === 0 && !confirmGroupJoin) {

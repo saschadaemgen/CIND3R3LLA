@@ -432,26 +432,25 @@ async function main(): Promise<void> {
     says(pluginsPage, 'currently capturing'),
   );
 
-  // A control with no working backend either works or says why not. Channel joining needs
-  // 7.0.0 and the page must say so BEFORE a link is pasted, not after the core refuses.
+  // ── THE CONTROL WORKS NOW (re-pointed under CCB-S5-038, D-197) ────────────
+  //
+  // These asserted that the page said channel joining was NOT BUILT and named what was
+  // missing. It is built: `/_prepare group` then `/_connect group #<id>`, both in the core
+  // this deployment already runs. A guard that pins "this does not work" outlives the day it
+  // stops being true, which is the third time this season an assertion has had to be turned
+  // around rather than loosened.
   const bridgePage = await get('/bridge');
   check(
-    'the bridge page says channel joining is not built yet',
-    says(bridgePage, 'Joining a channel is not built yet'),
-  );
-  // RE-POINTED under CCB-S5-038 (D-196). This asserted the page NAMED THE VERSION - it
-  // required the string "7.0.0" - which pinned a claim that turned out to be false: the
-  // command exists in the core already installed and no upgrade unblocks it. So the guard
-  // is inverted. The page must say what is missing without blaming a version, because a
-  // wrong reason on an operator-facing page is what sent him to wait for a release that
-  // would not have helped.
-  check(
-    '  saying what is missing WITHOUT blaming a version',
-    says(bridgePage, 'the wrapper on our side') && !says(bridgePage, '7.0.0'),
+    'the bridge no longer tells the operator that joining a channel is unbuilt',
+    !says(bridgePage, 'not built yet'),
   );
   check(
-    '  and what to do meanwhile',
-    says(bridgePage, 'Refresh from the core'),
+    '  and blames no version for it',
+    !says(bridgePage, '7.0.0'),
+  );
+  check(
+    '  while still offering the Join control',
+    says(bridgePage, 'channel link for this bot to join'),
   );
   check(
     'POSITIVE CONTROL: the group-link refusal is still offered, since it does real work',

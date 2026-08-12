@@ -544,6 +544,74 @@ export class MultiProfileRuntime {
   }
 
   /**
+   * Prepare a group or channel from a link, and return the id the core created for it
+   * (CCB-S5-038, D-197).
+   *
+   * ── THE FIRST RAW COMMAND IN THIS REPOSITORY, AND WHY ────────────────────────
+   *
+   * The SDK does not wrap this. It wraps 52 methods and `APIPrepareGroup` is not among
+   * them - at 6.5.4 or at 7.0.0, which is byte-identical in its `api.d.ts` and has the same
+   * 52. The CORE has it, and this deployment is already running that core:
+   *
+   *     $ strings libsimplex.so | grep -E '^/_prepare|^/_connect group'
+   *     /_prepare group
+   *     /_connect group #
+   *
+   * So the command is issued as a string through `sendChatCmd`, which is a supported public
+   * method. The seam is that raw commands live HERE, beside the typed ones, inside the
+   * adapter and inside a scheduled critical section - never in a view, never in a plugin.
+   *
+   * ── AND THE ID IS READ, NEVER INFERRED ───────────────────────────────────────
+   *
+   * This is the load-bearing rule of the whole path. `/_connect group #<n>` acts on whatever
+   * group `n` names, so an `n` from the wrong place joins the wrong room - and that is not
+   * recoverable from the console. The id therefore comes from THIS command's own response
+   * and from nowhere else: not from the connect PLAN, whose `ok` variant carries no group at
+   * all, and not from `apiListGroups`, whose ordering is not a promise.
+   *
+   * If the response carries no group id, this THROWS rather than returning a guess. A
+   * refusal costs the operator one message; a guess costs him a group.
+   */
+  async prepareGroupFromLink(simplexUserId: number, link: string): Promise<number> {
+    const chat = this.requireChat();
+    const response = await this.scheduler.run(
+      simplexUserId,
+      `prepareGroup:${String(simplexUserId)}`,
+      () => chat.sendChatCmd(`/_prepare group ${String(simplexUserId)} ${link}`),
+    );
+    const groupId = preparedGroupIdOf(response);
+    if (groupId === null) {
+      throw new Error(
+        `Preparing that link answered ${
+          (response as { type?: unknown } | null)?.type === undefined
+            ? 'nothing recognisable'
+            : String((response as { type?: unknown }).type)
+        } and carried no group id, so there is nothing safe to connect to. Nothing was joined.`,
+      );
+    }
+    log.info('runtime: prepared a group from a link', { simplexUserId, groupId });
+    return groupId;
+  }
+
+  /**
+   * Complete a prepared group or channel (CCB-S5-038, D-197).
+   *
+   * `APIConnectPreparedGroup`, which is what the core asks for by name when `apiConnect` is
+   * given a channel link: "channel links must be connected via APIConnectPreparedGroup".
+   * It takes a group id and NO user id, exactly like `/_join #`, so it executes as whichever
+   * profile is active and is scheduled for that reason (D-171).
+   *
+   * `groupId` must be one {@link prepareGroupFromLink} just returned. See its note.
+   */
+  async connectPreparedGroup(simplexUserId: number, groupId: number): Promise<void> {
+    const chat = this.requireChat();
+    await this.scheduler.run(simplexUserId, `connectPrepared:${String(groupId)}`, async () => {
+      await chat.sendChatCmd(`/_connect group #${String(groupId)}`);
+    });
+    log.info('runtime: connected a prepared group', { simplexUserId, groupId });
+  }
+
+  /**
    * Leave a group this bot is currently in (CCB-S5-034, D-192).
    *
    * `apiLeaveGroup` ANNOUNCES the departure: the other members see it, and the membership
@@ -899,6 +967,36 @@ export const REJECTED_REACTIONS: readonly string[] = Object.freeze([
  * groups can be called the same thing, so it would produce both false matches and false
  * misses on a question whose wrong answer duplicates the archive.
  */
+
+/**
+ * The group id inside a `newPreparedChat` answer, or null (CCB-S5-038, D-197).
+ *
+ * Structural rather than typed, because the SDK has no type for this response: it is
+ * `CRNewPreparedChat` in the core and nothing in `@simplex-chat/types` names it. It looks for
+ * a group id in the shapes the core uses and returns null for anything else, so an unexpected
+ * answer becomes a refusal upstream rather than a number.
+ */
+export function preparedGroupIdOf(response: unknown): number | null {
+  const seen = new Set<unknown>();
+  const walk = (node: unknown, depth: number): number | null => {
+    if (depth > 6 || node === null || typeof node !== 'object' || seen.has(node)) return null;
+    seen.add(node);
+    const record = node as Record<string, unknown>;
+    // `groupInfo.groupId` is the shape every group-carrying response uses.
+    const info = record['groupInfo'];
+    if (info !== null && typeof info === 'object') {
+      const id = (info as Record<string, unknown>)['groupId'];
+      if (typeof id === 'number') return id;
+    }
+    for (const value of Object.values(record)) {
+      const found = walk(value, depth + 1);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  return walk(response, 0);
+}
+
 export function sharedGroupKey(group: T.GroupInfo): string | null {
   const publicId = group.groupKeys?.publicGroupId;
   if (typeof publicId === 'string' && publicId.length > 0) return `pub:${publicId}`;

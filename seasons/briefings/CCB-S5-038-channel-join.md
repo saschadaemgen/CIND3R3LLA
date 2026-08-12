@@ -44,21 +44,35 @@ takes a raw string, so nothing is blocking this but the work.
 
 A wrapper for the prepared-group connect, and the bridge's Join control behind it.
 
-### 1. Establish the flow before writing it
+### 1. The flow, and the load-bearing rule — SETTLED
 
-The two-step shape is visible in the core but not proven, and **it must be proven before it is
-issued against the operator's live identity**. What is known:
+The core's parser carries four adjacent commands:
 
-- `apiConnectPlan` on a channel link returns a `groupLink` plan; the core also has
-  `CRNewPreparedChat` and a `conn_link_prepared_connection` column on `groups`, so planning a
-  channel link appears to CREATE a prepared group record.
-- `/_connect group #<groupId>` then completes it.
+```
+/_prepare contact      -> APIPrepareContact
+/_prepare group        -> APIPrepareGroup
+/_connect group #      -> APIConnectPreparedGroup
+/_join #               -> APIJoinGroup
+```
 
-**The open question is where the `groupId` comes from.** `GroupLinkPlan.Ok` carries
-`groupSLinkInfo_` and `groupSLinkData_` and no `groupInfo`. Establish, from the core's own
-strings and from a read of `groups` after a plan on the host, whether planning writes a row
-with `conn_link_prepared_connection = 1` and what its id is. Do not guess this: issuing
-`/_connect group #<n>` with the wrong `n` acts on a different group.
+So the join is **two steps**:
+
+1. `/_prepare group <userId> <link>` — creates the prepared group and answers
+   `newPreparedChat` (the `CRNewPreparedChat` constructor, the `"newPreparedChat"` JSON tag,
+   and the `conn_link_prepared_connection` column that exists for exactly this).
+2. `/_connect group #<groupId>` — completes it.
+
+**THE LOAD-BEARING RULE.** `/_connect group #<n>` acts on whatever group `n` names, and a
+wrong `n` joins a different real room which the console cannot undo. So:
+
+> **The id comes from step 1's own response and from nowhere else — never from the connect
+> plan, whose `ok` variant carries no group at all, and never from `apiListGroups`, whose
+> ordering promises nothing.**
+
+That makes the failure mode structurally impossible rather than merely avoided: the only
+value ever passed to step 2 is the one the core handed back one command earlier. If the
+prepare answer carries no id, the path REFUSES rather than continuing with a guess — a
+refusal costs one message, a guess costs a group.
 
 ### 2. The wrapper
 
