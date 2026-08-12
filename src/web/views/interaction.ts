@@ -377,6 +377,14 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'A lookup ran and found something, and the reply was then lost',
     vars: '',
   },
+  bridgeAttribution: {
+    label: 'Channel bridge: the attribution under a forwarded post',
+    vars: '{channel} {when}',
+  },
+  bridgeMore: {
+    label: 'Channel bridge: the digest line naming posts it did not show',
+    vars: '{channel} {n}',
+  },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
     vars: '{action} {duration}',

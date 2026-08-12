@@ -33,6 +33,15 @@ import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { PluginService } from '../src/plugins/service.js';
 import { WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
 import { KNOWLEDGE_BASE_ID } from '../src/plugins/knowledge-base/plugin.js';
+import { CHANNEL_BRIDGE_ID } from '../src/plugins/channel-bridge/plugin.js';
+import {
+  insertBridgeMapping,
+  insertBridgePost,
+  recordBridgeForward,
+  resolveBridgePost,
+  upsertBridgeChannel,
+} from '../src/plugins/channel-bridge/store.js';
+import { buildOrigin } from '../src/plugins/channel-bridge/origin.js';
 import {
   KnowledgeService,
   checksumOf,
@@ -358,6 +367,74 @@ async function main(): Promise<void> {
   // REAL chunker and a deterministic stand-in embedder, so the preview needs no Ollama and
   // the chunk counts on the page are the counts the real chunker produces.
   await plugins.setEnabled(KNOWLEDGE_BASE_ID, true, 'admin-preview');
+
+  // ── THE CHANNEL BRIDGE, POPULATED (CCB-S5-032, D-178) ─────────────────────
+  //
+  // The bridge's tables only fill from a live core's channel events, which the
+  // preview does not have, so every card would render empty and the page could
+  // only ever be read in its least interesting state. Seeded instead: a known
+  // channel, one enabled mapping, a pending post, a forwarded post with its
+  // STRUCTURED origin (so the forward log's channel filter can be OPERATED),
+  // and one suppression. Placeholder names throughout; this repository is
+  // public.
+  await plugins.setEnabled(CHANNEL_BRIDGE_ID, true, 'admin-preview');
+  await upsertBridgeChannel(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 901,
+    channelName: 'TownCrier',
+    link: 'https://simplex.chat/c#preview-placeholder-link',
+  });
+  const previewMappingId = await insertBridgeMapping(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 901,
+    destGroupId: 1,
+    intervalMinutes: 60,
+    messageCount: 30,
+    maxAgeHours: 24,
+    maxRepeats: 3,
+  });
+  const bridgePending = await insertBridgePost(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 901,
+    sharedMsgId: 'preview-shared-1',
+    itemId: 9001,
+    text: 'Market day moves to Saturday this week. Stalls open at nine.',
+    postedAt: new Date(Date.now() - 40 * 60_000),
+  });
+  void bridgePending;
+  const bridgeForwarded = await insertBridgePost(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 901,
+    sharedMsgId: 'preview-shared-2',
+    itemId: 9002,
+    text: 'The bakery reopens tomorrow after the oven repair.',
+    postedAt: new Date(Date.now() - 3 * 3_600_000),
+  });
+  await recordBridgeForward(db, {
+    mappingId: previewMappingId,
+    postId: bridgeForwarded.id,
+    kind: 'featured',
+    sentItemId: 501,
+    sentSharedMsgId: 'preview-sent-1',
+    origin: buildOrigin({
+      link: 'https://simplex.chat/c#preview-placeholder-link',
+      botProfileId: previewBotId,
+      sourceGroupId: 901,
+      channelName: 'TownCrier',
+      postedAt: new Date(Date.now() - 3 * 3_600_000),
+      sharedMsgId: 'preview-shared-2',
+    }),
+    messageId: null,
+  });
+  const bridgeSuppressed = await insertBridgePost(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 901,
+    sharedMsgId: 'preview-shared-3',
+    itemId: 9003,
+    text: 'Last month: the well on the north road is closed for cleaning.',
+    postedAt: new Date(Date.now() - 30 * 24 * 3_600_000),
+  });
+  await resolveBridgePost(db, bridgeSuppressed.id, 'aged-out', true, previewMappingId);
   const previewEmbed = (text: string): number[] => {
     const v = new Array<number>(EMBEDDING_DIMENSIONS).fill(0);
     for (const token of text.toLowerCase().match(/[a-z0-9]+/g) ?? []) {

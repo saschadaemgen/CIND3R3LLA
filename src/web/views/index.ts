@@ -15,6 +15,7 @@ import { registerBookOfElii } from './book-of-elii.js';
 import { registerRecital } from './recital.js';
 import { registerAiProfiles } from './ai-profiles.js';
 import { registerPlugins } from './plugins.js';
+import { registerBridge } from './bridge.js';
 import { registerKnowledge } from './knowledge.js';
 import { registerEmbeds } from './embeds.js';
 import { registerSecurity } from './security.js';
@@ -40,6 +41,7 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerRecital(app, ctx);
   registerAiProfiles(app, ctx);
   registerPlugins(app, ctx);
+  registerBridge(app, ctx);
   registerKnowledge(app, ctx);
   registerSecurity(app, ctx);
   registerEmbeds(app, ctx);
