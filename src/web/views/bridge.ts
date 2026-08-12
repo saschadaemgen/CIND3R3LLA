@@ -49,6 +49,7 @@ import { applyPluginOverrides } from '../../plugins/scope.js';
 import { isPluginEnabled } from '../../plugins/registry.js';
 import { listPluginOverridesForBot } from '../../db/plugin-overrides.js';
 import {
+  ChannelJoinUnavailableError,
   connectBotToChannel,
   discoverBotChannels,
   NotAChannelLinkError,
@@ -101,6 +102,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       error?: string;
       groupLink?: string;
       pending?: string;
+      notyet?: string;
       channel?: string;
       dest?: string;
       since?: string;
@@ -203,6 +205,11 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
         ${req.query.error
           ? html`<div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">${req.query.error}</div>`
           : ''}
+        ${req.query.notyet
+          ? html`<div class="mb-4 rounded-lg border border-slate-400 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+              ${req.query.notyet}
+            </div>`
+          : ''}
         ${req.query.groupLink
           ? html`<div class="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
               <p class="mb-2">${req.query.groupLink}</p>
@@ -260,6 +267,15 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                     )}
                   </tbody>
                 </table>`}
+            <div class="mb-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+              <strong>Joining a channel is not built yet.</strong> It needs the SimpleX 7.0.0
+              core and this deployment runs 6.5.4: the core requires a prepared-group command
+              that the installed SDK does not expose, so pasting a channel link here is refused
+              with that explanation rather than attempted. A channel this bot is ALREADY in
+              bridges normally, and everything else on this page works. What changes with 7.0.0
+              is that this box will join a channel link. Until then, add the bot to the channel
+              from your own SimpleX client and press Refresh from the core.
+            </div>
             <div class="flex flex-wrap gap-3">
               <form method="post" action="/bridge/connect" class="flex grow gap-2">
                 <input type="hidden" name="_csrf" value="${csrf}" />
@@ -598,6 +614,10 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       // A group link is not a fault, it is a question. Reported as a refusal the operator
       // can act on rather than as an error, and NOT escalated to the dashboard: nothing is
       // wrong with the deployment, somebody pasted the wrong thing.
+      if (err instanceof ChannelJoinUnavailableError) {
+        // NOT a fault and NOT escalated: the deployment is fine, the capability is not built.
+        return reply.redirect(back(req, `notyet=${encodeURIComponent(err.message)}`));
+      }
       if (err instanceof NotAChannelLinkError) {
         return reply.redirect(
           back(
