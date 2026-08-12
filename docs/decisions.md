@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 187 decisions</strong> — newest first. Highest allocated: <strong>D-188</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 188 decisions</strong> — newest first. Highest allocated: <strong>D-189</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-189 | The check had an expiry date compiled into it, and a crash reported as a count | IMPLEMENTED |
 | D-188 | The describer was built for the operator and wired only into the runtime, so the newest console reinvented the blank | IMPLEMENTED |
 | D-187 | A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror | IMPLEMENTED |
 | D-186 | A member's name is matched as a word, and a reply thrown away is counted rather than logged | IMPLEMENTED |
@@ -216,6 +217,70 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-189 - The check had an expiry date compiled into it, and a crash reported as a count
+
+**Status: IMPLEMENTED** (`verify:bridge`; no briefing id, this came from the operator reading a
+red suite on the pushed tree). `verify:bridge` was RED on `main` and had been since the day it
+landed. **The check was broken, not the guarantee**, and both halves of that sentence were proven
+rather than argued.
+
+**THE MECHANISM, one column.** `dueBy` (cadence.ts) anchors on `mapping.lastSentAt ?? createdAt`.
+`last_sent_at` is parameterised, so the service writes its own clock into it. `created_at` is not:
+migration 057 gives it `DEFAULT now()`, so an inserted mapping is born at REAL wall-clock time
+while every fixture and the injected service clock descend from a frozen
+`const NOW = new Date('2026-08-12T12:00:00Z')`. While real time was BEFORE that instant the anchor
+sat in the past and everything was due. The moment real time passed it, the anchor sat in the
+FUTURE and **nothing was ever due again**: no announcement, no forward row, no age-out
+suppression, and the loop mutation's "it re-bridged" assertion false because nothing was bridged
+at all.
+
+**THE WINDOW, measured.** Binary-searching the fixture clock against real time: green for offsets
+from 0 to about +12 hours, red at **minus one minute**, and red with a crash beyond +23 hours
+(where `maxAgeHours: 24` starts rejecting the fixtures). So the harness was green only while wall
+time had not yet reached 12:00 UTC on 2026-08-12. It was committed at 09:26 UTC that day. **It was
+valid for two hours and thirty-four minutes and has been red ever since, permanently, on every
+machine and every future date.**
+
+**SO THE COMMIT'S CLAIM WAS TRUE WHEN MADE.** 1eed8e4 said sixty assertions and two named
+mutations proven twice each, and at 09:26 UTC that was correct: the run was green. The report was
+not false; it was PERISHABLE, and nothing in the repository re-ran it. That is the distinction
+worth keeping, because the fix for a false report is honesty and the fix for a perishable one is
+hermeticity.
+
+**THE REPORTING FAILURE, which is worse than the rot.** Three separate things conspired to make
+the suite lie about itself. A missing row made `origin['v']` throw an uncaught `TypeError` out of
+`main()`, so the run DIED mid-section: later sections never ran and the summary was never printed.
+The top-level `.catch` printed a stack trace and exited, with no verdict of any kind. And
+`process.exit()` tears the process down without draining stdout, which to a PIPE is asynchronous.
+The result is a harness whose bottom line was a stack trace where the count belongs - and reading a
+truncated tail of it is how "2 CHECK(S) FAILED" got reported for a run with six red checks and no
+summary at all. All three are fixed: a missing row now FAILS an assertion instead of choking,
+the catch prints `RUN INCOMPLETE` with the count it had reached and says explicitly that it is not
+a count of what is wrong, and `process.exitCode` replaces `process.exit` so output drains.
+
+**THE GUARANTEE IS INTACT, PROVEN BY BREAKING IT.** A green run obtained by changing a constant
+proves nothing on its own, so the real guard was neutered in a worktree: with a working clock,
+`isOwnBridgeSend` disabled turns exactly three checks red, naming the loop guarantee. Guard intact,
+zero failures; guard broken, three. The loop refusal is genuinely load-bearing and genuinely
+protected.
+
+**THE LESSON, and it is not "do not freeze the clock".** A frozen clock is what makes a run
+deterministic and it is the right design; the defect was that only HALF the system was frozen, so
+the fixtures and the database were two clocks that agreed for one afternoon. The pin is one
+`UPDATE`, and beside it is the assertion that keeps it: the harness now checks that the row the
+cadence anchors on carries the frozen clock, and mutation-proving that by dropping the pin turns it
+red FIRST, naming both timestamps, instead of producing six mystery failures and a crash.
+This is D-184's shape with the sign reversed - there a constant described the environment and was
+wrong everywhere else; here a constant described the MOMENT and was wrong everywhen else. Both are
+the same error: a value that varies with where or when the code runs, written down once.
+
+**And a check that never re-runs cannot report anything.** Nothing in this repository runs
+`verify:bridge` automatically; every standing check is invoked by hand or by a briefing. That is
+why two and a half hours of validity went unnoticed for the rest of the day. Not solved here, and
+named so it is not mistaken for solved.
+
 ---
 
 ### D-188 - The describer was built for the operator and wired only into the runtime, so the newest console reinvented the blank
