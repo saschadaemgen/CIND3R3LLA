@@ -143,8 +143,24 @@ export function registerDashboard(app: FastifyInstance, ctx: ViewContext): void 
             <dd>
               ${botStateBadge()}${status.botError ? html` <span class="text-red-700">${status.botError}</span>` : null}
             </dd>
-            <dt class="text-slate-500">Groups</dt>
-            <dd>${status.groups.length > 0 ? status.groups.join(', ') : '—'}</dd>
+            <dt class="text-slate-500">Rooms</dt>
+            <dd>
+              ${status.groups.length === 0
+                ? 'none known yet'
+                : html`${status.groups.map(
+                    (g) => html`<div class="mb-1">
+                      <span class="font-medium">${g.bot}</span>:
+                      ${g.current.length > 0
+                        ? g.current.join(', ')
+                        : html`<span class="text-slate-500">in no room</span>`}
+                      ${g.endedCount > 0
+                        ? html`<span class="text-slate-500">
+                            (+ ${String(g.endedCount)} ended, not counted)
+                          </span>`
+                        : ''}
+                    </div>`,
+                  )}`}
+            </dd>
             <dt class="text-slate-500">Last captured</dt>
             <dd>${fmtDate(status.lastCapturedAt ?? stats.lastSentAt)}</dd>
             <dt class="text-slate-500">Process up since</dt>

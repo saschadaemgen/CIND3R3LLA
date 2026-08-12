@@ -77,6 +77,29 @@ export function captureRoomState(): { rooms: Room[]; decisions: CaptureDecision[
 }
 
 /**
+ * Each bot's rooms, for the dashboard (CCB-S5-034, D-192).
+ *
+ * Derived from the same index capture decides over, so it is per bot, it distinguishes a
+ * CURRENT membership from a record of one that ended, and it is as live as the index - which
+ * is refreshed at boot and on every membership change.
+ *
+ * The line it replaces flattened every bot's groups into one string, named nobody, counted
+ * ended memberships as though they were current, and was produced once at boot.
+ */
+export function botGroupSummaries(
+  bots: readonly { botProfileId: number; displayName: string }[],
+): { bot: string; current: string[]; endedCount: number }[] {
+  return bots.map((b) => {
+    const mine = index.rooms.flatMap((r) => r.records.filter((rec) => rec.botProfileId === b.botProfileId));
+    return {
+      bot: b.displayName,
+      current: mine.filter((r) => r.active).map((r) => r.displayName).sort((x, y) => x.localeCompare(y)),
+      endedCount: mine.filter((r) => !r.active).length,
+    };
+  });
+}
+
+/**
  * What this needs from the core, in CINDERELLA'S OWN TERMS.
  *
  * Structural rather than `T.GroupInfo` / `T.GroupMember`: `verify:adapter-seam` forbids the

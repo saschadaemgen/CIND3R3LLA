@@ -39,7 +39,7 @@ import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
 import { CAPTURE_ID } from './plugins/capture/plugin.js';
 import { refreshCaptureRooms, shouldCapture } from './capture/room-service.js';
-import { membershipIsActive } from './capture/room-service.js';
+import { botGroupSummaries, membershipIsActive } from './capture/room-service.js';
 import {
   membershipIsRecorded,
   recordMembershipChange,
@@ -148,16 +148,36 @@ async function reportGroups(host: RuntimeHost, cfg: Config): Promise<void> {
     try {
       // Through the runtime, which schedules it as this bot: a bare call is refused with
       // `differentActiveUser` for every bot that is not the active one (CCB-S5-018).
-      const groups = await host.runtime.listGroups(bot.simplexUserId);
+      const all = await host.runtime.listGroups(bot.simplexUserId);
+      // ── ENDED MEMBERSHIPS ARE NOT GROUPS THE BOT IS IN (CCB-S5-034, D-192) ──
+      //
+      // `apiListGroups` returns records for memberships that are OVER, and this line printed
+      // every one of them as though it were current. The operator removed the bot from a
+      // group, saw it still listed here and on the dashboard, and spent a week chasing
+      // groups he did not have - and everyone advising him chased the wrong cause, because
+      // the surface said something untrue.
+      //
+      // Production held six records for one bot in three rooms, of which exactly one
+      // membership was current. The ended ones are still worth stating, because they are why
+      // the core's own count is larger than the truth, but they are stated AS ended.
+      const groups = all.filter((g) => membershipIsActive(g.membership?.memberStatus));
+      const ended = all.length - groups.length;
+      const endedNote =
+        ended === 0
+          ? ''
+          : ` (${String(ended)} record(s) of memberships that have ENDED are not listed; ` +
+            `clear them on the Capture page)`;
       if (groups.length === 0) {
         log.warn(
-          `Bot "${bot.config.displayName}" is not a member of any group yet. Join one with: ` +
-            'npm run connect -- "<simplex group link>"',
+          `Bot "${bot.config.displayName}" is not a member of any group yet${endedNote}. ` +
+            'Join one with: npm run connect -- "<simplex group link>"',
         );
         continue;
       }
       const names = groups.map((g) => g.localDisplayName).join(', ');
-      log.info(`Bot "${bot.config.displayName}" is in ${groups.length} group(s): ${names}`);
+      log.info(
+        `Bot "${bot.config.displayName}" is in ${groups.length} group(s): ${names}${endedNote}`,
+      );
       if (cfg.groupName && !groups.some((g) => g.localDisplayName === cfg.groupName)) {
         log.warn(
           `GROUP_NAME="${cfg.groupName}" does not match any group "${bot.config.displayName}" ` +
@@ -773,9 +793,12 @@ async function startCaptureWorker(
         await reconcileMemberships(host, 'observed');
         watchMemberships(host, plugins);
 
-        status.botRunning(
-          host.runtime.ownership.all().map((g) => g.localDisplayName),
-        );
+        // Per bot, and only CURRENT memberships (CCB-S5-034, D-192). This read
+        // `ownership.all().map(g => g.localDisplayName)`: every bot's groups flattened into
+        // one string with nobody named, counting memberships that had ENDED as though they
+        // were current, and set once here so a runtime join could not appear until a
+        // restart. `refreshRooms` re-states it on every membership change.
+        status.botRunning(botSummaries(host));
 
         for (const bot of host.bots) {
           // ── NOT WRAPPED IN runScheduled (CCB-S5-015, D-167) ─────────────
@@ -949,6 +972,16 @@ function watchMemberships(host: RuntimeHost, plugins: PluginService): void {
   }
 }
 
+/** Each hosted bot's rooms, for the dashboard. Derived from the live room index. */
+function botSummaries(host: RuntimeHost): ReturnType<typeof botGroupSummaries> {
+  return botGroupSummaries(
+    host.bots.map((b) => ({
+      botProfileId: b.config.botProfileId,
+      displayName: b.config.displayName,
+    })),
+  );
+}
+
 async function refreshRooms(host: RuntimeHost, plugins: PluginService): Promise<void> {
   await refreshCaptureRooms(
     {
@@ -963,6 +996,9 @@ async function refreshRooms(host: RuntimeHost, plugins: PluginService): Promise<
     (botProfileId) => plugins.isEnabledFor(botProfileId, CAPTURE_ID),
     await listCaptureAssignments(getPool()),
   );
+  // LIVE, not a boot snapshot (CCB-S5-034): this runs on every membership change, so a room
+  // joined or left at runtime is on the dashboard without a restart.
+  status.groupsChanged(botSummaries(host));
 }
 
 /**
