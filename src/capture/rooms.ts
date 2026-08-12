@@ -56,7 +56,23 @@ export interface GroupRecord {
   simplexUserId: number;
   /** The core's local group id, unique per bot and NOT a room identity. */
   groupId: number;
+  /**
+   * WHAT THE GROUP IS CALLED, from its shared profile (CCB-S5-035, D-193).
+   *
+   * Not `localDisplayName`. The core keeps `UNIQUE (user_id, local_display_name)`, so a
+   * second record for a group whose name is already taken gets a `_1` suffix - and the
+   * operator was shown `Cyb3rD3sk_1`, a string that exists nowhere but in the bot's own
+   * SQLite. His group is called `Cyb3rD3sk`, and every record of it says so in
+   * `groupProfile.displayName`.
+   */
   displayName: string;
+  /** The core's local alias, for diagnostics only. Never shown as the room's name. */
+  localName?: string;
+  /**
+   * When the core last updated this record, for choosing between live records that disagree
+   * about the shared profile. See {@link roomsOf}.
+   */
+  updatedAt?: string;
   /** Wire member ids of everyone the core lists in this record. */
   memberIds: readonly string[];
   /**
@@ -142,14 +158,28 @@ export function roomsOf(records: readonly GroupRecord[]): Room[] {
     );
     const first = sorted[0];
     if (first === undefined) continue;
-    // The name an operator recognises: a CURRENT membership first, and among those the
-    // fullest. A record whose membership ended keeps whatever the group was called then, and
-    // naming the room after it is how the preview came to label a live room "Cyb3rD3sk_old" -
-    // found by operating the page rather than by reading it.
-    const byLiveness = [...sorted].sort(
-      (a, b) => Number(b.active) - Number(a.active) || b.memberIds.length - a.memberIds.length,
+    // ── WHICH RECORD NAMES THE ROOM (CCB-S5-035, D-193) ─────────────────────
+    //
+    // A CURRENT membership first: a record whose membership ended keeps whatever the group
+    // was called then, and naming a live room after it is how the preview came to label one
+    // "Cyb3rD3sk_old".
+    //
+    // Then, among live records, THE MOST RECENTLY UPDATED. Two live records in one room can
+    // disagree about the group's name, because `groupProfile` is shared state pushed by the
+    // group's owner and a bot that has not received the rename yet still holds the old one.
+    // There is no vote to take: one of them is stale and the other is not, and the core's own
+    // `updatedAt` is the only evidence of which. Ties fall to the lowest group id so the
+    // answer is stable rather than arbitrary.
+    //
+    // Member count is NOT the tiebreak any more. It was, and it is unrelated to freshness:
+    // the bot with more members is simply the one that has been in the room longer.
+    const byFreshness = [...sorted].sort(
+      (a, b) =>
+        Number(b.active) - Number(a.active) ||
+        (b.updatedAt ?? '').localeCompare(a.updatedAt ?? '') ||
+        a.groupId - b.groupId,
     );
-    const named = byLiveness[0];
+    const named = byFreshness[0];
     out.push({
       key: recordKey(first),
       displayName: named?.displayName ?? first.displayName,

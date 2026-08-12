@@ -443,6 +443,20 @@ export interface ChannelJoinResult {
  * only boot calls it otherwise, and a group the ownership index has never seen
  * is unroutable until restart - the D-171 misrouting shape one step later.
  */
+/**
+ * Channel joining is not built yet (D-191, D-193).
+ *
+ * Its own class rather than a generic failure: this is not a fault in the deployment, it is a
+ * capability that needs the 7.0.0 core, and the page says so plainly instead of showing the
+ * core's own unactionable refusal.
+ */
+export class ChannelJoinUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ChannelJoinUnavailableError';
+  }
+}
+
 export class NotAChannelLinkError extends Error {
   /** What the core says the link is for, when it says. */
   readonly groupName: string | null;
@@ -514,6 +528,28 @@ export async function connectBotToChannel(
     if (inner === 'ok') {
       const relays = plan.groupLinkPlan.groupSLinkInfo_?.groupRelays ?? [];
       const named = plan.groupLinkPlan.groupSLinkData_?.groupProfile?.displayName;
+
+      // ── A CHANNEL LINK CANNOT BE JOINED ON THIS CORE (D-191, D-193) ───────
+      //
+      // Refused HERE, before the command, rather than letting the core answer
+      // `channel links must be connected via APIConnectPreparedGroup` - which is true, is
+      // unactionable, and is what the operator saw twice. `apiConnect` is the wrong command
+      // for a channel link and the right one, `APIConnectPreparedGroup`, is not in
+      // @simplex-chat/types 0.8.0 or simplex-chat 6.5.4 at all.
+      //
+      // A control with no working backend either works or says why it does not. This says
+      // why, names the version that changes it, and stops sending a command that cannot
+      // succeed.
+      if (relays.length > 0) {
+        throw new ChannelJoinUnavailableError(
+          `Joining a channel needs the SimpleX 7.0.0 core and this deployment runs 6.5.4, so ` +
+            `this cannot work yet${named ? ` for "${named}"` : ''}. The core requires the ` +
+            `prepared-group command, which the installed SDK does not expose. Nothing was ` +
+            `joined and nothing was changed. A channel the bot is ALREADY in still bridges ` +
+            `normally; this is only about joining a new one.`,
+        );
+      }
+
       if (relays.length === 0 && !confirmGroupJoin) {
         throw new NotAChannelLinkError(
           `That is a GROUP link${named ? ` for "${named}"` : ''}, not a channel link. Joining it ` +
@@ -570,7 +606,8 @@ export async function listBotGroupRecords(botProfileId: number): Promise<BotGrou
     const memberStatus = String(g.membership?.memberStatus ?? 'unknown');
     return {
       groupId: g.groupId,
-      displayName: g.localDisplayName,
+      // The group's own name (D-193), so a confirmation says what the operator calls it.
+      displayName: g.groupProfile?.displayName || g.localDisplayName,
       active: membershipIsActive(g.membership?.memberStatus),
       memberStatus,
     };

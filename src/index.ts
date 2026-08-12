@@ -174,11 +174,19 @@ async function reportGroups(host: RuntimeHost, cfg: Config): Promise<void> {
         );
         continue;
       }
-      const names = groups.map((g) => g.localDisplayName).join(', ');
+      // The GROUP'S name, not the core's local alias: `localDisplayName` carries the `_1`
+      // disambiguator from UNIQUE (user_id, local_display_name) and names nothing outside
+      // this database, which is what the operator was shown for a week (D-193).
+      const names = groups.map((g) => g.groupProfile?.displayName || g.localDisplayName).join(', ');
       log.info(
         `Bot "${bot.config.displayName}" is in ${groups.length} group(s): ${names}${endedNote}`,
       );
-      if (cfg.groupName && !groups.some((g) => g.localDisplayName === cfg.groupName)) {
+      if (
+        cfg.groupName &&
+        !groups.some(
+          (g) => g.localDisplayName === cfg.groupName || g.groupProfile?.displayName === cfg.groupName,
+        )
+      ) {
         log.warn(
           `GROUP_NAME="${cfg.groupName}" does not match any group "${bot.config.displayName}" ` +
             `has joined.`,

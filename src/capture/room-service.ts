@@ -114,6 +114,9 @@ export interface RoomSource {
     readonly {
       groupId: number;
       localDisplayName: string;
+      /** The group's SHARED profile. Its `displayName` is what the group is called (D-193). */
+      groupProfile?: { displayName?: string } | undefined;
+      updatedAt?: string | undefined;
       membership?: { memberStatus?: string } | undefined;
     }[]
   >;
@@ -145,7 +148,11 @@ export async function refreshCaptureRooms(
           botProfileId: bot.botProfileId,
           simplexUserId: bot.simplexUserId,
           groupId: g.groupId,
-          displayName: g.localDisplayName,
+          // The GROUP'S name, from its shared profile - not `localDisplayName`, which carries
+          // the core's `_1` disambiguator and names nothing outside this database (D-193).
+          displayName: g.groupProfile?.displayName || g.localDisplayName,
+          localName: g.localDisplayName,
+          ...(g.updatedAt === undefined ? {} : { updatedAt: g.updatedAt }),
           memberIds: members.map((m) => m.memberId),
           active: membershipIsActive(g.membership?.memberStatus),
         });
@@ -205,6 +212,26 @@ function reportConflicts(conflicts: readonly CaptureDecision[], source: RoomSour
     });
     status.error(line);
   }
+}
+
+/**
+ * How many of the rooms this bot is in does it actually record (CCB-S5-035, D-193)?
+ *
+ * The capability and the assignment are different facts and the console showed only the
+ * first: "on for this bot" beside "Cinderella is capturing it" reads as a contradiction, and
+ * the operator reasonably concluded something was broken. `capturing` of `rooms` is the
+ * sentence that reconciles them.
+ */
+export function captureCounts(botProfileId: number): { rooms: number; capturing: number } {
+  const mine = index.rooms.filter((r) =>
+    r.records.some((rec) => rec.botProfileId === botProfileId && rec.active),
+  );
+  return {
+    rooms: mine.length,
+    capturing: index.decisions.filter(
+      (d) => d.botProfileId === botProfileId && mine.some((r) => r.key === d.roomKey),
+    ).length,
+  };
 }
 
 /** Test hook. */
