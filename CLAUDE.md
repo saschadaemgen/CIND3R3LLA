@@ -380,7 +380,17 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `plugins/`, because long-term per-member memory is the same machinery over different
   material; the plugin surface is `plugins/knowledge-base/`),
   `db/`, `web/` (server, auth, session, views), `index.ts`.
-- `migrations/` — 001 messages/links · 002 consent+views · 003 admin · 004
+- `src/capture/rooms.ts` is **what a real room is and which record captures it** (CCB-S5-033,
+  D-190): a member's wire id is scoped to the ROOM, so two `groups` records are one room exactly
+  when their member sets intersect, measured at 941/830/**1** within rooms and **0** across. The
+  1 is load-bearing, so the predicate is `>= 1` and never a ratio, and rooms are connected
+  COMPONENTS rather than pairs. **The unit is the capturing RECORD, not the bot**: `apiListGroups`
+  returns ENDED memberships, so one bot can hold several records in one room. An unresolved
+  conflict ELECTS (lowest SimpleX user id, the D-182 rule) and is reported loudly; every uncertain
+  case fails TOWARDS capturing, because a duplicate is visible and a lost message is gone.
+  `room-service.ts` is the live index, refreshed at boot and on membership change.
+
+`migrations/` — 001 messages/links · 002 consent+views · 003 admin · 004
   moderation gate · 005 deletion provenance · 006 webauthn + TOTP · 007 admin
   sessions (persisted across restarts) · 008 content reports · 009 consent action
   journal (provenance + undo) · 010 asset mappings (pinned symbol→asset) · 011
@@ -505,6 +515,11 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   jsonb, and the suppression record - plus the 'bridge' publication category as a view
   replacement, the 013/027/033 pattern, shipped EXCLUDED. **A channel post has no member**, so
   these tables are deliberately outside `messages` and outside every consent view; see D-187).
+  · 058 which bot captures which room (keyed on a REAL record, because a key derived from
+  membership drifts when membership does and a forgotten assignment is silent; one-per-room is
+  enforced in `assignCapture`'s single transaction, since a room is not a column) · 059 the
+  membership history (append-only: which bot, which room, when, how; distinct from 026, which
+  tracks ONE invitation and mutates - a link-join has no such row, which is why nothing recorded one).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -725,6 +740,12 @@ saying the results do not cover it and 4 of 6 inventing a provenance anyway. Its
 patterns were widened after a green run reported 0 of 3 on three answers that all invented one),
 `calibrate:search-relevance` is where the floor's number comes from, and it is not a check: it
 prints the four bands and what each candidate floor would admit,
+`verify:capture-rooms` and `verify:capture-console` (one record captures a room, CCB-S5-033,
+D-190: the room rule over the production shape, the election, the assignment, and the guarantee
+that no room is captured twice - mutation-proven by restoring the shipped "every bot captures"
+behaviour and by showing a per-groupId check finding six ids and no conflict. The console harness
+drives the real routes: the warning, the switch as ONE action read back out of the database, and a
+membership change appearing on the page. Neither can see that a control is reachable (D-162)),
 `verify:bridge` (the channel bridge, CCB-S5-032, D-187: the two parsers proven exclusive in
 both directions with positive controls, the cadence's whichever-comes-first at both orderings,
 the age window, the repeat cap, dismissal, the digest proven to ACCOUNT for every pending post,

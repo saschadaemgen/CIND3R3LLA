@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 188 decisions</strong> — newest first. Highest allocated: <strong>D-189</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 190 decisions</strong> — newest first. Highest allocated: <strong>D-191</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-191 | The bridge's Join joins what it says it joins, and the channel path needs 7.0.0 | PARTIAL |
+| D-190 | One capturing RECORD per room, and a room is a member set | IMPLEMENTED |
 | D-189 | The check had an expiry date compiled into it, and a crash reported as a count | IMPLEMENTED |
 | D-188 | The describer was built for the operator and wired only into the runtime, so the newest console reinvented the blank | IMPLEMENTED |
 | D-187 | A channel surfaces as a group with nobody in the sender seat, and the bridge is a cadence rather than a mirror | IMPLEMENTED |
@@ -217,6 +219,124 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-191 - The bridge's Join joins what it says it joins, and the channel path needs 7.0.0
+
+**Status: PARTIAL** (CCB-S5-033). Two defects behind one control; one is fixed here and one is
+provably not fixable on the installed SDK.
+
+**THE CONTROL WAS MORE POWERFUL THAN ITS LABEL.** The Join box sits on the Channel Bridge page
+and says it joins a channel. It accepted a GROUP link and connected it with no ceremony: a link
+pasted there by accident put the bot into a room at 15:00, where it archived and answered within
+two minutes, and the only way out was the operator's own SimpleX client. That is wrong on its own
+terms, independently of whether channel joining works.
+
+Fixed by reading the plan rather than the label. A channel IS a group with relays, so
+`GroupLinkPlan.Ok.groupSLinkInfo_.groupRelays` tells them apart: empty means an ordinary group,
+and the refusal NAMES what was pasted (`groupSLinkData_.groupProfile.displayName`), because "that
+is not a channel link" against a link the operator cannot read is not actionable. Joining a group
+from here is still possible and now requires saying so.
+
+**AND THE BRIDGE HAS NEVER BEEN ABLE TO JOIN A CHANNEL.** The core is explicit:
+`{"type":"commandError","message":"channel links must be connected via APIConnectPreparedGroup"}`.
+`apiConnect` is the wrong command. That message was invisible for three round trips behind the
+SDK's pointer text and became readable the day D-188 landed, which is the whole argument for
+D-188 in one line.
+
+**It cannot be corrected on 6.5.4, and this was established rather than assumed.**
+`@simplex-chat/types` 0.8.0 declares `APIConnectPlan` and `APIConnect` and no
+`APIConnectPreparedGroup`; `simplex-chat` 6.5.4 has no `apiConnectPreparedGroup` method. The
+`PreparedGroup` TYPE exists, as a field on `GroupInfo`, which is what makes the absence look like
+an oversight rather than a version gap. The only route on this version is a hand-built command
+string guessed against a production core, which is not a thing to guess.
+
+So it is **deferred to the 7.0.0 upgrade**, where it now has a concrete reason beyond signed
+messages and badges: the bridge cannot join a channel at all until then. Recorded here rather
+than left as a puzzle, because the next person to read the failing Join needs to know the answer
+is a version and not a bug.
+
+---
+
+### D-190 - One capturing RECORD per room, and a room is a member set
+
+**Status: IMPLEMENTED** (CCB-S5-033, migrations 058 and 059). Capture is a per-bot capability
+(D-175), and which bot records a room is a setting rather than an accident of who joined.
+
+**THE DEFECT.** Two bots were members of one real group. Capture is per bot by design and
+`messages` is `UNIQUE (group_id, group_msg_id)` over records that genuinely differ, so nothing
+could collapse them: 1,255 wire messages were archived twice between 7 and 12 August, 18 of them
+with their attachments downloaded twice. Consent was never split - `consent.member_id` is the
+primary key with no group dimension and member wire ids are identical across the records - so
+both copies simply published.
+
+**"ONE BOT PER ROOM" IS THE PHRASE EVERYONE WILL REMEMBER AND IT IS NOT THE GUARANTEE.** The unit
+is the capturing RECORD. `apiListGroups` returns memberships that have ENDED - production listed
+`Cyb3rD3sk` beside `Cyb3rD3sk_1` as two of one bot's four groups - so one bot can hold several
+records in one room, and a gate keyed on the bot satisfies "one capturing bot per room" while
+capturing through both of them. This was not in the briefing and is not a refinement of it: the
+briefing's phrasing would have shipped the same duplication with a different cause. Found by the
+check rather than by design, which is the argument for writing the check first.
+
+**WHAT IDENTIFIES A ROOM, MEASURED.** A member's wire id is scoped to the room. Intersecting
+every pair of records on the production core: same room **941, 830 and 1**; different room **0, 0
+and 0**. So two records are the same room exactly when their member sets intersect, and the
+predicate is `>= 1` rather than a ratio. That **1** is load-bearing - an invitation that never
+completed and knew only the host - so any threshold above one member splits a room and
+re-introduces the duplication on the next re-join. Rooms are connected COMPONENTS, not pairs:
+record 1 overlaps 4 by 830 and 5 by 829 while 4 and 5 overlap by 941.
+
+Rejected, and each looked right first. The **host member id**: it is the member through whom THIS
+bot joined, so two bots invited by different members hold different hosts for one room, and it is
+absent from `GroupInfo` entirely - it agrees on today's data, which is exactly how it would have
+shipped. **`groupKeys.publicGroupId` and `viaGroupLinkUri`**: both null for every record involved,
+which is not a coincidence but the existing bug, since `sharedGroupKey` consults those two and
+returns null - which is why the boot line said co-tenancy "could not be checked" about the four
+groups where it was real. **`root_pub_key`**: null everywhere. **`group_profile_id`**: one per
+record by construction.
+
+Members come from `apiListMembers`, documented "Network usage: no" - a local read - and scheduled,
+because it takes a groupId and no user id (D-171).
+
+**AN UNRESOLVED CONFLICT ELECTS, AND SAYS SO.** Capturing twice is the defect; capturing nothing
+loses messages and a lost message is not recoverable, whereas a wrong capturer is. The election is
+the lowest SimpleX user id, the rule D-182 already uses for slash commands: the core's own creation
+order, stable across restarts and renames, derivable by every bot with no coordination. It decides
+something the operator did not, so it reaches `log.error` and `status.error` naming the room and
+every bot in it, and an assignment overrides it. Every uncertain case FAILS TOWARDS CAPTURING - an
+unknown room, a failed refresh, an unfamiliar membership status - for the same asymmetry.
+
+**EVALUATED AT BOOT AND ON MEMBERSHIP CHANGE, not only on save.** The operator did not create this
+conflict in a form; a second bot joined a room that already had one. A rule evaluated only on save
+cannot see the way it actually happens.
+
+**SWITCHING IS ONE ACTION.** `assignCapture` clears the room's other records and writes the new one
+in one transaction: between "turn one off" and "turn the other on" a room captures nothing and
+nobody is told. The page states what switching does and does not do, because an operator will
+reasonably fear for consent and consent is untouched.
+
+**THE ASSIGNMENT KEYS ON A REAL RECORD**, not on a derived room key. Any key computed from
+membership moves when the membership moves, and an assignment whose key had drifted would be
+silently forgotten; a record is a row the core keeps, and if it disappears the room falls back to
+the election, which is the safe direction and is visible.
+
+**AND THE GATE IS ON THE ARCHIVE, NOT ON THE BOT.** First written into `inScope`, which guards the
+whole capture handler - so it would have stopped the non-capturing bot processing `/publish` and
+`/unpublish` and stopped it answering at all. It gates `persist`. A bot that does not capture a
+room still reads it, replies in it and moderates it, and returning false also stops it pulling the
+FILE, because two bots capturing one room produced two rows and two copies of every attachment.
+
+**Membership is recorded** (migration 059, append-only): which bot, which room, when, and how, with
+`observed` as an honest value for a change noticed between two reads. The old path only stamped a
+row an invitation had already created, so a link-join updated nothing and not even its log line
+fired.
+
+`verify:capture-rooms` (29) proves the rule, mutation-proven both ways the briefing names: the
+shipped "every bot captures" behaviour turns the guarantee red at two bots per room, and a
+per-groupId check is shown finding six distinct ids and therefore no conflict at all.
+`verify:capture-console` (25) drives the real routes: the warning, the switch in one action read
+back out of the database, and a membership change appearing in the page.
+
 ---
 
 ### D-189 - The check had an expiry date compiled into it, and a crash reported as a count
