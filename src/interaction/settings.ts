@@ -139,6 +139,13 @@ export const PERSONA_KEYS = [
   // every line above because those all describe the lookup failing, and saying one of them
   // here tells the member the opposite of what happened.
   'searchNoWords',
+  // CCB-S5-032. The two lines the bridge appends to a forwarded channel post: the
+  // attribution under each post, and the remainder line a digest ends with when more
+  // posts are pending than it shows. APPLICATION-WRITTEN, filled with fillPersona and
+  // appended verbatim (D-137, D-180); their leading literals are long enough that the
+  // protected-text guard derives markers for them, so a model imitating one is stripped.
+  'bridgeAttribution',
+  'bridgeMore',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -212,6 +219,8 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchIrrelevant: 'lookup',
   searchUnchecked: 'lookup',
   searchNoWords: 'lookup',
+  bridgeAttribution: 'bridge',
+  bridgeMore: 'bridge',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -465,6 +474,13 @@ const PERSONA_EN: PersonaStrings = {
   // CCB-S4-037. Appended verbatim after whatever she wrote from the results, so a member
   // can always tell an answer that came from the web from one that came from her.
   searchSources: '🔎 From the web: {sources}',
+  // CCB-S5-032. Printed under every forwarded channel post, application-written and
+  // appended verbatim, exactly as the search source line is: a fact the model carries
+  // inside its own prose is a fact it corrupts (D-137), so no model words this. The
+  // leading literal is long on purpose - it is what the protected-text guard derives the
+  // marker from, so an imitation of this line is stripped from her replies.
+  bridgeAttribution: '📣 From the channel {channel}, {when}',
+  bridgeMore: '📣 Also new in {channel}: {n} earlier posts.',
   knowledgeSources: '📄 From what you gave me: {sources}',
   // Said when she could not look it up. She does NOT then answer from training data and
   // present it as current: that is the failure the whole feature exists to avoid.
@@ -640,6 +656,10 @@ const PERSONA_DE: PersonaStrings = {
     '🔒 Das ist jetzt {action}{duration}. Es steht im Protokoll, und es war nicht meine ' +
     'Idee, es war die Zaehlung.',
   searchSources: '🔎 Aus dem Netz: {sources}',
+  // CCB-S5-032. Siehe die englische Fassung: von der Anwendung geschrieben, nie vom
+  // Modell, und die fuehrende Zeichenkette traegt den Schutzmarker.
+  bridgeAttribution: '📣 Aus dem Kanal {channel}, {when}',
+  bridgeMore: '📣 Ebenfalls neu in {channel}: {n} weitere Beitraege.',
   knowledgeSources: '📄 Aus deinen Unterlagen: {sources}',
   searchUnavailable:
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',

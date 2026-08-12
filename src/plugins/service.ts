@@ -66,6 +66,12 @@ import {
   type KnowledgeSettings,
 } from './knowledge-base/settings.js';
 import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
+import {
+  normalizeChannelBridgeSettings,
+  CHANNEL_BRIDGE_DEFAULTS,
+  type ChannelBridgeSettings,
+} from './channel-bridge/settings.js';
+import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
 
 const STATES_KEY = 'plugins';
 const settingsKey = (id: string): string => `plugin:${id}`;
@@ -99,6 +105,7 @@ export class PluginService {
     private cryptoPrices: CryptoPricesSettings,
     private webSearch: WebSearchSettings,
     private knowledge: KnowledgeSettings,
+    private channelBridge: ChannelBridgeSettings,
   ) {}
 
   static async load(db: Queryable): Promise<PluginService> {
@@ -118,6 +125,12 @@ export class PluginService {
     // document written by another version cannot hand the retriever a budget nobody typed.
     const knowledge = normalizeKnowledge(
       (await getSetting(db, settingsKey(KNOWLEDGE_BASE_ID))) ?? KNOWLEDGE_DEFAULTS,
+    );
+
+    // The channel bridge (CCB-S5-032). One deployment-wide bound; the cadences
+    // live on the mapping rows, which is where the briefing put them.
+    const channelBridge = normalizeChannelBridgeSettings(
+      (await getSetting(db, settingsKey(CHANNEL_BRIDGE_ID))) ?? CHANNEL_BRIDGE_DEFAULTS,
     );
 
     // Self-repair for instances written by the doubled-encryption path
@@ -156,7 +169,7 @@ export class PluginService {
         );
       }
     }
-    return new PluginService(db, states, crypto, webSearch, knowledge);
+    return new PluginService(db, states, crypto, webSearch, knowledge, channelBridge);
   }
 
   /** All-defaults instance, for harnesses and the server's fallback path. */
@@ -167,6 +180,7 @@ export class PluginService {
       normalizeCryptoPrices({}),
       normalizeWebSearchSettings({}),
       normalizeKnowledge({}),
+      normalizeChannelBridgeSettings({}),
     );
   }
 
@@ -455,6 +469,20 @@ export class PluginService {
     });
     this.knowledge = normalized;
     return { settings: normalized, ingestChanged };
+  }
+
+  channelBridgeSettings(): ChannelBridgeSettings {
+    return this.channelBridge;
+  }
+
+  async saveChannelBridge(next: unknown, actor: string): Promise<ChannelBridgeSettings> {
+    const normalized = normalizeChannelBridgeSettings({ ...this.channelBridge, ...(rec(next)) });
+    await setSetting(this.db, settingsKey(CHANNEL_BRIDGE_ID), normalized);
+    await writeAudit(this.db, actor, 'plugin.settings', `plugin:${CHANNEL_BRIDGE_ID}`, {
+      maxFileBytes: normalized.maxFileBytes,
+    });
+    this.channelBridge = normalized;
+    return normalized;
   }
 
   async saveCryptoPrices(next: unknown, actor: string): Promise<CryptoPricesSettings> {

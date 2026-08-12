@@ -215,6 +215,69 @@ export function parseGroupMessage(aChatItem: T.AChatItem): CapturedMessage | nul
 }
 
 /**
+ * A channel post, as the bridge stores it (CCB-S5-032, D-187).
+ *
+ * A SEPARATE PARSER, deliberately beside {@link parseGroupMessage} rather than a
+ * widening of it. The note at that function's `groupRcv` test says a widening is
+ * a decision, not an accident; this is the decision, and what it decides is that
+ * the two directions lead to two different worlds:
+ *
+ *   `groupRcv`   carries a MEMBER, so the item enters capture, consent and the
+ *                dialogue engine - the member machinery.
+ *   `channelRcv` carries NOBODY. The variant has no fields at all: no memberId,
+ *                no display name, no role. Consent is keyed per member, so a
+ *                channel post CANNOT travel the consent path, must never reach
+ *                `messages`, and must never be answerable by the engine. It goes
+ *                to the bridge's own table, which has no publication semantics.
+ *
+ * One parser accepting both would need every downstream consumer to re-check
+ * which world it is in; two parsers make the wrong world unrepresentable.
+ */
+export interface ChannelPost {
+  groupId: number;
+  channelName: string;
+  itemId: number;
+  sharedMsgId: string | null;
+  postedAt: string;
+  text: string;
+  file: CapturedFile | undefined;
+  /** True when the reporting core marks the group as relay-mediated. */
+  isChannelGroup: boolean;
+  /** The link this profile joined through, when the core retained it. */
+  viaLink: string | null;
+}
+
+export function parseChannelPost(aChatItem: T.AChatItem): ChannelPost | null {
+  const { chatInfo, chatItem } = aChatItem;
+  // The same public gate capture uses: a scoped (memberSupport) item is not a
+  // channel post whatever its direction claims.
+  if (!isPublicGroupChat(chatInfo)) return null;
+  if (chatInfo.type !== 'group') return null;
+  if (chatItem.chatDir.type !== 'channelRcv') return null;
+  const content = chatItem.content;
+  if (content.type !== 'rcvMsgContent') return null;
+  const msgContent = content.msgContent;
+  const groupInfo = chatInfo.groupInfo;
+  const profile = groupInfo.groupProfile;
+  return {
+    groupId: groupInfo.groupId,
+    channelName: profile.displayName || groupInfo.localDisplayName,
+    itemId: chatItem.meta.itemId,
+    sharedMsgId: chatItem.meta.itemSharedMsgId ?? null,
+    postedAt: chatItem.meta.itemTs,
+    text: msgContent.text ?? '',
+    file: buildCapturedFile(chatItem.file),
+    // Both signals the installed types carry; either one makes it a channel.
+    // First-ever reader of these fields in this codebase (D-105 noted: new
+    // surface, covered by verify:bridge rather than assumed covered).
+    isChannelGroup:
+      groupInfo.useRelays === true ||
+      profile.publicGroup?.groupType === ('channel' as T.GroupType),
+    viaLink: groupInfo.viaGroupLinkUri ?? null,
+  };
+}
+
+/**
  * Narrows a sent chat item to the group send we archive. Anything else — a direct
  * message, a received item, a group event — is not hers to archive here.
  */

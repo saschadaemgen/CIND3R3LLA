@@ -46,6 +46,8 @@ import { WEB_SEARCH_DEFAULTS } from './web-search/settings.js';
 import { WEB_SEARCH_ID } from './web-search/plugin.js';
 import { KNOWLEDGE_DEFAULTS } from './knowledge-base/settings.js';
 import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
+import { CHANNEL_BRIDGE_DEFAULTS } from './channel-bridge/settings.js';
+import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
 import { listPlugins, type PluginStates } from './registry.js';
 
 /** Where a plugin setting lives. */
@@ -339,6 +341,29 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     reason:
       'A SAFETY BOUND on what reaches the model, on exactly the terms the web search budgets are shared: one number, or nobody can state it for any bot.',
   },
+
+  /* ── Channel Bridge (CCB-S5-032) ────────────────────────────────────────── */
+  //
+  // The MAPPINGS and their cadences are per bot without appearing here, because
+  // a mapping is a row in `cinderella_bridge_mappings` rather than a setting:
+  // absence there means NO BRIDGE, where absence in the overrides table means
+  // inherit. Same shape as the knowledge base's per-bot document grants.
+  {
+    pluginId: CHANNEL_BRIDGE_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Channel bridge enabled',
+    reason:
+      'Whether this bot bridges at all. One bot announcing a channel beside one that stays quiet is the capability.',
+  },
+  {
+    pluginId: CHANNEL_BRIDGE_ID,
+    key: 'maxFileBytes',
+    scope: 'shared',
+    label: 'Largest re-hosted file',
+    reason:
+      'A storage bound. The bridge keeps its own copy of channel media because relays expire files, and disk is a deployment cost, not a bot choice.',
+  },
 ]);
 
 /** One bot's deviation from one plugin setting. Absence means inherit; NULL is not stored. */
@@ -471,5 +496,6 @@ export function expectedPluginSettingKeys(): Map<string, string[]> {
   add(CRYPTO_PRICES_ID, Object.keys(DEFAULT_CRYPTO_PRICES));
   add(WEB_SEARCH_ID, Object.keys(WEB_SEARCH_DEFAULTS));
   add(KNOWLEDGE_BASE_ID, Object.keys(KNOWLEDGE_DEFAULTS));
+  add(CHANNEL_BRIDGE_ID, Object.keys(CHANNEL_BRIDGE_DEFAULTS));
   return out;
 }

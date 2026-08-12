@@ -64,6 +64,11 @@ export interface Config {
    */
   assetRoot: string;
   /**
+   * Where the bridge's re-hosted channel media lives (CCB-S5-032). A sibling of
+   * MEDIA_ROOT for the destruction-sweeper reason resolveBridgeMediaRoot states.
+   */
+  bridgeMediaRoot: string;
+  /**
    * Path to the bot's avatar image (jpg/png/webp). Re-applied to the SimpleX
    * profile on every startup (bot.run blanks it otherwise). Optional — if the
    * file is absent the profile image is left as-is.
@@ -255,6 +260,7 @@ export function loadConfig(): Config {
     ),
     quarantineRoot: resolveQuarantineRoot(),
     assetRoot: resolveAssetRoot(),
+    bridgeMediaRoot: resolveBridgeMediaRoot(),
     avatarPath: resolveAvatarPath(),
     databaseUrl: required('DATABASE_URL'),
     logLevel: parseLogLevel(process.env['LOG_LEVEL']),
@@ -319,6 +325,30 @@ export function resolveAssetRoot(): string {
     throw new Error(
       `ASSET_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Member media is consent-` +
         'governed and swept by the destruction jobs; operator assets have no business in that tree.',
+    );
+  }
+  return root;
+}
+
+/**
+ * Where the bridge's re-hosted channel media lives (CCB-S5-032).
+ *
+ * A SIBLING of MEDIA_ROOT, like quarantine/ and assets/, and refused inside it
+ * for the sharpest of their reasons: the destruction sweeper walks ALL of
+ * MEDIA_ROOT to depth four matching id-shaped names, so a bridge file that
+ * happened to be called `thumb-123.jpg` would be enumerated and DELETED when
+ * message 123 is destroyed. Channel media is the operator's broadcast content
+ * and is governed by nothing in the consent machinery; it gets its own tree.
+ */
+export function resolveBridgeMediaRoot(): string {
+  const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
+  const configured = process.env['BRIDGE_MEDIA_ROOT'];
+  const root = configured ? resolve(configured) : resolve(dirname(media), 'bridge-media');
+  if (root === media || root.startsWith(media + sep)) {
+    throw new Error(
+      `BRIDGE_MEDIA_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Member media is ` +
+        'consent-governed and swept by the destruction jobs; channel media is neither, and a ' +
+        'bridge file with an id-shaped name inside that tree would be swept with it.',
     );
   }
   return root;

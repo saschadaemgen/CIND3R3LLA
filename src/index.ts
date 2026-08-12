@@ -33,6 +33,11 @@ import { enforcementAvailable, liveEnforcementPort, setEnforcementHandle } from 
 import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendViaRuntime } from './bot/send.js';
 import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
+import { bridgeSendPort, sdkBridgePort, setBridgeSendPort } from './bot/bridge-port.js';
+import { registerBridgeIntake, bridgeMediaStore } from './plugins/channel-bridge/intake.js';
+import type { BridgeDeps } from './plugins/channel-bridge/service.js';
+import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
+import { seedBridgeTick, setBridgeJobDeps } from './queue/jobs/bridge.js';
 import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
 import {
   startRecital,
@@ -55,7 +60,7 @@ import { markInterruptedMediaReceipts, setMemberCategory } from './db/messages.j
 import { SettingsService } from './settings/service.js';
 import { SecurityService } from './security/settings.js';
 import { ArchiveService } from './archive/settings.js';
-import { InteractionService } from './interaction/settings.js';
+import { InteractionService, fillPersona } from './interaction/settings.js';
 import { InteractionEngine } from './interaction/engine.js';
 import {
   AiRuntimeService,
@@ -201,6 +206,43 @@ interface BotGraph {
  * Nothing in here is shared between bots except the services passed in, and that is the
  * property the isolation checks assert.
  */
+/**
+ * The bridge's dependencies (CCB-S5-032), one factory for both consumers: the
+ * per-bot intake (which binds THIS bot's FileReceiver for media) and the queue
+ * jobs (which never store media and pass null). Everything is read LIVE - the
+ * per-bot switch, the persona lines, the file bound - so a console change takes
+ * effect on the next tick rather than the next boot.
+ */
+function makeBridgeDeps(
+  interaction: InteractionService,
+  plugins: PluginService,
+  storeMedia: BridgeDeps['storeMedia'],
+): BridgeDeps {
+  const linesFor = (botProfileId: number): ReturnType<BridgeDeps['linesFor']> => {
+    // THIS bot's persona in ITS default language (CCB-S5-006): the strings are
+    // per bot, and the bridge has no member message to pick a language from, so
+    // the bot's configured default is the honest choice.
+    const s = interaction.get(botProfileId);
+    const strings = s.persona[s.defaultLanguage] ?? s.persona['en'];
+    const when = (postedAt: Date): string =>
+      `${postedAt.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+    return {
+      lang: s.defaultLanguage,
+      attributionFor: (channel, postedAt) =>
+        fillPersona(strings?.bridgeAttribution ?? '', { channel, when: when(postedAt) }),
+      remainderLine: (channel, n) => fillPersona(strings?.bridgeMore ?? '', { channel, n }),
+    };
+  };
+  return {
+    db: getPool(),
+    port: () => bridgeSendPort(),
+    isEnabledFor: (botProfileId) => plugins.isEnabledFor(botProfileId, CHANNEL_BRIDGE_ID),
+    linesFor,
+    storeMedia,
+    maxFileBytes: () => plugins.channelBridgeSettings().maxFileBytes,
+  };
+}
+
 function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   const { cfg, interaction, plugins, prices, webSearch } = deps;
   const botProfileId = bot.config.botProfileId;
@@ -441,6 +483,19 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   // one bot's group. A bot captures the groups it is in.
   registerCapture({ chat: bot.events, fileReceiver: bot.fileReceiver }, cfg, hooks, {});
 
+  // The channel bridge's intake (CCB-S5-032), on the same per-bot event source
+  // and for the same isolation reason. Capture and the bridge route by item
+  // DIRECTION (groupRcv with a member vs channelRcv with nobody), so no item
+  // can enter both; parse.ts states the decision. Media receives through THIS
+  // bot's FileReceiver into the bridge's own tree.
+  registerBridgeIntake({ chat: bot.events, fileReceiver: bot.fileReceiver }, botProfileId, () =>
+    makeBridgeDeps(
+      deps.interaction,
+      deps.plugins,
+      bridgeMediaStore(bot.fileReceiver, cfg.bridgeMediaRoot),
+    ),
+  );
+
   // Onboarding steps two and three (CCB-S4-023, CCB-S4-025), on this bot's own stream
   // and filed against this bot. The listener used to look the bot up per event through
   // `selected_for_runtime`, which was right while one bot ran and would now file every
@@ -505,6 +560,13 @@ async function startCaptureWorker(
           host.runtime.sendGroupComposedAsOwner(groupId, composed),
       }),
     );
+
+    // The bridge's transport and its queue-job deps (CCB-S5-032), beside the
+    // recital port and for the same reasons: group-id based, owner-resolved.
+    // The job deps carry NO media store - the tick and propagation never fetch
+    // bytes, only the per-bot intake does.
+    setBridgeSendPort(sdkBridgePort(host.runtime));
+    setBridgeJobDeps(() => makeBridgeDeps(interaction, plugins, null));
 
     // Deployment-wide services, built once. Every setting is read live, so a chain
     // reorder or a new API key takes effect on the next question without a restart.
@@ -994,6 +1056,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   // admin console, or the bot down with it.
   try {
     await startQueue({ db: getPool() });
+    // The bridge's cadence chain (CCB-S5-032). Safe on every boot: the seed's
+    // minute-bucket idempotency key collapses into a live chain's own next link
+    // rather than starting a second one; see queue/jobs/bridge.ts.
+    await seedBridgeTick();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     status.error(`Job queue failed to start: ${message}`);
@@ -1029,6 +1095,10 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
         setCoreDeletePort(null);
         setEnforcementHandle(null);
         setRuntimeAdminHandle(null);
+        // Same reasoning as the delete port: the bridge must not go on
+        // reporting a transport it no longer has.
+        setBridgeSendPort(null);
+        setBridgeJobDeps(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
         resolve();

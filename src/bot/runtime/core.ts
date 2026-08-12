@@ -668,6 +668,49 @@ export class MultiProfileRuntime {
     return await this.sendGroupComposed(owner, groupId, composed);
   }
 
+  /**
+   * Edit one of her own sent messages in place, as the bot that owns the group
+   * (CCB-S5-032). The bridge uses this to make a source edit reach the copy: one
+   * authoritative copy in the group, and SimpleX clients mark it "edited" natively,
+   * so the correction is visible without a second announcement.
+   *
+   * `liveMessage` is typed as the literal `false` by the SDK and is passed
+   * explicitly; an unchanged edit answers `chatItemNotChanged`, which the typed
+   * helper surfaces as a throw the CALLER treats as success-shaped (nothing to move).
+   */
+  async updateGroupItemAsOwner(
+    groupId: number,
+    itemId: number,
+    msgContent: T.MsgContent,
+  ): Promise<void> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    const chat = this.requireChat();
+    await this.scheduler.run(owner, `updateItem:g${String(groupId)}`, async () => {
+      await chat.apiUpdateChatItem(T.ChatType.Group, groupId, itemId, msgContent, false);
+    });
+  }
+
+  /**
+   * Delete her own sent messages FOR EVERYONE, as the bot that owns the group
+   * (CCB-S5-032). Distinct from {@link deleteChatItems} on purpose: that one is
+   * `Internal` (the consent-erasure path, local core rows only), while a bridge
+   * withdrawal must reach members' clients, which is `Broadcast`. Two methods
+   * rather than a mode flag, so a future caller cannot pick the wrong scope by
+   * defaulting.
+   */
+  async deleteGroupItemsBroadcastAsOwner(
+    groupId: number,
+    itemIds: readonly number[],
+  ): Promise<void> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    const chat = this.requireChat();
+    await this.scheduler.run(owner, `deleteBroadcast:g${String(groupId)}`, async () => {
+      await chat.apiDeleteChatItems(T.ChatType.Group, groupId, [...itemIds], T.CIDeleteMode.Broadcast);
+    });
+  }
+
   /** Every group a hosted profile holds, as the index last saw them. */
   groupsOf(simplexUserId: number): OwnedGroup[] {
     return this.ownership.groupsOf(simplexUserId);

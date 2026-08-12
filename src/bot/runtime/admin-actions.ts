@@ -417,3 +417,79 @@ export async function applyBotFaceNow(
     alreadyCurrent: flushed.alreadyFlushed,
   };
 }
+
+/* ── the channel bridge's two actions (CCB-S5-032, D-187) ───────────────────── */
+
+export interface ChannelJoinResult {
+  /** What the core's plan said about the link before anything was done. */
+  plan: string;
+  /** True when a connect command was actually issued (not already joined). */
+  connected: boolean;
+}
+
+/**
+ * Connect one bot to a channel (or group) link from the console.
+ *
+ * The address-creation shape: ask first (`apiConnectPlan`), act second
+ * (`apiConnect`), both with the EXPLICIT user id and both through the scheduler
+ * (D-171: naming a user makes a command refusable, not unmisroutable, and
+ * `apiConnectActiveUser` - which names nobody - is exactly the silent
+ * cross-profile execution class this file exists to avoid).
+ *
+ * Membership arrives via events after the command answers; the caller is told
+ * so rather than promised a joined group. `refreshOwnership` runs here because
+ * only boot calls it otherwise, and a group the ownership index has never seen
+ * is unroutable until restart - the D-171 misrouting shape one step later.
+ */
+export async function connectBotToChannel(
+  botProfileId: number,
+  link: string,
+): Promise<ChannelJoinResult> {
+  const { host, bot, simplexUserId } = requireReadyBot('no channel can be joined', botProfileId);
+  const trimmed = link.trim();
+  if (trimmed === '') throw new RuntimeActionUnavailableError('A channel link is required.');
+
+  const [plan, prepared] = await bot.runScheduled('channel:plan', () =>
+    chatOf().apiConnectPlan(simplexUserId, trimmed),
+  );
+  const planText = JSON.stringify(plan).slice(0, 200);
+
+  // The plan says this profile already holds the connection: joining again
+  // would either error or fork, so the honest answer is "nothing to do".
+  if (planText.includes('known') || planText.includes('connecting')) {
+    return { plan: planText, connected: false };
+  }
+
+  await bot.runScheduled('channel:join', () => chatOf().apiConnect(simplexUserId, false, prepared));
+  // Two sequential scheduled calls plus a refresh, never nested (CCB-S5-015).
+  await host.runtime.refreshOwnership();
+  return { plan: planText, connected: true };
+}
+
+export interface DiscoveredChannel {
+  sourceGroupId: number;
+  channelName: string;
+  link: string | null;
+}
+
+/**
+ * Which of this bot's groups the core reports as CHANNELS, for the console's
+ * mapping picker and the known-channels table. The first reader of
+ * `useRelays` / `publicGroup.groupType` in this codebase (D-105 noted): a group
+ * is a channel when the core says either.
+ */
+export async function discoverBotChannels(botProfileId: number): Promise<DiscoveredChannel[]> {
+  const { host, simplexUserId } = requireReadyBot('no channels can be listed', botProfileId);
+  const groups = await host.runtime.listGroups(simplexUserId);
+  return groups
+    .filter(
+      (g) =>
+        g.useRelays === true ||
+        (g.groupProfile.publicGroup?.groupType as string | undefined) === 'channel',
+    )
+    .map((g) => ({
+      sourceGroupId: g.groupId,
+      channelName: g.groupProfile.displayName || g.localDisplayName,
+      link: g.viaGroupLinkUri ?? null,
+    }));
+}

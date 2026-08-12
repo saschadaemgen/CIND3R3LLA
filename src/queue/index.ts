@@ -9,6 +9,12 @@ import { QueueWorker } from './worker.js';
 import { getJobHandler, registerJobHandler } from './registry.js';
 import { RECITAL_JOB, handleRecitalBeat } from './jobs/recital.js';
 import { KNOWLEDGE_INGEST_JOB, knowledgeIngestHandler } from './jobs/knowledge-ingest.js';
+import {
+  BRIDGE_PROPAGATE_JOB,
+  BRIDGE_TICK_JOB,
+  bridgePropagateHandler,
+  bridgeTickHandler,
+} from './jobs/bridge.js';
 import { enqueueJob } from './store.js';
 import { DEFAULT_QUEUE_CONFIG, type EnqueueOptions, type JobLane, type QueueConfig } from './types.js';
 import {
@@ -91,6 +97,16 @@ export function registerBuiltinJobs(): void {
   // ever while the console showed it queued and nothing anywhere said why.
   if (!getJobHandler(KNOWLEDGE_INGEST_JOB)) {
     registerJobHandler(KNOWLEDGE_INGEST_JOB, knowledgeIngestHandler);
+  }
+  // The channel bridge's cadence tick and its edit/withdrawal propagation
+  // (CCB-S5-032). MUST be registered, and the tick doubly so: it is a
+  // self-chaining job, so an unregistered type would not merely sit queued - the
+  // whole cadence would stop and nothing anywhere would say why.
+  if (!getJobHandler(BRIDGE_TICK_JOB)) {
+    registerJobHandler(BRIDGE_TICK_JOB, bridgeTickHandler);
+  }
+  if (!getJobHandler(BRIDGE_PROPAGATE_JOB)) {
+    registerJobHandler(BRIDGE_PROPAGATE_JOB, bridgePropagateHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }
