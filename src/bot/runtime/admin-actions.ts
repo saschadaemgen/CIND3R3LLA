@@ -442,9 +442,20 @@ export interface ChannelJoinResult {
  * only boot calls it otherwise, and a group the ownership index has never seen
  * is unroutable until restart - the D-171 misrouting shape one step later.
  */
+export class NotAChannelLinkError extends Error {
+  /** What the core says the link is for, when it says. */
+  readonly groupName: string | null;
+  constructor(message: string, groupName: string | null) {
+    super(message);
+    this.name = 'NotAChannelLinkError';
+    this.groupName = groupName;
+  }
+}
+
 export async function connectBotToChannel(
   botProfileId: number,
   link: string,
+  confirmGroupJoin = false,
 ): Promise<ChannelJoinResult> {
   const { host, bot, simplexUserId } = requireReadyBot('no channel can be joined', botProfileId);
   const trimmed = link.trim();
@@ -485,6 +496,31 @@ export async function connectBotToChannel(
     if (inner === 'known' || inner === 'ownLink' || inner === 'connectingConfirmReconnect' || inner === 'connectingProhibit') {
       // Already held, or ours: joining again would error or fork.
       return { plan: planText, connected: false };
+    }
+    // ── IT SAYS CHANNEL, SO IT JOINS A CHANNEL (CCB-S5-033, D-191) ─────────
+    //
+    // This control sits on the Channel Bridge page and its own label says it joins a
+    // channel. It joined an ordinary GROUP without ceremony, and the bot then captured
+    // and answered there: a link pasted by accident put her into a room nobody had
+    // decided she should be in, and the only way out was the operator's own SimpleX
+    // client. A control that accepts more than it claims is wrong on its own terms,
+    // independently of whether channel joining works at all.
+    //
+    // A channel IS a group with relays, which is what tells them apart here:
+    // `groupRelays` is non-empty for a channel and empty for a plain group. The refusal
+    // NAMES what was pasted, because "that is not a channel link" against a link the
+    // operator cannot read is not actionable.
+    if (inner === 'ok') {
+      const relays = plan.groupLinkPlan.groupSLinkInfo_?.groupRelays ?? [];
+      const named = plan.groupLinkPlan.groupSLinkData_?.groupProfile?.displayName;
+      if (relays.length === 0 && !confirmGroupJoin) {
+        throw new NotAChannelLinkError(
+          `That is a GROUP link${named ? ` for "${named}"` : ''}, not a channel link. Joining it ` +
+            `would put this bot in that group, where it would archive and answer. If that is ` +
+            `what you want, confirm it; otherwise paste a channel link.`,
+          named ?? null,
+        );
+      }
     }
     if (inner === 'noRelays' || inner === 'updateRequired') {
       throw new RuntimeActionUnavailableError(
