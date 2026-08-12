@@ -142,9 +142,14 @@ export function roomsOf(records: readonly GroupRecord[]): Room[] {
     );
     const first = sorted[0];
     if (first === undefined) continue;
-    // The name from the record with the most members: a stale record from a membership that
-    // ended keeps the name it had, and the live one is the one an operator recognises.
-    const named = [...sorted].sort((a, b) => b.memberIds.length - a.memberIds.length)[0];
+    // The name an operator recognises: a CURRENT membership first, and among those the
+    // fullest. A record whose membership ended keeps whatever the group was called then, and
+    // naming the room after it is how the preview came to label a live room "Cyb3rD3sk_old" -
+    // found by operating the page rather than by reading it.
+    const byLiveness = [...sorted].sort(
+      (a, b) => Number(b.active) - Number(a.active) || b.memberIds.length - a.memberIds.length,
+    );
+    const named = byLiveness[0];
     out.push({
       key: recordKey(first),
       displayName: named?.displayName ?? first.displayName,

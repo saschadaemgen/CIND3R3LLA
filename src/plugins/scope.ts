@@ -48,6 +48,10 @@ import { KNOWLEDGE_DEFAULTS } from './knowledge-base/settings.js';
 import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
 import { CHANNEL_BRIDGE_DEFAULTS } from './channel-bridge/settings.js';
 import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
+// Importing the id REGISTERS the plugin: `definePlugin` runs at module load, which is how
+// every other capability here comes to exist. Capture has no settings document, so `enabled`
+// is its only key and `expectedPluginSettingKeys` supplies that for every plugin.
+import { CAPTURE_ID } from './capture/plugin.js';
 import { listPlugins, type PluginStates } from './registry.js';
 
 /** Where a plugin setting lives. */
@@ -363,6 +367,20 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     label: 'Largest re-hosted file',
     reason:
       'A storage bound. The bridge keeps its own copy of channel media because relays expire files, and disk is a deployment cost, not a bot choice.',
+  },
+  // PER BOT by question 1 of the three above, and the sharpest example of it: whether this
+  // bot records what is said is exactly "does this bot have the capability", and it is what
+  // makes a second bot in a room something other than a duplicated archive. The choice of
+  // WHICH bot captures a shared room is finer than a plugin setting and lives in
+  // `cinderella_capture_assignments`, because it is a fact about a room rather than about
+  // a bot.
+  {
+    pluginId: CAPTURE_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Archive capture enabled',
+    reason:
+      'Whether this bot records what is said in the rooms it is in. Two bots capturing one room wrote the archive twice.',
   },
 ]);
 

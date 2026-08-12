@@ -37,6 +37,15 @@ import { bridgeSendPort, sdkBridgePort, setBridgeSendPort } from './bot/bridge-p
 import { registerBridgeIntake, bridgeMediaStore } from './plugins/channel-bridge/intake.js';
 import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
+import { CAPTURE_ID } from './plugins/capture/plugin.js';
+import { refreshCaptureRooms, shouldCapture } from './capture/room-service.js';
+import { membershipIsActive } from './capture/room-service.js';
+import {
+  membershipIsRecorded,
+  recordMembershipChange,
+  type MembershipHow,
+} from './db/group-memberships.js';
+import { listCaptureAssignments } from './db/capture-assignments.js';
 import { seedBridgeTick, setBridgeJobDeps } from './queue/jobs/bridge.js';
 import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
 import {
@@ -481,7 +490,17 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   // another bot's engine. `GROUP_NAME` scoping is deliberately not applied per bot:
   // it is one deployment-wide name from the environment and would scope every bot to
   // one bot's group. A bot captures the groups it is in.
-  registerCapture({ chat: bot.events, fileReceiver: bot.fileReceiver }, cfg, hooks, {});
+  //
+  // `shouldCapture` is the room rule (CCB-S5-033, D-190): with two bots in one room exactly
+  // one RECORD writes the archive. Passed as a live predicate rather than a value, because
+  // the conflict it exists for appeared when a bot JOINED a room at runtime and nobody
+  // touched a setting - a value read here would have been correct at boot and wrong an hour
+  // later. A bot whose capability is off captures nothing anywhere; the index answers that
+  // too, so this is one question rather than two.
+  registerCapture({ chat: bot.events, fileReceiver: bot.fileReceiver }, cfg, hooks, {
+    shouldCapture: (groupId) =>
+      deps.plugins.isEnabledFor(botProfileId, CAPTURE_ID) && shouldCapture(botProfileId, groupId),
+  });
 
   // The channel bridge's intake (CCB-S5-032), on the same per-bot event source
   // and for the same isolation reason. Capture and the bridge route by item
@@ -745,6 +764,14 @@ async function startCaptureWorker(
         // erasure path would then refuse a group it will shortly know about.
         await host.runtime.refreshOwnership();
         reportCoTenancy(host);
+        // Which bot captures which room, from the member sets (CCB-S5-033). After
+        // `refreshOwnership` for the same reason it is: the core must have settled, or a
+        // partial membership would make two bots look like one room's only capturer in turn.
+        await refreshRooms(host, plugins);
+        // Recorded once the rooms are known, and watched from here on: a join by LINK
+        // updated nothing before this, which is why nobody saw one happen.
+        await reconcileMemberships(host, 'observed');
+        watchMemberships(host, plugins);
 
         status.botRunning(
           host.runtime.ownership.all().map((g) => g.localDisplayName),
@@ -844,13 +871,98 @@ function reportCoTenancy(host: RuntimeHost): void {
   }
   const unknown = host.runtime.ownership.unidentifiedGroups();
   if (unknown.length > 0) {
-    // Stated rather than passed over: a null shared key means the core gave nothing to
-    // compare, so co-tenancy in those groups can be neither confirmed nor ruled out, and
-    // silence would read as "checked, none found".
-    log.info('Some groups carry no shared identity, so co-tenancy could not be checked', {
+    // ── THIS LINE IS NO LONGER THE ANSWER (CCB-S5-033, D-190) ───────────────
+    //
+    // It looked straight at the case this briefing exists for and reported it as an
+    // unchecked case rather than a fault: `sharedGroupKey` consults `groupKeys.publicGroupId`
+    // and `viaGroupLinkUri`, both of which the core leaves null for a bot ADDED to a group,
+    // so the four groups it named were the four where co-tenancy was real and invisible.
+    //
+    // The room index answers the same question from the MEMBER SETS instead, which is
+    // measurable rather than absent, and reports a real conflict through `status.error`.
+    // Kept at debug because a null shared key is still true and still worth being able to
+    // see; it is no longer the only thing said about these groups.
+    log.debug('Some groups carry no shared identity; the room index decides them by membership', {
       groups: unknown.map((g) => g.localDisplayName).join(', '),
     });
   }
+}
+
+/**
+ * Which bot captures which room, evaluated at boot (CCB-S5-033, D-190).
+ *
+ * At boot and on membership change, NOT only when a setting is saved. The operator did not
+ * create the conflict that prompted this: a second bot joined a room that already had one,
+ * and the conflict appeared with nobody touching a form. A rule that is only evaluated on
+ * save is a rule that cannot see the way this actually happens.
+ */
+async function reconcileMemberships(host: RuntimeHost, how: MembershipHow): Promise<void> {
+  const db = getPool();
+  for (const bot of host.bots) {
+    try {
+      const groups = await host.runtime.listGroups(bot.simplexUserId);
+      for (const g of groups) {
+        if (!membershipIsActive(g.membership?.memberStatus)) continue;
+        if (await membershipIsRecorded(db, bot.config.botProfileId, g.groupId)) continue;
+        await recordMembershipChange(db, {
+          botProfileId: bot.config.botProfileId,
+          simplexUserId: bot.simplexUserId,
+          groupId: g.groupId,
+          groupName: g.localDisplayName,
+          change: 'joined',
+          how,
+        });
+        log.info('membership: a bot is in a room that was not recorded', {
+          bot: bot.config.displayName,
+          group: g.localDisplayName,
+          groupId: g.groupId,
+          how,
+        });
+      }
+    } catch (err) {
+      // Loud, not swallowed: an unrecorded membership is exactly the blindness this fixes.
+      log.error('membership: could not reconcile a bot\'s rooms', {
+        bot: bot.config.displayName,
+        error: describeChatError(err),
+      });
+    }
+  }
+}
+
+/**
+ * Watch for membership changing while the process runs.
+ *
+ * `userJoinedGroup` fires on this bot's own stream, and the existing handler only stamps a
+ * row an invitation created - so a LINK join updated nothing and said nothing. Reconciling
+ * from the core's own list rather than from the event payload means a join by any route is
+ * recorded, and the room index is rebuilt so the new membership takes effect on the next
+ * message rather than at the next restart.
+ */
+function watchMemberships(host: RuntimeHost, plugins: PluginService): void {
+  for (const bot of host.bots) {
+    bot.events.on('userJoinedGroup', () => {
+      void (async () => {
+        await reconcileMemberships(host, 'observed');
+        await refreshRooms(host, plugins);
+      })();
+    });
+  }
+}
+
+async function refreshRooms(host: RuntimeHost, plugins: PluginService): Promise<void> {
+  await refreshCaptureRooms(
+    {
+      bots: host.bots.map((b) => ({
+        botProfileId: b.config.botProfileId,
+        simplexUserId: b.simplexUserId,
+        displayName: b.config.displayName,
+      })),
+      listGroups: (simplexUserId) => host.runtime.listGroups(simplexUserId),
+      listMembers: (simplexUserId, groupId) => host.runtime.listMembers(simplexUserId, groupId),
+    },
+    (botProfileId) => plugins.isEnabledFor(botProfileId, CAPTURE_ID),
+    await listCaptureAssignments(getPool()),
+  );
 }
 
 /**

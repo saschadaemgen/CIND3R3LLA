@@ -74,6 +74,17 @@ export interface CaptureOptions {
    * otherwise silently stop capture). Resolved once at startup.
    */
   targetGroupId?: number | undefined;
+  /**
+   * Does THIS bot capture this group? (CCB-S5-033, D-190.)
+   *
+   * Asked per message rather than decided once here, because the answer changes while the
+   * process runs: the conflict this exists for appeared when a second bot JOINED a room that
+   * already had one, with nobody touching a setting. A registration-time decision would have
+   * been correct at boot and wrong an hour later.
+   *
+   * Absent means capture, which is what every harness and the single-bot deployment want.
+   */
+  shouldCapture?: ((groupId: number) => boolean) | undefined;
 }
 
 async function receiveAndReport(
@@ -180,6 +191,18 @@ export function registerCapture(
   };
 
   const persist = async (msg: CapturedMessage): Promise<boolean> => {
+    // ── THE ROOM RULE GATES THE ARCHIVE, NOT THE BOT (CCB-S5-033, D-190) ─────
+    //
+    // Here rather than in `inScope`, which was the first attempt and was wrong: `inScope`
+    // guards the WHOLE handler, so gating there would have stopped this bot processing
+    // `/publish` and `/unpublish` and stopped it answering at all. A bot that does not
+    // capture a room still reads it, still replies in it, and still moderates it - it just
+    // does not write the archive, because exactly one record per room does.
+    //
+    // Returning false is load-bearing: the caller uses it to decide whether to receive the
+    // FILE, and a non-capturing bot must not pull bytes for a row it will not write. Two
+    // bots capturing one room produced two rows AND two copies of every attachment.
+    if (opts.shouldCapture && !opts.shouldCapture(msg.groupId)) return false;
     try {
       await hooks.onMessage(msg);
       return true;

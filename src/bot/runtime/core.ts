@@ -524,6 +524,26 @@ export class MultiProfileRuntime {
   }
 
   /**
+   * The members of one group, as the profile that holds it (CCB-S5-033, D-190).
+   *
+   * `apiListMembers` takes a groupId and NO user id, and group ids are per profile, so it
+   * executes as whichever profile is active: exactly the command shape D-171 is about, and
+   * scheduled for that reason. The SDK documents it as "Network usage: no" - a local read of
+   * the core's SQLite - which is what makes reading every group's membership at boot
+   * affordable.
+   *
+   * This is how a ROOM is identified: a member's wire id is scoped to the room, so two
+   * records are the same room exactly when their member sets intersect. See `capture/rooms.ts`
+   * for the measurement that settled it.
+   */
+  async listMembers(simplexUserId: number, groupId: number): Promise<T.GroupMember[]> {
+    const chat = this.requireChat();
+    return await this.scheduler.run(simplexUserId, `listMembers:${String(groupId)}`, () =>
+      chat.apiListMembers(groupId),
+    );
+  }
+
+  /**
    * Rebuild the group index from what each hosted profile reports.
    *
    * Listed per profile rather than once, because there is no "all groups" command and each
