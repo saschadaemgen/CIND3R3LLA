@@ -544,6 +544,45 @@ export class MultiProfileRuntime {
   }
 
   /**
+   * Leave a group this bot is currently in (CCB-S5-034, D-192).
+   *
+   * `apiLeaveGroup` ANNOUNCES the departure: the other members see it, and the membership
+   * becomes `left`. The record REMAINS afterwards, which is not a bug and is why
+   * {@link deleteGroupRecord} exists as a separate operation - the core keeps a row for a
+   * membership that is over, and clearing it is a different decision from leaving.
+   *
+   * Takes no user id, so it executes as whichever profile is active: scheduled, per D-171.
+   */
+  async leaveGroup(simplexUserId: number, groupId: number): Promise<void> {
+    const chat = this.requireChat();
+    await this.scheduler.run(simplexUserId, `leaveGroup:${String(groupId)}`, async () => {
+      await chat.apiLeaveGroup(groupId);
+    });
+  }
+
+  /**
+   * Delete the local record of a group (CCB-S5-034, D-192).
+   *
+   * For a membership that has already ENDED. `apiDeleteGroup` does not exist in this SDK -
+   * checked, not assumed - so this is `apiDeleteChat` with the group chat type.
+   *
+   * `notify: false` deliberately. The membership is over, so there is nobody to tell, and a
+   * notifying delete on a chat the bot has already left is at best noise. The CALLER is
+   * responsible for refusing this on a membership that is still current: deleting the record
+   * while still a member would leave the bot in the group from every other member's view
+   * with no local record of it, which is worse than the state being cleared.
+   *
+   * This does NOT touch the archive. `messages` lives in PostgreSQL keyed on the group id and
+   * nothing here reaches it.
+   */
+  async deleteGroupRecord(simplexUserId: number, groupId: number): Promise<void> {
+    const chat = this.requireChat();
+    await this.scheduler.run(simplexUserId, `deleteGroupRecord:${String(groupId)}`, async () => {
+      await chat.apiDeleteChat(T.ChatType.Group, groupId, { type: 'full', notify: false });
+    });
+  }
+
+  /**
    * Rebuild the group index from what each hosted profile reports.
    *
    * Listed per profile rather than once, because there is no "all groups" command and each

@@ -42,6 +42,7 @@ import type { T } from '@simplex-chat/types';
 import type { Queryable } from '../../db/pool.js';
 import { applyProfileUpdate, type HostedBot, type RuntimeHost } from './host.js';
 import { describeChatError } from './chat-error.js';
+import { membershipIsActive } from '../../capture/room-service.js';
 import { flushAvatarToGroups } from '../avatar.js';
 
 /** The live runtime, when one is running. Absent in harnesses and scripts. */
@@ -544,6 +545,102 @@ export async function connectBotToChannel(
   // Two sequential scheduled calls plus a refresh, never nested (CCB-S5-015).
   await host.runtime.refreshOwnership();
   return { plan: planText, connected: true };
+}
+
+/* ── leaving a room, and clearing a record of one that ended (CCB-S5-034) ───── */
+
+/**
+ * What the console needs to know about one of a bot's group records.
+ *
+ * `active` is the whole point: it is what makes "leave" and "clear" different operations
+ * rather than two names for the same button.
+ */
+export interface BotGroupRecord {
+  groupId: number;
+  displayName: string;
+  active: boolean;
+  memberStatus: string;
+}
+
+/** Every group record this bot holds, ended ones included and marked. */
+export async function listBotGroupRecords(botProfileId: number): Promise<BotGroupRecord[]> {
+  const { host, simplexUserId } = requireReadyBot('its rooms cannot be listed', botProfileId);
+  const groups = await host.runtime.listGroups(simplexUserId);
+  return groups.map((g) => {
+    const memberStatus = String(g.membership?.memberStatus ?? 'unknown');
+    return {
+      groupId: g.groupId,
+      displayName: g.localDisplayName,
+      active: membershipIsActive(g.membership?.memberStatus),
+      memberStatus,
+    };
+  });
+}
+
+/**
+ * Leave a room, as this bot.
+ *
+ * Irreversible from the product's side: rejoining needs a link the bot does not keep, so the
+ * console asks first and names the room. The ARCHIVE IS UNTOUCHED - every message already
+ * captured stays in PostgreSQL, stays published if its sender consented, and stays searchable.
+ * Leaving stops new messages arriving; it does not retract the old ones.
+ */
+export async function leaveRoom(botProfileId: number, groupId: number): Promise<BotGroupRecord> {
+  const { host, simplexUserId, displayName } = requireReadyBot(
+    'it cannot leave a room',
+    botProfileId,
+  );
+  const records = await listBotGroupRecords(botProfileId);
+  const record = records.find((r) => r.groupId === groupId);
+  if (record === undefined) {
+    throw new RuntimeActionUnavailableError(
+      `Bot "${displayName}" has no record of group ${String(groupId)}, so there is nothing to leave.`,
+    );
+  }
+  if (!record.active) {
+    throw new RuntimeActionUnavailableError(
+      `"${displayName}" is not in "${record.displayName}" any more (${record.memberStatus}), so ` +
+        `there is nothing to leave. You can clear the leftover record instead.`,
+    );
+  }
+  await host.runtime.leaveGroup(simplexUserId, groupId);
+  log.info('runtime: a bot left a room on request', { botProfileId, groupId, displayName });
+  return record;
+}
+
+/**
+ * Clear the local record of a membership that has already ended.
+ *
+ * REFUSES while the membership is current, which is the load-bearing half. Deleting the
+ * record of a group the bot is still in would leave it in that group from every other
+ * member's point of view with nothing here to show it, and no way to leave afterwards - a
+ * worse state than the one being tidied. Leave first, then clear.
+ */
+export async function clearEndedRoomRecord(
+  botProfileId: number,
+  groupId: number,
+): Promise<BotGroupRecord> {
+  const { host, simplexUserId, displayName } = requireReadyBot(
+    'a record cannot be cleared',
+    botProfileId,
+  );
+  const records = await listBotGroupRecords(botProfileId);
+  const record = records.find((r) => r.groupId === groupId);
+  if (record === undefined) {
+    throw new RuntimeActionUnavailableError(
+      `Bot "${displayName}" has no record of group ${String(groupId)}; nothing to clear.`,
+    );
+  }
+  if (record.active) {
+    throw new RuntimeActionUnavailableError(
+      `"${displayName}" is STILL IN "${record.displayName}". Clearing the record now would ` +
+        `leave it in the group with nothing here to show it, and no way to leave afterwards. ` +
+        `Leave the room first, then clear the record.`,
+    );
+  }
+  await host.runtime.deleteGroupRecord(simplexUserId, groupId);
+  log.info('runtime: an ended room record was cleared', { botProfileId, groupId, displayName });
+  return record;
 }
 
 export interface DiscoveredChannel {

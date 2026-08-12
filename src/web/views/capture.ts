@@ -27,7 +27,9 @@ import {
   clearCaptureAssignments,
   listCaptureAssignments,
 } from '../../db/capture-assignments.js';
-import { listMembershipChanges } from '../../db/group-memberships.js';
+import { clearEndedRoomRecord, leaveRoom } from '../../bot/runtime/admin-actions.js';
+import { describeChatError } from '../../bot/runtime/chat-error.js';
+import { listMembershipChanges, recordMembershipChange } from '../../db/group-memberships.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { runtimeAdminAvailable } from '../../bot/runtime/admin-actions.js';
 import { writeAudit } from '../../db/audit.js';
@@ -49,7 +51,17 @@ function bodyInt(body: unknown, key: string): number | null {
 export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): void {
   const { db } = ctx;
 
-  app.get<{ Querystring: { saved?: string; error?: string; confirm?: string } }>(
+  app.get<{
+    Querystring: {
+      saved?: string;
+      error?: string;
+      confirm?: string;
+      to?: string;
+      leaving?: string;
+      bot?: string;
+      mode?: string;
+    };
+  }>(
     '/capture',
     async (req, reply) => {
       const csrf = req.session?.csrfToken ?? '';
@@ -66,6 +78,9 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
 
       /** The confirmation the operator is being asked for, if any. */
       const pending = req.query.confirm ?? '';
+      /** The record a leave/clear confirmation is about, if any. */
+      const leaving = req.query.leaving ? Number.parseInt(req.query.leaving, 10) : null;
+      const leavingBot = req.query.bot ? Number.parseInt(req.query.bot, 10) : null;
 
       reply.type('text/html');
       return page({
@@ -127,7 +142,7 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                         <thead>
                           <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
                             <th class="py-1 pr-3">Bot</th><th class="py-1 pr-3">Group id</th>
-                            <th class="py-1 pr-3">Membership</th><th class="py-1">Captures</th>
+                            <th class="py-1 pr-3">Membership</th><th class="py-1 pr-3">Captures</th><th class="py-1"></th>
                           </tr>
                         </thead>
                         <tbody>
@@ -136,10 +151,44 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                               <td class="py-1 pr-3">${nameOf(rec.botProfileId)}</td>
                               <td class="py-1 pr-3 text-slate-500">${String(rec.groupId)}</td>
                               <td class="py-1 pr-3">${rec.active ? badge('current', 'green') : badge('ended', 'slate')}</td>
-                              <td class="py-1">
+                              <td class="py-1 pr-3">
                                 ${rec.active && rec.botProfileId === d.botProfileId && rec.groupId === d.groupId
                                   ? badge('yes', 'green')
                                   : html`<span class="text-slate-400">no</span>`}
+                              </td>
+                              <td class="py-1">
+                                ${leaving === rec.groupId && leavingBot === rec.botProfileId
+                                  ? html`<form method="post" action="/capture/leave" class="flex flex-wrap items-center gap-2">
+                                      <input type="hidden" name="_csrf" value="${csrf}" />
+                                      <input type="hidden" name="botProfileId" value="${String(rec.botProfileId)}" />
+                                      <input type="hidden" name="groupId" value="${String(rec.groupId)}" />
+                                      <input type="hidden" name="mode" value="${rec.active ? 'leave' : 'clear'}" />
+                                      <input type="hidden" name="confirmed" value="yes" />
+                                      <span class="text-xs text-amber-900">
+                                        ${rec.active
+                                          ? html`<strong>Leave "${room.displayName}" as ${nameOf(rec.botProfileId)}?</strong>
+                                              The group is told. Rejoining needs a fresh link. Everything already
+                                              archived from this room stays: the messages remain, stay published if
+                                              their sender consented, and stay searchable. Leaving stops new
+                                              messages arriving; it does not retract the old ones.`
+                                          : html`<strong>Clear the leftover record for "${room.displayName}"?</strong>
+                                              This membership is already over; only the local row goes. The archive
+                                              is untouched.`}
+                                      </span>
+                                      <button type="submit" class="rounded-lg bg-red-700 px-2 py-1 text-xs font-medium text-white hover:bg-red-600">
+                                        ${rec.active ? 'Yes, leave it' : 'Yes, clear it'}
+                                      </button>
+                                      <a href="/capture" class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100">Cancel</a>
+                                    </form>`
+                                  : html`<form method="post" action="/capture/leave">
+                                      <input type="hidden" name="_csrf" value="${csrf}" />
+                                      <input type="hidden" name="botProfileId" value="${String(rec.botProfileId)}" />
+                                      <input type="hidden" name="groupId" value="${String(rec.groupId)}" />
+                                      <input type="hidden" name="mode" value="${rec.active ? 'leave' : 'clear'}" />
+                                      <button type="submit" class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100">
+                                        ${rec.active ? 'Leave' : 'Clear record'}
+                                      </button>
+                                    </form>`}
                               </td>
                             </tr>`,
                           )}
@@ -279,6 +328,60 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
       groupId: record.groupId,
     });
     return reply.redirect('/capture?saved=1');
+  });
+
+  /**
+   * Leave a room, or clear the record of one already left.
+   *
+   * Two operations, not one button with a mode. Leaving ANNOUNCES a departure and is
+   * irreversible from the product's side; clearing removes a local row for a membership that
+   * is already over. `clearEndedRoomRecord` refuses while the membership is current, because
+   * deleting the record of a group the bot is still in would leave it there with nothing here
+   * to show it and no way out.
+   */
+  app.post<{ Body: Record<string, unknown> }>('/capture/leave', async (req, reply) => {
+    const botProfileId = bodyInt(req.body, 'botProfileId');
+    const groupId = bodyInt(req.body, 'groupId');
+    const mode = bodyStr(req.body, 'mode') === 'clear' ? 'clear' : 'leave';
+    if (botProfileId === null || groupId === null) {
+      return reply.redirect('/capture?error=Pick+a+room+first.');
+    }
+    // Named confirmation. Leaving is not undoable from here: rejoining needs a link the bot
+    // does not keep.
+    if (bodyStr(req.body, 'confirmed') !== 'yes') {
+      return reply.redirect(
+        `/capture?leaving=${String(groupId)}&bot=${String(botProfileId)}&mode=${mode}`,
+      );
+    }
+    try {
+      const record =
+        mode === 'clear'
+          ? await clearEndedRoomRecord(botProfileId, groupId)
+          : await leaveRoom(botProfileId, groupId);
+      await writeAudit(
+        db,
+        req.session?.username ?? 'unknown',
+        mode === 'clear' ? 'capture.record.clear' : 'capture.room.leave',
+        `group:${String(groupId)}`,
+        { botProfileId, room: record.displayName },
+      );
+      if (mode === 'leave') {
+        // The history the operator had none of: which bot, which room, when, how.
+        await recordMembershipChange(db, {
+          botProfileId,
+          simplexUserId: 0,
+          groupId,
+          groupName: record.displayName,
+          change: 'left',
+          how: 'console',
+        });
+      }
+      return reply.redirect('/capture?saved=1');
+    } catch (err) {
+      const message = describeChatError(err);
+      log.error(`capture console: ${mode} failed`, { botProfileId, groupId, error: message });
+      return reply.redirect(`/capture?error=${encodeURIComponent(message)}`);
+    }
   });
 
   app.post<{ Body: Record<string, unknown> }>('/capture/clear', async (req, reply) => {
