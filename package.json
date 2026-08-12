@@ -124,6 +124,7 @@
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
     "verify:bridge": "tsx scripts/verify-bridge.ts",
     "verify:capture-rooms": "tsx scripts/verify-capture-rooms.ts",
+    "verify:capture-console": "tsx scripts/verify-capture-console.ts",
     "verify:chat-errors": "tsx scripts/verify-chat-error-surfaced.ts",
     "verify:name-guard": "tsx scripts/verify-name-guard.ts",
     "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"

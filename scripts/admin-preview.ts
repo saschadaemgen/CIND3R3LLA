@@ -42,6 +42,8 @@ import {
   upsertBridgeChannel,
 } from '../src/plugins/channel-bridge/store.js';
 import { buildOrigin } from '../src/plugins/channel-bridge/origin.js';
+import { refreshCaptureRooms } from '../src/capture/room-service.js';
+import type { T } from '@simplex-chat/types';
 import {
   KnowledgeService,
   checksumOf,
@@ -393,6 +395,45 @@ async function main(): Promise<void> {
     maxAgeHours: 24,
     maxRepeats: 3,
   });
+  // ── THE CAPTURE ROOMS (CCB-S5-033, D-190) ────────────────────────────────
+  //
+  // Seeded through the REAL refresh with a fake source rather than by poking the index,
+  // so the preview exercises `roomsOf` and `decideCapture` exactly as the runtime does.
+  // Three rooms in the production shape: one shared by both bots (the conflict, which is
+  // the thing that must be operable here), one held by one bot, and one whose membership
+  // has ended and which nobody captures.
+  await refreshCaptureRooms(
+    {
+      bots: [
+        { botProfileId: previewBotId, simplexUserId: 1, displayName: 'CIND3R3LLA' },
+        { botProfileId: supportBotId, simplexUserId: 2, displayName: 'SupportDesk' },
+      ],
+      listGroups: (uid) =>
+        Promise.resolve(
+          (uid === 1
+            ? [
+                { groupId: 4, localDisplayName: 'Cyb3rD3sk', status: 'connected' },
+                { groupId: 1, localDisplayName: 'Cyb3rD3sk_old', status: 'removed' },
+                { groupId: 6, localDisplayName: 'CIND3R3LLA', status: 'connected' },
+              ]
+            : [{ groupId: 5, localDisplayName: 'Cyb3rD3sk', status: 'connected' }]
+          ).map((g) => ({
+            groupId: g.groupId,
+            localDisplayName: g.localDisplayName,
+            membership: { memberStatus: g.status },
+          })) as unknown as T.GroupInfo[],
+        ),
+      listMembers: (_uid, groupId) => {
+        const room = groupId === 6 ? 'C' : groupId === 1 || groupId === 4 || groupId === 5 ? 'A' : 'B';
+        return Promise.resolve(
+          Array.from({ length: 6 }, (_v, i) => ({ memberId: `prev-${room}-${String(i)}` })) as unknown as T.GroupMember[],
+        );
+      },
+    },
+    () => true,
+    [],
+  );
+
   const bridgePending = await insertBridgePost(db, {
     botProfileId: previewBotId,
     sourceGroupId: 901,
