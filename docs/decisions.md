@@ -18,12 +18,13 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 197 decisions</strong> — newest first. Highest allocated: <strong>D-198</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 198 decisions</strong> — newest first. Highest allocated: <strong>D-199</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-199 | Nothing reaches the public repository until it has been demonstrated to work | IMPLEMENTED |
 | D-198 | The prepare command's shape, measured on a throwaway core, and a refusal with no button | IMPLEMENTED |
-| D-197 | The channel join, on the core we already had, with the id read and never inferred | IMPLEMENTED, corrected by [D-198] |
+| D-197 | The channel join, on the core we already had, with the id read and never inferred | NOT WORKING - the join does not subscribe to a channel |
 | D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
@@ -228,6 +229,39 @@ This has gone wrong twice.
 ---
 ---
 
+### D-199 - Nothing reaches the public repository until it has been demonstrated to work
+
+**Status: IMPLEMENTED** (standing rule). The repository is public and it is the operator's shop
+window. A commit that claims a capability it does not have reads as not knowing what we are doing,
+and that judgement is correct.
+
+Established after two pushes in two days that described unproven work as delivered: the channel
+join, pushed as "channel join built" when it creates an ordinary group rather than a channel and
+no subscriber ever appears ([D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)),
+and the expiry check the day before.
+
+**What makes this worth a rule is that both were GREEN.** Every harness passed. The trap is that
+the evidence looked like proof and was not:
+
+- **A passing harness is not a demonstration.** `verify:channel-join` asserted the wire string by
+  comparing the source against itself, so it confirmed the code emitted what the code emitted.
+- **A command the core ACCEPTS is not a command that WORKS.** `/_prepare group` returned
+  `newPreparedChat` and `/_connect group #<id>` returned `startedConnectionToGroup`. Both were
+  accepted, and the result was `use_relays = 0` and a group nobody joined.
+- **"Verified on the host" was the join being ISSUED on the host, not the join ARRIVING.** This is
+  D-178's lesson - rendering is not verifying - in a new place, so its scope is wider than the
+  browser: a control is verified when its EFFECT has been observed. Twelve seconds of watching was
+  not enough to see that the effect never came, and nobody watched longer until it was too late.
+
+The rule: **probe locally, prove locally, push what was proven.** Exploratory work belongs on
+throwaway cores and scratch databases and is not pushed at all, which is the one thing that went
+right here - both probes ran on disposable cores and neither reached the repository. Where
+something genuinely must land half-finished, that is allowed and it is SAID: the commit message
+and the register row state what is unproven, in those words, rather than describing it as
+delivered. A wrong claim is corrected IN PLACE per D-191/D-193, never edited away.
+
+---
+
 ### D-198 - The prepare command's shape, measured on a throwaway core, and a refusal with no button
 
 **Status: IMPLEMENTED** (CCB-S5-040). D-197 built the channel join on `/_prepare group` followed
@@ -285,12 +319,37 @@ the real channel. What is logged is the SHAPE and the byte counts, which is the 
 
 ### D-197 - The channel join, on the core we already had, with the id read and never inferred
 
-**Status: IMPLEMENTED, corrected by [D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)**
-(CCB-S5-038). The channel bridge shipped and could not join a channel. It can now, without
-upgrading anything. **The two-step structure below is right and is verified end to end on the
-host; the ARGUMENTS given for `/_prepare group` were a guess and were wrong.** It takes four
-(`<userId> <connFullLink> <connShortLink> <groupShortLinkData>`), both extra ones coming from the
-plan. See D-198 before reading the command shapes here as fact.
+**Status: NOT WORKING - the join does not subscribe to a channel. Corrected by
+[D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)
+and [D-199](#d-199---nothing-reaches-the-public-repository-until-it-has-been-demonstrated-to-work)**
+(CCB-S5-038).
+
+**THIS ENTRY CLAIMED THE CHANNEL JOIN WORKED. IT DOES NOT.** The claim is left standing below,
+per D-191/D-193, so the mistake stays legible. What is actually true:
+
+- The two-step STRUCTURE is right, and `apiConnect` really does refuse a channel link by name
+  (retested with the correct `CreatedConnLink` object, not the bare string that made the first
+  test worthless).
+- The ARGUMENTS were a guess and were wrong; D-198 measured the real four.
+- **And the four-argument form, though it parses, is INCOMPLETE.** It creates an ordinary group,
+  not a channel. Measured on group 7 and reproduced on a clean core: `use_relays = 0`,
+  `relay_own_status` NULL, `public_member_count` NULL, and ZERO rows in `group_relays` across the
+  whole database. A channel is served by its relays, so nothing ever connects and no subscriber
+  appears. Watched for 90 seconds on a clean core, sampled every 15 s: `memberStatus` never
+  leaves `unknown`.
+- The relay list lives in the plan's `groupSLinkInfo_` (`{direct, groupRelays[], publicGroupId}`),
+  a DIFFERENT object from the `groupSLinkData_` that is passed. `/_prepare group` cannot carry it:
+  four shapes that include it were all rejected by the parser, and only the shipped four-argument
+  form is accepted. So something must establish relays SEPARATELY and that command has not been
+  found. The core has the machinery unused - `group_relays.relay_status`, `relay_request_execute_at`,
+  `relay_request_retries`, `relay_request_failed`, `relay_request_err_reason`.
+- One lead, recorded rather than acted on: this entry itself lists `APIAddGroupRelays` and
+  `APIGetGroupRelays` among the 7.0.0 commands it dismissed as "create and manage channels rather
+  than join one by link". That dismissal was made before it was known that joining REQUIRES relays
+  to be established. It does not reopen the 7.0.0 question by itself, and the method-count parity
+  finding remains true, but it is the first evidence that bears on it from a new direction.
+
+Original entry follows, wrong where it claims delivery.
 
 **WHAT WAS ACTUALLY MISSING.** `apiConnect` is the wrong command and the core says so by name:
 "channel links must be connected via APIConnectPreparedGroup". D-196 established that command

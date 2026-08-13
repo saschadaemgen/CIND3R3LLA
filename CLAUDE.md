@@ -47,6 +47,20 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   never received in Season 3 and this was only discovered at close-out. Confirm receipt
   against the register when a briefing arrives, and record the delivering commit against
   its CCB id when it lands.
+- **Nothing reaches the public repository until it has been demonstrated to work** (standing rule,
+  D-199). The repository is the operator's shop window, and a commit that claims a capability it
+  does not have reads as not knowing what we are doing. This was established after two pushes in
+  two days that described unproven work as delivered: the channel join, pushed as "channel join
+  built" when it creates an ordinary group rather than a channel and no subscriber ever appears;
+  and the expiry check the day before. Both were green on every check, which is precisely the
+  problem - **a passing harness is not a demonstration**, and neither is a command the core
+  ACCEPTS. The join returned `startedConnectionToGroup` and set `use_relays = 0`.
+  So: **probe locally, prove locally, push what was proven.** Exploratory work belongs on
+  throwaway cores and databases and is never pushed at all, which is the one thing that went
+  right. Where something genuinely must land half-finished, that is fine and it is SAID: the
+  commit message and the register row state what is unproven, in those words, rather than
+  describing it as delivered. And when a claim turns out to be wrong, it is corrected IN PLACE
+  per D-191/D-193 so the mistake stays legible, never edited away.
 - **Surface failures, never swallow them** (standing rule, CCB-S3-023). A caught error
   must not be converted into a value that reads as a legitimate result (masking), and a
   degraded/absent function must not run silently. Log with actionable context (operation,
