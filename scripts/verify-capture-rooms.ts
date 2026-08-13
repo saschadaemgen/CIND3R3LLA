@@ -442,6 +442,49 @@ function sectionRefresh(): void {
   );
 }
 
+/**
+ * ── THE PAGE MUST ASK THE MEMBERSHIP QUESTION WITH THE MEMBERSHIP PREDICATE (D-203) ──
+ *
+ * Splitting the predicate is not the fix on its own. `GroupRecord` gained `current`, and
+ * `botGroupSummaries` was repointed at it - but `capture.ts`, the page that OWNS the Leave
+ * and Clear buttons, went on reading `active`. So group 7 kept rendering as a current
+ * membership, offered Leave rather than Clear, and the operator stayed blocked by a record
+ * that had never been a member of anything. The fix that mattered was the LAST consumer, not
+ * the first.
+ */
+function sectionPage(): void {
+  console.log('');
+  console.log('8. The capture page asks membership with `current`, capture with `active` (D-203)');
+  const page = readFileSync('src/web/views/capture.ts', 'utf8');
+  // Comments out first: the note explaining the split necessarily names both fields.
+  const code = page.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  check(
+    'the membership badge reads `current`',
+    code.includes("rec.current ? badge('current', 'green') : badge('ended', 'slate')"),
+  );
+  check(
+    '  and the leave/clear mode is chosen by `current`, on BOTH forms',
+    (code.match(/name="mode" value="\$\{rec\.current \? 'leave' : 'clear'\}"/g) ?? []).length === 2,
+  );
+  check(
+    '  and both button labels follow it',
+    code.includes("rec.current ? 'Leave' : 'Clear record'") &&
+      code.includes("rec.current ? 'Yes, leave it' : 'Yes, clear it'"),
+  );
+  check(
+    'MUTATION: no membership decision still reads `active`',
+    !code.includes("rec.active ? badge") && !code.includes("value=\"${rec.active ? 'leave'"),
+  );
+  // POSITIVE CONTROL. Every assertion above passes against a page that deleted `active`
+  // entirely, which would silently convert the capture question into a membership one.
+  check(
+    'POSITIVE CONTROL: the Captures column still uses `active`, which fails OPEN (D-190)',
+    (code.match(/rec\.active/g) ?? []).length === 1 &&
+      code.includes('rec.active && rec.botProfileId === d.botProfileId'),
+  );
+}
+
 function main(): void {
   console.log('One bot captures a room (CCB-S5-033, D-190)');
   sectionRooms();
@@ -451,6 +494,7 @@ function main(): void {
   sectionLeaveClear();
   sectionPredicates();
   sectionRefresh();
+  sectionPage();
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - capture rooms.`,
   );

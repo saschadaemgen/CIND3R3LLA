@@ -160,8 +160,15 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                             (rec) => html`<tr class="border-b border-slate-100">
                               <td class="py-1 pr-3">${nameOf(rec.botProfileId)}</td>
                               <td class="py-1 pr-3 text-slate-500">${String(rec.groupId)}</td>
-                              <td class="py-1 pr-3">${rec.active ? badge('current', 'green') : badge('ended', 'slate')}</td>
+                              <td class="py-1 pr-3">${rec.current ? badge('current', 'green') : badge('ended', 'slate')}</td>
                               <td class="py-1 pr-3">
+                                ${/*
+                                  `active`, NOT `current`, and deliberately (D-190/D-203): this
+                                  column is the CAPTURE question, which fails OPEN so a status
+                                  the SDK adds later cannot silently stop an archive. Every
+                                  other cell in this row is the MEMBERSHIP question and uses
+                                  `current`, which fails closed. Do not unify them.
+                                */ ''}
                                 ${rec.active && rec.botProfileId === d.botProfileId && rec.groupId === d.groupId
                                   ? badge('yes', 'green')
                                   : html`<span class="text-slate-400">no</span>`}
@@ -172,10 +179,10 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                                       <input type="hidden" name="_csrf" value="${csrf}" />
                                       <input type="hidden" name="botProfileId" value="${String(rec.botProfileId)}" />
                                       <input type="hidden" name="groupId" value="${String(rec.groupId)}" />
-                                      <input type="hidden" name="mode" value="${rec.active ? 'leave' : 'clear'}" />
+                                      <input type="hidden" name="mode" value="${rec.current ? 'leave' : 'clear'}" />
                                       <input type="hidden" name="confirmed" value="yes" />
                                       <span class="text-xs text-amber-900">
-                                        ${rec.active
+                                        ${rec.current
                                           ? html`<strong>Leave "${room.displayName}" as ${nameOf(rec.botProfileId)}?</strong>
                                               The group is told. Rejoining needs a fresh link. Everything already
                                               archived from this room stays: the messages remain, stay published if
@@ -186,7 +193,7 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                                               is untouched.`}
                                       </span>
                                       <button type="submit" class="rounded-lg bg-red-700 px-2 py-1 text-xs font-medium text-white hover:bg-red-600">
-                                        ${rec.active ? 'Yes, leave it' : 'Yes, clear it'}
+                                        ${rec.current ? 'Yes, leave it' : 'Yes, clear it'}
                                       </button>
                                       <a href="/capture" class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100">Cancel</a>
                                     </form>`
@@ -194,9 +201,9 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
                                       <input type="hidden" name="_csrf" value="${csrf}" />
                                       <input type="hidden" name="botProfileId" value="${String(rec.botProfileId)}" />
                                       <input type="hidden" name="groupId" value="${String(rec.groupId)}" />
-                                      <input type="hidden" name="mode" value="${rec.active ? 'leave' : 'clear'}" />
+                                      <input type="hidden" name="mode" value="${rec.current ? 'leave' : 'clear'}" />
                                       <button type="submit" class="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100">
-                                        ${rec.active ? 'Leave' : 'Clear record'}
+                                        ${rec.current ? 'Leave' : 'Clear record'}
                                       </button>
                                     </form>`}
                               </td>

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 201 decisions</strong> — newest first. Highest allocated: <strong>D-202</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 202 decisions</strong> — newest first. Highest allocated: <strong>D-203</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-203 | Splitting a predicate fixes nothing until the LAST consumer is repointed | IMPLEMENTED |
 | D-202 | "Saved." is what a successful join says, so a non-join may not say it too | IMPLEMENTED |
 | D-201 | A deny-list fails open, and a page that does not refresh reports a world that is gone | IMPLEMENTED |
 | D-200 | The channel join works, and it was one omitted token with a dangerous default | IMPLEMENTED, DEMONSTRATED |
@@ -230,6 +231,48 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-203 - Splitting a predicate fixes nothing until the LAST consumer is repointed
+
+**Status: IMPLEMENTED** (CCB-S5-040).
+[D-201](#d-201---a-deny-list-fails-open-and-a-page-that-does-not-refresh-reports-a-world-that-is-gone)
+split `membershipIsActive` into `membershipIsCurrent` (fails closed) and
+`membershipCouldReceive` (fails open), gave `GroupRecord` both `current` and `active`, shipped
+with mutation-proven assertions, and **the reported symptom did not change**: group 7 still
+rendered as a current membership, still offered Leave instead of Clear, and the operator was still
+blocked by a record that had never been a member of anything.
+
+The split was right. It was applied to `botGroupSummaries`, the dashboard summary, and NOT to
+`web/views/capture.ts` - the page that owns the Leave and Clear buttons, which went on reading
+`rec.active` in five places: the membership badge, the `mode` field on both forms, the confirmation
+copy, and both button labels. So the fail-open predicate still decided everything the operator
+saw and everything he could press.
+
+**The lesson is about the shape of the fix, not the predicate.** Splitting one function into two
+creates a silent migration: every existing call site keeps compiling, keeps its old meaning, and
+NOTHING marks the ones that chose wrong. A type error would have caught a rename; a split that
+leaves both names valid cannot. The verification followed the split rather than the symptom, which
+is why it was green - it asserted the new predicate behaved correctly and never asserted that the
+page USED it.
+
+So: when a predicate is split by failure direction, **enumerate every consumer and decide each one
+explicitly**, and assert the decision at the call site rather than only at the definition. The
+check now pins that the page reads `current` for every membership decision, with a POSITIVE
+CONTROL that the Captures column still reads `active` - because deleting `active` entirely would
+pass every other assertion while silently converting the capture question, which fails open by
+design under D-190, into a membership one that fails closed.
+
+**Also confirmed and recorded here, because it cost a scare**: `packages/simplex-chat-client/typescript`
+carries a deprecation notice, but it is published as **`@simplex-chat/webrtc-client`** and this
+product has never depended on it. What we install is **`simplex-chat`**, which IS
+`packages/simplex-chat-nodejs`, the library the notice points AT. Confirmed from the installed tree
+rather than from names: it carries `binding.gyp`, `cpp/`, `libs/libsimplex.so` and
+`node-addon-api/`, the native-addon layout a browser WebRTC client does not have. The two
+codebases share one npm name across a version discontinuity (0.0.1-0.3.0 old, 6.5.x+ new), which
+is what makes it confusing. Every measurement in D-196 through D-202 was made against the correct
+artifact.
+
 ---
 
 ### D-202 - "Saved." is what a successful join says, so a non-join may not say it too
