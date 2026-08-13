@@ -25,7 +25,7 @@ This has gone wrong twice.
 | D-199 | Nothing reaches the public repository until it has been demonstrated to work | IMPLEMENTED |
 | D-198 | The prepare command's shape, measured on a throwaway core, and a refusal with no button | IMPLEMENTED |
 | D-197 | The channel join, on the core we already had, with the id read and never inferred | NOT WORKING - the join does not subscribe to a channel |
-| D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED |
+| D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED, and now DEMONSTRATED rather than inferred |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
 | D-193 | The room's name is the group's, and a control with no backend says so | IMPLEMENTED |
@@ -396,8 +396,40 @@ operator joins his channel and not before.
 
 ### D-196 - 7.0.0 blocks nothing, and the channel join was never waiting on it
 
-**Status: IMPLEMENTED** (CCB-S5-038, as a correction; the upgrade is NOT done and is not
-scheduled). D-191 recorded that joining a channel needs the SimpleX 7.0.0 core, and D-193 told
+**Status: IMPLEMENTED, and now DEMONSTRATED rather than inferred** (CCB-S5-038/040; the upgrade is
+NOT done and is not scheduled).
+
+**REOPENED AND RE-SETTLED 2026-08-13 on new evidence, then closed again by measurement.** After
+D-198 found that the join creates an ordinary group and never establishes relays, the 7.0.0
+question was reopened on a genuinely new argument: `APIPrepareGroup` is absent from the typed API,
+SimpleX's v6.5.2 notes say subscriber-side relay handling "will be enabled in UI in v6.5.x or v7",
+and v7.0.0's docs describe `APIConnect` as accepting a group link - implying the core would route
+a channel link internally and establish relays itself. That was a strong inference from generated
+docs. **It is wrong.** Measured on a throwaway core with **7.0.0 installed and verified on disk**
+(`simplex-chat` 7.0.0, `@simplex-chat/types` 0.10.3), against the operator's real channel link:
+
+| | 6.5.4 | 7.0.0 |
+|---|---|---|
+| `apiConnect` with a correct `CreatedConnLink` | `channel links must be connected via APIConnectPreparedGroup` | **identical error** |
+| `/_prepare group` (4-arg) | `newPreparedChat` | `newPreparedChat` |
+| `/_connect group #<id>` | `startedConnectionToGroup` | `startedConnectionToGroup` |
+| `memberStatus` after 60 s | `unknown` | `unknown` |
+| `use_relays` / `group_relays` rows | 0 / 0 | **0 / 0** |
+| agent rcv queue | `new`, `last_broker_ts` NULL | **`new`, `last_broker_ts` NULL** |
+
+So 7.0.0 changes nothing here, and **6.5.4 versus 7.0.0 stops being the question**. Production was
+never touched; the probe cost one isolated install and was destroyed after.
+
+One positive finding worth keeping: **`/_get relays #<id>` answers `groupRelays` on both cores**,
+so the relay family IS reachable subscriber-side. What is missing is not the read but whatever
+POPULATES it, and `/_add relays` is owner-side. That remains unfound, and per
+[D-199](#d-199---nothing-reaches-the-public-repository-until-it-has-been-demonstrated-to-work)
+it will not be guessed at.
+
+Original entry follows; its conclusion stands and is now demonstrated rather than argued from
+method counts.
+
+D-191 recorded that joining a channel needs the SimpleX 7.0.0 core, and D-193 told
 the operator to wait for it. **Both were wrong**, and the console said so to his face until
 this entry.
 
