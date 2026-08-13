@@ -576,6 +576,7 @@ export class MultiProfileRuntime {
     simplexUserId: number,
     connLink: { connFullLink: string; connShortLink?: string },
     shortLinkData: unknown,
+    direct: boolean,
   ): Promise<number> {
     const chat = this.requireChat();
     // ── THE SHAPE IS FOUR ARGUMENTS, MEASURED (CCB-S5-040, D-198) ────────────
@@ -615,9 +616,34 @@ export class MultiProfileRuntime {
       );
     }
     const dataJson = JSON.stringify(shortLinkData);
+    // ── `direct` IS NOT OPTIONAL IN PRACTICE, BECAUSE ITS DEFAULT IS WRONG FOR US ──
+    //
+    // Read from the core's own parser (`Commands.hs`, `chatCommandP`):
+    //
+    //   "/_prepare group " *> (APIPrepareGroup
+    //     <$> A.decimal <* A.space
+    //     <*> connLinkP'
+    //     <*> (" direct=" *> onOffP <|> pure True)   -- OPTIONAL, DEFAULTS TO TRUE
+    //     <*> optional (" domain=" *> strP)
+    //     <* A.space <*> jsonP)
+    //
+    // Omitting it means `direct = True`, which tells the core the link names an ORDINARY
+    // DIRECT GROUP. A channel is `direct: false` and is served by RELAYS, so the omission
+    // produced `use_relays = 0`, no `group_relays` rows, a receive queue that never touched
+    // a broker, and a membership stuck at `unknown` forever. The command SUCCEEDED every
+    // time: `newPreparedChat` then `startedConnectionToGroup`, and nothing ever arrived.
+    // That is why this is not defaulted here - a default that is right for groups and wrong
+    // for channels is exactly what caused it, and this file only ever prepares channels.
+    //
+    // The value comes from the PLAN's `groupSLinkInfo_.direct`, never from a constant: it
+    // describes the link, and the link is the operator's.
+    //
+    // POSITION IS LOAD-BEARING. The flag sits BETWEEN the link and the JSON. It was tested
+    // before the link and after the JSON, and both parse-fail with the same generic
+    // `Failed reading: empty` as a wrong verb, which is how it survived four rounds.
     const command =
       `/_prepare group ${String(simplexUserId)} ` +
-      `${connLink.connFullLink} ${shortLink} ${dataJson}`;
+      `${connLink.connFullLink} ${shortLink} direct=${direct ? 'on' : 'off'} ${dataJson}`;
     // ── LOGGED AS A SHAPE, NOT AS A STRING ───────────────────────────────────
     //
     // The command embeds the operator's link twice AND the channel's base64 avatar; it
@@ -626,7 +652,8 @@ export class MultiProfileRuntime {
     // is the shape and the sizes, which is what a rejected command needs to be diagnosed.
     log.info('runtime: preparing a group from a link', {
       simplexUserId,
-      shape: '/_prepare group <userId> <connFullLink> <connShortLink> <groupShortLinkData>',
+      shape: '/_prepare group <userId> <connFullLink> <connShortLink> direct=<on|off> <groupShortLinkData>',
+      direct,
       dataBytes: dataJson.length,
       commandBytes: command.length,
     });
@@ -642,8 +669,8 @@ export class MultiProfileRuntime {
       // shape is what a `Failed reading` is actually about, and it is the half the operator
       // cannot see for himself.
       throw new Error(
-        'The core rejected the prepare command ' +
-          '(/_prepare group <userId> <connFullLink> <connShortLink> <groupShortLinkData>): ' +
+        'The core rejected the prepare command (/_prepare group <userId> <connFullLink> ' +
+          '<connShortLink> direct=<on|off> <groupShortLinkData>): ' +
           describeChatError(err),
       );
     }

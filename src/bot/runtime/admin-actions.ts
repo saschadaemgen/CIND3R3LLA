@@ -532,14 +532,22 @@ export async function connectBotToChannel(
         // that is waiting for it: the re-entry guard would throw, or without it the command
         // would hang for the full 60 s timeout. Two sequential scheduled calls, never nested,
         // which is the same shape the plan and join above already use.
-        // BOTH EXTRA ARGUMENTS COME FROM THE PLAN (D-198). `prepared` is the resolved
-        // `CreatedConnLink`, which serialises as two tokens, and `groupSLinkData_` is the
-        // channel's own profile data. Neither can be derived from `trimmed`, which is why
-        // the pasted link is not passed at all any more.
+        // EVERY ARGUMENT COMES FROM THE PLAN (D-198, D-200). `prepared` is the resolved
+        // `CreatedConnLink`, which serialises as two tokens; `groupSLinkData_` is the
+        // channel's profile data; and `direct` says whether the link names an ordinary
+        // group or a relay-served channel. None can be derived from `trimmed`, which is
+        // why the pasted link is not passed at all.
+        //
+        // `direct` is read here rather than defaulted to `false`. This block only runs when
+        // `relays.length > 0`, so `direct` is false in practice, but the core's own default
+        // for the flag is TRUE and getting it wrong is silent: it joins as a direct group,
+        // reports success, and nothing ever arrives (D-200). A value that describes the
+        // link is read from the link.
         const preparedGroupId = await host.runtime.prepareGroupFromLink(
           simplexUserId,
           prepared,
           plan.groupLinkPlan.groupSLinkData_,
+          plan.groupLinkPlan.groupSLinkInfo_?.direct ?? false,
         );
         await host.runtime.connectPreparedGroup(simplexUserId, preparedGroupId);
         await host.runtime.refreshOwnership();

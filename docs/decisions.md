@@ -18,13 +18,14 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 198 decisions</strong> — newest first. Highest allocated: <strong>D-199</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 199 decisions</strong> — newest first. Highest allocated: <strong>D-200</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-200 | The channel join works, and it was one omitted token with a dangerous default | IMPLEMENTED, DEMONSTRATED |
 | D-199 | Nothing reaches the public repository until it has been demonstrated to work | IMPLEMENTED |
 | D-198 | The prepare command's shape, measured on a throwaway core, and a refusal with no button | IMPLEMENTED |
-| D-197 | The channel join, on the core we already had, with the id read and never inferred | NOT WORKING - the join does not subscribe to a channel |
+| D-197 | The channel join, on the core we already had, with the id read and never inferred | FIXED by [D-200] |
 | D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED, and now DEMONSTRATED rather than inferred |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
@@ -229,6 +230,71 @@ This has gone wrong twice.
 ---
 ---
 
+### D-200 - The channel join works, and it was one omitted token with a dangerous default
+
+**Status: IMPLEMENTED, DEMONSTRATED** (CCB-S5-040). The channel join subscribes. Measured on a
+throwaway core against the operator's real channel, on **6.5.4, the core already in production**:
+
+| | before | after |
+|---|---|---|
+| `memberStatus` | `unknown` indefinitely | **`connected`** within 15 s |
+| `use_relays` | 0 | **1** |
+| `public_member_count` | NULL | 14 |
+| agent rcv queues | 1, `new`, `last_broker_ts` NULL | **3, all `active`, all with broker timestamps** |
+
+Three active queues with real broker timestamps are the three relays, connected.
+
+**THE DEFECT.** The core's parser (`Commands.hs`, `chatCommandP`):
+
+```haskell
+"/_prepare group " *> (APIPrepareGroup
+  <$> A.decimal <* A.space
+  <*> connLinkP'
+  <*> (" direct=" *> onOffP <|> pure True)   -- OPTIONAL, DEFAULTS TO TRUE
+  <*> optional (" domain=" *> strP)
+  <* A.space <*> jsonP)
+```
+
+`direct` defaults to **True**. A channel is `direct: false`. Omitting the flag told the core the
+link named an ordinary direct group, so it never used relays. Both commands returned SUCCESS every
+time - `newPreparedChat`, then `startedConnectionToGroup` - and nothing ever arrived.
+
+**Three lessons, each of which cost a round.**
+
+1. **A defaulted parameter is not an optional one.** The flag is syntactically optional and
+   semantically required, and its default is wrong for every channel. `/_prepare group` therefore
+   has FIVE parameters, not the four
+   [D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)
+   measured. D-198 was right about what PARSES and wrong about what is COMPLETE, which is the same
+   error one level down.
+2. **Position is load-bearing, and a wrong position is indistinguishable from a wrong verb.**
+   `direct=off` WAS tried - before the link and after the JSON. Both parse-fail with the identical
+   generic `Failed reading: empty`, so four rounds of probing could not tell "flag in the wrong
+   place" from "flag does not exist". This is the attoparsec backtracking trap of D-198 a second
+   time, and no amount of further probing would have escaped it.
+3. **The search space was wrong, not the commands.** The investigation read `bots/api/COMMANDS.md`,
+   the BOT surface, where `APIPrepareGroup` and `APIConnectPreparedGroup` do not appear at all. The
+   mobile and desktop clients do not use that surface; they drive the same core through their own
+   bindings. Reading the SOURCE - one grep of the parser - answered in minutes what probing could
+   not answer in four rounds. **When probing keeps returning the same uninformative failure, stop
+   probing and read the grammar.**
+
+**A claim of mine that this disproves.** D-199's entry recorded the conclusion that "the
+subscriber-side relay step is not present in any published artifact". That was wrong. It was
+refuted by the operator observing that fourteen people subscribed through the released app, and it
+was wrong on the core we already had. The reasoning error is worth keeping: eliminating four
+mechanisms by measurement made "the capability does not exist" feel like the last hypothesis
+standing, when the untested hypothesis was that **I was looking in the wrong place**. An
+elimination argument is only as good as the enumeration behind it.
+
+Two facts settled in passing, both from the same parser rather than from probing:
+`APIConnectPreparedGroup` takes `incognitoOnOffP` immediately after the group id, so per-bot
+incognito is expressible; and `/_connect plan`'s `sig=` takes `jsonP`, a `LinkOwnerSig` payload, so
+that lead was real but needs a value the core produced no source for (`ownerVerification` was null
+on a clean plan, and `resolve=on` returned a byte-identical payload).
+
+---
+
 ### D-199 - Nothing reaches the public repository until it has been demonstrated to work
 
 **Status: IMPLEMENTED** (standing rule). The repository is public and it is the operator's shop
@@ -319,10 +385,16 @@ the real channel. What is logged is the SHAPE and the byte counts, which is the 
 
 ### D-197 - The channel join, on the core we already had, with the id read and never inferred
 
-**Status: NOT WORKING - the join does not subscribe to a channel. Corrected by
+**Status: FIXED by [D-200](#d-200---the-channel-join-works-and-it-was-one-omitted-token-with-a-dangerous-default)
+- the join now subscribes, demonstrated on 6.5.4. Previously corrected by
 [D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)
 and [D-199](#d-199---nothing-reaches-the-public-repository-until-it-has-been-demonstrated-to-work)**
 (CCB-S5-038).
+
+**The cause was a single omitted token, `direct=off`, whose default is `True` and therefore wrong
+for every channel. See D-200. The two corrections below were accurate when written and the
+diagnosis in them stands; what they could not identify is why, because the answer was in the core's
+parser rather than anywhere reachable by probing.**
 
 **THIS ENTRY CLAIMED THE CHANNEL JOIN WORKED. IT DOES NOT.** The claim is left standing below,
 per D-191/D-193, so the mistake stays legible. What is actually true:

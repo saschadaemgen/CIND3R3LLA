@@ -74,7 +74,22 @@ async function main(): Promise<void> {
   check(
     "prepare uses '/_prepare group ' with the full link AND the short link",
     core.includes('`/_prepare group ${String(simplexUserId)} ` +') &&
-      core.includes('`${connLink.connFullLink} ${shortLink} ${dataJson}`'),
+      core.includes('${connLink.connFullLink} ${shortLink} direct='),
+  );
+  // ── THE FLAG THAT DECIDES CHANNEL-OR-GROUP, AND ITS POSITION (D-200) ───────
+  //
+  // `direct` is OPTIONAL in the core's grammar and DEFAULTS TO TRUE. Omitted, the core
+  // treats a channel link as an ordinary direct group: `use_relays = 0`, no relay rows, a
+  // receive queue that never reaches a broker, and a membership stuck at `unknown` - while
+  // BOTH commands return success. This check exists because the previous version of it
+  // asserted the four-argument form and was green for the whole time the join was broken.
+  check(
+    '  direct= is sent, and is BETWEEN the link and the JSON (position is load-bearing)',
+    /\$\{shortLink\} direct=\$\{direct \? 'on' : 'off'\} \$\{dataJson\}/.test(core),
+  );
+  check(
+    '  MUTATION: the flag is not defaulted in core.ts, it is a required parameter',
+    /direct: boolean,/.test(core) && !/direct = (true|false)/.test(core),
   );
   check(
     '  and the fourth argument is the plan\u2019s own group data as JSON',
@@ -117,8 +132,12 @@ async function main(): Promise<void> {
   );
 
   check(
-    '  and both extra arguments come from the plan, not from the pasted text',
+    '  and every argument comes from the plan, not from the pasted text',
     joinBlock.includes('prepared,') && joinBlock.includes('plan.groupLinkPlan.groupSLinkData_'),
+  );
+  check(
+    '  including direct, read from the link rather than assumed (D-200)',
+    /groupSLinkInfo_\?\.direct/.test(joinBlock),
   );
 
   console.log('\n6. A group link is refused, and the refusal has no override (D-198)');
