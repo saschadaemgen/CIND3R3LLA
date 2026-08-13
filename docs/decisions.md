@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 200 decisions</strong> — newest first. Highest allocated: <strong>D-201</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 201 decisions</strong> — newest first. Highest allocated: <strong>D-202</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-202 | "Saved." is what a successful join says, so a non-join may not say it too | IMPLEMENTED |
 | D-201 | A deny-list fails open, and a page that does not refresh reports a world that is gone | IMPLEMENTED |
 | D-200 | The channel join works, and it was one omitted token with a dangerous default | IMPLEMENTED, DEMONSTRATED |
 | D-199 | Nothing reaches the public repository until it has been demonstrated to work | IMPLEMENTED |
@@ -229,6 +230,43 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-202 - "Saved." is what a successful join says, so a non-join may not say it too
+
+**Status: IMPLEMENTED** (CCB-S5-040). Pressing Join with the channel link answered **"Saved."** and
+created nothing, because the core already held group 7 from the morning's broken attempt. The
+operator concluded nothing had happened. He was right, and the page had given him the same word it
+gives a join that worked.
+
+The already-known branch returned `{ connected: false }` and the route redirected to `saved=1`
+whatever happened. `connected` was an accurate field nobody rendered: the page had exactly two
+states, "Saved." and a red error, and "nothing was joined, and here is why" is neither.
+
+**The distinction that matters is not known-versus-new.** It is whether the record already held is
+WORKING, because a dead record blocks a fresh join and looks identical to a completed one from this
+page. That is precisely the state group 7 was in, and it is why two faults locked together: the
+broken record could not be cleared because
+[D-201](#d-201---a-deny-list-fails-open-and-a-page-that-does-not-refresh-reports-a-world-that-is-gone)
+misreported it as current, and a working join could not be attempted because the broken record was
+in the way.
+
+So the answer names the channel, its group id, and its membership state, and branches on
+`membershipIsCurrent`:
+
+- already subscribed: *"is already subscribed to X (group N), so nothing was joined and nothing
+  needed to be."*
+- a record that is not current: *"already holds a record of X (group N) and its membership is not
+  current (unknown), so nothing was joined. That record is what blocks a fresh attempt: clear it on
+  the Capture page, then press Join again."*
+
+Rendered in a THIRD banner, distinct from both. The general rule: **a control's success word must
+be reserved for success.** Reusing it for "nothing happened, harmlessly" is indistinguishable from
+a lie at the only moment the operator is reading. `verify:channel-join` now fails if a non-join can
+reach `saved=1`, with a positive control so "Saved." stays reachable for a real one.
+
+The dead `?pending=` query field went too, unused since D-198 removed the button that fed it.
+
 ---
 
 ### D-201 - A deny-list fails open, and a page that does not refresh reports a world that is gone

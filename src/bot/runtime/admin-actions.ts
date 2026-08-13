@@ -427,6 +427,15 @@ export interface ChannelJoinResult {
   plan: string;
   /** True when a connect command was actually issued (not already joined). */
   connected: boolean;
+  /**
+   * WHAT HAPPENED, IN A SENTENCE THE OPERATOR CAN ACT ON (CCB-S5-040, D-202).
+   *
+   * Null only when a join was actually issued. Otherwise this says why not, because the
+   * page previously rendered `connected: false` as "Saved." - the same word a real join
+   * produces. The operator pressed Join on a channel the core already held as a BROKEN
+   * record, was told "Saved", and reasonably concluded nothing had happened. Nothing had.
+   */
+  note: string | null;
 }
 
 /**
@@ -457,7 +466,10 @@ export async function connectBotToChannel(
   botProfileId: number,
   link: string,
 ): Promise<ChannelJoinResult> {
-  const { host, bot, simplexUserId } = requireReadyBot('no channel can be joined', botProfileId);
+  const { host, bot, simplexUserId, displayName } = requireReadyBot(
+    'no channel can be joined',
+    botProfileId,
+  );
   const trimmed = link.trim();
   if (trimmed === '') throw new RuntimeActionUnavailableError('A channel link is required.');
 
@@ -494,8 +506,33 @@ export async function connectBotToChannel(
   if (plan.type === 'groupLink') {
     const inner = plan.groupLinkPlan.type;
     if (inner === 'known' || inner === 'ownLink' || inner === 'connectingConfirmReconnect' || inner === 'connectingProhibit') {
-      // Already held, or ours: joining again would error or fork.
-      return { plan: planText, connected: false };
+      // ── ALREADY HELD IS AN ANSWER, NOT A SILENCE (CCB-S5-040, D-202) ──────
+      //
+      // Joining again would error or fork, so nothing is issued - but "nothing issued" was
+      // reported to the page as `connected: false` and rendered as "Saved.", which is what
+      // a SUCCESSFUL join says. The distinction that matters to the operator is not
+      // known-versus-new, it is whether the record he already has is WORKING. A dead record
+      // blocks a fresh join and looks identical to a completed one from this page.
+      const known =
+        inner === 'known'
+          ? plan.groupLinkPlan.groupInfo
+          : inner === 'ownLink'
+            ? plan.groupLinkPlan.groupInfo
+            : inner === 'connectingProhibit'
+              ? plan.groupLinkPlan.groupInfo_
+              : undefined;
+      const knownName = known?.groupProfile?.displayName ?? 'that channel';
+      const knownStatus = known?.membership?.memberStatus;
+      const knownId = known?.groupId;
+      const where = knownId === undefined ? '' : ` (group ${String(knownId)})`;
+      const note = membershipIsCurrent(knownStatus)
+        ? `"${displayName}" is already subscribed to "${knownName}"${where}, ` +
+          `so nothing was joined and nothing needed to be.`
+        : `"${displayName}" already holds a record of "${knownName}"${where} and ` +
+          `its membership is not current (${String(knownStatus ?? 'unknown')}), so nothing was ` +
+          `joined. That record is what blocks a fresh attempt: clear it on the Capture page, ` +
+          `then press Join again.`;
+      return { plan: planText, connected: false, note };
     }
     // ── IT SAYS CHANNEL, SO IT JOINS A CHANNEL (CCB-S5-033, D-191) ─────────
     //
@@ -556,7 +593,7 @@ export async function connectBotToChannel(
           preparedGroupId,
           channel: named ?? 'unnamed',
         });
-        return { plan: planText, connected: true };
+        return { plan: planText, connected: true, note: null };
       }
 
       // ── A GROUP LINK IS REFUSED OUTRIGHT, NOT CONFIRMED (CCB-S5-040, D-198) ──
@@ -601,7 +638,7 @@ export async function connectBotToChannel(
   await bot.runScheduled('channel:join', () => chatOf().apiConnect(simplexUserId, false, prepared));
   // Two sequential scheduled calls plus a refresh, never nested (CCB-S5-015).
   await host.runtime.refreshOwnership();
-  return { plan: planText, connected: true };
+  return { plan: planText, connected: true, note: null };
 }
 
 /* ── leaving a room, and clearing a record of one that ended (CCB-S5-034) ───── */

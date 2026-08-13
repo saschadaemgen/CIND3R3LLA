@@ -177,6 +177,34 @@ async function main(): Promise<void> {
     bridge.includes('req.query.groupLink') && /border-red-300/.test(bridge),
   );
 
+  console.log('');
+  console.log('7. A join that was not issued does not say "Saved." (D-202)');
+  // The operator pressed Join on a channel the core already held as a BROKEN record and was
+  // told "Saved." - the same word a real join produces - so he concluded nothing had
+  // happened. Nothing had, and the dead record was why. Three states, three answers.
+  check(
+    'the already-known branch returns a note rather than a bare false',
+    actions.includes('return { plan: planText, connected: false, note };'),
+  );
+  check(
+    '  and it names what to do when the existing record is NOT current',
+    actions.includes('clear it on the Capture page') &&
+      actions.includes('membershipIsCurrent(knownStatus)'),
+  );
+  check(
+    '  POSITIVE CONTROL: a real join still carries no note, so "Saved." stays reachable',
+    actions.includes('connected: true, note: null'),
+  );
+  check(
+    'the route renders the note instead of saved=1',
+    bridge.includes('if (result.note !== null)') &&
+      bridge.includes('notice=${encodeURIComponent(result.note)}'),
+  );
+  check(
+    '  and the page has a THIRD banner for it, distinct from saved and error',
+    bridge.includes('req.query.notice') && bridge.includes('border-sky-300'),
+  );
+
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - channel join.`,
   );

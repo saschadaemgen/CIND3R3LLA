@@ -99,8 +99,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       bot?: string;
       saved?: string;
       error?: string;
+      /** "Nothing was joined, and here is why" - neither success nor fault (D-202). */
+      notice?: string;
       groupLink?: string;
-      pending?: string;
       channel?: string;
       dest?: string;
       since?: string;
@@ -202,6 +203,14 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
           : ''}
         ${req.query.error
           ? html`<div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">${req.query.error}</div>`
+          : ''}
+        ${/*
+          A THIRD STATE, BECAUSE THERE ARE THREE (D-202). "Saved." means a join was issued;
+          red means something went wrong. "Nothing was joined, and here is why" is neither,
+          and rendering it as either one is what cost the operator a morning.
+        */ ''}
+        ${req.query.notice
+          ? html`<div class="mb-4 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">${req.query.notice}</div>`
           : ''}
         ${/*
           A GROUP LINK IS REFUSED, AND THE REFUSAL HAS NO BUTTON (CCB-S5-040, D-198).
@@ -598,6 +607,16 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       await writeAudit(db, req.session?.username ?? 'unknown', 'bridge.connect', `bot:${String(botProfileId)}`, {
         connected: result.connected,
       });
+      // ── "Saved." IS WHAT A SUCCESSFUL JOIN SAYS, SO IT MAY NOT BE WHAT A NON-JOIN
+      //    SAYS TOO (CCB-S5-040, D-202) ────────────────────────────────────────
+      //
+      // This redirected to `saved=1` whatever happened. Pressing Join on a channel the core
+      // already held as a BROKEN record answered "Saved.", the operator concluded nothing
+      // had happened, and he was right: nothing had, and the dead record was the reason.
+      // A join that was not issued now says so, and says what to do about it.
+      if (result.note !== null) {
+        return reply.redirect(back(req, `notice=${encodeURIComponent(result.note)}`));
+      }
       return reply.redirect(back(req, 'saved=1'));
     } catch (err) {
       // A group link is not a fault, it is a question. Reported as a refusal the operator
