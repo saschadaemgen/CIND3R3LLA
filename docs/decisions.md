@@ -18,11 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 196 decisions</strong> — newest first. Highest allocated: <strong>D-197</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 197 decisions</strong> — newest first. Highest allocated: <strong>D-198</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
-| D-197 | The channel join, on the core we already had, with the id read and never inferred | IMPLEMENTED in build, UNVERIFIED IN ANGER |
+| D-198 | The prepare command's shape, measured on a throwaway core, and a refusal with no button | IMPLEMENTED |
+| D-197 | The channel join, on the core we already had, with the id read and never inferred | IMPLEMENTED, corrected by [D-198] |
 | D-196 | 7.0.0 blocks nothing, and the channel join was never waiting on it | IMPLEMENTED |
 | D-195 | A message with nothing to look up does not look anything up | IMPLEMENTED |
 | D-194 | The console had no building blocks, so 26 pages each invented their own | IMPLEMENTED |
@@ -227,10 +228,69 @@ This has gone wrong twice.
 ---
 ---
 
+### D-198 - The prepare command's shape, measured on a throwaway core, and a refusal with no button
+
+**Status: IMPLEMENTED** (CCB-S5-040). D-197 built the channel join on `/_prepare group` followed
+by `/_connect group #<id>`. The second half was right. The first half was a guess, and it was
+wrong: every live attempt came back `{"type":"commandError","message":"Failed reading: empty"}`.
+
+**The shape is four arguments, not two:**
+
+```
+/_prepare group <userId> <connFullLink> <connShortLink> <groupShortLinkData-JSON>
+```
+
+Two things were missing, and neither is derivable from what the operator pastes. `CreatedConnLink`
+serialises as TWO space-separated tokens, the full link and the short link; passing the single
+pasted link is one token short. And the fourth argument is the channel's own `GroupShortLinkData`
+(profile, avatar, preferences), which is what `/_connect plan` returns in `groupSLinkData_`. Both
+therefore come from the plan, which is why preparing is genuinely a second step after planning and
+not a wrapper around a link. Verified end to end on the host: plan -> `newPreparedChat` with an id
+-> `/_connect group #<id>` -> `startedConnectionToGroup`.
+
+**The lesson is about the probe, not the parser.** The first investigation tried ten argument
+orders against a scratch core and all ten failed IDENTICALLY, which read as proof that the verb
+did not exist. It was proof of nothing. In attoparsec a failure ANYWHERE inside a command branch
+backtracks to the same generic message, so a wrong verb, a wrong arity and an unparseable link are
+indistinguishable from outside - and the probe used a DUMMY link, so the link was a live suspect
+the whole time. A probe that cannot separate its hypotheses discriminates nothing, however many
+times it is run. What broke it open was a **positive control**: `/_connect plan` given the same
+dummy link answered `invalidConnReq`, a semantic error, proving the transport and the link parser
+were reachable and that the difference lay inside the `/_prepare group` branch. The general rule:
+**when every variant fails the same way, suspect the harness before the subject**, and get a
+control that is known to succeed into the same run.
+
+**The check was green for all of it.** `verify:channel-join` asserted the wire string by comparing
+the source against itself - it pinned the literal the code emitted, and the code emitted the wrong
+literal. A check that can only confirm what was written is not a check. It now asserts the two
+arguments that were missing, and mutation-proves that the pasted link is no longer passed at all.
+
+**Secondary, and independent of the parser: the "Join that group anyway" button is gone.** D-191
+refused a group link on the Channel Bridge page OR let the operator confirm it. The confirmation
+was the wrong half. On that page a group link is a mistake every time - there is no case where
+somebody means to join an ordinary group from the bridge - so a confirmation adds no decision, only
+a click, offered at the moment he has just demonstrated he is confused about what he pasted. The
+one time it fired it put the bot into a group it then captured and answered in, unremovable from
+the console. The refusal is now absolute, it NAMES the group so he can tell what he pasted from
+what he meant, and it says where a group is actually joined (by invitation, on Foundation).
+Removing the form removed something quieter too: it carried the pasted link back as `?pending=`,
+putting a room credential into the query string, the access log and browser history.
+
+**And the command is no longer logged.** D-197 logged it to diagnose the rejection, which was
+right at the time. It embeds the link twice and the channel's base64 avatar, and ran to 12 kB on
+the real channel. What is logged is the SHAPE and the byte counts, which is the half a
+`Failed reading` is actually about.
+
+---
+
 ### D-197 - The channel join, on the core we already had, with the id read and never inferred
 
-**Status: IMPLEMENTED in build, UNVERIFIED IN ANGER** (CCB-S5-038). The channel bridge shipped
-and could not join a channel. It can now, without upgrading anything.
+**Status: IMPLEMENTED, corrected by [D-198](#d-198---the-prepare-commands-shape-measured-on-a-throwaway-core-and-a-refusal-with-no-button)**
+(CCB-S5-038). The channel bridge shipped and could not join a channel. It can now, without
+upgrading anything. **The two-step structure below is right and is verified end to end on the
+host; the ARGUMENTS given for `/_prepare group` were a guess and were wrong.** It takes four
+(`<userId> <connFullLink> <connShortLink> <groupShortLinkData>`), both extra ones coming from the
+plan. See D-198 before reading the command shapes here as fact.
 
 **WHAT WAS ACTUALLY MISSING.** `apiConnect` is the wrong command and the core says so by name:
 "channel links must be connected via APIConnectPreparedGroup". D-196 established that command

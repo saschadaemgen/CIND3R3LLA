@@ -63,7 +63,35 @@ async function main(): Promise<void> {
 
   console.log('\n4. The wire strings are the core\u2019s, not invented');
   const core = await readFile('src/bot/runtime/core.ts', 'utf8');
-  check("prepare uses '/_prepare group '", core.includes('`/_prepare group ${String(simplexUserId)} ${link}`'));
+  // \u2500\u2500 FOUR ARGUMENTS, MEASURED AGAINST THE REAL CORE (D-198) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  //
+  // This asserted the two-argument form `/_prepare group ${uid} ${link}`, which the core
+  // rejected on every live attempt with `Failed reading: empty`. The check was GREEN for
+  // that whole time, because it compared the source against itself: it pinned the string
+  // the code emitted, and the code emitted the wrong string. That is the shape of a check
+  // that can only ever confirm what was written, and it is why the assertion now names
+  // the two arguments that were MISSING rather than the literal it happens to build.
+  check(
+    "prepare uses '/_prepare group ' with the full link AND the short link",
+    core.includes('`/_prepare group ${String(simplexUserId)} ` +') &&
+      core.includes('`${connLink.connFullLink} ${shortLink} ${dataJson}`'),
+  );
+  check(
+    '  and the fourth argument is the plan\u2019s own group data as JSON',
+    /const dataJson = JSON\.stringify\(shortLinkData\)/.test(core),
+  );
+  check(
+    '  MUTATION: the pasted link is no longer passed to prepare at all',
+    !core.includes('`/_prepare group ${String(simplexUserId)} ${link}`'),
+  );
+  check(
+    '  a link with no short link is refused rather than sent (it cannot parse)',
+    /connShortLink/.test(core) && /without a short link, so it cannot be prepared/.test(core),
+  );
+  check(
+    '  and the command is never logged, because it carries the link and an avatar',
+    !/command: redactLink\(command\)/.test(core) && /shape: '\/_prepare group </.test(core),
+  );
   check("connect uses '/_connect group #'", core.includes('`/_connect group #${String(groupId)}`'));
   check(
     '  and both are inside a scheduled critical section (D-171)',
@@ -86,6 +114,48 @@ async function main(): Promise<void> {
   check(
     '  MUTATION: it is not taken from the plan or from listGroups',
     !joinBlock.includes('listGroups') && !joinBlock.includes('plan.groupLinkPlan.groupInfo'),
+  );
+
+  check(
+    '  and both extra arguments come from the plan, not from the pasted text',
+    joinBlock.includes('prepared,') && joinBlock.includes('plan.groupLinkPlan.groupSLinkData_'),
+  );
+
+  console.log('\n6. A group link is refused, and the refusal has no override (D-198)');
+  const bridgeSource = await readFile('src/web/views/bridge.ts', 'utf8');
+  // ── THE SCAN MEANS "IN THE CODE", SO COMMENTS COME OUT FIRST ───────────────
+  //
+  // Written without this, three of the checks below went red against a CORRECT page: the
+  // comment that records why the button was removed necessarily quotes the button, and a
+  // substring search cannot tell a removal from a mention of one. Per D-111 the verifier
+  // was fixed and the source was left alone - the alternative was deleting the note that
+  // explains the decision in order to satisfy a check about the decision.
+  const bridge = bridgeSource.replace(/\/\*[\s\S]*?\*\//g, '');
+  check(
+    'the "Join that group anyway" button is gone from the page',
+    !bridge.includes('Join that group anyway'),
+  );
+  check(
+    '  and nothing can re-enable it: confirmGroupJoin exists nowhere in the tree',
+    !bridge.includes('confirmGroupJoin') && !actions.includes('confirmGroupJoin'),
+  );
+  check(
+    '  the refusal names the group so the operator can tell what he pasted',
+    /That is a group link\$\{named \? ` for "\$\{named\}"` : ''\}/.test(actions),
+  );
+  check(
+    '  and says where a group IS joined, which a bare refusal does not',
+    /joined\s*` \+\s*`by invitation on the Foundation page\./.test(actions),
+  );
+  check(
+    '  the link is not carried back through the URL (log + history)',
+    !bridge.includes('pending=') && !bridge.includes("req.query.pending"),
+  );
+  // POSITIVE CONTROL. Every assertion above is an ABSENCE, and all five pass against a
+  // page that renders nothing at all. This one fails if the refusal stopped being shown.
+  check(
+    '  POSITIVE CONTROL: the refusal is still rendered to the operator',
+    bridge.includes('req.query.groupLink') && /border-red-300/.test(bridge),
   );
 
   console.log(

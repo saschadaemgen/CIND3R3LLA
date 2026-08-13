@@ -456,7 +456,6 @@ export class NotAChannelLinkError extends Error {
 export async function connectBotToChannel(
   botProfileId: number,
   link: string,
-  confirmGroupJoin = false,
 ): Promise<ChannelJoinResult> {
   const { host, bot, simplexUserId } = requireReadyBot('no channel can be joined', botProfileId);
   const trimmed = link.trim();
@@ -533,7 +532,15 @@ export async function connectBotToChannel(
         // that is waiting for it: the re-entry guard would throw, or without it the command
         // would hang for the full 60 s timeout. Two sequential scheduled calls, never nested,
         // which is the same shape the plan and join above already use.
-        const preparedGroupId = await host.runtime.prepareGroupFromLink(simplexUserId, trimmed);
+        // BOTH EXTRA ARGUMENTS COME FROM THE PLAN (D-198). `prepared` is the resolved
+        // `CreatedConnLink`, which serialises as two tokens, and `groupSLinkData_` is the
+        // channel's own profile data. Neither can be derived from `trimmed`, which is why
+        // the pasted link is not passed at all any more.
+        const preparedGroupId = await host.runtime.prepareGroupFromLink(
+          simplexUserId,
+          prepared,
+          plan.groupLinkPlan.groupSLinkData_,
+        );
         await host.runtime.connectPreparedGroup(simplexUserId, preparedGroupId);
         await host.runtime.refreshOwnership();
         log.info('runtime: joined a channel through the prepared-group path', {
@@ -544,11 +551,23 @@ export async function connectBotToChannel(
         return { plan: planText, connected: true };
       }
 
-      if (relays.length === 0 && !confirmGroupJoin) {
+      // ── A GROUP LINK IS REFUSED OUTRIGHT, NOT CONFIRMED (CCB-S5-040, D-198) ──
+      //
+      // This shipped as "refuse or require confirmation" and the confirmation was the
+      // wrong half. On the Channel Bridge page a group link is a mistake EVERY time:
+      // there is no case where the operator means to join an ordinary group from the
+      // bridge, so a confirmation does not add a decision, it adds a click - and it
+      // offers that click at the exact moment he has already demonstrated he is confused
+      // about what he pasted. The one time it happened it put the bot into a group it
+      // then captured and answered in, with no way out from the console at all.
+      //
+      // So: refuse, NAME the group so he can tell what he pasted from what he meant, and
+      // say where a group is actually joined. There is no override.
+      if (relays.length === 0) {
         throw new NotAChannelLinkError(
-          `That is a GROUP link${named ? ` for "${named}"` : ''}, not a channel link. Joining it ` +
-            `would put this bot in that group, where it would archive and answer. If that is ` +
-            `what you want, confirm it; otherwise paste a channel link.`,
+          `That is a group link${named ? ` for "${named}"` : ''}, not a channel link, so ` +
+            `nothing was joined. The channel bridge only joins channels. A group is joined ` +
+            `by invitation on the Foundation page.`,
           named ?? null,
         );
       }

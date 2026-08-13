@@ -203,19 +203,21 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
         ${req.query.error
           ? html`<div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">${req.query.error}</div>`
           : ''}
+        ${/*
+          A GROUP LINK IS REFUSED, AND THE REFUSAL HAS NO BUTTON (CCB-S5-040, D-198).
+
+          This used to render "Join that group anyway" beside the refusal. That made the
+          wrong outcome one click away at the moment the operator had just demonstrated he
+          was confused about what he pasted, and the one time it fired it put the bot into
+          a group it captured and answered in, unremovable from the console.
+
+          Removing the form also removes something quieter: it carried the pasted link
+          back through the URL as `?pending=`, which put a room credential in a query
+          string, in the access log and in browser history. There is no `pending` any more.
+        */ ''}
         ${req.query.groupLink
-          ? html`<div class="mb-4 rounded-lg border border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              <p class="mb-2">${req.query.groupLink}</p>
-              <form method="post" action="/bridge/connect" class="flex flex-wrap gap-2">
-                <input type="hidden" name="_csrf" value="${csrf}" />
-                <input type="hidden" name="botProfileId" value="${String(selectedBotId ?? '')}" />
-                <input type="hidden" name="link" value="${req.query.pending ?? ''}" />
-                <input type="hidden" name="confirmGroupJoin" value="yes" />
-                <button type="submit" class="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-500">
-                  Join that group anyway
-                </button>
-                <a href="/bridge" class="rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-100">Cancel</a>
-              </form>
+          ? html`<div class="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+              ${req.query.groupLink}
             </div>`
           : ''}
 
@@ -590,10 +592,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
     const link = bodyString(req.body, 'link');
     if (botProfileId === null) return reply.redirect('/bridge?error=Pick+a+bot+first.');
     try {
-      // The operator has to say so before this joins an ordinary GROUP (D-191). A link
-      // pasted here by accident put the bot into a room it then archived and answered in.
-      const confirmed = bodyString(req.body, 'confirmGroupJoin') === 'yes';
-      const result = await connectBotToChannel(botProfileId, link, confirmed);
+      // A GROUP link is REFUSED here, with no way to override it (D-198). It used to be
+      // confirmable; see the note on the banner above for why that was the wrong half.
+      const result = await connectBotToChannel(botProfileId, link);
       await writeAudit(db, req.session?.username ?? 'unknown', 'bridge.connect', `bot:${String(botProfileId)}`, {
         connected: result.connected,
       });
@@ -602,13 +603,10 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       // A group link is not a fault, it is a question. Reported as a refusal the operator
       // can act on rather than as an error, and NOT escalated to the dashboard: nothing is
       // wrong with the deployment, somebody pasted the wrong thing.
+      // The link is NOT carried back. It named a real room, and a query string is the one
+      // place it would be written to the access log and to browser history.
       if (err instanceof NotAChannelLinkError) {
-        return reply.redirect(
-          back(
-            req,
-            `groupLink=${encodeURIComponent(err.message)}&pending=${encodeURIComponent(link)}`,
-          ),
-        );
+        return reply.redirect(back(req, `groupLink=${encodeURIComponent(err.message)}`));
       }
       const message = reportActionFailure('joining a channel', botProfileId, err);
       return reply.redirect(back(req, `error=${encodeURIComponent(message)}`));

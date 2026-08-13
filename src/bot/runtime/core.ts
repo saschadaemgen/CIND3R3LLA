@@ -572,27 +572,63 @@ export class MultiProfileRuntime {
    * If the response carries no group id, this THROWS rather than returning a guess. A
    * refusal costs the operator one message; a guess costs him a group.
    */
-  async prepareGroupFromLink(simplexUserId: number, link: string): Promise<number> {
+  async prepareGroupFromLink(
+    simplexUserId: number,
+    connLink: { connFullLink: string; connShortLink?: string },
+    shortLinkData: unknown,
+  ): Promise<number> {
     const chat = this.requireChat();
-    // ── THE COMMAND IS LOGGED BEFORE IT IS SENT (CCB-S5-040) ─────────────────
+    // ── THE SHAPE IS FOUR ARGUMENTS, MEASURED (CCB-S5-040, D-198) ────────────
     //
-    // The first live attempt answered `{"type":"commandError","message":"Failed reading:
-    // empty"}` - the Haskell parser saying it ran out of input, so the STRING was malformed
-    // rather than the operation refused. The operator could see that a command was rejected
-    // and not what was rejected, which cost a whole round trip to learn nothing.
+    // It was built as `/_prepare group <userId> <link>` and every live attempt answered
+    // `{"type":"commandError","message":"Failed reading: empty"}` - the Haskell parser
+    // running out of input. Ten argument orders were tried against a throwaway core and
+    // all ten failed IDENTICALLY, which looked like proof the verb did not exist and was
+    // proof of nothing: in attoparsec a failure anywhere in a branch backtracks to that
+    // one generic message, so a wrong verb, a wrong arity and an unparseable link are
+    // indistinguishable from the outside.
     //
-    // The SDK does not wrap this command, so there is no typed builder to be right or wrong:
-    // the string IS the interface, and a rejected string is only diagnosable if it is
-    // recorded. At INFO rather than debug because this path is exercised by hand, rarely,
-    // and the one time it runs is the one time somebody is reading.
+    // What settled it was the PLAN, which carries both halves this command wants:
     //
-    // The link is NOT logged. It is the operator's, it is a credential to a room, and the
-    // shape of the command is what is in question rather than its content.
-    const command = `/_prepare group ${String(simplexUserId)} ${link}`;
+    //   1. `CreatedConnLink` serialises as TWO space-separated tokens, the full link and
+    //      the short link (`CreatedConnLink.cmdString`). Passing the single link the
+    //      operator pasted is one token short, and that alone breaks every shape.
+    //   2. The fourth argument is `GroupShortLinkData` as JSON - the group profile, its
+    //      avatar and its preferences - which is exactly what `/_connect plan` returns in
+    //      `groupSLinkData_`. It is not something this code can synthesise, which is why
+    //      preparing is a second step after planning rather than a wrapper around a link.
+    //
+    // Both therefore come from the plan and from nowhere else. See D-198.
+    const shortLink = connLink.connShortLink;
+    if (shortLink === undefined || shortLink === '') {
+      // A one-token link is the exact failure above. Refuse it by name rather than send a
+      // command that can only come back as `Failed reading: empty`.
+      throw new Error(
+        'The core resolved that link without a short link, so it cannot be prepared. ' +
+          'Nothing was joined.',
+      );
+    }
+    if (shortLinkData === undefined || shortLinkData === null) {
+      throw new Error(
+        'The core planned that link without the channel data needed to prepare it, so ' +
+          'there is nothing safe to join. Nothing was joined.',
+      );
+    }
+    const dataJson = JSON.stringify(shortLinkData);
+    const command =
+      `/_prepare group ${String(simplexUserId)} ` +
+      `${connLink.connFullLink} ${shortLink} ${dataJson}`;
+    // ── LOGGED AS A SHAPE, NOT AS A STRING ───────────────────────────────────
+    //
+    // The command embeds the operator's link twice AND the channel's base64 avatar; it
+    // ran to 12 kB on the real channel. Logging it would put a room credential and a
+    // picture in the log to answer a question about ARGUMENT ORDER, so what is recorded
+    // is the shape and the sizes, which is what a rejected command needs to be diagnosed.
     log.info('runtime: preparing a group from a link', {
       simplexUserId,
-      command: redactLink(command),
-      note: 'the argument shape is not confirmed against the core parser; see D-198',
+      shape: '/_prepare group <userId> <connFullLink> <connShortLink> <groupShortLinkData>',
+      dataBytes: dataJson.length,
+      commandBytes: command.length,
     });
     let response: unknown;
     try {
@@ -602,10 +638,13 @@ export class MultiProfileRuntime {
         () => chat.sendChatCmd(command),
       );
     } catch (err) {
-      // The command goes into the error too, so the banner names the input and not only the
-      // complaint. `Failed reading: empty` on its own is unactionable.
+      // The SHAPE goes into the error, never the command: see the logging note above. The
+      // shape is what a `Failed reading` is actually about, and it is the half the operator
+      // cannot see for himself.
       throw new Error(
-        `The core rejected the prepare command "${redactLink(command)}": ${describeChatError(err)}`,
+        'The core rejected the prepare command ' +
+          '(/_prepare group <userId> <connFullLink> <connShortLink> <groupShortLinkData>): ' +
+          describeChatError(err),
       );
     }
     const groupId = preparedGroupIdOf(response);
