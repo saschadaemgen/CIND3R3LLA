@@ -251,6 +251,44 @@ export async function startRuntimeHost(
     // as terminal, or media that later completes would be dropped.
     events.on('rcvFileWarning', (ev) => fileReceiver.handleWarning(ev));
 
+    // ── WHICH EVENT ANNOUNCES A NEW MEMBER? OBSERVED, NOT ASSUMED (CCB-S5-041) ──
+    //
+    // The Welcome plugin needs the event that means "somebody joined", and two candidates
+    // carry an IDENTICAL shape (`user`, `groupInfo`, `member`) while meaning opposite things:
+    //
+    //   joinedGroupMember      a member joined the group
+    //   connectedToGroupMember WE established a connection to a member - which fires ONCE PER
+    //                          EXISTING MEMBER when the bot itself joins a room
+    //
+    // Wired to the second, her first act in a 900-member room is 900 greetings, and the
+    // once-per-member constraint would not save it: those are 900 distinct members, each
+    // greeted exactly once, exactly as specified. `joinedGroupMember` is the right one
+    // semantically, but it may only reach the HOST - the member whose link was used - and
+    // this bot is usually an ordinary member.
+    //
+    // Neither event was referenced anywhere in this tree and production's journal held no
+    // occurrence of either, so there was no evidence in any direction. Rather than stage a
+    // test or guess, this records what actually arrives; the answer turns up the next time
+    // anybody joins any of his groups. Content-free by design: which event, which group, the
+    // member's STATUS and CATEGORY - never a name and never a message. It is a question about
+    // the event vocabulary, not about a person.
+    for (const kind of [
+      'joinedGroupMember',
+      'connectedToGroupMember',
+      'joinedGroupMemberConnecting',
+      'memberAcceptedByOther',
+    ] as const) {
+      events.on(kind, (ev: { groupInfo?: { groupId?: number }; member?: { memberCategory?: string; memberStatus?: string } }) => {
+        log.info('membership event observed (CCB-S5-041: which event announces a new member?)', {
+          event: kind,
+          botProfileId: config.botProfileId,
+          groupId: ev.groupInfo?.groupId,
+          memberCategory: ev.member?.memberCategory,
+          memberStatus: ev.member?.memberStatus,
+        });
+      });
+    }
+
     const sendGroupText = heldUntilReady(
       (groupId: number, text: string, quotedItemId?: number): Promise<T.AChatItem[]> =>
         runtime.sendGroupText(hosted.simplexUserId, groupId, text, quotedItemId),
