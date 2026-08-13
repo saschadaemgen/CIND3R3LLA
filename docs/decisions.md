@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 203 decisions</strong> — newest first. Highest allocated: <strong>D-204</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 204 decisions</strong> — newest first. Highest allocated: <strong>D-205</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-205 | A surface is a claim about state, and a local id is not an identity | IMPLEMENTED as standing rules |
 | D-204 | A channel is keyed on a group id that does not survive a rejoin | PARTIALLY IMPLEMENTED |
 | D-203 | Splitting a predicate fixes nothing until the LAST consumer is repointed | IMPLEMENTED |
 | D-202 | "Saved." is what a successful join says, so a non-join may not say it too | IMPLEMENTED |
@@ -232,6 +233,49 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-205 - A surface is a claim about state, and a local id is not an identity
+
+**Status: IMPLEMENTED as standing rules** (CCB-S5-040); both are in `CLAUDE.md`. Two patterns, each
+named four times in one day, promoted out of individual decision entries because they kept
+recurring in new places.
+
+**1. An action in one surface must reach every surface that shows it.** Four times the operator was
+shown a world that no longer existed, and each cost him a round of testing something that could not
+work:
+
+| what he saw | what was true |
+|---|---|
+| Clear record "did nothing", twice | it succeeded on the first press; the page never refreshed |
+| "No rooms known yet" | the index had resolved 4 rooms |
+| `CIND3R3LLA News` membership current | `unknown` - never joined, `use_relays 0` |
+| the bridge offering a cleared channel | its group was gone from the core |
+
+**Not one of these was a mechanism failing.** The clear cleared. The tick ran 1516 times and
+succeeded every time. The join command returned `startedConnectionToGroup`. What failed was that
+the thing which changed the world did not tell the things that describe it. Two traps in
+particular, because both are what happened: a read model refreshed only at boot and on one event is
+**stale by construction**, so name every writer rather than the one you were thinking about; and a
+successful action followed by an accurate refusal is **indistinguishable from a control that does
+nothing**, so a stale surface does not merely mislead, it makes the working fix look broken.
+
+**2. A key that is local to one profile is not an identity.** The core's numeric group id is stable
+within one profile's database and nowhere else: two bots in one room hold two different ids, and a
+rejoin gives the same room a new one. Both bit the operator in one day - his group moved 4 -> 8 and
+the channel 7 -> 9. Every guard built on that id inherits the bug, which is why the cross-bot
+duplicate-pairing refusal is **deliberately deferred** until the re-key: a refusal keyed on
+`source_group_id` and `dest_group_id` would be defeated by exactly the rejoin it exists to survive,
+and worse, two bots bridging one channel into one room hold FOUR different ids for the two things,
+so the naive guard would not fire at all.
+
+`plugins/channel-bridge/origin.ts` already states this in full - *"the core's numeric group id is
+stable but local to one profile's database (two bots subscribed to one channel hold two different
+ids)"* - and `cinderella_bridge_channels` and `cinderella_bridge_mappings` were keyed on the local
+id anyway. **The reasoning was written down and the schema did not follow it**, which is D-171's
+lesson inverted: there, correct code carried wrong reasoning; here, correct reasoning sat beside a
+schema that ignored it. Both propagate.
+
 ---
 
 ### D-204 - A channel is keyed on a group id that does not survive a rejoin

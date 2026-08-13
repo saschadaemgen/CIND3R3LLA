@@ -47,6 +47,36 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   never received in Season 3 and this was only discovered at close-out. Confirm receipt
   against the register when a briefing arrives, and record the delivering commit against
   its CCB id when it lands.
+- **An action in one surface must reach every surface that shows it** (standing rule, D-205).
+  Four times in one day the operator was shown a world that no longer existed, and each one cost
+  him a round of testing something that could not work: **Clear record** succeeded and the page
+  kept rendering the cleared row, so he pressed it again and got a correct refusal that read as a
+  broken control; the **room index** resolved four rooms while the page said none; the
+  **membership status** called a channel current that had never been joined; and the **bridge's
+  channel list** went on offering a channel whose group the Capture page had just cleared, so he
+  picked the dead one as a mapping source and waited an hour for posts that could never arrive.
+  None of these was a mechanism failing. Every mechanism worked: the clear cleared, the tick
+  ticked 1516 times and succeeded, the join command returned success. **What failed was that the
+  thing which changed the world did not tell the things that describe it.**
+  So when an action changes state, ask **which other surfaces render that state** and reach them
+  in the same action: rebuild the index, invalidate the list, delete the paired row. Two specific
+  traps, because both of these are what actually happened. **A read model refreshed only at boot
+  and on one event is stale by construction** - name every writer, not the one you were thinking
+  about. And **a successful action followed by an accurate refusal is indistinguishable from a
+  control that does nothing**, so a stale surface does not merely mislead, it makes the working
+  fix look broken and invites somebody to "fix" it.
+  This is the same failure as reporting against the console instead of the core: a surface is a
+  claim about state, never the state, and it is only as true as its last refresh.
+- **A key that is local to one profile is not an identity** (standing rule, D-205). The core's
+  numeric group id is stable *within* one profile's database and nowhere else: two bots in one
+  room hold two different ids, and **a rejoin gives the same room a new one**. Both bit the
+  operator in one day - his group moved 4 -> 8 and the channel 7 -> 9 - and every guard built on
+  that id inherits the bug, which is why a duplicate-pairing refusal keyed on it would be defeated
+  by exactly the rejoin it is meant to survive. `plugins/channel-bridge/origin.ts` already says
+  this in full, and the mapping tables were keyed on the local id anyway: **the reasoning was
+  written down and the schema did not follow it**. So when something must be identified across
+  profiles or across time, derive the key from what the thing IS (a channel's link) rather than
+  from what this process happens to call it, and treat a local id as a handle for one session.
 - **A deny-list on the consent, capture or membership path fails OPEN, so it must be an
   allow-list** (standing rule, D-201). Three times this season a guard was written as "everything
   except these" and the case that mattered was simply not on the list: the wake-word guard, the
