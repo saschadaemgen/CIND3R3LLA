@@ -42,7 +42,7 @@ import type { T } from '@simplex-chat/types';
 import type { Queryable } from '../../db/pool.js';
 import { applyProfileUpdate, type HostedBot, type RuntimeHost } from './host.js';
 import { describeChatError } from './chat-error.js';
-import { membershipIsActive } from '../../capture/room-service.js';
+import { membershipIsCurrent, refreshRoomsNow } from '../../capture/room-service.js';
 import { flushAvatarToGroups } from '../avatar.js';
 
 /** The live runtime, when one is running. Absent in harnesses and scripts. */
@@ -629,7 +629,9 @@ export async function listBotGroupRecords(botProfileId: number): Promise<BotGrou
       groupId: g.groupId,
       // The group's own name (D-193), so a confirmation says what the operator calls it.
       displayName: g.groupProfile?.displayName || g.localDisplayName,
-      active: membershipIsActive(g.membership?.memberStatus),
+      // FAILS CLOSED (D-201). This feeds the operator's list AND the leave/clear
+      // decisions, so an unrecognised status must not read as a membership.
+      active: membershipIsCurrent(g.membership?.memberStatus),
       memberStatus,
     };
   });
@@ -662,6 +664,9 @@ export async function leaveRoom(botProfileId: number, groupId: number): Promise<
     );
   }
   await host.runtime.leaveGroup(simplexUserId, groupId);
+  // The page reads the INDEX, so an action that changes membership must rebuild it or the
+  // operator is shown the world as it was before he acted (D-201).
+  await refreshRoomsNow();
   log.info('runtime: a bot left a room on request', { botProfileId, groupId, displayName });
   return record;
 }
@@ -697,6 +702,10 @@ export async function clearEndedRoomRecord(
     );
   }
   await host.runtime.deleteGroupRecord(simplexUserId, groupId);
+  // Rebuild the index BEFORE returning (D-201). Without this the clear succeeded and the
+  // page kept rendering the cleared row, so the next press answered "no record of group N"
+  // - a correct refusal that reads exactly like a control that never worked.
+  await refreshRoomsNow();
   log.info('runtime: an ended room record was cleared', { botProfileId, groupId, displayName });
   return record;
 }

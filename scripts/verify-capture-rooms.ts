@@ -31,6 +31,8 @@ import {
   type CaptureAssignment,
   type GroupRecord,
 } from '../src/capture/rooms.js';
+import { readFileSync } from 'node:fs';
+import { membershipIsCurrent, membershipCouldReceive } from '../src/capture/room-service.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -380,6 +382,66 @@ function sectionLeaveClear(): void {
   );
 }
 
+
+/**
+ * ── THE TWO PREDICATES, AND THE DIRECTIONS THEY FAIL IN (CCB-S5-040, D-201) ──
+ *
+ * This file was fully green while `membershipIsActive` reported a channel the bot had never
+ * joined as a current membership, because every fixture used a status that WAS on the
+ * deny-list. The assertions that matter are therefore about the statuses that are NOT.
+ */
+function sectionPredicates(): void {
+  console.log('\n6. Membership predicates fail in opposite directions (D-201)');
+
+  // The production case, by name. `unknown` is what a join that never completed looks like.
+  check('unknown is NOT a current membership', !membershipIsCurrent('unknown'));
+  check('  nor is undefined', !membershipIsCurrent(undefined));
+  check(
+    '  nor is a status nobody has enumerated (the allow-list FAILS CLOSED)',
+    !membershipIsCurrent('some_status_the_sdk_adds_in_2027'),
+  );
+  for (const s of ['pending_approval', 'pending_review', 'introduced', 'intro-inv']) {
+    check(`  nor is ${s}, which the old deny-list admitted`, !membershipIsCurrent(s));
+  }
+
+  // POSITIVE CONTROLS. Every assertion above passes against a predicate that returns false
+  // for everything, which would report the bot as a member of nothing at all.
+  check('POSITIVE CONTROL: connected IS current', membershipIsCurrent('connected'));
+  check('  and so are complete, creator and announced',
+    ['complete', 'creator', 'announced'].every((s) => membershipIsCurrent(s)));
+
+  // The other direction, deliberately permissive per D-190.
+  check(
+    'capture FAILS OPEN: an unrecognised status still receives',
+    membershipCouldReceive('some_status_the_sdk_adds_in_2027'),
+  );
+  check('  and undefined does too', membershipCouldReceive(undefined));
+  check(
+    '  POSITIVE CONTROL: but a removed record does not, so it is not blanket',
+    !membershipCouldReceive('removed'),
+  );
+  check(
+    'the two disagree on unknown, which is the whole point',
+    membershipCouldReceive('unknown') && !membershipIsCurrent('unknown'),
+  );
+}
+
+/** An action that ends a membership must rebuild the index, or the page shows a dead row. */
+function sectionRefresh(): void {
+  console.log('\n7. Ending a membership refreshes the index (D-201)');
+  const src = readFileSync('src/bot/runtime/admin-actions.ts', 'utf8');
+  const after = (fn: string): boolean => {
+    const i = src.indexOf(fn);
+    return i >= 0 && src.slice(i, i + 1400).includes('await refreshRoomsNow()');
+  };
+  check('clearEndedRoomRecord refreshes before returning', after('deleteGroupRecord(simplexUserId, groupId)'));
+  check('leaveRoom refreshes before returning', after('leaveGroup(simplexUserId, groupId)'));
+  check(
+    '  MUTATION: the hook is real, not a no-op name',
+    /export async function refreshRoomsNow/.test(readFileSync('src/capture/room-service.ts', 'utf8')),
+  );
+}
+
 function main(): void {
   console.log('One bot captures a room (CCB-S5-033, D-190)');
   sectionRooms();
@@ -387,6 +449,8 @@ function main(): void {
   sectionAssignment();
   sectionGate();
   sectionLeaveClear();
+  sectionPredicates();
+  sectionRefresh();
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - capture rooms.`,
   );

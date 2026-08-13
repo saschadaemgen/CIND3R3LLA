@@ -47,6 +47,22 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   never received in Season 3 and this was only discovered at close-out. Confirm receipt
   against the register when a briefing arrives, and record the delivering commit against
   its CCB id when it lands.
+- **A deny-list on the consent, capture or membership path fails OPEN, so it must be an
+  allow-list** (standing rule, D-201). Three times this season a guard was written as "everything
+  except these" and the case that mattered was simply not on the list: the wake-word guard, the
+  blocked-literals match, and `membershipIsActive`, which named five of the FIFTEEN
+  `GroupMemberStatus` values and therefore reported `unknown` - what a join that never completed
+  looks like - as a CURRENT membership. The console told the operator the bot was in a channel it
+  had never joined, wrote `joined` into the membership history, and kept saying so for a day while
+  he insisted otherwise. He was right.
+  A deny-list is a claim to have enumerated every way something can be false, over a vocabulary
+  somebody else owns and extends. **State what is ALLOWED and refuse the rest**, so an unknown
+  value is refused rather than admitted, and so a vocabulary that grows fails loudly instead of
+  silently widening the guard. Where a path genuinely must be permissive - capture fails TOWARDS
+  capturing per D-190, because a duplicate is visible and a lost message is gone - that is a
+  SECOND predicate with its own name and its own comment, never the same one serving both. The two
+  questions "may this keep capturing?" and "is this true?" have safe answers pointing in opposite
+  directions, and one predicate cannot answer both.
 - **Nothing reaches the public repository until it has been demonstrated to work** (standing rule,
   D-199). The repository is the operator's shop window, and a commit that claims a capability it
   does not have reads as not knowing what we are doing. This was established after two pushes in

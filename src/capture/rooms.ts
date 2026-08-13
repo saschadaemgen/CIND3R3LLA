@@ -83,8 +83,22 @@ export interface GroupRecord {
    * A stale record receives nothing, but it is still a record, and a bot holding two records
    * in one room would otherwise satisfy "one capturing BOT per room" while capturing through
    * both. So the unit is the capturing RECORD, and liveness decides which one.
+   *
+   * FAILS OPEN, towards capturing (D-190): an unrecognised status keeps the record eligible,
+   * because a duplicate is visible and a lost message is gone. Use for CAPTURE decisions.
+   * For anything the operator READS, use {@link GroupRecord.current} - see D-201.
    */
   active: boolean;
+  /**
+   * Whether this bot is genuinely a MEMBER, for anything the operator reads.
+   *
+   * FAILS CLOSED, the opposite of {@link GroupRecord.active} and deliberately so. `active`
+   * once answered both questions and reported a channel the bot had never joined as current,
+   * because `unknown` - what a join that never completed looks like - was simply absent from
+   * a deny-list of five out of fifteen statuses. A claim of membership must be positively
+   * evidenced; capture eligibility may be assumed. See D-201.
+   */
+  current: boolean;
 }
 
 /** Several records that are one real room. */

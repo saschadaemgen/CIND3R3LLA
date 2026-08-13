@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 199 decisions</strong> — newest first. Highest allocated: <strong>D-200</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 200 decisions</strong> — newest first. Highest allocated: <strong>D-201</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-201 | A deny-list fails open, and a page that does not refresh reports a world that is gone | IMPLEMENTED |
 | D-200 | The channel join works, and it was one omitted token with a dangerous default | IMPLEMENTED, DEMONSTRATED |
 | D-199 | Nothing reaches the public repository until it has been demonstrated to work | IMPLEMENTED |
 | D-198 | The prepare command's shape, measured on a throwaway core, and a refusal with no button | IMPLEMENTED |
@@ -228,6 +229,49 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-201 - A deny-list fails open, and a page that does not refresh reports a world that is gone
+
+**Status: IMPLEMENTED** (CCB-S5-040). Two defects with one shape: the console told the operator
+things that were not true, and he said so for a day while it kept saying them.
+
+**1. `membershipIsActive` was a deny-list, and it failed open.** `GroupMemberStatus` has FIFTEEN
+values; the deny-list named five, so `unknown`, `pending_approval`, `pending_review`, `introduced`
+and `intro-inv` all read as a CURRENT membership. `unknown` is exactly what a join that never
+completed looks like, so after [D-200](#d-200---the-channel-join-works-and-it-was-one-omitted-token-with-a-dangerous-default)
+the console reported the bot as being in `CIND3R3LLA News`, wrote `joined | observed` into the
+membership history at 11:17, and went on showing "membership current" for a group whose
+`use_relays` was 0 and whose connection had not moved since 08:49.
+
+**This is the third deny-list this season to fail open**, after the wake-word guard and the
+blocked-literals match, which is why it is now a standing rule in `CLAUDE.md` rather than only an
+entry here. A deny-list is a claim to have enumerated every way something can be false, over a
+vocabulary somebody else owns and extends.
+
+**The old comment was not wrong, it was answering a different question.** It defended the
+deny-list so that "a status the SDK adds later reads as ACTIVE and the room keeps capturing",
+which is D-190's fail-towards-capturing and is correct. What it missed is that "should this room
+keep capturing?" and "is this bot a member?" have safe answers pointing in OPPOSITE directions.
+So there are now two predicates, `membershipIsCurrent` (allow-list, fails CLOSED, for anything the
+operator reads or that decides leaving and clearing) and `membershipCouldReceive` (deny-list, fails
+OPEN, capture only), and `GroupRecord` carries both `current` and `active` for the same reason.
+
+**2. Clearing a record worked and the page kept showing it.** The log is unambiguous: the record
+was cleared at 11:33:17, and the presses at 11:33:27 and 11:35:13 failed with "no record of group
+1" - a CORRECT refusal, because the row was already gone. Boot resolved `records: 7`; the core held
+6. The index was refreshed at boot and on `userJoinedGroup` only, so every console action that
+ENDED a membership left the page describing the world as it was before the operator acted, and a
+successful action followed by an accurate refusal is indistinguishable from a control that does
+nothing. `leaveRoom` and `clearEndedRoomRecord` now rebuild the index before returning, through a
+late-bound hook in the shape of `setRuntimeAdminHandle` because refreshing needs the runtime and
+the plugin service and the console has neither.
+
+**The lesson that connects them**: both are the console reporting its own optimistic model instead
+of the core. That is the same failure as D-199 and D-200, and it is why the verification for the
+channel join is stated in `use_relays`, `group_relays` rows and broker timestamps rather than in
+anything the console says.
+
 ---
 
 ### D-200 - The channel join works, and it was one omitted token with a dangerous default

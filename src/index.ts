@@ -38,8 +38,8 @@ import { registerBridgeIntake, bridgeMediaStore } from './plugins/channel-bridge
 import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
 import { CAPTURE_ID } from './plugins/capture/plugin.js';
-import { refreshCaptureRooms, shouldCapture } from './capture/room-service.js';
-import { botGroupSummaries, membershipIsActive } from './capture/room-service.js';
+import { refreshCaptureRooms, setRoomRefresher, shouldCapture } from './capture/room-service.js';
+import { botGroupSummaries, membershipIsCurrent } from './capture/room-service.js';
 import {
   membershipIsRecorded,
   recordMembershipChange,
@@ -160,7 +160,7 @@ async function reportGroups(host: RuntimeHost, cfg: Config): Promise<void> {
       // Production held six records for one bot in three rooms, of which exactly one
       // membership was current. The ended ones are still worth stating, because they are why
       // the core's own count is larger than the truth, but they are stated AS ended.
-      const groups = all.filter((g) => membershipIsActive(g.membership?.memberStatus));
+      const groups = all.filter((g) => membershipIsCurrent(g.membership?.memberStatus));
       const ended = all.length - groups.length;
       const endedNote =
         ended === 0
@@ -940,7 +940,9 @@ async function reconcileMemberships(host: RuntimeHost, how: MembershipHow): Prom
     try {
       const groups = await host.runtime.listGroups(bot.simplexUserId);
       for (const g of groups) {
-        if (!membershipIsActive(g.membership?.memberStatus)) continue;
+        // FAILS CLOSED (D-201): the history recorded `joined` for a channel the bot
+        // had never joined, because `unknown` was absent from a deny-list.
+        if (!membershipIsCurrent(g.membership?.memberStatus)) continue;
         if (await membershipIsRecorded(db, bot.config.botProfileId, g.groupId)) continue;
         await recordMembershipChange(db, {
           botProfileId: bot.config.botProfileId,
@@ -977,6 +979,8 @@ async function reconcileMemberships(host: RuntimeHost, how: MembershipHow): Prom
  * message rather than at the next restart.
  */
 function watchMemberships(host: RuntimeHost, plugins: PluginService): void {
+  // Console actions that end a membership refresh through this too (D-201).
+  setRoomRefresher(() => refreshRooms(host, plugins));
   for (const bot of host.bots) {
     bot.events.on('userJoinedGroup', () => {
       void (async () => {

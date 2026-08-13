@@ -34,12 +34,50 @@ import {
 } from './rooms.js';
 
 /**
- * Membership states in which a record receives nothing.
+ * ── TWO QUESTIONS, TWO PREDICATES, OPPOSITE FAILURE DIRECTIONS (CCB-S5-040, D-201) ──
  *
- * A DENY-list rather than an allow-list, so a status the SDK adds later reads as ACTIVE and
- * the room keeps capturing. The other direction would stop an archive because a vocabulary
- * grew. `invited` is here because it means the join never completed: production held such a
- * record for months, with two members and no messages.
+ * This was ONE deny-list answering both, and it failed OPEN on the question that decides
+ * what the operator is told. `GroupMemberStatus` has FIFTEEN values; the deny-list named
+ * five, so `unknown`, `pending_approval`, `pending_review`, `introduced` and `intro-inv`
+ * all read as a CURRENT membership. `unknown` is what a join that never completed looks
+ * like, so the console reported the bot as being in a channel it had never joined, wrote
+ * `joined` into the membership history, and went on saying so while the operator said the
+ * opposite. He was right for a day.
+ *
+ * The old comment defended the deny-list, and it was RIGHT about capture: a status the SDK
+ * adds later must not silently stop an archive, which is D-190's "every uncertain case
+ * fails TOWARDS capturing, because a duplicate is visible and a lost message is gone".
+ * That reasoning is sound and is kept below. What it did not notice is that "should this
+ * room keep capturing?" and "is this bot a member?" are different questions whose SAFE
+ * answers point in OPPOSITE directions, and one predicate cannot serve both.
+ */
+
+/**
+ * States in which the membership is genuinely established.
+ *
+ * An ALLOW-list, so it FAILS CLOSED: anything unrecognised, and `undefined`, is NOT current.
+ * Use for anything the operator READS or that decides leaving and clearing - a claim of
+ * membership must be positively evidenced, never inferred from the absence of a refusal.
+ */
+const CURRENT: ReadonlySet<string> = new Set([
+  'connected',
+  'complete',
+  'creator',
+  'announced',
+]);
+
+/** Is this bot actually a member? Fails CLOSED. */
+export function membershipIsCurrent(memberStatus: string | undefined): boolean {
+  return memberStatus === undefined ? false : CURRENT.has(memberStatus);
+}
+
+/**
+ * States in which a record receives nothing, for CAPTURE decisions only.
+ *
+ * A DENY-list, so it FAILS OPEN, deliberately and per D-190: a status the SDK adds later
+ * keeps the room capturing rather than silently dropping an archive. `invited` is here
+ * because it means the join never completed; production held such a record for months, with
+ * two members and no messages.
  */
 const ENDED: ReadonlySet<string> = new Set([
   'rejected',
@@ -49,7 +87,8 @@ const ENDED: ReadonlySet<string> = new Set([
   'invited',
 ]);
 
-export function membershipIsActive(memberStatus: string | undefined): boolean {
+/** Could this record still receive messages? Fails OPEN, towards capturing. */
+export function membershipCouldReceive(memberStatus: string | undefined): boolean {
   return memberStatus === undefined ? true : !ENDED.has(memberStatus);
 }
 
@@ -65,6 +104,29 @@ let index: Index = {
   decisions: [],
   gate: { shouldCapture: () => true },
 };
+
+/**
+ * ── THE INDEX MUST BE REFRESHED BY WHATEVER CHANGES MEMBERSHIP (CCB-S5-040, D-201) ──
+ *
+ * A late-bound hook, the same shape and for the same reason as `setRuntimeAdminHandle`:
+ * refreshing needs the runtime AND the plugin service, and the console has neither.
+ *
+ * It exists because clearing a record WORKED and the page went on showing the cleared row.
+ * The operator pressed again, got a correct "no record of group 1", and reasonably read a
+ * successful action followed by an accurate refusal as a control that does nothing. The
+ * index was refreshed at boot and on `userJoinedGroup` only, so every console action that
+ * ENDED a membership left the page describing a world that no longer existed.
+ */
+let refresher: (() => Promise<void>) | null = null;
+
+export function setRoomRefresher(fn: (() => Promise<void>) | null): void {
+  refresher = fn;
+}
+
+/** Rebuild the index now. A no-op with no runtime, which is the harness case. */
+export async function refreshRoomsNow(): Promise<void> {
+  if (refresher !== null) await refresher();
+}
 
 /** What capture consults, per message. */
 export function shouldCapture(botProfileId: number, groupId: number): boolean {
@@ -93,8 +155,9 @@ export function botGroupSummaries(
     const mine = index.rooms.flatMap((r) => r.records.filter((rec) => rec.botProfileId === b.botProfileId));
     return {
       bot: b.displayName,
-      current: mine.filter((r) => r.active).map((r) => r.displayName).sort((x, y) => x.localeCompare(y)),
-      endedCount: mine.filter((r) => !r.active).length,
+      // `current`, never `active`: this is what the OPERATOR reads (D-201).
+      current: mine.filter((r) => r.current).map((r) => r.displayName).sort((x, y) => x.localeCompare(y)),
+      endedCount: mine.filter((r) => !r.current).length,
     };
   });
 }
@@ -154,7 +217,9 @@ export async function refreshCaptureRooms(
           localName: g.localDisplayName,
           ...(g.updatedAt === undefined ? {} : { updatedAt: g.updatedAt }),
           memberIds: members.map((m) => m.memberId),
-          active: membershipIsActive(g.membership?.memberStatus),
+          // Two questions, two predicates, opposite failure directions (D-201).
+          active: membershipCouldReceive(g.membership?.memberStatus),
+          current: membershipIsCurrent(g.membership?.memberStatus),
         });
       }
     }
