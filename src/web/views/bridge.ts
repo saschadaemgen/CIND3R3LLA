@@ -19,6 +19,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page, type SafeHtml } from '../html.js';
 import { badge, card, factList, fmtDate, pageHeader } from './ui.js';
+import { captureRoomState } from '../../capture/room-service.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { resolveSelectedBot } from '../selected-bot.js';
 import {
@@ -125,7 +126,33 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
     const effective = applyPluginOverrides(shared, overrides);
     const enabledHere = isPluginEnabled(effective, CHANNEL_BRIDGE_ID);
 
-    const channels = selectedBotId === null ? [] : await listBridgeChannels(db, selectedBotId);
+    // ── A CHANNEL WHOSE GROUP THE CORE NO LONGER HAS IS NOT A SOURCE (D-204) ──
+    //
+    // `cinderella_bridge_channels` is keyed on the core's LOCAL group id, and that id does
+    // not survive a rejoin: the failed morning attempt left group 7 and the real
+    // subscription arrived as group 9, so this list offered "CIND3R3LLA News" TWICE. The
+    // operator picked the dead one, and the tick then ran 1516 times, succeeding every time,
+    // looking for posts on a channel that receives nothing.
+    //
+    // Clearing the record now removes the row as well, but that only fixes the case somebody
+    // clears. This is the guard for every other way a group id goes stale, and it is derived
+    // from the core rather than stored: a channel is offered only while the bot still holds
+    // a record of its group.
+    const allChannels = selectedBotId === null ? [] : await listBridgeChannels(db, selectedBotId);
+    const liveGroupIds = new Set(
+      captureRoomState()
+        .rooms.flatMap((r) => r.records)
+        .filter((rec) => rec.botProfileId === selectedBotId)
+        .map((rec) => rec.groupId),
+    );
+    // With no room index yet (the bot is not running) nothing is filtered, because an empty
+    // index would otherwise hide every channel and read as "you have none".
+    const channels =
+      liveGroupIds.size === 0
+        ? allChannels
+        : allChannels.filter((c) => liveGroupIds.has(c.sourceGroupId));
+    const staleChannels =
+      liveGroupIds.size === 0 ? [] : allChannels.filter((c) => !liveGroupIds.has(c.sourceGroupId));
     const mappings = selectedBotId === null ? [] : await listBridgeMappings(db, selectedBotId);
     const settings = plugins.channelBridgeSettings();
     const diag = bridgeDiagnostics();
@@ -211,6 +238,20 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
         */ ''}
         ${req.query.notice
           ? html`<div class="mb-4 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900">${req.query.notice}</div>`
+          : ''}
+        ${/*
+          NOT FILTERED IN SILENCE (CCB-S3-023, D-204). A channel that vanished from the
+          picker with no explanation is the same defect one step quieter: the operator would
+          look for a source he had seen before and find nothing. Say which, and why.
+        */ ''}
+        ${staleChannels.length > 0
+          ? html`<div class="mb-4 rounded-lg border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+              <strong>${String(staleChannels.length)} channel${staleChannels.length === 1 ? '' : 's'} no longer selectable.</strong>
+              ${staleChannels.map((c) => html`<span class="font-mono">${c.channelName}</span> (group ${String(c.sourceGroupId)}) `)}
+              left over from a membership this bot no longer holds. A rejoin gives the same
+              channel a new group id, so the old row can never receive a post again. Clear the
+              record on the <a class="underline" href="/capture">Capture</a> page to remove it.
+            </div>`
           : ''}
         ${/*
           A GROUP LINK IS REFUSED, AND THE REFUSAL HAS NO BUTTON (CCB-S5-040, D-198).

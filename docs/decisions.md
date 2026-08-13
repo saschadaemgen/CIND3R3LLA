@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 202 decisions</strong> — newest first. Highest allocated: <strong>D-203</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 203 decisions</strong> — newest first. Highest allocated: <strong>D-204</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-204 | A channel is keyed on a group id that does not survive a rejoin | PARTIALLY IMPLEMENTED |
 | D-203 | Splitting a predicate fixes nothing until the LAST consumer is repointed | IMPLEMENTED |
 | D-202 | "Saved." is what a successful join says, so a non-join may not say it too | IMPLEMENTED |
 | D-201 | A deny-list fails open, and a page that does not refresh reports a world that is gone | IMPLEMENTED |
@@ -231,6 +232,52 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-204 - A channel is keyed on a group id that does not survive a rejoin
+
+**Status: PARTIALLY IMPLEMENTED** (CCB-S5-040). The guard and the cleanup are built and pushed.
+**The underlying key is NOT changed**, and the three items the briefing also asked for are not
+built; see the end of this entry.
+
+**What happened.** The bridge's channel list offered `CIND3R3LLA News` TWICE: `source_group_id 7`,
+the dead record from the failed morning join, and `source_group_id 9`, the live subscription. The
+operator picked 7 as a mapping source. `bridge.tick` then ran **1516 times, succeeding every
+time**, looking for pending posts on a channel that receives nothing - so there was no forward log,
+nothing suppressed, and no error anywhere. Clearing group 7 on the Capture page had removed the
+core's record and left this table's row untouched, so one surface acted and another went on
+describing the world as it was. That is the same shape as D-201, D-202 and D-203, for the fourth
+time in one day.
+
+**The root cause is the key.** `cinderella_bridge_channels` is keyed on
+`(bot_profile_id, source_group_id)` - the core's LOCAL group id, which does not survive a rejoin.
+`origin.ts` already derives a `channelKey` from the channel LINK precisely because it is stable
+across a rename, and the mappings do not use it. **Re-keying on `channelKey` is the real fix and is
+not done here**; it needs a migration and a backfill, and inventing one at the end of a long day is
+how the last four defects were written.
+
+**What is built:**
+
+1. Clearing an ended record now also forgets the bridge's channel row (`deleteBridgeChannel`). The
+   CASCADE takes its mappings and pending posts, which is correct rather than convenient: a mapping
+   whose source group is gone can never fire, and pending posts are announcement state. Her
+   announcements are in `messages` under the 'bridge' category and are untouched. What was removed
+   is logged rather than deleted in silence.
+2. A channel whose group the bot no longer holds is **not selectable as a source**, derived from
+   the live room index rather than stored. With no index (bot not running) nothing is filtered,
+   because an empty index would hide every channel and read as "you have none".
+3. The hidden ones are NAMED on the page with the reason, per CCB-S3-023 - a source that vanished
+   from a picker with no explanation is the same defect one step quieter.
+
+**Not built, and asked for:** the immediate first announcement (a fresh post should go out at once;
+the cadence exists to REPEAT an announcement, not to delay the first), refusing a duplicate
+`(channel -> destination)` pairing across two bots at the form, and incognito. The duplicate-pairing
+case is real: `cinderella_bridge_mappings_unique` covers
+`(bot_profile_id, source_group_id, dest_group_id)`, so the SAME bot mapping the same pair twice is
+already refused by the database, but nothing stops TWO bots bridging one channel into one group and
+every post arriving twice. Note that a refusal keyed on `source_group_id` would be defeated by
+exactly the rejoin above, which is another reason the key comes first.
+
 ---
 
 ### D-203 - Splitting a predicate fixes nothing until the LAST consumer is repointed

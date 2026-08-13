@@ -22,6 +22,7 @@ import type { ViewContext } from '../server.js';
 import { html, page } from '../html.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
 import { captureRoomState } from '../../capture/room-service.js';
+import { deleteBridgeChannel } from '../../plugins/channel-bridge/store.js';
 import {
   assignCapture,
   clearCaptureAssignments,
@@ -375,6 +376,23 @@ export function registerCapturePage(app: FastifyInstance, ctx: ViewContext): voi
         mode === 'clear'
           ? await clearEndedRoomRecord(botProfileId, groupId)
           : await leaveRoom(botProfileId, groupId);
+      // ── CLEARING REACHES BOTH LISTS (CCB-S5-040, D-204) ────────────────────
+      //
+      // The core forgot the group and the bridge did not, so its channel list went on
+      // offering `CIND3R3LLA News` TWICE - the dead group 7 beside the live group 9 - and the
+      // operator picked the dead one as a mapping source and waited for posts that could
+      // never arrive. Same shape as everything else today: one surface acting, another still
+      // describing the world as it was.
+      const forgotten =
+        mode === 'clear' ? await deleteBridgeChannel(db, botProfileId, groupId) : null;
+      if (forgotten !== null && forgotten.channels > 0) {
+        log.info('capture console: the bridge forgot a channel whose record was cleared', {
+          botProfileId,
+          groupId,
+          mappingsRemoved: forgotten.mappings,
+          pendingPostsRemoved: forgotten.posts,
+        });
+      }
       await writeAudit(
         db,
         req.session?.username ?? 'unknown',

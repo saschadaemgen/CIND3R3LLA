@@ -132,6 +132,46 @@ export async function listBridgeChannels(
   }));
 }
 
+/**
+ * Forget a channel, because the record it was read from is gone (CCB-S5-040, D-204).
+ *
+ * Called when the Capture page clears an ended group record. Without it the core forgets the
+ * group and this table does not, so the bridge went on OFFERING a channel whose group no
+ * longer existed - and the operator picked it as a mapping source and waited for posts that
+ * could never arrive, because the live subscription was a different `source_group_id`.
+ *
+ * The CASCADE takes the mappings and the pending posts with it. That is correct rather than
+ * merely convenient: a mapping whose source group is gone can never fire again, and the
+ * pending posts are announcement state, not the archive. Her announcements are already in
+ * `messages` under the 'bridge' category and are untouched by this.
+ *
+ * Returns what it removed so the caller can say so rather than delete in silence.
+ */
+export async function deleteBridgeChannel(
+  db: Queryable,
+  botProfileId: number,
+  sourceGroupId: number,
+): Promise<{ channels: number; mappings: number; posts: number }> {
+  const counts = await db.query<{ mappings: string; posts: string }>(
+    `SELECT
+       (SELECT COUNT(*) FROM cinderella_bridge_mappings
+         WHERE bot_profile_id = $1 AND source_group_id = $2) AS mappings,
+       (SELECT COUNT(*) FROM cinderella_bridge_posts
+         WHERE bot_profile_id = $1 AND source_group_id = $2) AS posts`,
+    [botProfileId, sourceGroupId],
+  );
+  const { rowCount } = await db.query(
+    `DELETE FROM cinderella_bridge_channels WHERE bot_profile_id = $1 AND source_group_id = $2`,
+    [botProfileId, sourceGroupId],
+  );
+  const row = counts.rows[0];
+  return {
+    channels: rowCount ?? 0,
+    mappings: Number(row?.mappings ?? 0),
+    posts: Number(row?.posts ?? 0),
+  };
+}
+
 /* ── mappings ─────────────────────────────────────────────────────────────── */
 
 interface MappingRow {
