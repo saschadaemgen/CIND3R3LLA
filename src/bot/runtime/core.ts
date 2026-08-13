@@ -574,11 +574,40 @@ export class MultiProfileRuntime {
    */
   async prepareGroupFromLink(simplexUserId: number, link: string): Promise<number> {
     const chat = this.requireChat();
-    const response = await this.scheduler.run(
+    // ── THE COMMAND IS LOGGED BEFORE IT IS SENT (CCB-S5-040) ─────────────────
+    //
+    // The first live attempt answered `{"type":"commandError","message":"Failed reading:
+    // empty"}` - the Haskell parser saying it ran out of input, so the STRING was malformed
+    // rather than the operation refused. The operator could see that a command was rejected
+    // and not what was rejected, which cost a whole round trip to learn nothing.
+    //
+    // The SDK does not wrap this command, so there is no typed builder to be right or wrong:
+    // the string IS the interface, and a rejected string is only diagnosable if it is
+    // recorded. At INFO rather than debug because this path is exercised by hand, rarely,
+    // and the one time it runs is the one time somebody is reading.
+    //
+    // The link is NOT logged. It is the operator's, it is a credential to a room, and the
+    // shape of the command is what is in question rather than its content.
+    const command = `/_prepare group ${String(simplexUserId)} ${link}`;
+    log.info('runtime: preparing a group from a link', {
       simplexUserId,
-      `prepareGroup:${String(simplexUserId)}`,
-      () => chat.sendChatCmd(`/_prepare group ${String(simplexUserId)} ${link}`),
-    );
+      command: redactLink(command),
+      note: 'the argument shape is not confirmed against the core parser; see D-198',
+    });
+    let response: unknown;
+    try {
+      response = await this.scheduler.run(
+        simplexUserId,
+        `prepareGroup:${String(simplexUserId)}`,
+        () => chat.sendChatCmd(command),
+      );
+    } catch (err) {
+      // The command goes into the error too, so the banner names the input and not only the
+      // complaint. `Failed reading: empty` on its own is unactionable.
+      throw new Error(
+        `The core rejected the prepare command "${redactLink(command)}": ${describeChatError(err)}`,
+      );
+    }
     const groupId = preparedGroupIdOf(response);
     if (groupId === null) {
       throw new Error(
@@ -605,9 +634,17 @@ export class MultiProfileRuntime {
    */
   async connectPreparedGroup(simplexUserId: number, groupId: number): Promise<void> {
     const chat = this.requireChat();
-    await this.scheduler.run(simplexUserId, `connectPrepared:${String(groupId)}`, async () => {
-      await chat.sendChatCmd(`/_connect group #${String(groupId)}`);
-    });
+    const command = `/_connect group #${String(groupId)}`;
+    log.info('runtime: connecting a prepared group', { simplexUserId, groupId, command });
+    try {
+      await this.scheduler.run(simplexUserId, `connectPrepared:${String(groupId)}`, async () => {
+        await chat.sendChatCmd(command);
+      });
+    } catch (err) {
+      throw new Error(
+        `The core rejected the connect command "${command}": ${describeChatError(err)}`,
+      );
+    }
     log.info('runtime: connected a prepared group', { simplexUserId, groupId });
   }
 
@@ -976,6 +1013,22 @@ export const REJECTED_REACTIONS: readonly string[] = Object.freeze([
  * a group id in the shapes the core uses and returns null for anything else, so an unexpected
  * answer becomes a refusal upstream rather than a number.
  */
+
+/**
+ * A command string with any SimpleX link reduced to its shape (CCB-S5-040).
+ *
+ * The command is logged so a parser rejection names its input, and the SHAPE is the thing in
+ * question. The link itself is the operator's and is a credential to a room, so it is
+ * replaced by its scheme and length: enough to see that an argument was present and roughly
+ * how long, which is what a "Failed reading: empty" needs, and not enough to join anything.
+ */
+export function redactLink(command: string): string {
+  return command.replace(
+    /(https?:\/\/|simplex:\/\/)\S+/g,
+    (m) => `${m.slice(0, m.indexOf('//') + 2)}<link:${String(m.length)}chars>`,
+  );
+}
+
 export function preparedGroupIdOf(response: unknown): number | null {
   const seen = new Set<unknown>();
   const walk = (node: unknown, depth: number): number | null => {
