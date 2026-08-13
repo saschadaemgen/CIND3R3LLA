@@ -130,7 +130,8 @@
     "verify:capture-console": "tsx scripts/verify-capture-console.ts",
     "verify:chat-errors": "tsx scripts/verify-chat-error-surfaced.ts",
     "verify:name-guard": "tsx scripts/verify-name-guard.ts",
-    "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts"
+    "verify:lookup-honesty-live": "tsx scripts/verify-lookup-honesty-live.ts",
+    "verify:welcome": "tsx scripts/verify-welcome.ts"
   },
   "dependencies": {
     "@electric-sql/pglite-pgvector": "0.0.5",

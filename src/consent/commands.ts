@@ -63,7 +63,7 @@ const FAILURE_REPLY =
  * `_italic_`, `~strike~`, backtick code, `#secret#`. This message contains none,
  * so it is unaffected, but any copy added here must respect that.
  */
-const WELCOME_TEMPLATE = `I'm {wake}, and yes, I run this place.
+const ARRIVAL_TEMPLATE = `I'm {wake}, and yes, I run this place.
 
 Before you settle in, one thing you should know. By default, whatever you say here stays here, between us. I publish nothing of yours to the outside world unless you tell me to.
 
@@ -83,13 +83,19 @@ No /publish, and you simply talk freely. Nothing leaves this room. Your choice, 
 {wake}`;
 
 /**
- * The welcome, addressed in the bot's own configured name.
+ * HER ARRIVAL NOTICE, addressed in the bot's own configured name.
+ *
+ * Renamed from `welcomeMessage` under CCB-S5-041 (D-206). Three unrelated things were called
+ * "welcome" and the collision hid a dead field for months: this line, which she posts when SHE
+ * joins a group; `AddressSettings.autoReply`, stored by onboarding as `welcome_message` and
+ * wired to nothing; and the member greeting the Welcome plugin now owns. This one fires on
+ * `userJoinedGroup` - her own join - and greets the ROOM, not a member.
  *
  * CIND3R3LLA is the PRODUCT. The bot running in a given community is named by its
  * operator, so no member-facing copy may hard-code a name (CCB-S3-031 follow-up).
  */
-export function welcomeMessage(wakeWord: string): string {
-  return WELCOME_TEMPLATE.split('{wake}').join(wakeWord);
+export function arrivalNotice(wakeWord: string): string {
+  return ARRIVAL_TEMPLATE.split('{wake}').join(wakeWord);
 }
 
 /**

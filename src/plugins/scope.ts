@@ -48,6 +48,7 @@ import { KNOWLEDGE_DEFAULTS } from './knowledge-base/settings.js';
 import { KNOWLEDGE_BASE_ID } from './knowledge-base/plugin.js';
 import { CHANNEL_BRIDGE_DEFAULTS } from './channel-bridge/settings.js';
 import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
+import { WELCOME_ID } from './welcome/plugin.js';
 // Importing the id REGISTERS the plugin: `definePlugin` runs at module load, which is how
 // every other capability here comes to exist. Capture has no settings document, so `enabled`
 // is its only key and `expectedPluginSettingKeys` supplies that for every plugin.
@@ -374,6 +375,61 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
   // WHICH bot captures a shared room is finer than a plugin setting and lives in
   // `cinderella_capture_assignments`, because it is a fact about a room rather than about
   // a bot.
+  // ── THE WELCOME PLUGIN (CCB-S5-041, D-206) ─────────────────────────────────
+  //
+  // EVERY setting here is per bot, which is unusual and is the point. A greeting is the
+  // bot's own voice, in the bot's own words, on somebody's arrival; two bots in one group
+  // will usually want one greeting and one silence, and where both speak the operator
+  // chose that. Nothing here is a deployment cost, so nothing here is shared - the
+  // opposite of the bridge, whose storage bound and file ceiling are the deployment's.
+  {
+    pluginId: WELCOME_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Welcome enabled',
+    reason:
+      'Whether this bot greets a new member at all. One bot welcoming a room while another stays quiet is the capability.',
+  },
+  {
+    pluginId: WELCOME_ID,
+    key: 'text',
+    scope: 'per-bot',
+    label: 'The greeting',
+    reason:
+      "The words themselves, in this bot's voice. The model neither writes this nor sees it (D-137, D-180); the application fills the placeholders.",
+  },
+  {
+    pluginId: WELCOME_ID,
+    key: 'returningText',
+    scope: 'per-bot',
+    label: 'The greeting for a returning member',
+    reason:
+      'Used only when the separate-returning switch is on. A member who left and came back is a real distinction because the member id is stable; incognito is NOT, and cannot be.',
+  },
+  {
+    pluginId: WELCOME_ID,
+    key: 'separateReturning',
+    scope: 'per-bot',
+    label: 'Different words for someone coming back',
+    reason:
+      'Off by default: most operators want one greeting. On, a returning member gets the second text instead.',
+  },
+  {
+    pluginId: WELCOME_ID,
+    key: 'destination',
+    scope: 'per-bot',
+    label: 'Where the greeting goes',
+    reason:
+      'The group, the private support thread, or a direct message. Per bot because it is a choice about this bot’s manner, and because only some of the three are available in a given group.',
+  },
+  {
+    pluginId: WELCOME_ID,
+    key: 'fallback',
+    scope: 'per-bot',
+    label: 'When the private route is unavailable',
+    reason:
+      'Fall back to the group, or do not greet. Both are defensible; silently doing neither is not, so this is a choice rather than a default buried in code.',
+  },
   {
     pluginId: CAPTURE_ID,
     key: ENABLED_KEY,

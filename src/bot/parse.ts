@@ -287,6 +287,24 @@ export function parseSentGroupItem(item: RawItem): SentGroupItem | null {
   const { chatInfo, chatItem } = item as T.AChatItem;
   if (chatInfo.type !== 'group') return null;
   if (chatItem.chatDir.type !== 'groupSnd') return null;
+  // ── A PRIVATE MESSAGE OF HERS IS NOT ARCHIVED EITHER (CCB-S5-041, D-206) ───
+  //
+  // THE RECEIVE PATH GUARDED THIS AND THE SEND PATH DID NOT. `isPublicGroupMessage`
+  // above requires `groupChatScope === undefined`, so a member's support-thread message
+  // has never been captured. This function checked `group` and `groupSnd` and stopped -
+  // and a message SHE sends into the member support thread is both. It would have been
+  // archived, and published wherever its category publishes.
+  //
+  // It was harmless only because nothing in this product had ever sent a scoped message;
+  // the Welcome plugin is the first thing that can, which is exactly why the briefing
+  // asked for the exclusion to be PROVEN rather than asserted. The asymmetry is the
+  // defect: one direction of a two-way boundary was guarded, and nothing said so.
+  //
+  // Written as the receive side is, in the same words, so the two read alike: PUBLIC
+  // means no scope. An unrecognised future scope is refused rather than admitted, which
+  // is D-201's rule on the path that matters most - a scope SimpleX adds later is private
+  // until somebody decides otherwise, and consent is not a thing to be permissive about.
+  if (chatInfo.groupChatScope !== undefined) return null;
   const me = chatInfo.groupInfo.membership;
   if (!me?.memberId) return null;
   return {

@@ -62,6 +62,8 @@ import { resolveAssetPath } from '../../media/assets.js';
 import { avatarFault, decideFaces } from './faces.js';
 import { findRenameOnBoot, renameRefusal } from './naming.js';
 import { FileReceiver } from '../files.js';
+import { makeWelcomeTransport } from '../welcome-transport.js';
+import { setWelcomeTransports, type WelcomeTransport } from '../welcome-port.js';
 import {
   bindSimplexUser,
   anyBotIsBound,
@@ -222,6 +224,8 @@ export async function startRuntimeHost(
 
   const chat = runtime.chat;
   const bots: HostedBot[] = [];
+  /** Per bot, keyed by profile id: the welcome's send routes. See where it is filled. */
+  const welcomeTransports = new Map<number, WelcomeTransport>();
 
   for (const [index, config] of configured.entries()) {
     const hosted = runtime.profiles[index];
@@ -305,6 +309,25 @@ export async function startRuntimeHost(
       `group-reply:${config.slug}`,
     );
 
+    const runScheduled = <R>(label: string, fn: () => Promise<R>): Promise<R> =>
+      runtime.scheduler.run(hosted.simplexUserId, label, fn);
+
+    // ── ONE WELCOME TRANSPORT PER BOT (CCB-S5-041, D-206) ─────────────────────
+    //
+    // Built here for the reason each bot gets its own event source: a transport shared across
+    // profiles would send in whichever voice the scheduler last left active, which is the
+    // D-171 misrouting shape with a greeting attached. It reuses this bot's own
+    // `sendGroupText`, so the readiness gate is not bypassed by a new send path.
+    welcomeTransports.set(
+      config.botProfileId,
+      makeWelcomeTransport({
+        chat,
+        runScheduled,
+        sendGroupText: (groupId: number, text: string) => sendGroupText(groupId, text),
+        slug: config.slug,
+      }),
+    );
+
     bots.push({
       config,
       simplexUserId: hosted.simplexUserId,
@@ -312,8 +335,7 @@ export async function startRuntimeHost(
       events,
       fileReceiver,
       sendGroupText,
-      runScheduled: <R>(label: string, fn: () => Promise<R>): Promise<R> =>
-        runtime.scheduler.run(hosted.simplexUserId, label, fn),
+      runScheduled,
     });
   }
 
@@ -328,6 +350,10 @@ export async function startRuntimeHost(
   await runtime.scheduler.run(primary.simplexUserId, 'adopt-active-user', () =>
     Promise.resolve(undefined),
   );
+
+  // Published once, after every bot is built, so the port can never resolve a half-built
+  // transport. Set as a whole map rather than one bot at a time for the same reason.
+  setWelcomeTransports(welcomeTransports);
 
   // ── EVERY BOT WEARS ITS OWN FACE (CCB-S5-007, D-161) ─────────────────────
   //

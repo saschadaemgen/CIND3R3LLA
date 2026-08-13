@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 204 decisions</strong> — newest first. Highest allocated: <strong>D-205</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 205 decisions</strong> — newest first. Highest allocated: <strong>D-206</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-206 | The welcome: greeted once, by a key SimpleX assigned, and never in the archive | IMPLEMENTED in build, LIVE CASES UNPROVEN |
 | D-205 | A surface is a claim about state, and a local id is not an identity | IMPLEMENTED as standing rules |
 | D-204 | A channel is keyed on a group id that does not survive a rejoin | PARTIALLY IMPLEMENTED |
 | D-203 | Splitting a predicate fixes nothing until the LAST consumer is repointed | IMPLEMENTED |
@@ -233,6 +234,91 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-206 - The welcome: greeted once, by a key SimpleX assigned, and never in the archive
+
+**Status: IMPLEMENTED in build, LIVE CASES UNPROVEN** (CCB-S5-041). She greets a new member once,
+with words the operator wrote. The offline guarantees are built and mutation-proven; a real join,
+each private route, and two bots in one room are the operator's to stage and are NOT claimed here
+(D-199).
+
+**THE STRONGEST GUARANTEE OF THE THREE, AND WE DID NOT IMPOSE IT.** The once-per-member rule and
+the one-greeting-per-room rule are **the same constraint**. A member's wire id is scoped to the
+ROOM (D-190) - that is what makes room identity computable at all - so `UNIQUE (member_id)` means
+a second bot in the room finds *the same row*, not its own. **There is nothing to elect, and
+therefore nothing to elect wrongly.** Capture needed an election and a conflict report; the bridge
+needs a duplicate refusal it cannot yet write correctly because its ids are profile-local. This
+needs neither, because SimpleX assigned the key. **Do not add an election here** - it would be
+strictly weaker than the constraint already is.
+
+**The claim IS the insert.** Not a read followed by a write: several bots in one room receive the
+same event, from the same core, in the same process, at the same instant, so whatever they do
+BEFORE the claim, they all do. The cost is a row that exists before the outcome is known and
+states the intended route, corrected afterwards. That trade is deliberate: a duplicate greeting is
+visible to every member forever; a briefly-wrong row is visible only to the diagnostics page.
+
+**A guard the constraint cannot give.** `UNIQUE (member_id)` enforces ONCE, not APPROPRIATE. The
+bot's own join connects it to every existing member, so without a second guard a first join into a
+900-member room greets 900 people, each exactly once, exactly as specified. `arrivedAfterBot` is
+an allow-list over `GroupMemberCategory` (`post`, `invitee`), read from the event rather than
+computed from timestamps - SimpleX already answers the question, and a resync carries the category
+it always had. It fails CLOSED per D-201.
+
+**That guard removed a dependency it was not aimed at.** Two events carry an identical shape and
+mean opposite things (`joinedGroupMember`, `connectedToGroupMember`), and nothing in the tree, the
+docs or production answered which reaches an ordinary member bot. Both are now subscribed, because
+`arrivedAfterBot` filters the flood whichever event delivers it and the claim dedupes a double
+fire. Picking one and guessing wrong means no greetings ever, or a flood; subscribing to both
+behaves identically under either answer. `c856dca` still logs which arrives, as confirmation
+rather than a prerequisite.
+
+**AN ARCHIVE LEAK, FOUND BY BEING ASKED TO PROVE THE EXCLUSION RATHER THAN ASSERT IT.** The receive
+path guarded scope (`isPublicGroupMessage` requires `groupChatScope === undefined`); the send-site
+capture of HER OWN messages did not - it checked `group` and `groupSnd` and stopped. A greeting she
+sends into the member support thread is both, so it would have been archived and published wherever
+its category publishes. It was harmless only because nothing had ever sent a scoped message; this
+plugin is the first thing that can. Fixed as an allow-list in the receive side's own words.
+**Asserting the exclusion would have found nothing**, because the half that was guarded reads
+reassuringly.
+
+**Incognito is not buildable, and that is by design.** Every occurrence of `incognito` in
+`@simplex-chat/types` is an error type about our own connections or `AutoAccept.acceptIncognito`,
+our own setting. `GroupMember` and `LocalProfile` carry no such flag. A bot that could detect
+incognito would break the guarantee incognito exists to provide. **First-time versus returning**
+replaces it: buildable, because the member id is stable.
+
+**A contradiction in the briefing, corrected rather than inherited.** It asked both that a rejoin
+never re-greet and that a member who left and came back get different words - the same event with
+opposite outcomes, which would have made `returningText` a second dead field. Settled: the
+once-rule stays ABSOLUTE, and `returning` means the archive already holds this member id and they
+have never been greeted. It rests on a fact and degrades correctly - on a fresh deployment nobody
+has history, so everyone is a newcomer.
+
+**One place the briefing is deliberately not followed.** "A greeting that did not go out must leave
+a record" holds for every reason except `predates-bot`, which writes no row: it fires once per
+existing member on the bot's own join, so honouring it literally writes 900 rows, buries every real
+suppression and claims 900 member ids that were never candidates. **The other reasons are decisions
+about a candidate; this one says there was no candidate.** It is counted and logged once per join.
+
+**THE TWO PORTS LOOK ALIKE AND ARE NOT.** `bridge-port.ts` is a module singleton because it
+resolves the OWNING bot through the runtime; the welcome transport is a **map keyed by profile
+id**, because a greeting already knows who is greeting. The first draft copied the singleton and
+would have sent every greeting through whichever bot registered last - the right room, the wrong
+voice, and silent. Recorded because the next port written here will be copied from one of these.
+
+**Three things called "welcome", now named apart**, which is what let a stored field go nowhere for
+months: `AddressSettings.autoReply` (stored as `welcome_message`, still unwired, left for its own
+decision about whether the operator wants a contact-address auto-reply at all); `arrivalNotice()`
+(renamed from `welcomeMessage()`, her own arrival on `userJoinedGroup`); and this plugin, owning
+its own text.
+
+Also: availability of a private route is DISCOVERED, never predicted, because `directMessages` is a
+`RoleGroupPreference` (allowed from a role upwards) and reimplementing the role ordering would be
+D-201 over a vocabulary SimpleX extends. The three refusals are kept apart - `no-contact` (an
+absence), `prohibited` (correct behaviour by the admin's configuration), `send-failed` (the only
+fault, the only one reaching `status.error`, and the only one a fallback must never absorb).
+
 ---
 
 ### D-205 - A surface is a claim about state, and a local id is not an identity

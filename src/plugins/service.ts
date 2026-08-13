@@ -72,6 +72,8 @@ import {
   type ChannelBridgeSettings,
 } from './channel-bridge/settings.js';
 import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
+// Side-effect import: importing the module is what registers the plugin (see above).
+import './welcome/plugin.js';
 
 const STATES_KEY = 'plugins';
 const settingsKey = (id: string): string => `plugin:${id}`;

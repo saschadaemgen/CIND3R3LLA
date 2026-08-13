@@ -151,6 +151,29 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       liveGroupIds.size === 0
         ? allChannels
         : allChannels.filter((c) => liveGroupIds.has(c.sourceGroupId));
+    // ── NAME FIRST, ID BESIDE IT (CCB-S5-041) ──────────────────────────────
+    //
+    // The destination picker offered "group 8" and nothing else, so the operator picked his
+    // room by typing a number he had learned from a LOG LINE - and that number had been 4
+    // that morning, before a rejoin moved it. The console was asking him to remember a value
+    // that means nothing to him and changes underneath him.
+    //
+    // The room index already resolves names, which is why the Capture page shows Cyb3rD3sk
+    // rather than 4. Both are shown everywhere from here: the NAME first because it is what
+    // he thinks in, the ID beside it because it is what the logs and the database speak, and
+    // he reads both every day.
+    const roomNames = new Map<number, string>();
+    for (const r of captureRoomState().rooms) {
+      for (const rec of r.records) {
+        if (rec.botProfileId === selectedBotId) roomNames.set(rec.groupId, r.displayName);
+      }
+    }
+    /** `Cyb3rD3sk (group 8)`, or `group 8` when the index has never seen it. */
+    const withId = (groupId: number): string => {
+      const name = roomNames.get(groupId);
+      return name === undefined ? `group ${String(groupId)}` : `${name} (group ${String(groupId)})`;
+    };
+
     const staleChannels =
       liveGroupIds.size === 0 ? [] : allChannels.filter((c) => !liveGroupIds.has(c.sourceGroupId));
     const mappings = selectedBotId === null ? [] : await listBridgeMappings(db, selectedBotId);
@@ -354,7 +377,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                       ${badge(m.enabled ? 'on' : 'off', m.enabled ? 'green' : 'slate')}
                       <span class="text-sm font-medium">
                         ${ch?.channelName ?? `channel ${String(m.sourceGroupId)}`} into group
-                        ${String(m.destGroupId)}
+                        ${withId(m.destGroupId)}
                       </span>
                       <span class="text-xs text-slate-500">
                         last sent: ${m.lastSentAt ? fmtDate(m.lastSentAt.toISOString()) : 'never'}
@@ -403,7 +426,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                   'Source channel',
                   html`<select name="sourceGroupId" class="${INPUT_CLS}">
                     ${channels.map(
-                      (c) => html`<option value="${String(c.sourceGroupId)}">${c.channelName}</option>`,
+                      (c) => html`<option value="${String(c.sourceGroupId)}">${c.channelName} (group ${String(c.sourceGroupId)})</option>`,
                     )}
                   </select>`,
                   channels.length === 0 ? 'Join a channel first; the picker lists known channels only.' : undefined,
@@ -413,7 +436,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                   html`<select name="destGroupId" class="${INPUT_CLS}">
                     <option value="">type an id below</option>
                     ${destGroups.rows.map(
-                      (g) => html`<option value="${String(g.group_id)}">group ${String(g.group_id)}</option>`,
+                      (g) => html`<option value="${String(g.group_id)}">${withId(Number(g.group_id))}</option>`,
                     )}
                   </select>`,
                   'Groups the bot has captured from. For one it has not spoken in yet, use the id field.',
@@ -522,7 +545,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${fmtDate(f.sentAt.toISOString())}</td>
                           <td class="py-2 pr-3">${badge(f.kind, f.kind === 'withdrawal' ? 'amber' : 'slate')}</td>
                           <td class="py-2 pr-3 text-slate-600">${f.origin.channelName}</td>
-                          <td class="py-2 pr-3 text-slate-500">${String(f.destGroupId)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${withId(f.destGroupId)}</td>
                           <td class="py-2 text-slate-600">${f.postText.slice(0, 100)}</td>
                         </tr>`,
                       )}

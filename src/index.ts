@@ -39,6 +39,8 @@ import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
 import { CAPTURE_ID } from './plugins/capture/plugin.js';
 import { refreshCaptureRooms, setRoomRefresher, shouldCapture } from './capture/room-service.js';
+import { watchArrivals } from './plugins/welcome/trigger.js';
+import { resolveWelcomeSettings } from './plugins/welcome/settings.js';
 import { botGroupSummaries, membershipIsCurrent } from './capture/room-service.js';
 import {
   membershipIsRecorded,
@@ -981,6 +983,28 @@ async function reconcileMemberships(host: RuntimeHost, how: MembershipHow): Prom
 function watchMemberships(host: RuntimeHost, plugins: PluginService): void {
   // Console actions that end a membership refresh through this too (D-201).
   setRoomRefresher(() => refreshRooms(host, plugins));
+
+  // ── SHE GREETS WHOEVER ARRIVES (CCB-S5-041, D-206) ────────────────────────
+  //
+  // Wired here rather than in `host.ts` because greeting needs the archive database and the
+  // plugin states, and `host.ts` deliberately knows about neither. Settings are resolved per
+  // arrival, not captured now: the operator edits the greeting between joins.
+  watchArrivals(
+    host.bots.map((b) => ({
+      botProfileId: b.config.botProfileId,
+      on: (event: string, handler: (ev: never) => void) => {
+        (b.events as unknown as { on: (e: string, h: (ev: never) => void) => void }).on(
+          event,
+          handler,
+        );
+      },
+    })),
+    {
+      db: getPool(),
+      settingsFor: (botProfileId) =>
+        resolveWelcomeSettings(getPool(), plugins.getStates(), botProfileId),
+    },
+  );
   for (const bot of host.bots) {
     bot.events.on('userJoinedGroup', () => {
       void (async () => {
