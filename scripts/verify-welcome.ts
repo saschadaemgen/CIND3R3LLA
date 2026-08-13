@@ -222,6 +222,47 @@ async function sectionMutationPrivate(): Promise<void> {
   );
 }
 
+/**
+ * ── A BOT THAT CANNOT GREET MUST NOT CLAIM (CCB-S5-041, D-208) ──────────────
+ *
+ * The first live test produced no greeting at all. Rick had the capability OFF, his event
+ * arrived first, he took the exclusive claim, recorded `suppressed / disabled` and sent
+ * nothing - so Cinderella, who had the capability and a written greeting, could never greet
+ * that member. The claim is permanent by design, which is right for a race and fatal for a
+ * non-participant.
+ *
+ * Asserted over the SOURCE because the ordering is the guarantee: `disabled` and `no-text`
+ * must return BEFORE `claimGreeting` is reached.
+ */
+async function sectionNonParticipant(): Promise<void> {
+  console.log('');
+  console.log('8. A bot that cannot greet does not take the claim (D-208)');
+  const src = await readFile('src/plugins/welcome/service.ts', 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  const suppressBranch = code.slice(
+    code.indexOf("if (plan.kind === 'suppress')"),
+    code.indexOf('THE CLAIM') >= 0 ? code.indexOf('THE CLAIM') : code.indexOf('const won'),
+  );
+  check(
+    'the suppress branch returns without claiming',
+    !suppressBranch.includes('claimGreeting'),
+    'a disabled bot claiming is what blocked the enabled one',
+  );
+  check(
+    '  MUTATION: it is the ORDER that holds this, so the claim comes after the branch',
+    code.indexOf("if (plan.kind === 'suppress')") < code.indexOf('const won = await claimGreeting'),
+  );
+  // POSITIVE CONTROL: the assertions above pass against a runner that never claims at all.
+  check(
+    'POSITIVE CONTROL: a bot that CAN greet still claims',
+    /const won = await claimGreeting\(/.test(code),
+  );
+  check(
+    'and a lost claim is logged rather than silent',
+    /another bot greeted this member first/.test(src),
+  );
+}
+
 function ctx(): { memberName: string; groupName: string; returning: boolean; predatesBot: boolean } {
   return { memberName: 'Ada', groupName: 'Cyb3rD3sk', returning: false, predatesBot: false };
 }
@@ -235,6 +276,7 @@ async function main(): Promise<void> {
   await sectionOnce();
   await sectionMutationTwice();
   await sectionMutationPrivate();
+  await sectionNonParticipant();
   console.log(
     `\n${failures === 0 ? 'ALL PASSED' : `${String(failures)} CHECK(S) FAILED`} - welcome.`,
   );

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 206 decisions</strong> — newest first. Highest allocated: <strong>D-207</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 207 decisions</strong> — newest first. Highest allocated: <strong>D-208</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-208 | A bot that cannot greet must not claim the right to greet | IMPLEMENTED |
 | D-207 | A registration that cannot fail proves nothing, and an empty set is not a result | IMPLEMENTED |
 | D-206 | The welcome: greeted once, by a key SimpleX assigned, and never in the archive | IMPLEMENTED in build, LIVE CASES UNPROVEN |
 | D-205 | A surface is a claim about state, and a local id is not an identity | IMPLEMENTED as standing rules |
@@ -235,6 +236,53 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-208 - A bot that cannot greet must not claim the right to greet
+
+**Status: IMPLEMENTED** (CCB-S5-041). The first live test produced no greeting at all, on either
+route, with no line anywhere saying why. The events arrived correctly - three of them, all
+`memberCategory: post`, seen by both bots - so `arrivedAfterBot` was satisfied and the failure was
+downstream of everything D-207 fixed.
+
+**The cause, from the one row in the table:**
+
+```
+bot_profile_id 14 | route suppressed | reason disabled
+```
+
+Bot 14 is the SECOND bot, and the boot line says `welcome:on(own)` for bot 10 and `welcome:off`
+for bot 14. **Rick's event arrived first, he took the exclusive claim, recorded `disabled`, and
+sent nothing.** Cinderella - who had the capability and a written greeting - then lost the claim
+and returned silently. The member is permanently unreachable, because the claim is exclusive and
+there is no retry: a bot that was never allowed to greet had taken the sole right to greet.
+
+**The rule.** `disabled` and `no-text` are facts about the BOT, not decisions about the MEMBER.
+That is the same distinction that already keeps `predates-bot` from writing a row - *the other
+reasons are decisions about a candidate, this one says there was no candidate* - and it extends one
+step further: **there was no greeter.** A bot in either state is not a participant, so it must
+neither claim nor record; the bot that CAN greet will do both.
+
+**What made it expensive was the silence.** The lost claim logged nothing, so from outside, four
+distinct failures were indistinguishable: the trigger not firing, the claim being lost, the text
+being missing, and the transport refusing. The operator had to name all four as candidates because
+the system distinguished none of them. A lost claim is the guarantee WORKING and is now logged
+anyway - normal is not the same as invisible, and `already-greeted` is the one outcome that is
+both.
+
+**A near miss worth recording.** The suspected cause was different and equally real: the member is
+`pending_review` for nine seconds and only reaches `connected` at the third event. If the first
+event had reached the transport, the claim would have been taken and a `send-failed` on an
+unreachable member would have burned it just as permanently. The claim-before-send order is right
+for the race and creates exactly this hazard for anything that can refuse afterwards - **the
+ordering that prevents a duplicate also prevents a retry**, and both consequences are permanent.
+Not fixed here, because it was not what happened; recorded because it is the next one.
+
+**`verify:welcome` gained section 8**, asserting over the SOURCE that the suppress branch returns
+before `claimGreeting` is reached, with the mutation stated as the ORDER and a positive control
+that a bot which CAN greet still claims - since every assertion about not-claiming passes against a
+runner that never claims at all.
+
 ---
 
 ### D-207 - A registration that cannot fail proves nothing, and an empty set is not a result

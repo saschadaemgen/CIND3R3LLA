@@ -91,16 +91,22 @@ export async function greetArrival(
   });
 
   if (plan.kind === 'suppress') {
-    // A decision about a real candidate, so it is recorded. If another bot got here first the
-    // claim simply fails and this one records nothing, which is correct.
-    await claimGreeting(db, {
-      memberId: ev.memberId,
+    // ── ONLY A BOT THAT CAN GREET MAY CLAIM (CCB-S5-041, D-208) ─────────────
+    //
+    // This used to claim here, and it cost the first live test. Rick has the capability OFF;
+    // his event arrived first; he took the claim, recorded `suppressed / disabled`, and sent
+    // nothing - and because the claim is exclusive and permanent, Cinderella, who HAS the
+    // capability and a greeting written, could never greet that member. A bot that is not
+    // allowed to greet had claimed the exclusive right to greet.
+    //
+    // `disabled` and `no-text` are facts about the BOT, not decisions about the MEMBER, which
+    // is the same distinction that already keeps `predates-bot` from writing a row. A bot in
+    // either state is not a participant, so it must not take a claim another bot needs. It
+    // records nothing, for the same reason: there was no greeter, so there is nothing to say
+    // about this member yet - the bot that CAN greet will say it.
+    log.debug('welcome: this bot is not greeting', {
       botProfileId: ev.botProfileId,
       groupId: ev.groupId,
-      groupName: ev.groupName,
-      memberName: ev.memberName,
-      isReturning: returning,
-      route: 'suppressed',
       reason: plan.reason,
     });
     return { greeted: false, reason: plan.reason };
@@ -118,8 +124,14 @@ export async function greetArrival(
     reason: null,
   });
   if (!won) {
-    // Not an error and not logged as one: this is the guarantee working. A second bot, a
-    // rejoin, a reconnect, or a resync replaying connections.
+    // Not an error - this is the guarantee working - but NOT SILENT either (D-208). The first
+    // live test produced no greeting and no explanation anywhere, and a lost claim was one of
+    // the four candidates the operator had to ask about. Losing is normal; being unable to
+    // tell that you lost is what cost the round.
+    log.info('welcome: another bot greeted this member first', {
+      botProfileId: ev.botProfileId,
+      groupId: ev.groupId,
+    });
     return { greeted: false, reason: 'already-greeted' };
   }
 
