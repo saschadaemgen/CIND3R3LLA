@@ -27,12 +27,19 @@
  * counts, logs with context, and pushes to the admin dashboard.
  */
 
-import type { CEvt, ChatEvent } from '@simplex-chat/types';
-import type { RoutableEvent } from './types.js';
+import type { ChatEvent } from '@simplex-chat/types';
+import type { RoutableEvent, RoutedTag } from './types.js';
 
 /** The subscribe shape `api.ChatApi` offers, narrowed to what handlers use. */
 export interface ChatEventSource {
-  on<K extends CEvt.Tag>(
+  /**
+   * Subscribe to an event the runtime ROUTES.
+   *
+   * `K extends RoutedTag`, not `CEvt.Tag`, and that narrowing is the whole guarantee: a tag
+   * the runtime does not route is fed by nothing, so subscribing to one compiled, succeeded
+   * and delivered silence for ever. See {@link RoutedTag} for what that cost.
+   */
+  on<K extends RoutedTag>(
     event: K,
     subscriber: (event: ChatEvent & { type: K }) => void | Promise<void>,
   ): void;
@@ -55,7 +62,7 @@ export class RoutedEventSource implements ChatEventSource {
    */
   readonly unhandled = new Map<string, number>();
 
-  on<K extends CEvt.Tag>(
+  on<K extends RoutedTag>(
     event: K,
     subscriber: (event: ChatEvent & { type: K }) => void | Promise<void>,
   ): void {

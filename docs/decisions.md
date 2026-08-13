@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 205 decisions</strong> — newest first. Highest allocated: <strong>D-206</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 206 decisions</strong> — newest first. Highest allocated: <strong>D-207</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-207 | A registration that cannot fail proves nothing, and an empty set is not a result | IMPLEMENTED |
 | D-206 | The welcome: greeted once, by a key SimpleX assigned, and never in the archive | IMPLEMENTED in build, LIVE CASES UNPROVEN |
 | D-205 | A surface is a claim about state, and a local id is not an identity | IMPLEMENTED as standing rules |
 | D-204 | A channel is keyed on a group id that does not survive a rejoin | PARTIALLY IMPLEMENTED |
@@ -234,6 +235,65 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-207 - A registration that cannot fail proves nothing, and an empty set is not a result
+
+**Status: IMPLEMENTED** (CCB-S5-041). The welcome trigger never fired. The operator switched the
+capability on, saved a greeting, had members join and rejoin, and got nothing - not a greeting, not
+a suppression, and not one line from the diagnostic logging shipped in `c856dca` specifically to
+watch this happen.
+
+**The cause.** The runtime subscribes to the SDK over a fixed allow-list, `ROUTED_TAGS`. It carried
+`userJoinedGroup` - HER join - and none of the four member-arrival events. So `chat.on(tag, ...)`
+was never called for them, the router never received them, and
+`events.on('joinedGroupMember', ...)` in `host.ts` registered a handler **on a tag nothing would
+ever feed**. The logging and the trigger were both wired to a dead socket. A full round of live
+testing was spent on a path that could not have worked.
+
+**THE DEFECT IS THAT THE REGISTRATION COULD NOT FAIL.** `RoutedEventSource.on()` accepted any
+`CEvt.Tag`, so subscribing to an unrouted tag compiled, ran, returned, and delivered silence
+forever. There is no error to see, no exception to catch and no log line to miss: the shape of the
+failure is *nothing happening*, which is indistinguishable from a quiet room.
+
+**The guard existed and was blind.** `verify:runtime-host` had a check for exactly this, naming it
+in its own comment: *"the tag exists, the core emits it, and the RUNTIME DOES NOT ROUTE IT, so the
+handler is wired to a source that will never deliver."* It scans for `.on('literalTag'`. The
+subscription was a loop over a const array, so the scan could not see it and passed - truthfully,
+about the subscriptions it could see. **A string matcher over source can always be evaded, and the
+evasion is silent.** Two independent failures, either of which alone would have caught it: the scan
+could not see the shape, and the close-out verification set did not include the one suite written
+for it.
+
+**So it is a TYPE now, not a scan.** `ROUTED_TAGS` moved to the SDK-free `types.ts` as `as const`,
+`RoutedTag = (typeof ROUTED_TAGS)[number]`, and `on()` is narrowed to it. An unrouted subscription
+is a **build error**, in every shape - literal, loop, computed - with nothing to evade. It caught
+the real defect immediately and by name. The scan stays as the belt to those braces, because it
+still catches a tag that is not an SDK event at all, which the type cannot.
+
+**AND AN EMPTY SET IS NOT A RESULT.** Moving `ROUTED_TAGS` made the scan's regex match nothing, so
+its routed set went empty and every subscription in the tree was reported unrouted: eleven
+confident failures produced by a parse that had failed. It had a vacuity guard for the SDK union
+(`sdkTags.size > 20`) and none for its own routed set. There is now `routed.size >= 10`.
+
+**This is the second time in two days a check has reported on an empty set as though it were a
+result**, and the first time the empty set was mine to read: grepping production's journal for the
+four arrival events returned ZERO, and it was recorded as "no evidence in any direction". The
+correct reading was available and stronger - **nothing was logging them because nothing was
+subscribed to them.** An empty result answers "was anything found", never "does anything exist",
+and the difference is whether the instrument was pointed at the subject.
+
+The rule: **every check that derives a set before asserting over it must assert the set is
+non-empty.** A parse failure, a moved constant, a renamed file or a changed shape otherwise turns a
+guarantee into a formality that passes - or, as here, into a page of false failures - and both read
+as findings.
+
+**The tags themselves were READ, not guessed** (the D-200 method, skipped twice at cost). The
+Kotlin client handles all four arrival events identically, `upsertGroupMember(rhId, r.groupInfo,
+r.member)`, privileging none as *the* arrival event - and it is the same handler an ordinary
+member-role client runs, which is what makes them real for a bot that is merely a member rather
+than the host. Subscribing to all four is the client's own shape rather than a hedge.
+
 ---
 
 ### D-206 - The welcome: greeted once, by a key SimpleX assigned, and never in the archive

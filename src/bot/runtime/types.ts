@@ -98,3 +98,71 @@ export function emptyCounters(): RuntimeCounters {
     handlerFailures: 0,
   };
 }
+
+/**
+ * THE EVENT TAGS THE RUNTIME SUBSCRIBES TO. Exactly one subscriber per tag.
+ *
+ * ── WHY THIS IS A TYPE AND NOT ONLY A LIST (CCB-S5-041, D-207) ──────────────
+ *
+ * `RoutedEventSource.on()` used to accept any `CEvt.Tag`, so subscribing to a tag the runtime
+ * does not route COMPILED, SUCCEEDED, and delivered nothing - for ever, silently. The welcome
+ * plugin's arrival handler was wired that way and a full round of live testing was spent
+ * waiting for events that were never subscribed to at the SDK at all.
+ *
+ * `verify:runtime-host` already had a check for exactly this, naming it in its own comment,
+ * and it did not fire: it matches `.on('literalTag'` over the source, and the subscription was
+ * a loop over a const array, so the scan simply could not see it. A string matcher over source
+ * can always be evaded, and the evasion is silent.
+ *
+ * So the set moved HERE, to the SDK-free module both the runtime and the event source can
+ * import, and `on()` is narrowed to {@link RoutedTag}. An unrouted subscription is now a TYPE
+ * ERROR at build time, in every shape - literal, loop, computed - with no scan to evade. The
+ * scan stays as the belt to this braces.
+ */
+export const ROUTED_TAGS = [
+  // `contactConnected` is here for the detector rather than for a handler: a tag that
+  // is never subscribed can never restart the quiet period, and readiness declared on
+  // evidence the runtime never asked for is readiness declared early. It carries a
+  // handler as well since CCB-S4-023, which stamps when an accepted contact actually
+  // connected.
+  'contactConnected',
+  // The onboarding console's step two (CCB-S4-023). Without it the core raises the
+  // request, nothing listens, and the sender's app sits on "connecting" forever.
+  'receivedContactRequest',
+  // Step three (CCB-S4-025). Same hazard one step later: the operator's app says
+  // "You sent group invitation" and the bot never hears it. `userJoinedGroup` is the
+  // confirmation that the membership is live, which is a later fact than the join
+  // command returning. `verify:runtime-host` checks both are real and both are here.
+  'receivedGroupInvitation',
+  'userJoinedGroup',
+  'newChatItems',
+  'chatItemUpdated',
+  'groupChatItemsDeleted',
+  'chatItemsDeleted',
+  'rcvFileComplete',
+  'rcvFileError',
+  'rcvFileWarning',
+  'chatError',
+  'chatErrors',
+  'hostConnected',
+  'hostDisconnected',
+  'subscriptionStatus',
+  // ── SOMEBODY ARRIVED (CCB-S5-041, D-207) ─────────────────────────────────
+  //
+  // All four, READ FROM THE CLIENT rather than guessed. The Kotlin client
+  // (apps/multiplatform .../SimpleXAPI.kt) handles every one of these identically -
+  // `upsertGroupMember(rhId, r.groupInfo, r.member)` - and privileges none of them as THE
+  // arrival event. It is the same handler an ordinary member-role client runs, which is what
+  // makes them real for a bot that is merely a member rather than the host.
+  //
+  // Subscribing to all four is therefore the client's own shape, not a hedge.
+  // `arrivedAfterBot` filters the bot's own join whichever one delivers it, and the
+  // greeting's UNIQUE claim dedupes a member announced by more than one.
+  'joinedGroupMember',
+  'connectedToGroupMember',
+  'joinedGroupMemberConnecting',
+  'memberAcceptedByOther',
+] as const;
+
+/** A tag the runtime actually routes. Subscribing to anything else does not compile. */
+export type RoutedTag = (typeof ROUTED_TAGS)[number];

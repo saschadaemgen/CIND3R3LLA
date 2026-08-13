@@ -54,6 +54,7 @@ import { GroupOwnership, UnknownGroupOwnerError, type OwnedGroup } from './owner
 import { describeChatError } from './chat-error.js';
 import {
   emptyCounters,
+  ROUTED_TAGS,
   type ActiveUserCore,
   type ReadyReason,
   type RoutableEvent,
@@ -89,36 +90,6 @@ const SUBSCRIPTION_EVENT_TAGS: ReadonlySet<string> = new Set([
   'sndFileSubscribed',
 ]);
 
-/** The event tags the runtime subscribes to. Exactly one subscriber per tag. */
-const ROUTED_TAGS: readonly string[] = [
-  // `contactConnected` is here for the detector rather than for a handler: a tag that
-  // is never subscribed can never restart the quiet period, and readiness declared on
-  // evidence the runtime never asked for is readiness declared early. It carries a
-  // handler as well since CCB-S4-023, which stamps when an accepted contact actually
-  // connected.
-  'contactConnected',
-  // The onboarding console's step two (CCB-S4-023). Without it the core raises the
-  // request, nothing listens, and the sender's app sits on "connecting" forever.
-  'receivedContactRequest',
-  // Step three (CCB-S4-025). Same hazard one step later: the operator's app says
-  // "You sent group invitation" and the bot never hears it. `userJoinedGroup` is the
-  // confirmation that the membership is live, which is a later fact than the join
-  // command returning. `verify:runtime-host` checks both are real and both are here.
-  'receivedGroupInvitation',
-  'userJoinedGroup',
-  'newChatItems',
-  'chatItemUpdated',
-  'groupChatItemsDeleted',
-  'chatItemsDeleted',
-  'rcvFileComplete',
-  'rcvFileError',
-  'rcvFileWarning',
-  'chatError',
-  'chatErrors',
-  'hostConnected',
-  'hostDisconnected',
-  'subscriptionStatus',
-];
 
 export interface RuntimeOptions {
   /** SimpleX database file prefix. Produces `<prefix>_chat.db` and `<prefix>_agent.db`. */

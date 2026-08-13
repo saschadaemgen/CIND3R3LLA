@@ -613,12 +613,21 @@ section('Event tags: subscribed to something the core emits, and something the r
   measure('tags in the SDK event union', String(sdkTags.size));
   check('the SDK union parsed at all, so the check is not vacuous', sdkTags.size > 20);
 
-  const core = readFileSync(join('src', 'bot', 'runtime', 'core.ts'), 'utf8');
-  const routedBlock = /const ROUTED_TAGS[^=]*=\s*\[([\s\S]*?)\];/.exec(core)?.[1] ?? '';
+  // ROUTED_TAGS moved to `types.ts` under CCB-S5-041 (D-207) so that `RoutedEventSource.on()`
+  // could be NARROWED to it: an unrouted subscription is a type error now, in every shape,
+  // including the loop-over-a-const-array that walked straight past this scan. The scan stays
+  // as the belt to that braces - it still catches a tag that is not an SDK event at all, which
+  // the type cannot - but the type is what actually holds the rule.
+  const runtimeTypes = readFileSync(join('src', 'bot', 'runtime', 'types.ts'), 'utf8');
+  const routedBlock =
+    /const ROUTED_TAGS[^=]*=\s*\[([\s\S]*?)\] as const;/.exec(runtimeTypes)?.[1] ?? '';
   const routed = new Set(
     [...routedBlock.matchAll(/'([a-zA-Z]+)'/g)].map((m) => m[1] as string),
   );
   measure('tags the runtime routes', [...routed].sort().join(', '));
+  // Without this, moving ROUTED_TAGS makes the routed set EMPTY and every subscription looks
+  // unrouted - which is exactly what happened when it moved. A vacuous scan must go red.
+  check('the routed set parsed at all, so this scan is not vacuous', routed.size >= 10);
 
   const unknownRouted = [...routed].filter((t) => !sdkTags.has(t));
   check(
