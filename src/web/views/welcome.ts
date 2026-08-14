@@ -89,6 +89,10 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
         overrides.find((o) => o.pluginId === WELCOME_ID && o.key === key)?.value;
       const str = (key: string): string => (typeof val(key) === 'string' ? String(val(key)) : '');
       const greetings = selected === undefined ? [] : await listGreetings(db, selected, 50);
+      // WHOSE greeting this is. Named, because the page said nothing and read as deployment
+      // -wide; see the header note below.
+      const botName =
+        profiles.find((p) => p.id === selected)?.displayName ?? 'no bot selected';
 
       reply.type('text/html');
       return page({
@@ -103,9 +107,28 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
         // 96b2211 taught the page to honour the switcher; this is the other half.
         botSwitcher: { ...selection, returnTo: '/welcome' },
         body: html`
+          ${/*
+            ── THE SCOPE STATEMENT WAS MISSING, AND SILENCE READ AS "SHARED" (D-211) ──
+
+            This page said "What she says to somebody who has just joined" and named no bot.
+            The picker was in the sidebar and working; the COPY contradicted it. So the
+            operator edited one specific bot believing he was setting something shared, every
+            value went to whichever bot was selected, and he found out only when both bots
+            greeted identically.
+
+            That is D-155's scope visibility failing on a page that HAS the picker: a control
+            that says which bot, beside words that imply none, and the words win because they
+            are what he is reading while he types.
+
+            The lesson is not "add a label". It is that operating a control proves it works and
+            proves nothing about whether the words beside it are true. Every per-bot page owes
+            this sentence, and it must name the bot rather than gesture at one.
+          */ ''}
           ${pageHeader(
-            'Welcome',
-            'What she says to somebody who has just joined, and where she says it.',
+            `Welcome: ${botName}`,
+            `Everything on this page belongs to ${botName} alone. Nothing here is shared with ` +
+              `your other bots: each one has its own greeting, its own destination, and its ` +
+              `own record below. Switch bots in the sidebar to edit another.`,
           )}
           ${req.query.saved
             ? html`<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Saved.</div>`

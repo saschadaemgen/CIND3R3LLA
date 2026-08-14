@@ -244,9 +244,19 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       csrfToken: csrf,
       botSwitcher: { ...selection, returnTo: '/bridge' },
       body: html`
+        ${/*
+          NAMES THE BOT (D-211). This said "the bot" and named none, the same silence that let
+          the operator edit one bot's greeting believing it was shared. The capability and the
+          MAPPINGS here are per bot; the storage bound and the file ceiling are the
+          deployment's, and saying which is which is what `knowledge` already does well.
+        */ ''}
         ${pageHeader(
           'Channel Bridge',
-          'Channel posts become standing announcements the bot brings into a group on your cadence.',
+          selection.selectedName
+            ? `Channel posts become standing announcements ${selection.selectedName} brings into ` +
+              `a group on your cadence. The mappings and the capability below are ` +
+              `${selection.selectedName}'s alone; the storage limits are deployment-wide.`
+            : 'Channel posts become standing announcements a bot brings into a group on your cadence.',
         )}
         ${req.query.saved
           ? html`<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Saved.</div>`
