@@ -1652,6 +1652,59 @@ cleared, which would silently strip provenance from items already published.
 Doing it now costs one migration. Doing it after the stream depends on it costs a backfill from
 a source that may no longer be complete.
 
+
+## The picker states the scope, and every view declares what kind of page it is (CCB-S5-041)
+
+The operator set one bot's greeting believing it was shared, because the page named no bot. The
+copy fix helps; this is the structural version, and it removes the need to read a paragraph to
+know what you are editing.
+
+**The picker gains an entry above the bots: "All bots (shared settings)".** Then the SWITCHER
+states the scope. A bot's name selected means you are editing that bot; the shared entry means
+you are editing everything.
+
+- **shared page**: the shared entry is preselected and the bot entries are NOT selectable,
+  because choosing one would promise something the page cannot do.
+- **per-bot page**: the bots are selectable, as now.
+- **mixed page**: `knowledge` is the real one - grants are per bot, the rest is deployment-wide -
+  so the entry appears and the page says which blocks belong to which, the way it already does.
+
+**Not blocking the dropdown**, which was the first thought: a control that will not open does not
+say WHY, and that is a silent control again - the defect this whole thread is about.
+
+### And this answers the twelve UNCLASSIFIABLE views
+
+`verify:scope-copy` could not classify twelve of twenty-two, and the reason is that **most of
+them are not settings pages at all**. Asking "per-bot or shared?" was the wrong question, which
+is why they came back unclassifiable rather than wrong:
+
+| kind | views |
+|---|---|
+| show DATA | messages, consent, holds, reports |
+| configure INFRASTRUCTURE | security, backup, embeds |
+| OVERVIEW | dashboard |
+| operator ACCESS | ai-profiles |
+
+`ai-profiles` is worth its own note: it manages operator access, a THIRD id space - and the one
+nearly confused with bot ids when the profile-words form was almost placed there (D-209). Three
+id spaces that look alike is exactly the standing-rule shape.
+
+- [ ] Require every view to DECLARE its kind (settings / data / infrastructure / overview /
+      access). Only a settings page then owes a bot-or-shared answer, and `verify:scope-copy`
+      asserts the declaration matches what the view calls rather than guessing from it.
+- [ ] A data page's honest question is **whose data is shown**, which is a different question and
+      worth asking separately rather than folding into scope.
+
+### Tooltips, because the console is too dry
+
+Every setting has one honest line today, which is good and terse. He wants the OPTION of more
+detail without the page becoming a wall of text, and a tooltip is the right shape: the line stays
+short, the explanation is there for whoever wants it.
+
+- [ ] Hover tooltips carrying real explanation beside the one-line label. The reasoning already
+      exists in the code comments and the decision entries; most of these tooltips are a matter
+      of surfacing what is written rather than writing something new.
+
 ## Verification note
 
 This backlog was written against the code on `main`. Every "Done" checkbox was
