@@ -108,6 +108,40 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   days. Three questions are open there right now: how visible the member support thread is to a
   member, where the client renders `peerType` and why the operator sees it only in a direct chat,
   and whether its audio player accepts an MP3.
+- **Before a page is reported done: open it, screenshot it, and LOOK at it** (standing rule,
+  D-212). This is the gap between D-178 and D-199, and it is not "look harder". D-178 says a
+  control is verified when it has been OPERATED, and that has been happening. This is a
+  different question: is the page PRESENTABLE. Are the controls aligned, does every one say what
+  it acts on, is the copy TRUE, and does anything look dropped in beside something else.
+  **The test is one question, answered honestly in the report: would you show this page to a
+  customer?** If no, it is not done, and fixing it is part of the work rather than a follow-up.
+  Every check in this repository asserts BEHAVIOUR, and behaviour is not what the operator sees
+  first. A page can pass every assertion, be operated successfully in a browser, and still be
+  mislabelled, unaligned and unusable - all three shipped in one week, and all three were found
+  by the operator opening a page rather than by anything we ran. The tooling was never missing:
+  pages were being opened, spacing measured, controls pressed. What was missing was doing it
+  UNPROMPTED and judging appearance rather than function.
+  **The same applies to copy, which is the half most easily skipped.** Operating a control
+  proves it works; it proves nothing about whether the words beside it are true. `/welcome`'s
+  scope statement was false while the control it described worked perfectly, and the operator
+  set one bot's greeting believing it was shared. Read what a page SAYS, not only what it does.
+  **And look at the page the OPERATOR will get - rebuilt and reloaded - not at whatever the
+  preview last compiled.** This rule failed on its first use exactly there: the copy fix had
+  been written and pushed, the preview was serving the build from before it, and the page on
+  screen still carried the old words. Reporting from that would have claimed a change nobody
+  had seen render. A stale preview makes "I looked" FALSE IN A WAY THAT FEELS TRUE, which is
+  worse than not looking, because not looking is at least known to the person doing it.
+  **HOW TO LOOK, because a rule requiring a look is worth nothing if the next session cannot
+  work out how.** The in-app Browser pane's screenshot fails when the pane is not displayed
+  (`the page is not compositing frames`), which is a state the model cannot change. Headless
+  Chrome needs no pane and works. The console needs a session, so mint one with a PERSISTENT
+  profile and reuse it: run `scripts/admin-preview.ts` (port 8788), then two Chrome
+  invocations sharing one `--user-data-dir` - first `/preview-login`, then the page:
+  `chrome.exe --headless=new --disable-gpu --no-first-run --user-data-dir=/tmp/shot/prof
+  --virtual-time-budget=5000 --screenshot=/tmp/shot/page.png --window-size=1440,1400 <url>` -
+  and READ the png. `npm run build` FIRST or the screenshot shows the previous build, which is
+  the trap above; and give `--window-size` more height than the page so a fold does not hide
+  the half most worth judging.
 - **Nothing reaches the public repository until it has been demonstrated to work** (standing rule,
   D-199). The repository is the operator's shop window, and a commit that claims a capability it
   does not have reads as not knowing what we are doing. This was established after two pushes in
