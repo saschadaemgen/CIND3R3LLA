@@ -18,6 +18,7 @@ import type { ViewContext } from '../server.js';
 import { html, page } from '../html.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
+import { resolveSelectedBot } from '../selected-bot.js';
 import { listPluginOverridesForBot, setPluginOverride } from '../../db/plugin-overrides.js';
 import { WELCOME_ID } from '../../plugins/welcome/plugin.js';
 import { listGreetings } from '../../plugins/welcome/store.js';
@@ -66,7 +67,22 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
     async (req, reply) => {
       const csrf = req.session?.csrfToken ?? '';
       const profiles = await listBotOnboardingProfiles(db);
-      const selected = req.query.bot ? Number.parseInt(req.query.bot, 10) : profiles[0]?.id;
+      // ── THE SIDEBAR'S BOT, NOT THE FIRST ONE (CCB-S5-041, D-211) ────────
+      //
+      // This read `req.query.bot ?? profiles[0].id`, using neither the session nor the sidebar
+      // switcher that every other bot-scoped page goes through. So switching bot in the
+      // sidebar and opening this page still showed - and SAVED - the FIRST bot's settings.
+      //
+      // The operator reported "the same greeting for both bots though the settings are per
+      // bot". He was not seeing one text shared by two bots; he was seeing ONE BOT TWICE, and
+      // every save he made went to bot 10 whichever bot he thought he was editing. The
+      // resolver was right all along: it reads the greeting bot's own overrides.
+      const selection = resolveSelectedBot(
+        profiles,
+        req.query.bot,
+        req.session?.selectedBotProfileId ?? null,
+      );
+      const selected = selection.selectedId ?? undefined;
       const overrides =
         selected === undefined ? [] : await listPluginOverridesForBot(db, selected);
       const val = (key: string): unknown =>
