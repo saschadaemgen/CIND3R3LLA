@@ -40,7 +40,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_INTERACTION } from '../src/interaction/settings.js';
 import { buildHelpReply, buildHelpTopic } from '../src/interaction/help.js';
-import { welcomeMessage } from '../src/consent/commands.js';
+import { arrivalNotice } from '../src/consent/commands.js';
 import type { Intent } from '../src/interaction/intent.js';
 import {
   DEFAULT_ASSEMBLE_CONFIG,
@@ -99,7 +99,7 @@ for (const lang of ['en', 'de'] as const) {
   check(`helpTopic.consent.${lang}`, buildHelpTopic('consent', 'Cinderella', lang));
   check(`helpTopic.prices.${lang}`, buildHelpTopic('prices', 'Cinderella', lang));
 }
-check('welcomeMessage', welcomeMessage('Cinderella'));
+check('arrivalNotice (her own arrival, renamed from welcomeMessage under D-206)', arrivalNotice('Cinderella'));
 
 /* ── 3. Source backstop (comments stripped) ──────────────────────────────── */
 function stripComments(src: string): string {
