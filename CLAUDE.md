@@ -105,9 +105,22 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   evidence of an absent capability**, and a bot surface that does not wrap something says nothing
   about whether the core can do it - `APIPrepareGroup` is in no public bot API and works. Fetch
   the file and grep it; it is minutes, and every time it has been skipped the alternative was
-  days. Three questions are open there right now: how visible the member support thread is to a
-  member, where the client renders `peerType` and why the operator sees it only in a direct chat,
-  and whether its audio player accepts an MP3.
+  days. Two questions are open there right now: how visible the member support thread is to a
+  member, and where the client renders `peerType` and why the operator sees it only in a direct
+  chat.
+  **AND THE OTHER HALF, WHICH COST THREE ROUNDS IN ONE WEEK: the source is the authority on what
+  a capability IS, and only the RUNNING APP is the authority on what it DOES.** The client
+  imports `AnimatedImageDrawable`, has a `SimpleAndAnimatedImageView` with per-platform
+  implementations, and carries a comment saying WebP is left uncompressed on send *because it
+  can be animated* - so animation is plainly supported in the source. It does not happen. A
+  40-frame GIF with its extension intact, sent from the operator's own app AND from the bot's
+  own path, renders as a still both times. The same gap appeared with `peerType`, which every
+  type defines and no client was ever watched displaying, and with the voice player, which
+  accepted an MP3 the source never promised.
+  So a grep answers "can this be expressed" and settles an argument about the API. It does not
+  answer "does this work", and reporting the first as though it were the second is how three
+  findings this week were confidently wrong. When the question is what a MEMBER will see, the
+  only instrument is a member's app, and the operator is the one holding it.
 - **Before a page is reported done: open it, screenshot it, and LOOK at it** (standing rule,
   D-212). This is the gap between D-178 and D-199, and it is not "look harder". D-178 says a
   control is verified when it has been OPERATED, and that has been happening. This is a
