@@ -18,8 +18,9 @@
  */
 
 import type { T } from '@simplex-chat/types';
-import sharp from 'sharp';
+import { readFile } from 'node:fs/promises';
 import { log } from '../log.js';
+import { buildAvatarDataUri } from './avatar.js';
 import { describeChatError } from './runtime/chat-error.js';
 
 export interface BridgeSentMessage {
@@ -39,11 +40,16 @@ export interface BridgeSentMessage {
  */
 async function bridgeImagePreview(filePath: string): Promise<string | null> {
   try {
-    const buf = await sharp(filePath, { animated: false })
-      .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
-      .jpeg({ quality: 70 })
-      .toBuffer();
-    return `data:image/jpg;base64,${buf.toString('base64')}`;
+    // `buildAvatarDataUri`, NOT a fresh encode (CCB-S5-042, D-214). The first version of this
+    // resized once at 320px/q70 and cited "the avatar's ladder" in its comment without using
+    // it. The preview rides INSIDE the message, so an unbounded one blows the envelope: the
+    // core answered `largeMsg`, the send failed, and the fallback dropped the picture
+    // entirely - leaving the operator worse off than the attachment he had before.
+    //
+    // The ladder descends sizes and qualities until the data URI fits MAX_DATA_URI_CHARS and
+    // is the only thing here that knows that budget. Reusing it is also why this needs no
+    // number of its own to drift.
+    return await buildAvatarDataUri(await readFile(filePath));
   } catch (err) {
     log.warn(
       `bridge: could not build a preview for ${filePath} (${
@@ -143,14 +149,43 @@ export function sdkBridgePort(runtime: BridgeRuntimePort): BridgeSendPort {
           ]),
         );
       } catch (error) {
-        // `describeChatError`, not `.message` (CCB-S5-018): this is an SDK send and the
-        // fallback to text-only HIDES the fault by design, so the log line is the only
-        // record that the picture was lost and why.
+        // ── DEGRADE TO THE ATTACHMENT, NOT TO NOTHING (CCB-S5-042, D-214) ───
+        //
+        // There are TWO fallbacks here and there used to be one. An image send that fails
+        // dropped straight to text-only, so when an oversized preview made the core answer
+        // `largeMsg` the operator lost the picture ENTIRELY - strictly worse than the
+        // attachment he had before the image branch existed. A regression that arrived
+        // wearing an improvement's clothes.
+        //
+        // So an image retries as a plain FILE first. That is exactly the old behaviour, which
+        // is known to work, and it keeps the picture reachable. Only if that fails too does
+        // the caption go alone.
         log.error(
-          `bridge: sending a file into group ${String(groupId)} failed (${describeChatError(
+          `bridge: sending group ${String(groupId)} an image failed (${describeChatError(
             error,
-          )}); forwarding the text without it.`,
+          )}); retrying as a plain attachment.`,
         );
+        if (isImage) {
+          try {
+            return firstSent(
+              await runtime.sendGroupComposedAsOwner(groupId, [
+                {
+                  fileSource: { filePath },
+                  msgContent: { type: 'file', text: caption },
+                  mentions: {},
+                },
+              ]),
+            );
+          } catch (fileError) {
+            log.error(
+              `bridge: the attachment retry for group ${String(groupId)} failed too (${describeChatError(
+                fileError,
+              )}); forwarding the text without it.`,
+            );
+          }
+        }
+        // `describeChatError`, not `.message` (CCB-S5-018): the fallback to text-only HIDES
+        // the fault by design, so the log line is the only record that the picture was lost.
         return firstSent(await runtime.sendGroupTextAsOwner(groupId, caption));
       }
     },
