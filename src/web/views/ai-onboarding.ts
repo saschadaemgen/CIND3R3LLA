@@ -1501,18 +1501,19 @@ function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
           place what she is can be stated in your own words, instead of relying on whether a
           member's app shows the bot label. Please use a hyphen or a comma rather than a dash.
         </span>
-        <button type="submit" name="apply" value="restart" class="setup-button setup-button-secondary">
-          Save, apply at the next restart
-        </button>
+        ${/*
+          ONE BUTTON (CCB-S5-041, D-210). This offered two, on a premise that was WRONG: I told
+          the operator a profile only travels with a message, so applying now had to send a line
+          into every group. He tested it - opened the contact, closed it, reopened it - and the
+          name and description were already there, with no message sent and none needed. The
+          core propagates a profile change on its own.
+          So the second button ("apply at the next restart") described a delivery mechanism that
+          does not exist for this field, and did not work either. Saving applies immediately;
+          one button, one behaviour, and no claim about messages.
+        */ ''}
         <button type="submit" name="apply" value="now" class="setup-button setup-button-secondary">
-          Save and apply now, with a message
+          Save
         </button>
-        <span class="setup-inline-note">
-          <strong>Members notice the second one and not the first.</strong> A profile only
-          travels with a message, so applying now sends one short line into every group this bot
-          is in - that is what actually delivers the new description to anybody. Applying at the
-          next restart sends nothing and shows nobody anything until then.
-        </span>
       </form>
       <form method="post" action="/ai/onboarding" class="setup-avatar-apply">
         <input type="hidden" name="_csrf" value="${csrf}" />

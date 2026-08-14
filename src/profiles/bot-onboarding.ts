@@ -538,6 +538,12 @@ const SELECT_COLUMNS = `
   update_profile,
   auto_accept_contacts,
   welcome_message,
+  -- The operator's own words (CCB-S5-041). Absent from this list until D-210, which is why
+  -- the page rendered empty fields over values that WERE stored: the type carried them, the
+  -- row mapping read them, and the query never asked for them. Fourth instance this week of
+  -- a field present everywhere except the one place that matters.
+  full_name,
+  short_descr,
   business_address,
   allow_files,
   command_registry_mode,
