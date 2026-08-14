@@ -95,6 +95,13 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
         title: 'Welcome',
         active: 'welcome',
         csrfToken: csrf,
+        // ── A PER-BOT PAGE MUST CARRY THE PICKER (CCB-S5-041, D-211) ────────
+        //
+        // Without this the sidebar renders "Deployment-wide", which is not a blank - it is a
+        // CLAIM, and on this page a false one. The operator was editing one bot's greeting
+        // with no way to see or change which bot, which is how every save went to bot 10.
+        // 96b2211 taught the page to honour the switcher; this is the other half.
+        botSwitcher: { ...selection, returnTo: '/welcome' },
         body: html`
           ${pageHeader(
             'Welcome',
