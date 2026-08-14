@@ -460,3 +460,40 @@ export async function upsertCinderellaGroupAuthority(
 
   return id;
 }
+
+/**
+ * The two fields that say what she IS, in the operator's own words (CCB-S5-041, D-209).
+ *
+ * ── WHY THESE ARE NOT A NICETY ──────────────────────────────────────────────
+ *
+ * The bot label a client may or may not render comes from `peerType`, which is SimpleX's
+ * field, rendered SimpleX's way. Neither the operator nor this codebase has ever watched a
+ * client display it - it was inferred from the types, which is not the same thing. These two
+ * fields are the ONLY place transparency can be asserted in words the operator controls,
+ * independent of any client's rendering, and since 2 August 2026 that is a compliance question
+ * rather than a preference.
+ *
+ * NEITHER IS EVER GENERATED. His sentences or nothing.
+ *
+ * NULL clears; a string sets. The 160 bound is the CORE's documented limit for `shortDescr`
+ * (`Simplex/Chat/Types.hs`), enforced by the schema so an over-long description is refused at
+ * the write rather than truncated on the wire - a description that silently lost its last
+ * sentence would drop the warranty disclaimer, which is the part that matters most.
+ */
+export async function setBotProfileWords(
+  db: Queryable,
+  botProfileId: number,
+  words: { fullName: string | null; shortDescr: string | null },
+  actor: string,
+): Promise<void> {
+  await db.query(
+    `UPDATE cinderella_bot_profiles
+        SET full_name = $2, short_descr = $3, updated_at = now()
+      WHERE id = $1`,
+    [botProfileId, words.fullName, words.shortDescr],
+  );
+  await writeAudit(db, actor, 'bot.profile.words', `bot:${String(botProfileId)}`, {
+    fullNameSet: words.fullName !== null,
+    shortDescrChars: words.shortDescr === null ? 0 : words.shortDescr.length,
+  });
+}

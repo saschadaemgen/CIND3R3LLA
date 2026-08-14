@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 207 decisions</strong> — newest first. Highest allocated: <strong>D-208</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 208 decisions</strong> — newest first. Highest allocated: <strong>D-209</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-209 | What she says she is, and three identifiers that look alike | IMPLEMENTED |
 | D-208 | A bot that cannot greet must not claim the right to greet | IMPLEMENTED |
 | D-207 | A registration that cannot fail proves nothing, and an empty set is not a result | IMPLEMENTED |
 | D-206 | The welcome: greeted once, by a key SimpleX assigned, and never in the archive | IMPLEMENTED in build, LIVE CASES UNPROVEN |
@@ -236,6 +237,86 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-209 - What she says she is, and three identifiers that look alike
+
+**Status: IMPLEMENTED** (CCB-S5-041). Two profile fields the operator writes himself, a boot-time
+readback that she is still marked as a bot, and four lessons - two of them mistakes made while
+building this.
+
+**1. THE FIELDS STOPPED BEING A NICETY.** `fullName` was hard-coded to `''` from the beginning and
+`shortDescr` appeared nowhere in the tree; both are writable on `T.Profile` and neither was ever
+offered. That was a small gap until the bot label went missing from a client. The label comes from
+`peerType`, which is SimpleX's field rendered SimpleX's way - **and neither the operator nor this
+codebase has ever watched a client display it.** It was inferred from the types, which is not the
+same thing, and both of us said so once it mattered.
+
+So these two fields are **the only place transparency can be asserted in words the operator
+controls**, independent of any client's rendering. Since 2 August 2026 that is a compliance
+question rather than a preference. Neither is ever generated: a description of what a bot is,
+written by the bot's own software, is precisely the claim nobody should trust.
+
+The 160-character bound is the CORE's (`Simplex/Chat/Types.hs`: *"short description limited to 160
+characters"*), enforced by the schema so an over-long description is REFUSED rather than truncated
+- a description silently losing its last sentence would drop the warranty line, which is the part
+that matters most. Stable's `Profile` has gained `description`, `badge` and `contactDomain` that
+0.10.3 does not, so 160 is the whole budget and not a summary above a longer field.
+
+**The readback.** `botProfileFor` sets `peerType = Bot` and `verify:runtime-host` proves it does;
+nothing proved it SURVIVED, and `profileDiffers` carries the field, so the boot path can write it.
+A cleared peer type would have been silent - D-207's shape exactly. Every boot now reads it back
+from what the CORE reported (not from what we intended to write; the intent is already known
+correct and is not what a member sees) and raises a fault. **It does not repair**: rewriting a
+profile at boot on the strength of a comparison is what could clear it, and a silent self-heal
+hides the fault that matters. Both hosted bots read `bot`, unchanged since 9 August, so nothing
+was actually wrong - the check exists because nothing could have told us if it had been.
+
+**2. THREE IDENTIFIERS THAT LOOK ALIKE, IN TWO DAYS.** The pattern: **two ids with the same name,
+the same type and the same shape on a form, one belonging to the core or the access policy and the
+other to us.**
+
+- the core's local `groupId`, which a rejoin moves (D-205)
+- `cinderella_profiles.id` versus `cinderella_bot_profiles.id` - the words form was nearly placed
+  on the access-policy page, where `profile.id` is the wrong table. It would have stored one bot's
+  words against another bot's id and looked entirely plausible
+- and inside this very change: the fields were added to `BotOnboardingProfile` and appeared on
+  `BotOnboardingInput`, because that type is `Omit<>` of the read model. A field written AFTER
+  creation silently became one required AT creation. `avatarPath` was already omitted for exactly
+  that reason and I had not looked
+
+All three share a tell: **the compiler is happy, the page looks right, and the value is wrong.**
+Two were caught only because a type happened to be derived; the first was not caught at all.
+
+**3. A GUARANTEE THAT RESTED ON SOMETHING NOT RUNNING.** `applyProfileUpdate` returned early when
+no avatar was loaded, which was right while the avatar was all it wrote. Carrying the words meant
+narrowing that return - otherwise an operator with no avatar writes a description that saves,
+stores and never reaches the profile, which is `welcome_message` for the third time.
+
+Narrowing it opened a hazard the early return had been hiding: with no avatar loaded, `desired`
+carries no image, so it DIFFERS from a stored profile that has one, the update fires, and the
+write **blanks the avatar**. D-161's rule - an absent avatar must never clear a stored one - had
+been holding as a side effect of the path not running. It is now kept explicitly. **That is the
+second time in one day a guarantee turned out to rest on something not running rather than on
+something asserted**, and it is worth looking for a third.
+
+**4. THE WORDS RIDE THE SAME WIRE AS THE FACE.** A profile write carries the whole profile, so
+`flushAvatarToGroups` passes the configured words too. Without that, applying a face would build a
+profile with no `shortDescr` and - because `profileDiffers` now compares it - **applying an avatar
+would silently wipe the description.** One operation, one profile, both fields.
+
+**Two choices, and the quiet one is the default.** A profile only travels with a message, which is
+why `apply-face` sends one. So: *apply at the next restart* (stored, silent, nobody sees anything
+until then) or *apply now, with a message* (one short line into every group, which is what
+actually delivers it). The page says which one members notice, because that is the entire
+difference. Storing with no way to force it would be a control that saves and appears to do
+nothing - the shape this page has shipped twice, and the reason the avatar's button exists.
+
+**And the standing rule this work earned**: when the documentation is silent, READ THE CLIENT. See
+`CLAUDE.md`. `bots/api/COMMANDS.md` and the SDK readme predate channels entirely; the clients ship
+with every release and cannot be stale. An absent answer in the docs is not evidence of an absent
+capability.
+
 ---
 
 ### D-208 - A bot that cannot greet must not claim the right to greet

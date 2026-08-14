@@ -41,6 +41,9 @@ export interface HostedBotConfig {
    * every bot including the first one gets until somebody uploads a face for it.
    */
   avatarPath: string | null;
+  /** The operator's own words about this bot (CCB-S5-041). NULL means he has written none. */
+  fullName: string | null;
+  shortDescr: string | null;
 }
 
 interface BotRow {
@@ -49,6 +52,8 @@ interface BotRow {
   display_name: string;
   simplex_user_id: string | null;
   avatar_path: string | null;
+  full_name: string | null;
+  short_descr: string | null;
 }
 
 /**
@@ -69,7 +74,7 @@ export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> 
     // while the primary was the one bot allowed to adopt the core's active user. D-165 made
     // adoption depend on whether ANYTHING is bound rather than on which bot is special, so
     // the ordering carries no meaning beyond being stable across boots.
-    `SELECT id, slug, display_name, simplex_user_id, avatar_path
+    `SELECT id, slug, display_name, simplex_user_id, avatar_path, full_name, short_descr
        FROM cinderella_bot_profiles
       WHERE enabled = TRUE
       ORDER BY id`,
@@ -80,6 +85,8 @@ export async function listBotsToHost(db: Queryable): Promise<HostedBotConfig[]> 
     displayName: r.display_name,
     simplexUserId: r.simplex_user_id === null ? null : Number(r.simplex_user_id),
     avatarPath: r.avatar_path,
+    fullName: r.full_name,
+    shortDescr: r.short_descr,
   }));
 }
 

@@ -599,6 +599,45 @@ section('Event tags: subscribed to something the core emits, and something the r
   //      handler is wired to a source that will never deliver. Step three of onboarding
   //      subscribes to a group-invitation event, and forgetting ROUTED_TAGS would be
   //      exactly this.
+  // ── WHAT SHE SAYS SHE IS, AND WHAT MUST NOT BE LOST SAYING IT (D-209) ────
+  //
+  // Both assertions here exist because of hazards created while building the feature, not
+  // hypothetical ones: `profileDiffers` ignoring `shortDescr` would make the field save and
+  // change nothing (welcome_message, three times), and narrowing the early return opened a path
+  // where an absent avatar BLANKS a stored one - a rule that had been holding only because the
+  // code did not run.
+  {
+    const hostSrc = readFileSync(join('src', 'bot', 'runtime', 'host.ts'), 'utf8');
+    check(
+      'profileDiffers compares shortDescr, so the description actually reaches the profile',
+      /x\.shortDescr \?\? null/.test(hostSrc),
+    );
+    check(
+      '  and peerType too, which is what the boot readback guards',
+      /x\.peerType \?\? null/.test(hostSrc),
+    );
+    check(
+      'an absent avatar carries the STORED image forward rather than clearing it (D-161)',
+      /const carried = image \?\? storedImage/.test(hostSrc),
+    );
+    check(
+      '  MUTATION: without that, desired has no image and the write blanks the avatar',
+      hostSrc.includes('botProfileFor(displayName, carried, words)'),
+    );
+    check(
+      'the peer type is read back at boot and is a FAULT, not a repair',
+      /function assertBotPeerType/.test(hostSrc) &&
+        /status\.error\(/.test(hostSrc.slice(hostSrc.indexOf('function assertBotPeerType'))) &&
+        !/apiUpdateProfile/.test(
+          hostSrc.slice(
+            hostSrc.indexOf('function assertBotPeerType'),
+            hostSrc.indexOf('function assertBotPeerType') + 1600,
+          ),
+        ),
+      'it reports and the operator decides',
+    );
+  }
+
   const eventTypes = readFileSync(
     join('node_modules', '@simplex-chat', 'types', 'dist', 'events.d.ts'),
     'utf8',

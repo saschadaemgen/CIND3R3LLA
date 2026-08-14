@@ -1615,6 +1615,43 @@ is why it is a backlog item and not a drive-by fix.
 - [ ] Add a `tsconfig.scripts.json` (or widen `include`) and clear the 64 errors, then wire
       it into `npm run typecheck` so the harnesses are covered by the same gate as `src/`.
 
+
+## The activity stream's channel filter, and the one thing to do BEFORE it (CCB-S5-041)
+
+The website's activity stream should offer a channel dropdown - every channel that has posted
+into it, plus "all channels" - showing only that channel's items. That is the fitness proof
+`origin` was designed for, and the bridge console's own forward filter already proves the query
+works one surface in.
+
+**Nothing about the origin field needs to change.** `cinderella_bridge_forwards` already carries
+the structured `origin` jsonb and already has exactly the index the filter wants:
+
+```sql
+ON cinderella_bridge_forwards ((origin ->> 'channelKey'), sent_at DESC)
+```
+
+`channelKey` is derived from the channel LINK, so it survives a rename and a rejoin, which the
+local group id does not (D-205).
+
+**The one thing to decide first, and to do first.** `origin` lives on that table and NOWHERE
+else: her bridged announcements archive as bot messages under the `bridge` category, and
+`bot-message.ts` / `db/bot-messages.ts` reference `origin` not at all. So the archived row - the
+thing the public stream actually renders - does not know which channel it came from.
+
+- [ ] **Carry `channelKey` and `channelName` onto the archived message at insert**, with a
+      migration, BEFORE the stream is built.
+
+Rejected alternative: joining the stream to `cinderella_bridge_forwards` at render time. It is
+cheaper to build and needs no migration, and it is wrong for a reason this repository has paid
+for repeatedly - **the forward log is OPERATIONAL state with its own lifecycle, and the archive
+is a PUBLISHED record.** Deriving a public claim from a table a console action can cascade is
+the same shape as keying on a group id that a rejoin moves. And the cascade is real rather than
+theoretical: `deleteBridgeChannel` (D-204) removes a channel's forwards when an ended record is
+cleared, which would silently strip provenance from items already published.
+
+Doing it now costs one migration. Doing it after the stream depends on it costs a backfill from
+a source that may no longer be complete.
+
 ## Verification note
 
 This backlog was written against the code on `main`. Every "Done" checkbox was

@@ -63,6 +63,15 @@ export interface BotOnboardingProfile {
   id: number;
   slug: string;
   displayName: string;
+  /**
+   * The operator's own words about this bot (CCB-S5-041, D-209). Null means unwritten.
+   *
+   * On the READ model only, deliberately: they are edited on the bot page after creation, like
+   * the avatar, and adding them to `BotOnboardingInput` would force every caller that creates a
+   * bot to supply words nobody has written yet.
+   */
+  fullName: string | null;
+  shortDescr: string | null;
   enabled: boolean;
   workflowState: BotWorkflowState;
   sdkVersion: string;
@@ -141,6 +150,10 @@ export type BotOnboardingInput = Omit<
   | 'contactAddressUserId'
   | 'contactAddressCreatedAt'
   | 'avatarPath'
+  // Written on the bot page after creation, exactly like `avatarPath` beside them: nobody
+  // has words for a bot that does not exist yet (CCB-S5-041, D-209).
+  | 'fullName'
+  | 'shortDescr'
   | 'createdAt'
   | 'updatedAt'
 >;
@@ -430,6 +443,8 @@ function mapRow(row: {
   update_profile: boolean;
   auto_accept_contacts: boolean;
   welcome_message: string | null;
+  full_name: string | null;
+  short_descr: string | null;
   business_address: boolean;
   allow_files: boolean;
   command_registry_mode: CommandRegistryMode;
@@ -473,6 +488,8 @@ function mapRow(row: {
     updateProfile: row.update_profile,
     autoAcceptContacts: row.auto_accept_contacts,
     welcomeMessage: row.welcome_message ?? '',
+    fullName: row.full_name,
+    shortDescr: row.short_descr,
     businessAddress: row.business_address,
     allowFiles: row.allow_files,
     commandRegistryMode: row.command_registry_mode,

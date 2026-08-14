@@ -97,10 +97,28 @@ export interface ResolvedProfile {
  * above it. Deduplicating this against `client.ts`'s profile is the obvious next tidy
  * and it is the one that must not be done.
  */
-export function botProfileFor(displayName: string, image?: string): T.Profile {
+/** The operator's own words about this bot, when he has written any (CCB-S5-041, D-209). */
+export interface BotWords {
+  /** The profile's full name. Empty until written; never generated. */
+  fullName?: string | undefined;
+  /** Up to 160 characters, the core's documented limit. Never generated. */
+  shortDescr?: string | undefined;
+}
+
+export function botProfileFor(
+  displayName: string,
+  image?: string,
+  words?: BotWords,
+): T.Profile {
+  // NEITHER FIELD IS EVER GENERATED. They are the operator's sentences or they are absent -
+  // a description of what a bot is, written by the bot's own software, would be exactly the
+  // claim nobody should trust. `shortDescr` is omitted rather than sent empty so an untouched
+  // deployment writes nothing at all.
+  const shortDescr = words?.shortDescr?.trim();
   return {
     displayName,
-    fullName: '',
+    fullName: words?.fullName?.trim() ?? '',
+    ...(shortDescr === undefined || shortDescr === '' ? {} : { shortDescr }),
     ...(image === undefined ? {} : { image }),
     preferences: {
       files: { allow: T.FeatureAllowed.Yes },

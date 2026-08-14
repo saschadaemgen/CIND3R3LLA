@@ -69,6 +69,7 @@ import { listSettingOverridesForBot } from '../../db/interaction-overrides.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, fmtDate, stat } from './ui.js';
+import { setBotProfileWords } from '../../profiles/service.js';
 
 const SDK_ROLES: Array<{
   value: SdkGroupRole;
@@ -1196,6 +1197,17 @@ function savedMessage(action: string): string {
       return 'AI bot created.';
     case 'delete-profile':
       return 'AI bot deleted.';
+    // The two halves of the same choice, said in terms of who notices (CCB-S5-041, D-209).
+    case 'words':
+      return (
+        'Saved. Nothing has been sent and nobody has been shown anything: the words reach the ' +
+        'profile when the bot next starts. To deliver them now, press "Save and apply now".'
+      );
+    case 'words-live':
+      return (
+        'Done. The profile is written and one short line has gone to each group this bot is ' +
+        'in, which is what carries the new description to members.'
+      );
     case 'avatar':
       return (
         'The image is stored, but the bot is not running, so it is not wearing it yet. It ' +
@@ -1420,7 +1432,48 @@ function avatarPanel(profile: BotOnboardingProfile, csrf: string): SafeHtml {
       // Rendered for every bot rather than only for one with an upload, because a bot on
       // the deployment default has a face too and "apply what this bot should be wearing"
       // is the same operation either way.
-      html`<form method="post" action="/ai/onboarding" class="setup-avatar-apply">
+      html`<form method="post" action="/ai/onboarding" class="setup-words">
+        <input type="hidden" name="_csrf" value="${csrf}" />
+        <input type="hidden" name="action" value="save-words" />
+        <input type="hidden" name="profileId" value="${profile.id}" />
+        <label class="setup-label" for="fullName-${profile.id}">Full name</label>
+        <input
+          id="fullName-${profile.id}"
+          class="setup-input"
+          type="text"
+          name="fullName"
+          maxlength="200"
+          value="${profile.fullName ?? ''}"
+        />
+        <label class="setup-label" for="shortDescr-${profile.id}">Description</label>
+        <textarea
+          id="shortDescr-${profile.id}"
+          class="setup-input"
+          name="shortDescr"
+          rows="3"
+          maxlength="160"
+        >${profile.shortDescr ?? ''}</textarea>
+        <span class="setup-inline-note">
+          Up to 160 characters, which is the SimpleX limit rather than ours. Anything longer is
+          refused rather than shortened, because a description that lost its last sentence would
+          drop whatever you put at the end. Written by you and never generated: this is the one
+          place what she is can be stated in your own words, instead of relying on whether a
+          member's app shows the bot label. Please use a hyphen or a comma rather than a dash.
+        </span>
+        <button type="submit" name="apply" value="restart" class="setup-button setup-button-secondary">
+          Save, apply at the next restart
+        </button>
+        <button type="submit" name="apply" value="now" class="setup-button setup-button-secondary">
+          Save and apply now, with a message
+        </button>
+        <span class="setup-inline-note">
+          <strong>Members notice the second one and not the first.</strong> A profile only
+          travels with a message, so applying now sends one short line into every group this bot
+          is in - that is what actually delivers the new description to anybody. Applying at the
+          next restart sends nothing and shows nobody anything until then.
+        </span>
+      </form>
+      <form method="post" action="/ai/onboarding" class="setup-avatar-apply">
         <input type="hidden" name="_csrf" value="${csrf}" />
         <input type="hidden" name="action" value="apply-face" />
         <input type="hidden" name="profileId" value="${profile.id}" />
@@ -1841,6 +1894,50 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
         // The button that replaces "restart the bot" (CCB-S5-016). It applies whatever the
         // bot is CONFIGURED to wear, which for a bot with no upload is the deployment
         // default: "apply this bot's face" is one operation either way.
+        // ── WHAT SHE SAYS SHE IS (CCB-S5-041, D-209) ──────────────────────
+        //
+        // HERE rather than on the access-policy page, and the distinction is the whole point:
+        // `profile.id` there is a `cinderella_profiles` row and `profile.id` here is a
+        // `cinderella_bot_profiles` row. Two identifiers with the same name, the same shape and
+        // different meanings. Writing this form there would have stored one bot's words against
+        // another bot's id and looked entirely plausible on the page.
+        //
+        // Trimmed, and empty means CLEAR: an operator who empties the box means "say nothing",
+        // and NULL is what an untouched deployment holds, so the two states stay one state.
+        case 'save-words': {
+          profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
+          const full = text(body['fullName']).trim();
+          const descr = text(body['shortDescr']).trim();
+          await setBotProfileWords(
+            ctx.db,
+            profileId,
+            { fullName: full === '' ? null : full, shortDescr: descr === '' ? null : descr },
+            actor,
+          );
+          // ── TWO CHOICES, AND THE QUIET ONE IS THE DEFAULT ──────────────────
+          //
+          // A profile rides along with the next message, so the only way to DELIVER one now is
+          // to send something - which is why apply-face works as it does. That cost is real and
+          // it lands in every one of the bot's rooms, so it is a deliberate press rather than a
+          // side effect of saving.
+          //
+          // But storing with no way to force it is the defect this page has shipped twice: a
+          // control that saves and appears to do nothing. Hence both, named, with what each
+          // costs stated on the page.
+          if (text(body['apply']) === 'now') {
+            const applied = await applyFaceIfRunning(ctx, profileId);
+            // A runtime that is down means nothing was DELIVERED, and the words are stored
+            // either way - so this says so rather than reporting a success it did not have.
+            return reply.redirect(
+              `/ai/onboarding?saved=${applied === 'avatar' ? 'words' : 'words-live'}` +
+                `&profile=${encodeURIComponent(String(profileId))}`,
+            );
+          }
+          return reply.redirect(
+            `/ai/onboarding?saved=words&profile=${encodeURIComponent(String(profileId))}`,
+          );
+        }
+
         case 'apply-face': {
           profileId = positiveInteger(body['profileId'], 'Bot profile ID', 0);
           const applied = await applyFaceIfRunning(ctx, profileId);

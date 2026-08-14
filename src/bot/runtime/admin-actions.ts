@@ -394,7 +394,14 @@ export async function applyBotFaceNow(
   }
 
   const before = (bot.user.profile as unknown as T.Profile).image;
-  await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user);
+  // The WORDS ride along (CCB-S5-041, D-209). A profile write carries the whole profile, so
+  // applying a face and applying a description are the same operation at the wire; passing the
+  // configured words here is what lets "apply now" mean both without a second command and
+  // without one silently reverting the other.
+  await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user, {
+    fullName: bot.config.fullName ?? undefined,
+    shortDescr: bot.config.shortDescr ?? undefined,
+  });
 
   const flushed = await flushAvatarToGroups(db, {
     // The image just written, NOT the boot snapshot. See above; this is the whole trap.

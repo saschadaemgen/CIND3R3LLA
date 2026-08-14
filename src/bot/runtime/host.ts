@@ -72,6 +72,7 @@ import {
   type HostedBotConfig,
 } from '../../profiles/hosted-bots.js';
 import { MultiProfileRuntime, botProfileFor } from './core.js';
+import type { BotWords } from './profiles.js';
 import { RoutedEventSource } from './events.js';
 import { heldUntilReady } from './gate.js';
 import type { RoutableEvent } from './types.js';
@@ -122,6 +123,11 @@ function profileDiffers(stored: T.Profile, desired: T.Profile): boolean {
     JSON.stringify([
       x.displayName,
       x.fullName,
+      // `shortDescr` is HERE because leaving it out is a known cost, not a hypothetical one
+      // (D-203): a field the console saves, the database stores and this comparison ignores
+      // compares equal every boot and never reaches the profile - it would work everywhere
+      // except the one place that matters. `welcome_message` is that defect already shipped.
+      x.shortDescr ?? null,
       x.image ?? null,
       x.peerType ?? null,
       x.preferences?.files?.allow ?? null,
@@ -129,6 +135,47 @@ function profileDiffers(stored: T.Profile, desired: T.Profile): boolean {
       x.preferences?.voice?.allow ?? null,
     ]);
   return p(stored) !== p(desired);
+}
+
+/**
+ * SHE MUST NEVER PRESENT AS HUMAN (CCB-S5-041, D-209).
+ *
+ * `mkBotProfile` / {@link botProfileFor} set `peerType = Bot` at creation, and
+ * `verify:runtime-host` proves they do. Nothing proved it SURVIVED - and `profileDiffers`
+ * carries `peerType` in its comparison list, so the boot path can write the field. A cleared
+ * peer type would therefore be silent, exactly like the dead subscription of D-207: no error,
+ * no log line, and a bot presenting as a person until somebody happened to look.
+ *
+ * That is the one thing this product must never do. It is the basis of the honesty the
+ * operator sells, and since 2 August 2026 the EU transparency obligation makes it a compliance
+ * question rather than a preference.
+ *
+ * So the stored value is READ BACK at every boot and disagreement is a FAULT: logged, and
+ * raised to the admin dashboard rather than merely logged, because a log line nobody reads is
+ * how this would be discovered late. Read from what the core reported for this profile, not
+ * from what we intended to write - the intent is already known to be right, and the intent is
+ * not what a member sees.
+ *
+ * It does NOT repair the value. Rewriting a profile at boot on the strength of a comparison is
+ * what could clear it in the first place, and a silent self-heal would hide the fault that
+ * matters. It reports, loudly, and the operator decides.
+ */
+function assertBotPeerType(user: T.User, displayName: string): void {
+  const peerType = (user.profile as unknown as T.Profile).peerType;
+  // Compared against the WIRE VALUE rather than the enum: `T` is a type-only import in this
+  // file, and the string is what the core actually stores (`contact_profiles.chat_peer_type`),
+  // which is the thing being asserted.
+  if (String(peerType) === 'bot') return;
+  const seen = peerType === undefined ? 'absent' : String(peerType);
+  log.error('runtime: a hosted bot is NOT marked as a bot in its stored profile', {
+    displayName,
+    peerType: seen,
+  });
+  status.error(
+    `"${displayName}" is not marked as a bot in its SimpleX profile (peerType ${seen}). ` +
+      `It may present as a person to members, which this product must never do. Nothing was ` +
+      `changed automatically; see the AI Bot page.`,
+  );
 }
 
 export async function startRuntimeHost(
@@ -175,7 +222,15 @@ export async function startRuntimeHost(
   const runtime = new MultiProfileRuntime({
     dbPrefix: cfg.simplexDbPrefix,
     profiles: toRuntimeSpecs(configured, anyBound),
-    profileFor: (displayName) => botProfileFor(displayName, image),
+    profileFor: (displayName) => {
+      // The words belong to the bot being CREATED, so they are looked up by the name the
+      // runtime is creating rather than taken from whichever bot happens to be first.
+      const cfg = configured.find((c) => c.displayName === displayName);
+      return botProfileFor(displayName, image, {
+        fullName: cfg?.fullName ?? undefined,
+        shortDescr: cfg?.shortDescr ?? undefined,
+      });
+    },
     onError: (message) => status.error(message),
     handlerFor: (profile) => {
       const source = sourceFor(profile.simplexUserId);
@@ -246,6 +301,10 @@ export async function startRuntimeHost(
       await bindSimplexUser(db, config.botProfileId, hosted.simplexUserId);
       config.simplexUserId = hosted.simplexUserId;
     }
+
+    // Read back before anything is wired: if she is presenting as a person, that is the first
+    // thing the operator should see in the log, not the last.
+    assertBotPeerType(user, config.displayName);
 
     const events = sourceFor(hosted.simplexUserId);
     const fileReceiver = new FileReceiver(chat, cfg.simplexFilesFolder, opts.getFileTimeoutMs);
@@ -476,12 +535,35 @@ export async function applyProfileUpdate(
   displayName: string,
   image: string | undefined,
   stored: T.User,
+  words?: BotWords,
 ): Promise<void> {
-  if (image === undefined) {
-    log.debug('runtime: no avatar file loaded, leaving the stored profile untouched');
+  // ── AN ABSENT AVATAR NO LONGER SKIPS THE WHOLE UPDATE (CCB-S5-041, D-209) ──
+  //
+  // This returned outright when no avatar was loaded, which was right while the avatar was the
+  // only thing this path wrote. It is now also the path that carries the operator's OWN WORDS
+  // about the bot, and a deployment with no avatar is ordinary - so returning here would mean
+  // he writes a description, the console saves it, the database stores it, and it never
+  // reaches the profile. That is `welcome_message` exactly: a field that saves and changes
+  // nothing, the defect this product has now shipped twice.
+  //
+  // The image is still only written when one was loaded, because an unreadable or absent
+  // avatar must never BLANK a stored one (D-161). `botProfileFor` omits the key entirely when
+  // `image` is undefined, so `profileDiffers` compares the stored image against itself and the
+  // absence cannot clear it.
+  if (image === undefined && words === undefined) {
+    log.debug('runtime: nothing configured to write, leaving the stored profile untouched');
     return;
   }
-  const desired = botProfileFor(displayName, image);
+  // THE STORED IMAGE IS CARRIED FORWARD WHEN NO NEW ONE WAS LOADED (D-161, D-209).
+  //
+  // Narrowing the early return above opened a hazard the early return had been hiding: with no
+  // avatar loaded, `desired` carries no image, so it DIFFERS from a stored profile that has
+  // one, the update fires, and the write blanks the avatar. An absent avatar must never clear
+  // a stored one - that is D-161's rule, and it now has to be kept explicitly rather than as a
+  // side effect of not running at all.
+  const storedImage = (stored.profile as unknown as T.Profile).image;
+  const carried = image ?? storedImage;
+  const desired = botProfileFor(displayName, carried, words);
   const current = stored.profile as unknown as T.Profile;
   if (!profileDiffers(current, desired)) {
     log.debug('runtime: stored profile already matches the configured one');

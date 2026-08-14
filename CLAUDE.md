@@ -93,6 +93,21 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   SECOND predicate with its own name and its own comment, never the same one serving both. The two
   questions "may this keep capturing?" and "is this true?" have safe answers pointing in opposite
   directions, and one predicate cannot answer both.
+- **When the documentation is silent, read the client** (standing rule, D-209). It has paid
+  twice in two days. Four rounds of probing could not find `direct=off`, and one grep of the
+  core's own parser gave the whole grammar including the flag's default; the four member-arrival
+  events were settled by reading the Kotlin client rather than guessing a fifth time. The reason
+  is structural rather than lucky: `bots/api/COMMANDS.md` and the SDK readme are months old and
+  predate channels entirely, while the **clients ship with every release and therefore cannot be
+  stale**. They are public under `apps/` (`apps/multiplatform` Kotlin, `apps/ios` Swift), and the
+  core's parser is `src/Simplex/Chat/Library/Commands.hs`.
+  The rule is not "read more source". It is that **an absent answer in the documentation is not
+  evidence of an absent capability**, and a bot surface that does not wrap something says nothing
+  about whether the core can do it - `APIPrepareGroup` is in no public bot API and works. Fetch
+  the file and grep it; it is minutes, and every time it has been skipped the alternative was
+  days. Three questions are open there right now: how visible the member support thread is to a
+  member, where the client renders `peerType` and why the operator sees it only in a direct chat,
+  and whether its audio player accepts an MP3.
 - **Nothing reaches the public repository until it has been demonstrated to work** (standing rule,
   D-199). The repository is the operator's shop window, and a commit that claims a capability it
   does not have reads as not knowing what we are doing. This was established after two pushes in
