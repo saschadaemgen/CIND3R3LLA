@@ -38,7 +38,6 @@
 
 import { util } from 'simplex-chat';
 import { log } from '../../log.js';
-import type { T } from '@simplex-chat/types';
 import type { Queryable } from '../../db/pool.js';
 import { applyProfileUpdate, type HostedBot, type RuntimeHost } from './host.js';
 import { describeChatError } from './chat-error.js';
@@ -393,14 +392,22 @@ export async function applyBotFaceNow(
     );
   }
 
-  const before = (bot.user.profile as unknown as T.Profile).image;
   // The WORDS ride along (CCB-S5-041, D-209). A profile write carries the whole profile, so
   // applying a face and applying a description are the same operation at the wire; passing the
   // configured words here is what lets "apply now" mean both without a second command and
   // without one silently reverting the other.
-  await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user, {
-    fullName: bot.config.fullName ?? undefined,
-    shortDescr: bot.config.shortDescr ?? undefined,
+  // FRESH FROM THE DATABASE, never `bot.config` (CCB-S5-041, D-210). `bot.config` is the
+  // snapshot `listBotsToHost` built at BOOT, so words saved a minute ago are not in it: the
+  // apply path read the OLD empty values, `profileDiffers` found no difference, and the button
+  // reported success having written nothing. The trap is named two lines below for the image
+  // and I walked into it for the words.
+  const words = await db.query<{ full_name: string | null; short_descr: string | null }>(
+    `SELECT full_name, short_descr FROM cinderella_bot_profiles WHERE id = $1`,
+    [botProfileId],
+  );
+  const wrote = await applyProfileUpdate(host.runtime, simplexUserId, displayName, image, bot.user, {
+    fullName: words.rows[0]?.full_name ?? undefined,
+    shortDescr: words.rows[0]?.short_descr ?? undefined,
   });
 
   const flushed = await flushAvatarToGroups(db, {
@@ -414,14 +421,17 @@ export async function applyBotFaceNow(
   log.info('runtime: applied a bot face on demand', {
     simplexUserId,
     displayName,
-    profileWritten: before !== image,
+    // What the write ITSELF reported, not an image comparison (D-210). Comparing images
+    // answers "did the picture change", which is a different question from "did anything
+    // reach the profile" the moment the profile carries words as well.
+    profileWritten: wrote,
     groupsFlushed: flushed.sent,
   });
 
   return {
     displayName,
     simplexUserId,
-    profileWritten: before !== image,
+    profileWritten: wrote,
     groupsFlushed: flushed.sent,
     alreadyCurrent: flushed.alreadyFlushed,
   };

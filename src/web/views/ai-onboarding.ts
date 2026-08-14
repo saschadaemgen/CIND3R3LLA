@@ -1153,6 +1153,42 @@ function groupInvitationPanel(
  * not that the upload failed, so it returns a different banner rather than throwing. Anything
  * else, including a fault reading the file, is a real error the operator has to see.
  */
+/**
+ * Like {@link applyFaceIfRunning}, but distinguishes a write that changed NOTHING (D-210).
+ *
+ * `applyBotFaceNow` has always returned `profileWritten`; nothing read it, so a no-op and a
+ * real write produced the same banner. That is what made a button that did nothing look like a
+ * button that worked.
+ */
+async function applyFaceIfRunningReporting(
+  ctx: ViewContext,
+  profileId: number,
+): Promise<string> {
+  const profile = (await listBotOnboardingProfiles(ctx.db)).find((p) => p.id === profileId);
+  if (!profile) return 'words';
+  const [outcome] = await decideFaces(
+    [{ displayName: profile.displayName, avatarPath: profile.avatarPath }],
+    {
+      defaultImage: await loadAvatarDataUri(ctx.cfg.avatarPath),
+      resolve: (relative) => resolveAssetPath(ctx.cfg.assetRoot, relative),
+      load: loadAvatarDataUri,
+    },
+  );
+  if (outcome?.source === 'fault') {
+    throw new Error(outcome.fault ?? 'That bot has an avatar configured that cannot be read.');
+  }
+  try {
+    const applied = await applyBotFaceNow(ctx.db, profileId, outcome?.image);
+    return applied.profileWritten ? 'words-live' : 'words-nochange';
+  } catch (err) {
+    if (err instanceof RuntimeActionUnavailableError) {
+      log.info(`Bot ${profileId}: words stored but not applied live: ${errorMessage(err)}`);
+      return 'words';
+    }
+    throw err;
+  }
+}
+
 async function applyFaceIfRunning(ctx: ViewContext, profileId: number): Promise<string> {
   const profile = (await listBotOnboardingProfiles(ctx.db)).find((p) => p.id === profileId);
   if (!profile) return 'avatar';
@@ -1202,6 +1238,11 @@ function savedMessage(action: string): string {
       return (
         'Saved. Nothing has been sent and nobody has been shown anything: the words reach the ' +
         'profile when the bot next starts. To deliver them now, press "Save and apply now".'
+      );
+    case 'words-nochange':
+      return (
+        'Saved, and nothing was written to the profile because it already says exactly this. ' +
+        'No message was sent, because there was nothing to tell anybody.'
       );
     case 'words-live':
       return (
@@ -1925,7 +1966,15 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
           // control that saves and appears to do nothing. Hence both, named, with what each
           // costs stated on the page.
           if (text(body['apply']) === 'now') {
-            const applied = await applyFaceIfRunning(ctx, profileId);
+            const applied = await applyFaceIfRunningReporting(ctx, profileId);
+            // A PATH THAT WROTE NOTHING SAYS SO (D-210). He pressed a button that reported
+            // success and did nothing, and it took a query against two databases to find out.
+            if (applied === 'words-nochange') {
+              return reply.redirect(
+                `/ai/onboarding?saved=words-nochange` +
+                  `&profile=${encodeURIComponent(String(profileId))}`,
+              );
+            }
             // A runtime that is down means nothing was DELIVERED, and the words are stored
             // either way - so this says so rather than reporting a success it did not have.
             return reply.redirect(

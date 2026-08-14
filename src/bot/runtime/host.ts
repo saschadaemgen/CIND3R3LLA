@@ -536,7 +536,7 @@ export async function applyProfileUpdate(
   image: string | undefined,
   stored: T.User,
   words?: BotWords,
-): Promise<void> {
+): Promise<boolean> {
   // ── AN ABSENT AVATAR NO LONGER SKIPS THE WHOLE UPDATE (CCB-S5-041, D-209) ──
   //
   // This returned outright when no avatar was loaded, which was right while the avatar was the
@@ -552,7 +552,7 @@ export async function applyProfileUpdate(
   // absence cannot clear it.
   if (image === undefined && words === undefined) {
     log.debug('runtime: nothing configured to write, leaving the stored profile untouched');
-    return;
+    return false;
   }
   // THE STORED IMAGE IS CARRIED FORWARD WHEN NO NEW ONE WAS LOADED (D-161, D-209).
   //
@@ -567,7 +567,7 @@ export async function applyProfileUpdate(
   const current = stored.profile as unknown as T.Profile;
   if (!profileDiffers(current, desired)) {
     log.debug('runtime: stored profile already matches the configured one');
-    return;
+    return false;
   }
   // Through the scheduler: apiUpdateProfile takes an explicit user id, but it is a
   // write to a profile and the scheduler is the one place that serialises those.
@@ -578,4 +578,5 @@ export async function applyProfileUpdate(
     simplexUserId,
     withImage: true,
   });
+  return true;
 }
