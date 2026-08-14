@@ -705,17 +705,23 @@ ${input.personality.baseCharacter}</textarea
               input.allowFiles,
             )}
           </div>
-          <label class="setup-field">
-            <span>Welcome message</span>
-            <textarea
-              name="welcomeMessage"
-              rows="5"
-              maxlength="4000"
-              placeholder="Optional message shown before the connection is completed."
-            >
-${input.welcomeMessage}</textarea>
-            <small>Leave empty to use no welcome message.</small>
-          </label>
+          ${/*
+            THE DEAD CONTROL IS GONE (CCB-S5-041, D-210).
+
+            This asked for a "Welcome message" and stored it in `welcome_message`, where it has
+            sat unread for months: nothing in the tree ever sent it. It is the field that
+            started the three-names confusion - it is not the member greeting (the Welcome
+            plugin owns that) and it is not her arrival notice (`arrivalNotice`); it maps to
+            `AddressSettings.autoReply`, the auto-reply to somebody connecting to the bot's
+            CONTACT ADDRESS, which is a different feature nobody has asked the operator whether
+            he wants.
+
+            So it is removed from the wizard rather than relabelled: a control that collects
+            text reaching nothing is worse than no control, and worst of all on a step he must
+            walk through to reach the ones that work. THE COLUMN AND ANY STORED TEXT ARE LEFT
+            ALONE - dropping data to tidy a form would be the destructive half of a cosmetic
+            fix - and wiring it to `autoReply` stays queued as its own decision.
+          */ ''}
         </section>
 
         <section class="setup-wizard-step" data-setup-step="2" hidden>
