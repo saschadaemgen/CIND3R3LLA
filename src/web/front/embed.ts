@@ -34,6 +34,7 @@ import {
   getPublishedMedia,
   isPublished,
   latestPublishedImageId,
+  listPublishedChannels,
   listPublishedIds,
   listPublishedItemRefs,
   listPublishedItems,
@@ -56,6 +57,7 @@ import { enqueueHoldExpiry } from '../../queue/index.js';
 import { status } from '../status.js';
 import {
   renderCards,
+  renderChannelBlockPage,
   renderEmbedPage,
   renderItemPage,
   type CardOpts,
@@ -126,6 +128,11 @@ interface EmbedQuery {
   since?: string;
   until?: string;
   q?: string;
+  /**
+   * Channel public ids (CCB-S5-043). Repeatable, so Fastify hands over a string for one and
+   * an array for several; `resolveView` normalises both and validates every element.
+   */
+  c?: string | string[];
   page?: string;
   /** Cursor pagination (CCB-S2-007). */
   cursor?: string;
@@ -224,6 +231,9 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
     // endpoint returns; a cheap ids+hash query, not a re-render.
     const { hash: streamHash } = await listPublishedIds(ctx.db, enabledTypes, filters);
     const ogImageId = await latestPublishedImageId(ctx.db, enabledTypes);
+    // The channels that have actually published INTO THE STREAM, so the dropdown cannot
+    // offer an entry that selects an empty page (CCB-S5-043).
+    const channels = await listPublishedChannels(ctx.db, enabledTypes, 'stream');
 
     const seoCtx: SeoContext = {
       instance,
@@ -280,12 +290,105 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
       windowCap: WINDOW_CAP,
       cursorPageSize: CURSOR_PAGE_SIZE,
       reported: req.query.reported === '1',
+      channels,
+      scope: 'stream',
     };
 
     applyEmbedHeaders(reply, nonce, analyticsHost, hasVideoCard);
     reply.type('text/html; charset=utf-8');
     return renderEmbedPage(renderCtx);
   });
+
+  // --- The standalone channel block (CCB-S5-043, D-215) ---
+  //
+  // Announcements and nothing else, embeddable without the stream: one channel, several, or
+  // all, chosen with repeated `?c=<public id>`. A customer who wants his announcements on a
+  // website buys this and carries none of the consent machinery he does not need.
+  //
+  // It reads the SAME records through the SAME view as the stream. What differs is the
+  // scope (`'channels'`) and therefore what a visitor is shown and what he is promised: no
+  // member's message can reach this page, because a row with no channel origin cannot
+  // satisfy the scope, and migration 062 refuses a channel origin on anything but one of
+  // her bridge rows.
+  app.get<{ Params: { id: string }; Querystring: EmbedQuery }>(
+    '/embed/:id/channels',
+    async (req, reply) => {
+      const instance = await getEmbedInstance(ctx.db, req.params.id);
+      if (!instance) return reply.code(404).type('text/plain').send('Not found');
+
+      const s = instance.settings;
+      const basePath = `${origin}/embed/${instance.id}/channels`;
+      const { enabledTypes, filters } = resolveView(s, req.query);
+      const page = filters.page;
+
+      const { items, total } = await listPublishedItems(ctx.db, enabledTypes, filters, 'channels');
+      const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+      const channels = await listPublishedChannels(ctx.db, enabledTypes, 'channels');
+
+      const seo = resolveSeoHead({
+        instance,
+        seo: s.seo,
+        filters,
+        items,
+        total,
+        origin,
+        basePath,
+        canonicalUrl: `${basePath}${canonicalQuery(filters)}`,
+        // No OG image: the stream's preview is the newest published IMAGE anywhere in the
+        // archive, which on this page would advertise a member's photograph on a block that
+        // deliberately contains no member content. The instance's own configured image (or
+        // the auto one drawn from the title) still applies.
+        ogImageId: null,
+        page,
+        pageCount,
+        section: 'Announcements',
+      });
+
+      const nonce = randomBytes(16).toString('base64');
+      const analyticsHost = analyticsOrigin(s.seo.analytics.scriptUrl);
+      const videoOpts = {
+        embed: s.video.embed,
+        providers: s.video.providers,
+        showNotice: s.video.showNotice,
+      };
+      const hasVideoCard =
+        videoOpts.embed &&
+        items.some(
+          (it) => it.video && it.type === 'link' && videoOpts.providers.includes(it.video.provider),
+        );
+
+      const renderCtx: RenderContext = {
+        presentation: { template: 'default', theme: s.theme, layout: s.layout },
+        enabledFilters: s.filters,
+        filters,
+        items,
+        total,
+        page,
+        pageCount,
+        basePath,
+        origin,
+        seo,
+        nonce,
+        showDownload: s.player.showDownload,
+        video: videoOpts,
+        share: s.share,
+        attribution: s.attribution,
+        // No live reconcile on this surface, so no cursor seed and no stream hash: the
+        // renderer emits neither `#stream-list` nor the client, and shipping the attributes
+        // without the script that reads them would be dead markup pretending to be a feature.
+        nextCursor: '',
+        hasMore: false,
+        windowCap: WINDOW_CAP,
+        cursorPageSize: CURSOR_PAGE_SIZE,
+        channels,
+        scope: 'channels',
+      };
+
+      applyEmbedHeaders(reply, nonce, analyticsHost, hasVideoCard);
+      reply.type('text/html; charset=utf-8');
+      return renderChannelBlockPage(renderCtx);
+    },
+  );
 
   // --- Item permalink page (CCB-S3-025): a stable, crawlable, canonical URL per item ---
   // One published message on its own page, so a shared link resolves cleanly and gets
@@ -437,7 +540,7 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
   app.post<{ Params: { id: string }; Body: { msg?: string; reason?: string; note?: string } }>(
     '/embed/:id/report',
     async (req, reply) => {
-      if (!reportAllowed(reply, req.ip)) return 'Too many reports — please try again shortly.';
+      if (!reportAllowed(reply, req.ip)) return 'Too many reports. Please try again shortly.';
       // Reject cross-SITE auto-submissions (CCB-S2-009 review): the report form is always
       // served from THIS origin — even when the archive runs inside a third-party iframe —
       // so a legitimate submit is same-origin. A malicious third-party page auto-POSTing
@@ -747,6 +850,7 @@ function resolveView(
       ? qs.q.trim().slice(0, MAX_Q)
       : undefined;
   const page = Math.min(MAX_PAGE, Math.max(1, Number.parseInt(qs.page ?? '1', 10) || 1));
+  const channels = resolveChannelSelection(qs.c);
   const filters: PublicFilters = {
     page,
     pageSize: PAGE_SIZE,
@@ -754,8 +858,39 @@ function resolveView(
     ...(since ? { since } : {}),
     ...(until ? { until } : {}),
     ...(q ? { q } : {}),
+    ...(channels.length > 0 ? { channels } : {}),
   };
   return { enabledTypes, filters };
+}
+
+/**
+ * The channel selection from a query string, validated as an ALLOW-LIST (CCB-S5-043, D-201).
+ *
+ * A public id is `[A-Za-z0-9_-]`, which is what migration 062's CHECK permits and what
+ * `mintChannelPublicId` produces, so anything else cannot name a real channel and is
+ * dropped. Stating the permitted shape rather than filtering out the shapes that look
+ * dangerous means an id form somebody adds later fails loudly here instead of widening the
+ * filter silently.
+ *
+ * A dropped id is NOT the same as no selection, which is why an entirely invalid `?c=` still
+ * yields an empty list and therefore every channel: the value reaching SQL is a bind
+ * parameter either way, and refusing the request would turn a mangled bookmark into an error
+ * page on somebody's website.
+ */
+const CHANNEL_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
+/** Bounds the selection so a hand-built URL cannot ask for an unbounded ANY() array. */
+const MAX_CHANNEL_SELECTION = 50;
+
+function resolveChannelSelection(raw: string | string[] | undefined): string[] {
+  if (raw === undefined) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out: string[] = [];
+  for (const v of list) {
+    if (typeof v !== 'string' || !CHANNEL_ID_RE.test(v)) continue;
+    if (!out.includes(v)) out.push(v);
+    if (out.length >= MAX_CHANNEL_SELECTION) break;
+  }
+  return out;
 }
 
 /** Images render inline; everything else downloads. */
@@ -811,6 +946,9 @@ function canonicalQuery(f: PublicFilters): string {
   if (f.since) parts.push(`since=${encodeURIComponent(f.since)}`);
   if (f.until) parts.push(`until=${encodeURIComponent(f.until)}`);
   if (f.q) parts.push(`q=${encodeURIComponent(f.q)}`);
+  // A channel-filtered view is a different set of content, so it is its own canonical URL
+  // (CCB-S5-043). Dropping it here would point every channel's block at the unfiltered one.
+  for (const c of f.channels ?? []) parts.push(`c=${encodeURIComponent(c)}`);
   if (f.page > 1) parts.push(`page=${f.page}`);
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }

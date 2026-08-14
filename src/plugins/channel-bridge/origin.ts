@@ -77,10 +77,18 @@ export function channelKeyFor(
   return `local:${String(botProfileId)}:${String(sourceGroupId)}`;
 }
 
+/**
+ * Assembles the origin from a key the caller already holds.
+ *
+ * It used to derive the key itself. It takes one now because the SAME key has to reach two
+ * places for one announcement (CCB-S5-043, D-215): the forward log's structured origin, and
+ * the archived message's own `bridge_channel_key`, which is what publication and the
+ * website's channel filter are derived from. Two calls to `channelKeyFor` would agree today
+ * and would be two places to change; one value computed once in the tick cannot disagree
+ * with itself.
+ */
 export function buildOrigin(input: {
-  link: string | null;
-  botProfileId: number;
-  sourceGroupId: number;
+  channelKey: string;
   channelName: string;
   postedAt: Date;
   sharedMsgId: string;
@@ -88,7 +96,7 @@ export function buildOrigin(input: {
   return {
     v: 1,
     source: 'simplex-channel',
-    channelKey: channelKeyFor(input.link, input.botProfileId, input.sourceGroupId),
+    channelKey: input.channelKey,
     channelName: input.channelName,
     postedAt: input.postedAt.toISOString(),
     sharedMsgId: input.sharedMsgId,

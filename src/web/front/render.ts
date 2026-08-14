@@ -20,7 +20,13 @@
 import { html, raw, type SafeHtml } from '../html.js';
 import { THEME_TOGGLE, THEME_TOGGLE_SCRIPT, THEME_VARS_CSS, themeBootScript } from '../theme.js';
 import { DEFAULT_EMBED_SETTINGS, type EmbedSettings } from '../../db/embeds.js';
-import type { ArchiveType, PublicFilters, PublicItem } from '../../db/public-archive.js';
+import type {
+  ArchiveType,
+  PublicChannel,
+  PublicFilters,
+  PublicItem,
+  PublicScope,
+} from '../../db/public-archive.js';
 import { COPY_ICON, COPY_OK_ICON, SHARE_ICONS, SHARE_LABELS, shareUrl } from '../share.js';
 import type { SeoHead } from './seo.js';
 
@@ -122,6 +128,19 @@ export interface RenderContext {
   cursorPageSize: number;
   /** True after a report was filed (renders the confirmation banner; CCB-S2-009). */
   reported?: boolean;
+  /**
+   * Channels a visitor may narrow this surface to (CCB-S5-043, D-215).
+   *
+   * Empty means no channel has published into this surface, and the control is then not
+   * rendered at all rather than rendered offering only "All channels": a dropdown with one
+   * inert entry is a control that cannot do anything, which is worse than its absence.
+   */
+  channels?: PublicChannel[];
+  /**
+   * Which surface is being rendered. 'channels' is the standalone block: announcements and
+   * nothing else, embeddable without the stream.
+   */
+  scope?: PublicScope;
 }
 
 /**
@@ -154,6 +173,10 @@ function queryString(f: PublicFilters, overrides: Partial<PublicFilters> = {}): 
   if (m.since) parts.push(`since=${encodeURIComponent(m.since)}`);
   if (m.until) parts.push(`until=${encodeURIComponent(m.until)}`);
   if (m.q) parts.push(`q=${encodeURIComponent(m.q)}`);
+  // Repeated rather than comma-joined (CCB-S5-043): the standalone block takes several
+  // channels, and `?c=a&c=b` is what a plain HTML form and Fastify's own parser both
+  // produce, so the paging links a visitor follows are the same shape the embed snippet is.
+  for (const c of m.channels ?? []) parts.push(`c=${encodeURIComponent(c)}`);
   if (m.page && m.page > 1) parts.push(`page=${m.page}`);
   return parts.length > 0 ? `?${parts.join('&')}` : '';
 }
@@ -478,11 +501,27 @@ function itemLinks(it: PublicItem, video: VideoCardOpts): SafeHtml {
   </ul>`;
 }
 
+/**
+ * How a channel is named in a selector when the operator publishes it unnamed.
+ *
+ * The entry still exists, because the posts are public and selecting them is the whole
+ * point of the standalone block. What it must not do is invent a name or imply the archive
+ * lost one, so it says what is true: there is a channel here and it is not named.
+ */
+const UNNAMED_CHANNEL_LABEL = 'A channel that is not named';
+
 /** The SSR filter/search bar (only the enabled controls). */
 function filterBar(ctx: RenderContext): SafeHtml {
   const { enabledFilters: ef, filters: f } = ctx;
-  if (!ef.byType && !ef.byTime && !ef.search) return html``;
+  const channels = ctx.channels ?? [];
+  // The channel control is never gated on `enabledFilters`: those are the instance's
+  // media/time/search preferences and predate channels entirely. It appears when there is
+  // more than one thing to choose between, and on the standalone block it is the only
+  // control that means anything.
+  const showChannels = channels.length > 1;
+  if (!ef.byType && !ef.byTime && !ef.search && !showChannels) return html``;
   const typeOptions: [string, string][] = [['', 'All types'], ...ARCHIVE_TYPE_ENTRIES];
+  const selected = f.channels ?? [];
   return html`<form class="filters" method="get" action="${ctx.basePath}">
     ${
       ef.search
@@ -493,6 +532,22 @@ function filterBar(ctx: RenderContext): SafeHtml {
             placeholder="Search the archive…"
             aria-label="Search"
           />`
+        : null
+    }
+    ${
+      showChannels
+        ? html`<select name="c" aria-label="Channel">
+            <option value="" ${selected.length === 0 ? raw('selected') : ''}>All channels</option>
+            ${channels.map(
+              (c) =>
+                html`<option
+                  value="${c.publicId}"
+                  ${selected.length === 1 && selected[0] === c.publicId ? raw('selected') : ''}
+                >
+                  ${c.name ?? UNNAMED_CHANNEL_LABEL} (${String(c.count)})
+                </option>`,
+            )}
+          </select>`
         : null
     }
     ${
@@ -515,7 +570,7 @@ function filterBar(ctx: RenderContext): SafeHtml {
     }
     <button type="submit">Filter</button>
     ${
-      f.type || f.since || f.until || f.q
+      f.type || f.since || f.until || f.q || selected.length > 0
         ? html`<a class="reset" href="${ctx.basePath}">Reset</a>`
         : null
     }
@@ -829,7 +884,7 @@ export function renderEmbedPage(ctx: RenderContext): string {
           ${
             ctx.reported
               ? html`<p class="report-ok">
-                  Thank you — your report was received and will be reviewed.
+                  Thank you, your report was received and will be reviewed.
                 </p>`
               : null
           }
@@ -878,6 +933,130 @@ export function renderEmbedPage(ctx: RenderContext): string {
 }
 
 /** Context for a single-item permalink page (CCB-S3-025). */
+/**
+ * The standalone channel block (CCB-S5-043, D-215): announcements and nothing else,
+ * embeddable without the stream.
+ *
+ * ── WHY IT IS NOT `renderEmbedPage` WITH A FLAG ──────────────────────────────
+ *
+ * It shares everything that decides how content LOOKS: the theme CSS, the card renderer,
+ * the filter bar, the head, the iframe-height and video and copy scripts. What it does not
+ * share is `#stream-list` and the live-reconcile client, and that is the whole difference.
+ * The reconcile is the consent-critical machinery: it fingerprints a loaded span through
+ * `published_messages` and drops cards that left the set. Threading a second scope through
+ * it means the span endpoints have to agree with the page about which surface they are
+ * describing, and a disagreement there does not look like a bug, it looks like a card that
+ * will not go away.
+ *
+ * So the block is server-rendered with a crawlable page pager and no polling. The cost is
+ * stated on the console rather than left to be discovered: a switch flipped off empties the
+ * block on the next page load rather than within eighteen seconds. For content that arrives
+ * on a cadence measured in hours that is the right trade, and it is one fewer place a
+ * consent-adjacent guarantee can be got wrong.
+ */
+export function renderChannelBlockPage(ctx: RenderContext): string {
+  const css = themeCss(ctx.presentation.theme, ctx.presentation.layout);
+  const seo = ctx.seo;
+  const mode = ctx.presentation.theme.mode;
+  const initialTheme = mode === 'light' ? 'light' : 'dark';
+  const themeColor = initialTheme === 'light' ? '#FAFBFD' : '#050A12';
+  const channels = ctx.channels ?? [];
+  const selected = ctx.filters.channels ?? [];
+
+  // What this block is currently showing, said in words. An embed is often the only thing a
+  // visitor sees of the archive, so a block narrowed to one channel that says nothing about
+  // it reads as "this is everything".
+  const nameOf = (publicId: string | undefined): string =>
+    channels.find((c) => c.publicId === publicId)?.name ?? 'a channel that is not named';
+  const selectionLine =
+    selected.length > 1
+      ? `Announcements from ${String(selected.length)} selected channels.`
+      : selected.length === 1
+        ? `Announcements from ${nameOf(selected[0])}.`
+        : // Nothing selected. With one channel, NAME it: the title already says
+          // "Announcements", so repeating the word underneath tells a reader nothing they
+          // did not just read, and the one thing they want to know is whose.
+          channels.length === 1
+          ? `Announcements from ${nameOf(channels[0]?.publicId)}.`
+          : channels.length > 1
+            ? `Announcements from ${String(channels.length)} channels.`
+            : 'No announcements are published here.';
+
+  const items =
+    ctx.items.length > 0
+      ? html`<ul class="items">
+          ${renderCards(ctx.items, ctx.basePath, cardOptsFrom(ctx))}
+        </ul>`
+      : html`<p class="empty">No announcements are published here yet.</p>`;
+
+  const pager =
+    ctx.pageCount > 1
+      ? html`<nav class="pager" aria-label="Pagination">
+          <span>Page ${ctx.page} of ${ctx.pageCount}</span>
+          <span>
+            ${
+              ctx.page > 1
+                ? html`<a
+                    rel="prev"
+                    href="${ctx.basePath}${queryString(ctx.filters, { page: ctx.page - 1 })}"
+                    >← Newer</a
+                  >`
+                : null
+            }
+            ${
+              ctx.page < ctx.pageCount
+                ? html`<a
+                    rel="next"
+                    href="${ctx.basePath}${queryString(ctx.filters, { page: ctx.page + 1 })}"
+                    >Older →</a
+                  >`
+                : null
+            }
+          </span>
+        </nav>`
+      : html``;
+
+  const body = html`<!doctype html>
+    <html lang="en" data-theme="${initialTheme}">
+      ${documentHead(seo, ctx.nonce, css, themeColor, mode === 'auto')}
+      <body>
+        <div class="wrap">
+          <header class="arch">
+            <div class="head-row">
+              <div>
+                <h1>${seo.title}</h1>
+                <p>${selectionLine}</p>
+              </div>
+              ${raw(THEME_TOGGLE)}
+            </div>
+          </header>
+          ${filterBar(ctx)}
+          ${items} ${pager}
+          <footer class="arch">
+            Published by the operator of this archive · powered by
+            <a href="https://github.com/saschadaemgen/cinderella" target="_blank" rel="noopener"
+              >CIND3R3LLA</a
+            >
+          </footer>
+        </div>
+        <script nonce="${ctx.nonce}">
+          ${raw(HEIGHT_SCRIPT)};
+        </script>
+        <script nonce="${ctx.nonce}">
+          ${raw(THEME_TOGGLE_SCRIPT)};
+        </script>
+        <script nonce="${ctx.nonce}">
+          ${raw(VIDEO_SCRIPT)};
+        </script>
+        <script nonce="${ctx.nonce}">
+          ${raw(COPY_SCRIPT)};
+        </script>
+      </body>
+    </html>`;
+
+  return body.toString();
+}
+
 export interface ItemPageContext {
   item: PublicItem;
   presentation: PresentationConfig;

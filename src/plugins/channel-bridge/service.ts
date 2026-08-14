@@ -35,7 +35,7 @@ import {
   renderAnnouncement,
   type PendingPost,
 } from './cadence.js';
-import { buildOrigin } from './origin.js';
+import { buildOrigin, channelKeyFor } from './origin.js';
 import {
   applyAnnouncementOutcome,
   applyPostEdit,
@@ -305,6 +305,16 @@ async function tickOneMapping(
     `${String(mapping.botProfileId)}:${String(mapping.sourceGroupId)}`,
   );
   const channelName = channel?.channelName ?? `channel ${String(mapping.sourceGroupId)}`;
+  // The key this announcement is stamped with, computed ONCE for both the forward log's
+  // structured origin and the archived message's own columns (CCB-S5-043, D-215). Every
+  // post in one announcement comes from one mapping and therefore one channel, so a digest
+  // has one origin. A channel record the tick could not find falls back to the same
+  // profile-local form `channelKeyFor` would produce, so a stamped row is never keyless.
+  const channelKey = channelKeyFor(
+    channel?.link ?? null,
+    mapping.botProfileId,
+    mapping.sourceGroupId,
+  );
   const lines = deps.linesFor(mapping.botProfileId);
   const text = renderAnnouncement(plan.announce, {
     attributionFor: (post) => lines.attributionFor(channelName, post.postedAt),
@@ -321,7 +331,10 @@ async function tickOneMapping(
         await port.sendFile(mapping.destGroupId, featured.mediaPath, text, featured.mediaMime)
       : await port.sendText(mapping.destGroupId, text);
 
-  const messageId = await archiveOwnSend(deps, sent, text, lines.lang);
+  const messageId = await archiveOwnSend(deps, sent, text, lines.lang, {
+    channelKey,
+    channelName,
+  });
 
   for (const post of [plan.announce.full, ...plan.announce.summarized]) {
     await recordBridgeForward(deps.db, {
@@ -331,9 +344,7 @@ async function tickOneMapping(
       sentItemId: sent.itemId,
       sentSharedMsgId: sent.sharedMsgId,
       origin: buildOrigin({
-        link: channel?.link ?? null,
-        botProfileId: mapping.botProfileId,
-        sourceGroupId: mapping.sourceGroupId,
+        channelKey,
         channelName,
         postedAt: post.postedAt,
         sharedMsgId: post.sharedMsgId,
@@ -360,6 +371,12 @@ async function archiveOwnSend(
   sent: BridgeSentMessage,
   text: string,
   lang: string,
+  /**
+   * The channel this announcement came from (CCB-S5-043, D-215). Written in the SAME
+   * statement as the message, because the forward log it used to live on is cascaded by a
+   * console action and a published item must not be able to lose its provenance.
+   */
+  origin: { channelKey: string; channelName: string },
 ): Promise<number | null> {
   if (sent.raw === null) return null;
   try {
@@ -379,6 +396,8 @@ async function archiveOwnSend(
       // the attribution names a channel), so the searchable text is the text.
       searchBody: text,
       mentions: [],
+      bridgeChannelKey: origin.channelKey,
+      bridgeChannelName: origin.channelName,
       rawJson: sent.raw,
     });
   } catch (error) {

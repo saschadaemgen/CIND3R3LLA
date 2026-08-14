@@ -558,7 +558,7 @@ async function main(): Promise<void> {
     kind: 'featured',
     sentItemId: 400,
     sentSharedMsgId: 'sent-echo',
-    origin: buildOrigin({ link: LINK, botProfileId: BOT, sourceGroupId: CHANNEL_GROUP, channelName: 'TownCrier', postedAt: NOW, sharedMsgId: 'sh-victim' }),
+    origin: buildOrigin({ channelKey: channelKeyFor(LINK, BOT, CHANNEL_GROUP), channelName: 'TownCrier', postedAt: NOW, sharedMsgId: 'sh-victim' }),
     messageId: null,
   });
 
@@ -598,7 +598,7 @@ async function main(): Promise<void> {
       kind: 'featured',
       sentItemId: 401,
       sentSharedMsgId: 'sent-echo-mutated',
-      origin: buildOrigin({ link: LINK, botProfileId: BOT, sourceGroupId: CHANNEL_GROUP, channelName: 'TownCrier', postedAt: NOW, sharedMsgId: 'sh-victim' }),
+      origin: buildOrigin({ channelKey: channelKeyFor(LINK, BOT, CHANNEL_GROUP), channelName: 'TownCrier', postedAt: NOW, sharedMsgId: 'sh-victim' }),
       messageId: null,
     });
     calls.length = 0;

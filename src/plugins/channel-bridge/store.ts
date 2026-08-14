@@ -8,7 +8,8 @@
  */
 
 import type { Queryable } from '../../db/pool.js';
-import type { BridgeOrigin } from './origin.js';
+import { channelKeyFor, type BridgeOrigin } from './origin.js';
+import { ensureChannelPublication } from './publication.js';
 import type { PendingPost, PostResolution } from './cadence.js';
 
 export interface BridgeChannel {
@@ -16,6 +17,15 @@ export interface BridgeChannel {
   sourceGroupId: number;
   channelName: string;
   link: string | null;
+  /**
+   * The stable identity of the channel this record is a record OF (CCB-S5-043).
+   *
+   * Derived from the link by `channelKeyFor`, which stays the single authority, and stored
+   * so the console can get from a channel a bot knows to that channel's publication row.
+   * Two bots subscribed to one channel hold two records with the SAME key, which is
+   * exactly why publication is keyed on the key rather than on either record.
+   */
+  channelKey: string;
   firstSeenAt: Date;
   lastPostAt: Date | null;
 }
@@ -75,19 +85,46 @@ export type SuppressionReason = 'aged-out' | 'dismissed' | 'loop-refused';
  * The name always updates (a rename should show its current name); the link
  * only fills in, never clears, because the core reports it inconsistently and
  * a known link is what keeps the origin's channelKey portable.
+ *
+ * ── THE KEY IS RE-DERIVED ON EVERY UPSERT, AND THAT IS THE POINT (CCB-S5-043) ─
+ *
+ * `channel_key` is recomputed from the link the row will HOLD after this
+ * statement, not from the link it holds now. The core reports `viaGroupLinkUri`
+ * inconsistently, so a channel is often first recorded with no link and gets one
+ * later; the key moves from `local:` to `link:` at that moment, and the row has
+ * to move with it or the console would go on offering a switch for an identity
+ * nothing publishes under any more.
+ *
+ * Existing archived announcements keep the key they were stamped with, which is
+ * correct: they are a record of what was true when they were sent. The console
+ * lists a publication row with no live channel as orphaned for exactly this
+ * reason, so a key that has been superseded is visible rather than silent.
  */
 export async function upsertBridgeChannel(
   db: Queryable,
   ch: { botProfileId: number; sourceGroupId: number; channelName: string; link: string | null },
 ): Promise<void> {
+  const { rows } = await db.query<{ link: string | null }>(
+    `SELECT link FROM cinderella_bridge_channels
+      WHERE bot_profile_id = $1 AND source_group_id = $2`,
+    [ch.botProfileId, ch.sourceGroupId],
+  );
+  const effectiveLink = rows[0]?.link ?? ch.link;
+  const channelKey = channelKeyFor(effectiveLink, ch.botProfileId, ch.sourceGroupId);
   await db.query(
-    `INSERT INTO cinderella_bridge_channels (bot_profile_id, source_group_id, channel_name, link)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO cinderella_bridge_channels
+       (bot_profile_id, source_group_id, channel_name, link, channel_key)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT (bot_profile_id, source_group_id) DO UPDATE
        SET channel_name = EXCLUDED.channel_name,
-           link = COALESCE(cinderella_bridge_channels.link, EXCLUDED.link)`,
-    [ch.botProfileId, ch.sourceGroupId, ch.channelName, ch.link],
+           link = COALESCE(cinderella_bridge_channels.link, EXCLUDED.link),
+           channel_key = EXCLUDED.channel_key`,
+    [ch.botProfileId, ch.sourceGroupId, ch.channelName, ch.link, channelKey],
   );
+  // The publication row exists from the moment a channel is known, switched OFF, so the
+  // console never renders a switch with nothing behind it and the first announcement is
+  // archived against a row that is already there. It never flips a switch.
+  await ensureChannelPublication(db, channelKey, ch.channelName);
 }
 
 export async function touchChannelPostAt(
@@ -108,6 +145,7 @@ interface ChannelRow {
   source_group_id: string | number;
   channel_name: string;
   link: string | null;
+  channel_key: string;
   first_seen_at: string | Date;
   last_post_at: string | Date | null;
 }
@@ -127,6 +165,7 @@ export async function listBridgeChannels(
     sourceGroupId: Number(r.source_group_id),
     channelName: r.channel_name,
     link: r.link,
+    channelKey: r.channel_key,
     firstSeenAt: new Date(r.first_seen_at),
     lastPostAt: r.last_post_at === null ? null : new Date(r.last_post_at),
   }));
@@ -146,6 +185,15 @@ export async function listBridgeChannels(
  * `messages` under the 'bridge' category and are untouched by this.
  *
  * Returns what it removed so the caller can say so rather than delete in silence.
+ *
+ * ── THE PUBLICATION ROW IS DELIBERATELY NOT TOUCHED (CCB-S5-043, D-215) ──────
+ *
+ * `cinderella_bridge_channel_publication` has no foreign key here and is not
+ * cleared, because the operator's decision to publish a channel is a decision
+ * about the CHANNEL rather than about this record. Deleting it would silently
+ * unpublish a live public block, and a rejoin - which is the main reason this
+ * function is ever called - would then need the decision taken again. The console
+ * lists such a row as orphaned so it is visible rather than forgotten.
  */
 export async function deleteBridgeChannel(
   db: Queryable,

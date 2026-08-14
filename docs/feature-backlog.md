@@ -1618,6 +1618,16 @@ is why it is a backlog item and not a drive-by fix.
 
 ## The activity stream's channel filter, and the one thing to do BEFORE it (CCB-S5-041)
 
+**DELIVERED under CCB-S5-043 (D-215), including the migration this entry said to do first.**
+The origin is on the archived record (`messages.bridge_channel_key` / `bridge_channel_name`,
+migration 062, written in the same INSERT as the announcement); the stream has its channel
+dropdown; publication is a switch per channel rather than the one Archive-page category this
+entry assumed, because the operator wants one channel public and another private; and there is
+a second surface the entry did not anticipate, a standalone announcements block a site can
+embed without the stream. The rejected alternative below stayed rejected, for exactly the
+reason stated. What is left of this entry is the record of the reasoning; nothing in it is
+outstanding.
+
 The website's activity stream should offer a channel dropdown - every channel that has posted
 into it, plus "all channels" - showing only that channel's items. That is the fitness proof
 `origin` was designed for, and the bridge console's own forward filter already proves the query
@@ -1638,8 +1648,12 @@ else: her bridged announcements archive as bot messages under the `bridge` categ
 `bot-message.ts` / `db/bot-messages.ts` reference `origin` not at all. So the archived row - the
 thing the public stream actually renders - does not know which channel it came from.
 
-- [ ] **Carry `channelKey` and `channelName` onto the archived message at insert**, with a
-      migration, BEFORE the stream is built.
+- [x] **Carry `channelKey` and `channelName` onto the archived message at insert**, with a
+      migration, BEFORE the stream is built. Done in CCB-S5-043 (migration 062). The backfill
+      could read only `cinderella_bridge_forwards.origin`, so an announcement whose forward row
+      had already been cascaded away keeps no origin, can never publish, and is COUNTED on the
+      Bridge console rather than left blank in silence - which is the cost this entry's last
+      line predicted, made visible instead of assumed away.
 
 Rejected alternative: joining the stream to `cinderella_bridge_forwards` at render time. It is
 cheaper to build and needs no migration, and it is wrong for a reason this repository has paid

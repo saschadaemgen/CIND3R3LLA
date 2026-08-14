@@ -146,6 +146,15 @@ export const PERSONA_KEYS = [
   // protected-text guard derives markers for them, so a model imitating one is stripped.
   'bridgeAttribution',
   'bridgeMore',
+  // CCB-S5-043. What stands in for a channel's name on the PUBLIC archive when the
+  // operator has asked for that channel to be published without being named. The
+  // attribution line above puts the name inside the announcement TEXT, so hiding the
+  // column and leaving the words would be a switch that changes a label and nothing a
+  // reader sees; `published_messages` replaces the name with this, per language, exactly
+  // as it replaces a non-consenting member's name with `redactedMember`. It carries no
+  // placeholder, so the protected-text guard derives no marker for it and she is free to
+  // use the words.
+  'bridgeAnonymousChannel',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -221,6 +230,10 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   searchNoWords: 'lookup',
   bridgeAttribution: 'bridge',
   bridgeMore: 'bridge',
+  // Never sent to a chat at all - it is only ever substituted INTO an already-archived
+  // announcement by the public view - but the map is total, and 'bridge' is the category
+  // the text it lands in belongs to.
+  bridgeAnonymousChannel: 'bridge',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -481,6 +494,11 @@ const PERSONA_EN: PersonaStrings = {
   // marker from, so an imitation of this line is stripped from her replies.
   bridgeAttribution: '📣 From the channel {channel}, {when}',
   bridgeMore: '📣 Also new in {channel}: {n} earlier posts.',
+  // CCB-S5-043. Substituted for the channel's name on the public archive when that
+  // channel is published anonymously. It stands where a NAME stood, in the middle of both
+  // lines above, so it has to read as a name would: "From the channel a channel" is what a
+  // plain noun phrase produces, which is why this is a bracketed token instead.
+  bridgeAnonymousChannel: '(not named)',
   knowledgeSources: '📄 From what you gave me: {sources}',
   // Said when she could not look it up. She does NOT then answer from training data and
   // present it as current: that is the failure the whole feature exists to avoid.
@@ -660,6 +678,10 @@ const PERSONA_DE: PersonaStrings = {
   // Modell, und die fuehrende Zeichenkette traegt den Schutzmarker.
   bridgeAttribution: '📣 Aus dem Kanal {channel}, {when}',
   bridgeMore: '📣 Ebenfalls neu in {channel}: {n} weitere Beitraege.',
+  // CCB-S5-043. Steht auf der oeffentlichen Seite anstelle des Kanalnamens, wenn dieser
+  // Kanal anonym veroeffentlicht wird. Es steht dort, wo ein NAME stand, also muss es sich
+  // wie ein Name lesen: "Aus dem Kanal einem Kanal" waere falsch, daher die Klammern.
+  bridgeAnonymousChannel: '(nicht genannt)',
   knowledgeSources: '📄 Aus deinen Unterlagen: {sources}',
   searchUnavailable:
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',

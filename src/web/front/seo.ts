@@ -96,6 +96,15 @@ export interface SeoContext {
   page: number;
   /** Total pages for rel=prev/next (CCB-S2-007). */
   pageCount: number;
+  /**
+   * Overrides the section the title is derived from (CCB-S5-043).
+   *
+   * The standalone channel block is a different SURFACE of the same instance, not a filtered
+   * view of the stream, so its title has to say so or two documents on one origin carry the
+   * same title and compete for the same query. Absent everywhere else, which leaves the
+   * derived section exactly as it was.
+   */
+  section?: string;
 }
 
 /** A crawlable `?page=N` URL for the active filters (drops page=1), origin-based. */
@@ -105,21 +114,37 @@ function pageUrl(basePath: string, f: PublicFilters, page: number): string {
   if (f.since) parts.push(`since=${encodeURIComponent(f.since)}`);
   if (f.until) parts.push(`until=${encodeURIComponent(f.until)}`);
   if (f.q) parts.push(`q=${encodeURIComponent(f.q)}`);
+  // The channel selection (CCB-S5-043) belongs in rel=prev/next as much as any other
+  // filter: without it, page 2 of a one-channel block is page 2 of every channel, and a
+  // crawler would index that under the filtered URL's neighbour.
+  for (const c of f.channels ?? []) parts.push(`c=${encodeURIComponent(c)}`);
   if (page > 1) parts.push(`page=${page}`);
   return parts.length > 0 ? `${basePath}?${parts.join('&')}` : basePath;
 }
 
 const DEFAULT_DESCRIPTION =
-  'A consent-first public archive — only messages members chose to publish. ' +
+  // NOT "only messages members chose to publish" (CCB-S5-043). That was true when the stream
+  // was members' words and hers, and stopped being true the moment the operator could put his
+  // own channel announcements beside them. The consent promise is the half that matters and it
+  // is kept exactly; what went is the claim of exclusivity, which the page could no longer
+  // make. Operator-editable like every other SEO field, so this is only the default.
+  'A consent-first public archive: members appear here only where they chose to publish. ' +
   'Searchable and permanent.';
 
 export function resolveSeoHead(c: SeoContext): SeoHead {
   const { seo } = c;
-  const sec = section(c.filters);
+  const sec = c.section ?? section(c.filters);
   const title =
     (seo.titleTemplate || '{instance}{section}')
       .replaceAll('{instance}', c.instance.name || 'Community Archive')
-      .replaceAll('{section}', sec ? ` — ${sec}` : '')
+      // A COMMA, not an em-dash (CCB-S5-043). This separator has been putting an em-dash
+      // into a visitor-facing page title since CCB-S2-004, whenever a filter was active,
+      // and `verify:no-dashes` could not see it: the harness scanned the bot's own copy and
+      // the public front was never in its scope. That is the D-105 shape exactly - the rule
+      // held, the check was green, and the output violated it - so the scope was widened in
+      // the same change rather than the one line being quietly fixed. It is unconditional on
+      // the standalone channel block, which is what made it visible.
+      .replaceAll('{section}', sec ? `, ${sec}` : '')
       .trim() ||
     c.instance.name ||
     'Community Archive';

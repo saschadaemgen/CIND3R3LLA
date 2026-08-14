@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 208 decisions</strong> — newest first. Highest allocated: <strong>D-209</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 209 decisions</strong> — newest first. Highest allocated: <strong>D-215</strong>. Not allocated: D-108, D-210, D-211, D-212, D-213, D-214. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-215 | Announcements are public per channel, and the origin belongs on the record | IMPLEMENTED, DEMONSTRATED |
 | D-209 | What she says she is, and three identifiers that look alike | IMPLEMENTED |
 | D-208 | A bot that cannot greet must not claim the right to greet | IMPLEMENTED |
 | D-207 | A registration that cannot fail proves nothing, and an empty set is not a result | IMPLEMENTED |
@@ -237,6 +238,120 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-215 - Announcements are public per channel, and the origin belongs on the record
+
+**Status: IMPLEMENTED, DEMONSTRATED** (CCB-S5-043). Her bridged channel announcements can be
+published: in the community activity stream, and separately as a block a site can embed without
+the stream. Two audiences, two promises, two surfaces over one set of records.
+
+**A NOTE ON THE NUMBER.** D-210 through D-214 are ALLOCATED, cited in the source tree by
+CCB-S5-041 and CCB-S5-042 (`bot/runtime/admin-actions.ts`, `web/html.ts`,
+`bot/bridge-port.ts`, `scripts/verify-scope-copy.ts`, and this repository's own `CLAUDE.md`),
+and their entries never landed in this file, so the generated index states the highest
+allocated number as D-209 and is wrong. This entry therefore skips five numbers deliberately
+rather than reusing one, which is the allocation failure this file already records happening
+twice. The missing entries are a real gap and were not this briefing's to write; what mattered
+here was not making it worse.
+
+**1. THE ORIGIN MOVED ONTO THE ARCHIVED RECORD, AND IT HAD TO GO FIRST.** The structured origin
+lived only on `cinderella_bridge_forwards`, which is operational state with its own lifecycle:
+`deleteBridgeChannel` (D-204) cascades it when the Capture page clears an ended group record. So
+clearing a channel record would have stripped a PUBLISHED item of its provenance while it was
+still online and readable. That is the D-205 shape exactly, a public claim derived from a table a
+console action can remove, and the answer is the same: put the claim on the record it is a claim
+about. `messages.bridge_channel_key` / `bridge_channel_name` are written in the same INSERT as the
+announcement, and `buildOrigin` now TAKES the key rather than deriving it, so the forward log and
+the message are stamped from one value computed once per tick.
+
+What the backfill could not recover is stated rather than smoothed over. Its only source is the
+forward log, so an announcement whose forward row was already cascaded away has no origin and
+cannot be reconstructed: the one remaining starting point would be the local group id, which is
+the value that does not survive. Those rows keep NULL, which means they can never publish, and the
+count is DERIVED and printed on the Bridge console. A `RAISE NOTICE` in the migration would have
+scrolled past in a deploy log, and a stored number would be a second source that goes stale.
+
+**2. PUBLICATION IS KEYED ON THE CHANNEL, NOT ON THE CHANNEL RECORD.**
+`cinderella_bridge_channel_publication` has `channel_key` as its primary key and no foreign key to
+`cinderella_bridge_channels`. This is §1 one step further out: a rejoin replaces the channel
+record with a new local group id, so a decision hanging off that record would be silently
+unpublished by the very event it most needs to survive. Keyed on the link-derived identity, the
+same link lands on the same decision, and two bots subscribed to one channel are subscribed to ONE
+channel with one decision covering it. The consequence is said out loud: a publication row
+outlives its channel record, and the console marks such a row **orphaned** rather than hiding it.
+
+**3. TWO IDENTITIES, BECAUSE ONE OF THEM WOULD DEFEAT ANONYMISATION.** `channelKey` is
+`link:<sha256 of the join link>`. A bridged channel's link is public, so publishing the key would
+let anybody holding it confirm which channel an anonymised post came from, and the people holding
+it are the audience most likely to test the claim. `public_id` is random, stable, and the only
+channel identifier that reaches a visitor or an embed URL.
+
+**4. ONE SWITCH DECIDES PUBLICATION.** Migration 057 shipped the `bridge` category excluded and
+said the decision was the operator's "the day the site work wants them". That day arrived and the
+answer was not one deployment-wide switch: he wants one channel public and another private, which
+a category cannot say. So a `bridge` row publishes on the per-channel switch alone, not the
+category, and deliberately not `publish_bot`, because "do not publish her replies" is a statement
+about her conversation while an announcement is the operator's own text that she only carried. A
+second master switch here would have reproduced the defect this repository has bled over most: a
+control pressed, and nothing happening.
+
+`categories.bridge` keeps a real job and its label was changed to match, which is the other half
+of not leaving a dead control: it is now `in_stream`, deciding whether a PUBLIC announcement also
+appears beside members' messages. That is the briefing's own distinction rather than an invented
+one.
+
+**5. WHY TWO SURFACES RATHER THAN ONE WITH A FILTER.** Both read the same records through the same
+consent gate; what differs is what a visitor is SHOWN and what he is PROMISED. The stream is the
+community: members' messages, consent-gated, every revocation propagating. The block is the
+operator's announcements, his own text, with no consent question because it is his, and a customer
+who wants only that should be able to embed it without carrying machinery he does not need. A
+single surface with a filter would make the two promises one promise and leave the weaker one
+governing both: a member's message appearing in a block sold as "my announcements" is a consent
+surface nobody asked for. So `PublicScope` is applied first and unconditionally, as a POSITIVE
+statement of what each surface contains, and the block's own renderer omits the live-reconcile
+client rather than threading a second scope through the consent-critical machinery, at the stated
+cost that the block updates on page load rather than within eighteen seconds.
+
+**6. ANONYMISATION HAS TO MOVE FOUR THINGS, AND ITS LIMITS ARE STATED.** Withholding the column
+would be a switch that changes a label: the application's attribution line puts the channel name
+inside the announcement TEXT. So the view also replaces the name in `text_body` and `search_body`
+(a literal `replace()`, never a regex compiled from a column, per D-164), nulls `formatted_text`
+(the runs carry unredacted text, the hole migration 019 closed for mentions), and nulls `search`,
+because the stored tsvector holds the name and cannot be re-derived per row without losing the
+index. Two limits, both on the page: an anonymised announcement is not full-text findable, and the
+name stays in the operator's own records because this hides it from visitors rather than erasing
+it. What does NOT change is the post's own words, asserted character for character.
+
+**7. THREE THINGS FOUND BY LOOKING AT THE PAGE, NOT BY ANYTHING THAT RAN (D-212).** Every check
+was green and the console still said three untrue things. The scope panel badged the publication
+switch "shared: 2 bot(s)" under the heading "Shared across every bot", above a footer promising
+that editing it changed two bots, while the reason line beside it read "per CHANNEL, not per bot".
+The mappings line read "per bot: none set" where a mapping existed, because "none set" is the
+right sentence about an unfilled override and the wrong one about rows. And every channel the
+selected bot owned was labelled "known to another bot", because the set was built from the
+room-index-filtered list instead of the bot's own records. `scopePanel` gained a third answer
+(`other`) rather than the wrong one being tolerated.
+
+**8. A CHECK WHOSE SCOPE NEVER COVERED THE PUBLIC FRONT (D-105).** `verify:no-dashes` scanned the
+bot's own copy and had never included `src/web/front/`, which is what a VISITOR reads, and the
+rule has always said "a member or a visitor". A page-title separator had been emitting an em-dash
+on every filtered view since CCB-S2-004, green the whole time. Widening the scope in the same
+change immediately found three more, all in visitor-facing copy. Related, and worth a future
+briefing: `tsconfig.json` includes only `src/**/*.ts`, so `npm run typecheck` cannot see
+`scripts/`, and changing `buildOrigin`'s signature left two harness call sites passing dead
+arguments while `verify:bridge` stayed green, because nothing asserted the value they produced.
+
+**Verification.** `verify:channel-publication` (new): the migration's SQL key derivation proven
+identical to `channelKeyFor` in both forms; the backfill driven by applying migrations to 061,
+seeding legacy rows, then 062 alone; the origin stamped through the real service; the channel
+record CLEARED and provenance and publication both surviving; a rejoin landing on the same
+decision; the switch off, on, and mutation-proven by rebuilding the view with the predicate
+replaced by `TRUE`, which makes an unpublished channel's post publicly readable; the two surfaces
+with positive controls in both directions; anonymisation's four exits with the post's words
+intact; and the console's routes pressed with the effect read back out of the database. The whole
+offline set of 82 checks is green.
+
 ---
 
 ### D-209 - What she says she is, and three identifiers that look alike

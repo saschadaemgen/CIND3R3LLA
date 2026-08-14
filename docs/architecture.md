@@ -3909,3 +3909,81 @@ Her announcements are archived at the send site under `bot_category = 'bridge'`,
 publication by default (migration 057 replaces `bot_publish_settings`, the 013/027/033
 pattern); `cinderella_bridge_forwards.message_id` joins the archived row for the day the
 website's activity stream reads it.
+
+## 54. Channel posts on the website (CCB-S5-043, D-215)
+
+The announcements of §53 become publishable, on two surfaces, over one set of records.
+
+**The origin moved onto the archived record.** `messages.bridge_channel_key` /
+`bridge_channel_name` are written in the same INSERT as the announcement
+(`insertBotMessage`, fed from `tickOneMapping`). Before this the structured origin lived only
+on `cinderella_bridge_forwards`, which `deleteBridgeChannel` cascades, so the Capture page's
+Clear record would have stripped a **published** item of its provenance while it was still
+readable. Two CHECKs make the pair unrepresentable half-filled and refuse a channel origin on
+anything but one of her `bridge` rows, so nothing but an announcement can ever reach the
+channel surface. `buildOrigin` now TAKES the key rather than deriving it, so the forward log
+and the message are stamped from one value computed once per tick.
+
+**Publication is keyed on the channel, not on the channel record.**
+`cinderella_bridge_channel_publication` (migration 062) has `channel_key` as its primary key
+and NO foreign key to `cinderella_bridge_channels`. A rejoin replaces the channel record with
+a new local group id, so a decision hanging off that record would silently unpublish a live
+public block; keyed on the link-derived identity, the same link lands on the same decision.
+The consequence is stated rather than discovered: a publication row outlives its channel
+record, and the console lists such a row as **orphaned**. `upsertBridgeChannel` is the one
+choke point that creates a row (switched OFF), and it also maintains
+`cinderella_bridge_channels.channel_key` from `channelKeyFor`, which stays the single
+authority for the derivation; migration 062's backfill is the only SQL copy of it and
+`verify:channel-publication` asserts the two agree, in both key forms, and can go red.
+
+**Two identities, on purpose.** `channelKey` is `link:<sha256 of the join link>` and is
+operational. `public_id` is random, stable, and the only channel identifier that reaches a
+visitor or an embed URL: publishing the key would let anybody holding the (public) channel
+link confirm which channel an *anonymised* post came from.
+
+**One switch decides publication.** For a `bridge` row, `message_publish_state` consults the
+per-channel switch and nothing else: not `categories.bridge`, and deliberately not
+`publish_bot`, since "do not publish her replies" is a statement about her conversation while
+an announcement is the operator's own text. The bot mention guard was hoisted out of the CASE
+so the new branch inherits it. `categories.bridge` keeps a real job and its label changed to
+match: it is the `in_stream` column, deciding whether a **public** announcement also appears
+in the activity stream beside members' messages.
+
+**Two surfaces, one query.** `PublicScope` (`db/public-archive.ts`) is `'stream' | 'channels'`,
+applied first and unconditionally in `buildPublishedWhere` as a POSITIVE statement of what the
+surface contains. The stream gains a channel dropdown; the block is `GET /embed/:id/channels`,
+selectable by repeated `?c=<public id>`, rendered by `renderChannelBlockPage`. That renderer
+shares the theme, cards, filter bar and head with the stream and deliberately omits
+`#stream-list` and the live-reconcile client: the reconcile is the consent-critical machinery,
+and a second scope threaded through it would have to agree with the page about which surface
+it describes. The block therefore does not live-update, which the console states. The
+stream's SEO artifacts (`publishedLastmod`, `listPublishedItemRefs`,
+`latestPublishedImageId`) gained an `in_stream` gate so they keep describing the page they
+point at.
+
+**Anonymisation is applied in the view, and it moves four things together.** The name is not
+only a column: the application's own attribution line carries it inside the announcement TEXT.
+So `published_messages` withholds `bridge_channel_name`, replaces the name in `text_body` and
+`search_body` with the `bridgeAnonymousChannel` persona string (a literal `replace()`, never a
+regex compiled from data), nulls `formatted_text` (the runs hold the unredacted text, the hole
+migration 019 closed for mentions), and nulls `search` (the stored tsvector holds the name and
+cannot be re-derived per row without losing the GIN index). An anonymised announcement is
+therefore readable but not full-text findable, which the console says.
+
+**What is published is the TEXT, and the page says so.** A bridged picture is sent to the group
+as a picture (D-214), but `insertBotMessage` writes no media columns, so the archived row is
+text; the re-hosted bytes live under `BRIDGE_MEDIA_ROOT`, which `getPublishedMedia` cannot
+serve because it resolves under `MEDIA_ROOT` and requires a stripped derivative that nothing
+produces for that tree. Publishing the picture therefore means extending the metadata-stripping
+pipeline over bridge media, which is a safety guarantee rather than plumbing, and it is
+deliberately NOT part of this change. The Bridge console states the limitation where the
+switches are, rather than leaving the operator to find it on his own website.
+
+**The console** (`web/views/bridge.ts`) carries the two switches per channel, what each acts
+on, how many of a channel's archived announcements are public right now (counted through
+`published_messages`, never from the switch), the snippet for the block, and the count of
+announcements whose provenance the backfill could not recover. `scopePanel` moved from
+`views/interaction.ts` to `views/ui.ts` so this page renders the same scope surface rather
+than a second one, and gained a third answer, `other`, because publication is per CHANNEL: the
+first version badged it "shared: 2 bot(s)" under "Shared across every bot" above a footer
+promising it changed two bots, every word of which was false while the control worked (D-212).

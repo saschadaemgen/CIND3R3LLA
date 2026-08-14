@@ -222,6 +222,32 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### Migration 062 changes what publishes a channel announcement (CCB-S5-043, D-215)
+
+**No operator step is needed to APPLY it** - it uses only core built-ins, needs no extension and
+no superuser, and `deploy.sh` covers it. But it changes a publication rule, so read this before
+the deploy rather than after.
+
+Before 062, a bridged channel announcement published if **Interaction, Archiving** had
+*Channel announcements* switched on. After 062 that switch no longer decides publication at all:
+it decides whether an already-public announcement ALSO appears in the activity stream. What
+decides publication is a switch **per channel**, on the **Channel Bridge** page, and every
+channel starts OFF.
+
+So if that category was on, announcements that were public **become not public** the moment the
+migration lands, until each channel is switched on deliberately. That direction is the safe one -
+nothing becomes public that was not - and it is the point of the change: one channel public and
+another private is not something a single category can say.
+
+Two things to expect on the Bridge page afterwards, both stated on the page itself:
+
+- **A count of announcements that can never be published.** The migration recovers each
+  announcement's channel from the forward log, and that log is cascaded when a channel record or
+  a mapping is deleted. Where it was already gone, the provenance cannot be reconstructed from
+  anything. Those rows stay in the archive, unpublishable, and the page says how many.
+- **Text only.** A published announcement carries its words in full and not the channel's
+  picture, because the re-hosted copy lives outside the tree the public media route serves.
+
 ### And can now join an invited group (CCB-S4-025, D-129)
 
 Step three. Once the bot is a connected contact, invite it into a group from your own

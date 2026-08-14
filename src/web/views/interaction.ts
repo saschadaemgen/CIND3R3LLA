@@ -52,7 +52,7 @@ import {
 } from '../../interaction/ai-runtime.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
-import { badge, card, fmtDate, pageHeader } from './ui.js';
+import { badge, card, fmtDate, pageHeader, scopePanel, type ScopeLine } from './ui.js';
 import {
   SETTING_SCOPES,
   applySettingOverrides,
@@ -385,6 +385,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Channel bridge: the digest line naming posts it did not show',
     vars: '{channel} {n}',
   },
+  bridgeAnonymousChannel: {
+    label: 'Channel bridge: what stands in for the channel name when it is published unnamed',
+    vars: '',
+  },
   moderationAction: {
     label: 'Moderation step announced (only when armed and announcements are on)',
     vars: '{action} {duration}',
@@ -556,101 +560,39 @@ function wakeWordStateNote(state: WakeWordState | null): SafeHtml {
     </p>`;
 }
 
-function scopePanel(
+/**
+ * The scope panel for one interaction section.
+ *
+ * The RENDERING moved to `ui.ts` under CCB-S5-043 so the Bridge page shows the same surface
+ * rather than a second one beside it (D-213). What stays here is the part that is this page's
+ * own: which keys belong to this section, and where its per-bot links point.
+ */
+function interactionScopePanel(
   section: string,
   scopes: Map<string, SettingScopeView>,
   bots: { id: number; displayName: string }[],
   selectedBotId: number | null,
   slug: string,
 ): SafeHtml | null {
-  const here = SETTING_SCOPES.filter((p) => p.section === section);
-  if (here.length === 0) return null;
-
-  const names = new Map(bots.map((b) => [b.id, b.displayName]));
-  const selected = selectedBotId === null ? null : names.get(selectedBotId) ?? null;
-  const perBot = here.filter((p) => p.scope === 'per-bot');
-  const shared = here.filter((p) => p.scope === 'shared');
-
-  const line = (key: string): SafeHtml | null => {
-    const v = scopes.get(key);
-    if (!v) return null;
-    const deviating = v.deviatingBotIds
-      .map((id) => names.get(id) ?? `bot ${String(id)}`)
-      .join(', ');
-    return html`<li class="flex flex-wrap items-baseline gap-2 py-0.5">
-      <code class="text-xs text-slate-800">${key}</code>
-      ${v.scope === 'per-bot'
-        ? v.deviatingBotIds.length > 0
-          ? badge(`per bot: ${String(v.deviatingBotIds.length)} differ`, 'amber')
-          : badge('per bot: none set', 'slate')
-        : badge(`shared: ${String(v.sharedBotCount)} bot(s)`, 'slate')}
-      <span class="text-xs text-slate-500">${v.reason}</span>
-      ${v.deviatingBotIds.length > 0
-        ? html`<span class="text-xs text-amber-800">Set for ${deviating}.</span>`
-        : null}
-    </li>`;
-  };
-
-  return card(
-    'What this page changes',
-    html`
-      ${bots.length > 1
-        ? html`<div class="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
-            <p>
-              Editing
-              <strong>${selected ?? 'the shared settings'}</strong>.
-              ${selected === null
-                ? html`Saving here changes the shared value, which reaches every bot that has
-                    not been given its own.`
-                : html`Saving a per-bot setting here changes <strong>${selected}</strong> only;
-                    the others keep what they have.`}
-            </p>
-            <p class="mt-2 flex flex-wrap gap-2">
-              <a
-                class="rounded-lg px-2 py-1 text-xs ${selectedBotId === null
-                  ? 'bg-slate-900 font-medium text-white'
-                  : 'border border-slate-300 text-slate-700'}"
-                href="/interaction/${slug}"
-                >Shared</a
-              >
-              ${bots.map(
-                (b) =>
-                  html`<a
-                    class="rounded-lg px-2 py-1 text-xs ${b.id === selectedBotId
-                      ? 'bg-slate-900 font-medium text-white'
-                      : 'border border-slate-300 text-slate-700'}"
-                    href="/interaction/${slug}?bot=${String(b.id)}"
-                    >${b.displayName}</a
-                  >`,
-              )}
-            </p>
-          </div>`
-        : null}
-
-      ${perBot.length > 0
-        ? html`<div>
-            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Set per bot
-            </h4>
-            <ul class="mt-1">${perBot.map((p) => line(p.key))}</ul>
-          </div>`
-        : null}
-
-      ${shared.length > 0
-        ? html`<div class="${perBot.length > 0 ? 'mt-3' : ''}">
-            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
-              Shared across every bot
-            </h4>
-            <ul class="mt-1">${shared.map((p) => line(p.key))}</ul>
-            <p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              These cannot be set for one bot, and the reason is beside each one. Editing any of
-              them changes
-              <strong>${String(bots.length)}</strong> bot(s).
-            </p>
-          </div>`
-        : null}
-    `,
-  );
+  const lines: ScopeLine[] = [];
+  for (const p of SETTING_SCOPES) {
+    if (p.section !== section) continue;
+    const v = scopes.get(p.key);
+    if (!v) continue;
+    lines.push({
+      key: p.key,
+      scope: v.scope,
+      deviatingBotIds: v.deviatingBotIds,
+      sharedBotCount: v.sharedBotCount,
+      reason: v.reason,
+    });
+  }
+  return scopePanel({
+    lines,
+    bots,
+    selectedBotId,
+    switcherHref: (id) => (id === null ? `/interaction/${slug}` : `/interaction/${slug}?bot=${String(id)}`),
+  });
 }
 
 export function registerInteraction(app: FastifyInstance, ctx: ViewContext): void {
@@ -1353,7 +1295,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       const body = html`
         ${pageHeader(`Interaction — ${meta.title}`, meta.desc)} ${submenu} ${notice}
         <div class="flex flex-col gap-6">
-          ${scopePanel(slug, settingScopes, bots, selectedBotId, slug)}
+          ${interactionScopePanel(slug, settingScopes, bots, selectedBotId, slug)}
           ${cardsFor[slug]?.()}
         </div>
       `;

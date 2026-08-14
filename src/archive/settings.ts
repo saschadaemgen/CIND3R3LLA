@@ -217,8 +217,16 @@ export const CATEGORY_LABELS: Record<ReplyCategory, { label: string; help: strin
     help: 'Excluded by default: answers she built from web search results, plus the line she says when she could not look something up. The wording is the model own and the material came from outside the group.',
   },
   bridge: {
-    label: 'Channel announcements',
-    help: 'Excluded by default: channel posts the bridge forwarded into the group, verbatim, with their attribution. They are the operator content rather than any member words, so publishing them is a separate decision.',
+    label: 'Channel announcements in the stream',
+    // CCB-S5-043: this switch no longer decides whether announcements are PUBLIC. That is
+    // per channel, on the Channel Bridge page, because an operator wants one channel public
+    // and another private and a category cannot say that. What is left here is the question
+    // the two surfaces make separate: do public announcements belong beside members' words.
+    help:
+      'Off by default, and this is not the publish switch: whether a channel is public at all ' +
+      'is a switch per channel on the Channel Bridge page. This decides whether already-public ' +
+      'announcements ALSO appear in the activity stream beside what members said. The ' +
+      'standalone announcements block ignores it.',
   },
   conversation: {
     label: 'Free conversation',

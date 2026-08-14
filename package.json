@@ -124,6 +124,7 @@
     "verify:lookup-announcement-live": "tsx scripts/verify-lookup-announcement-live.ts",
     "verify:lookup-honesty": "tsx scripts/verify-lookup-honesty.ts",
     "verify:bridge": "tsx scripts/verify-bridge.ts",
+    "verify:channel-publication": "tsx scripts/verify-channel-publication.ts",
     "verify:layout": "tsx scripts/verify-layout-vocabulary.ts",
     "verify:channel-join": "tsx scripts/verify-channel-join.ts",
     "verify:capture-rooms": "tsx scripts/verify-capture-rooms.ts",

@@ -1637,7 +1637,48 @@ there than a member typing the same words.
 **No consent semantics, and no path to acquire them.** A `channelRcv` item carries no member,
 so a channel post cannot enter `messages` and cannot publish; it lives in the bridge's own
 tables. Her forwarded announcement CAN publish - it is her message - under the 'bridge'
-category, which ships excluded; publication is one deliberate switch on the Archive page.
+category, which ships excluded; publication is a deliberate switch PER CHANNEL on the Channel
+Bridge page since CCB-S5-043 (§16a below; it was one switch on the Archive page before, and a
+category cannot say "this channel public, that one private").
+
+## 16a. Publishing channel announcements (CCB-S5-043, D-215)
+
+**A member's message cannot reach the channel block, at two layers.** The scope predicate
+requires `bridge_channel_public_id IS NOT NULL`, which is a positive statement of what the
+surface contains rather than an exclusion of what it does not; and migration 062's
+`messages_bridge_origin_only_bridge_check` refuses a channel origin on any row that is not
+`is_bot AND bot_category = 'bridge'`, so the column the scope keys on cannot be set on a
+member's message even by direct SQL. `verify:channel-publication` drives both, with the
+positive control beside each: the member's message IS in the stream, and the announcement is
+NOT.
+
+**One switch, and it fails closed.** A `bridge` row publishes only when its channel's
+publication row says so. A row whose origin the backfill could not recover has no key, so it
+can never publish whatever any switch says; the count of those is derived and shown on the
+console rather than stored. Switching a channel off removes its announcements from both
+surfaces on the next read, and their media with them, because the public media route resolves
+through the same view. `verify:channel-publication` mutation-proves this by rebuilding the view
+with the switch predicate replaced by `TRUE` and showing an unpublished channel's post become
+publicly readable.
+
+**The published channel identifier is not derived from the channel link.** `channelKey` is
+`link:<sha256 of the join link>`. A bridged channel's link is public, so publishing the key
+would let anybody holding it confirm which channel an anonymised post came from, which is the
+audience most likely to check. `public_id` is 12 random bytes, base64url, minted per channel
+and constrained by a CHECK to the alphabet `mintChannelPublicId` produces; it is the only
+channel identifier in a URL, an embed snippet or a page.
+
+**Anonymisation is enforced in the view, and it covers four exits.** Withholding the column
+alone would be a switch that changes a label: the application's attribution line puts the
+channel name inside the announcement's own TEXT. `published_messages` therefore also replaces
+the name in `text_body` and in `search_body` (a literal `replace()`, never a regex compiled
+from a column - D-164), nulls `formatted_text` (the structured runs carry the unredacted text,
+which is the hole migration 019 closed for mention redaction), and nulls `search`, because the
+stored tsvector holds the name and cannot be re-derived per row without losing the GIN index.
+The stated limit: an anonymised announcement is not full-text findable, and the name it was
+sent under remains in the operator's own records, since this hides it from visitors rather
+than erasing it. What anonymisation does NOT change is the post's own words, asserted
+character for character.
 
 **Not end-to-end encrypted, said on the console rather than in a document nobody reads.**
 Channel content is relay-mediated; relay operators can read what they forward, a deliberate

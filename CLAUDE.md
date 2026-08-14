@@ -427,9 +427,13 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
   deployment** (CCB-S5-021, D-175). The per-bot settings are the `enabled` switches, one per
-  plugin (four since the channel bridge: crypto prices, web search, knowledge base, channel
-  bridge - this line said "exactly two" until CCB-S5-032 and had been stale since the
-  knowledge base made it three); everything else is deployment-wide: the credential, the
+  plugin (**six**: crypto prices, web search, knowledge base, channel bridge, welcome, capture
+  - and this number keeps going stale, because a new plugin adds one and nothing points at
+  this line. It said "exactly two" until CCB-S5-032, "three" until the knowledge base, "four"
+  until welcome and capture, and was corrected again under CCB-S5-043. The count that cannot
+  drift is `grep -c "key: ENABLED_KEY" src/plugins/scope.ts`, and `verify:plugin-scope` already
+  asserts every registered plugin is placed, so the check is the authority and this is a
+  convenience); everything else is deployment-wide: the credential, the
   upstream quota, the cache, the untrusted-text ceilings and the bridge's storage bound. The
   catalog a bot can be asked for is built per bot by
   `capabilitiesFor` and carried in `IntentContext`, where it is REQUIRED: it was module state
@@ -460,7 +464,20 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   The transport is `bot/bridge-port.ts` (recital-port pattern, plus in-place edit and
   BROADCAST delete, a separate runtime method from the Internal-mode consent erasure so no
   caller defaults into the wrong scope); the rhythm is `bridge.tick`, a self-chaining queue
-  job with a minute-bucket key so boot seeds collapse into a live chain. `settings/`,
+  job with a minute-bucket key so boot seeds collapse into a live chain.
+  **Her announcements PUBLISH since CCB-S5-043** (D-215): `publication.ts` is the per-channel
+  publish and publish-unnamed decision, keyed on `channelKey` with NO foreign key to the channel
+  records, because a rejoin replaces those and would otherwise unpublish a live block silently.
+  The origin now rides on the archived message itself (`messages.bridge_channel_key` /
+  `bridge_channel_name`, migration 062, written in the same INSERT), because the forward log it
+  used to live on is cascaded by the Capture page's Clear record, and a published item must not
+  be able to lose its provenance. A `bridge` row publishes on that switch ALONE - not on
+  `categories.bridge`, which becomes the separate question of whether a public announcement also
+  appears beside members' messages, and not on `publish_bot`, which is about her conversation
+  rather than the operator's own text. Two surfaces read those records: the activity stream with
+  a channel dropdown, and `GET /embed/:id/channels`, a standalone announcements block a site can
+  embed WITHOUT the stream (`renderChannelBlockPage`), which is two promises rather than one
+  filtered surface. `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
   SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
@@ -641,7 +658,16 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   membership drifts when membership does and a forgotten assignment is silent; one-per-room is
   enforced in `assignCapture`'s single transaction, since a room is not a column) · 059 the
   membership history (append-only: which bot, which room, when, how; distinct from 026, which
-  tracks ONE invitation and mutates - a link-join has no such row, which is why nothing recorded one).
+  tracks ONE invitation and mutates - a link-join has no such row, which is why nothing recorded one)
+  · 062 channel posts on the website (CCB-S5-043, D-215: the channel origin ON the archived
+  announcement, written in the same INSERT, because the forward log it used to live on is
+  cascaded by a console action and a published item must not be able to lose its provenance; the
+  publication record keyed on `channel_key` with NO foreign key to the channel records, so a
+  rejoin cannot silently unpublish a live block; a random `public_id` because the key is derived
+  from the channel's public link and publishing it would defeat anonymisation; and both publish
+  views rebuilt, where a `bridge` row now publishes on the per-channel switch ALONE and
+  `categories.bridge` becomes `in_stream`, the separate question of whether a public
+  announcement also stands beside members' messages).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -649,7 +675,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **058**, since 057 landed with the channel bridge). Stated as a rule
+  (currently **062**, since 062 landed with channel publication). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -878,6 +904,21 @@ deletions broadcast-withdrawing, and NO model on the path asserted structurally.
 briefing-named mutations are proven in-script AND by breaking the source: the readback bypassed
 re-bridges the bridge's own product, the record skipped turns the invariant red, and a third -
 the trigger composition inverted to whichever-comes-last - turns eight checks red),
+`verify:channel-publication` (channel posts on the website, CCB-S5-043, D-215: the migration's
+own SQL derivation of a channel key proven CHARACTER IDENTICAL to `channelKeyFor` in both its
+forms, because that expression runs once on the operator's data and nothing else would notice a
+disagreement; the BACKFILL driven the only honest way, by applying migrations to 061, seeding
+legacy rows and then applying 062 alone, so what is recoverable is recovered and what is not is
+left NULL, unpublishable and COUNTED; the origin stamped through the real service and a fake
+port; the channel record CLEARED and the published item keeping BOTH its provenance and its
+publication, which is the whole point of the briefing; a rejoin under a new group id landing on
+the same decision; and the mutation the briefing named, the view rebuilt with the switch
+predicate replaced by TRUE, which makes an unpublished channel's post publicly readable. Two
+surfaces with positive controls in BOTH directions, because "no member message is in the block"
+passes against a block that is empty. Anonymisation asserted over all four exits the name has -
+the column, the text, the search text and the structured runs - with the post's own words proven
+intact character for character. The console section PRESSES the real routes and reads the effect
+back out of the database, including the refusal for a channel that has no record),
 `verify:protected-text` (the lines the application writes and she may not, CCB-S5-027, D-180:
 that the protected set is DERIVED from the persona rather than listed, that a forgery is removed
 whether it stands on its own line or is tacked onto the end of a sentence, that a draft she was

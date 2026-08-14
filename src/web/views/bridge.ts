@@ -18,7 +18,8 @@
 import type { FastifyInstance } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page, type SafeHtml } from '../html.js';
-import { badge, card, factList, fmtDate, pageHeader } from './ui.js';
+import { badge, card, factList, fmtDate, pageHeader, scopePanel, type ScopeLine } from './ui.js';
+import { listEmbedInstances } from '../../db/embeds.js';
 import { captureRoomState } from '../../capture/room-service.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { resolveSelectedBot } from '../selected-bot.js';
@@ -36,6 +37,12 @@ import {
   updateBridgeMappingCadence,
   upsertBridgeChannel,
 } from '../../plugins/channel-bridge/store.js';
+import {
+  countBridgeMessagesWithoutOrigin,
+  listChannelPublications,
+  setChannelPublication,
+  type ChannelPublicationView,
+} from '../../plugins/channel-bridge/publication.js';
 import { refuseMapping, refusalText } from '../../plugins/channel-bridge/loop.js';
 import {
   DEFAULT_INTERVAL_MINUTES,
@@ -46,9 +53,14 @@ import {
 } from '../../plugins/channel-bridge/cadence.js';
 import { bridgeDiagnostics, noteBridgeError } from '../../plugins/channel-bridge/bridge-log.js';
 import { CHANNEL_BRIDGE_ID } from '../../plugins/channel-bridge/plugin.js';
-import { applyPluginOverrides } from '../../plugins/scope.js';
+import {
+  applyPluginOverrides,
+  describePluginScopes,
+  PLUGIN_SETTING_SCOPES,
+  type PluginScopeView,
+} from '../../plugins/scope.js';
 import { isPluginEnabled } from '../../plugins/registry.js';
-import { listPluginOverridesForBot } from '../../db/plugin-overrides.js';
+import { listAllPluginOverrides, listPluginOverridesForBot } from '../../db/plugin-overrides.js';
 import {
   connectBotToChannel,
   discoverBotChannels,
@@ -90,6 +102,360 @@ function numberField(name: string, value: string, min: number, max: number): Saf
     max="${String(max)}"
     class="${INPUT_CLS}"
   />`;
+}
+
+/**
+ * WHAT THIS PAGE CHANGES, on the shared surface (CCB-S5-043, D-213).
+ *
+ * `scopePanel` was lifted out of the Interaction page for this, rather than a second scope
+ * surface being invented beside it: the operator has learned to read one shape, and two
+ * would drift. The three kinds of control this page carries are named explicitly, because
+ * only two of them are plugin settings:
+ *
+ *   the capability      per bot, from the plugin inventory
+ *   the file ceiling    the deployment's, from the same inventory
+ *   the mappings        per bot, and NOT a setting at all - they are rows, so the inventory
+ *                       cannot carry them (the same note `scope.ts` makes about them)
+ *   publication         per CHANNEL, which is neither, and is the one an operator is most
+ *                       likely to assume is per bot because everything else here is
+ */
+function bridgeScopePanel(
+  scopes: Map<string, PluginScopeView>,
+  bots: readonly { id: number; displayName: string }[],
+  selectedBotId: number | null,
+  counts: { mappings: number; channelsPublished: number; channelsKnown: number },
+): SafeHtml | null {
+  const lines: ScopeLine[] = [];
+  for (const p of PLUGIN_SETTING_SCOPES) {
+    if (p.pluginId !== CHANNEL_BRIDGE_ID) continue;
+    const v = scopes.get(`${p.pluginId}:${p.key}`);
+    if (!v) continue;
+    lines.push({
+      key: p.label,
+      scope: v.scope,
+      deviatingBotIds: v.deviatingBotIds,
+      sharedBotCount: v.sharedBotCount,
+      reason: v.reason,
+    });
+  }
+  // The two things an operator sets here that are not plugin settings, stated in the same
+  // list so the page's answer to "what am I editing" is complete rather than only complete
+  // for the settings that happen to live in an inventory.
+  lines.push({
+    key: 'Mappings and their cadences',
+    scope: 'per-bot',
+    deviatingBotIds: [],
+    sharedBotCount: 0,
+    // NOT the derived "per bot: none set": these are rows, so none set means none EXIST,
+    // which is a different statement from an override nobody has filled in.
+    badge: `per bot: ${String(counts.mappings)} here`,
+    reason:
+      'Rows rather than settings, so there is no shared value to inherit: a bot with no mapping does not bridge.',
+  });
+  lines.push({
+    key: 'Publish / publish unnamed',
+    scope: 'other',
+    deviatingBotIds: [],
+    sharedBotCount: 0,
+    badge: `per channel: ${String(counts.channelsPublished)} of ${String(counts.channelsKnown)} published`,
+    reason:
+      'Per CHANNEL, not per bot and not deployment-wide. Two bots subscribed to one channel are subscribed to one channel, so switching the bot above changes nothing here.',
+  });
+  return scopePanel({
+    lines,
+    bots: [...bots],
+    selectedBotId,
+    // The sidebar switcher above already chooses the bot for this page; a second row of bot
+    // links inside the panel would be two controls for one choice.
+    switcherHref: null,
+  });
+}
+
+/** The iframe snippet for a standalone channel block, offered as the stream's snippet is. */
+function channelBlockSnippet(publicOrigin: string, instanceId: string, publicIds: string[]): string {
+  const query = publicIds.map((p) => `c=${encodeURIComponent(p)}`).join('&');
+  const src = `${publicOrigin}/embed/${instanceId}/channels${query ? `?${query}` : ''}`;
+  return [
+    `<iframe src="${src}" style="width:100%;border:0" title="Announcements" allow="fullscreen" allowfullscreen></iframe>`,
+    `<script>addEventListener("message",e=>{if(e.origin==="${publicOrigin}"&&e.data&&e.data.cinderellaEmbedHeight)for(const f of document.querySelectorAll("iframe"))if(f.contentWindow===e.source)f.style.height=e.data.cinderellaEmbedHeight+"px"})</script>`,
+  ].join('\n');
+}
+
+/**
+ * Publication, per channel (CCB-S5-043, D-215).
+ *
+ * ── WHAT THIS CARD HAS TO SAY, AND WHY EACH SENTENCE IS HERE ─────────────────
+ *
+ * "An operator will assume [switching it off removes what was published]. It must either be
+ * true or be denied on the page." It IS true: publication is derived on every read, so this
+ * card states it as a fact rather than a hope.
+ *
+ * It also answers the question the operator cannot answer by looking at his own website:
+ * which posts are published and which are not, per channel, counted through the same view a
+ * visitor reads. A count computed from the switch would say "3 published" for three
+ * announcements the quarantine had withheld.
+ *
+ * And it names the two things that are true but invisible from here: that the community
+ * stream has its own switch on another page, and that announcements older than the origin
+ * work can never be attributed and therefore never published.
+ */
+function publicationCard(opts: {
+  csrf: string;
+  publications: readonly ChannelPublicationView[];
+  /** Channels the SELECTED bot holds a record of, stale records included. */
+  knownToThisBot: ReadonlySet<string>;
+  /** Channels that bot can currently use as a mapping source (the live ones). */
+  selectableKeys: ReadonlySet<string>;
+  unattributed: number;
+  inStream: boolean;
+  publicOrigin: string;
+  instances: readonly { id: string; name: string }[];
+  botId: number | null;
+}): SafeHtml {
+  const { publications, knownToThisBot, selectableKeys } = opts;
+  const publishedChannels = publications.filter((p) => p.publish);
+  const instance = opts.instances[0];
+
+  /** "1 of 1 archived announcements are public" is not a sentence anybody writes. */
+  const publishedLine = (archived: number, published: number): string => {
+    const one = archived === 1;
+    if (published === 0) {
+      return one ? '1 archived announcement, not public' : `${String(archived)} archived, none public`;
+    }
+    if (published === archived) {
+      return one
+        ? 'its 1 archived announcement is public'
+        : `all ${String(archived)} archived announcements are public`;
+    }
+    return `${String(published)} of ${String(archived)} archived announcements are public`;
+  };
+
+  return card(
+    'Publish these announcements on the website',
+    html`<p class="mb-3 text-sm text-slate-500">
+        A switch per channel, because an operator wants one channel public and another
+        private. It is <strong>not</strong> per bot: two bots subscribed to one channel are
+        subscribed to one channel, and one decision covers it, which is also what makes the
+        decision survive a rejoin.
+      </p>
+      <div class="mb-4 rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+        <p>
+          <strong>Publishing a channel puts its archived announcements on the public
+          archive</strong>, under the standalone announcements block and, if you also switch
+          the stream on below, beside your members' messages. The posts are your own text, so
+          no member consent is involved and none is asked for.
+        </p>
+        <p class="mt-2">
+          <strong>Switching it off removes them.</strong> Publication is worked out on every
+          request rather than stored, so a channel switched off is gone from the standalone
+          block and the stream on the next page load. Nothing is left behind to sweep up.
+        </p>
+      </div>
+      ${/*
+        SAID HERE BECAUSE THE OPERATOR WOULD OTHERWISE FIND IT BY LOOKING AT HIS OWN SITE
+        (CCB-S5-043). A bridged picture is sent to the group AS a picture (D-214), but the
+        archived row is text: `insertBotMessage` writes no media columns, and the re-hosted
+        bytes live under BRIDGE_MEDIA_ROOT, which the public media route cannot serve because
+        it resolves under MEDIA_ROOT and requires a stripped derivative that nothing produces
+        for that tree. Publishing the picture therefore needs the metadata-stripping pipeline
+        extended over bridge media, which is a safety guarantee rather than a plumbing job, so
+        it was not done here. What is published is the announcement's TEXT, in full.
+      */ ''}
+      <div class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <strong>Text only, for now.</strong> A published announcement carries its words, in
+        full. It does not carry the channel's picture or file, even though the announcement in
+        the group does: the re-hosted copy sits outside the tree the public media route serves,
+        and serving it would mean extending the metadata stripping that protects every other
+        published image. That is a safety decision rather than a missing wire, so it is a
+        separate piece of work rather than something to switch on.
+      </div>
+      ${publications.length === 0
+        ? html`<p class="mb-3 text-sm text-slate-500">
+            No channels yet. One appears here as soon as a bot knows about it.
+          </p>`
+        : html`<div class="overflow-x-auto">
+            <table class="mb-3 w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                  <th class="py-2 pr-3">Channel</th>
+                  <th class="py-2 pr-3">Public now</th>
+                  <th class="py-2 pr-3">Named</th>
+                  <th class="py-2">Acts on</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${publications.map((p) => {
+                  const label = p.channelName || p.channelKey;
+                  return html`<tr class="border-b border-slate-100 align-top">
+                    <td class="py-2 pr-3">
+                      <div class="font-medium">${label}</div>
+                      <div class="text-xs text-slate-500">
+                        ${publishedLine(p.archived, p.published)}
+                      </div>
+                      ${p.orphaned
+                        ? html`<div class="mt-1 text-xs text-amber-800">
+                            No bot currently holds this channel, and its posts stay public while
+                            the switch is on. Kept on purpose: a rejoin gives the channel a new
+                            group id, and forgetting the decision every time would mean taking
+                            it again every time.
+                          </div>`
+                        : !knownToThisBot.has(p.channelKey)
+                          ? html`<div class="mt-1 text-xs text-slate-500">
+                              Known to another bot, not to the one selected above. The switch
+                              still acts on the channel.
+                            </div>`
+                          : selectableKeys.has(p.channelKey)
+                            ? null
+                            : html`<div class="mt-1 text-xs text-slate-500">
+                                This bot's record of it is stale, so it cannot be a mapping
+                                source until it is rejoined. Its archived announcements are
+                                unaffected, and this switch still governs them.
+                              </div>`}
+                    </td>
+                    <td class="py-2 pr-3">
+                      <form method="post" action="/bridge/publication/publish">
+                        <input type="hidden" name="_csrf" value="${opts.csrf}" />
+                        <input type="hidden" name="channelKey" value="${p.channelKey}" />
+                        <input type="hidden" name="botProfileId" value="${String(opts.botId ?? '')}" />
+                        <input type="hidden" name="publish" value="${p.publish ? 'off' : 'on'}" />
+                        <div class="mb-1">${badge(p.publish ? 'public' : 'not public', p.publish ? 'green' : 'slate')}</div>
+                        <button type="submit" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100">
+                          ${p.publish ? `Stop publishing ${label}` : `Publish ${label}`}
+                        </button>
+                      </form>
+                    </td>
+                    <td class="py-2 pr-3">
+                      <form method="post" action="/bridge/publication/anonymise">
+                        <input type="hidden" name="_csrf" value="${opts.csrf}" />
+                        <input type="hidden" name="channelKey" value="${p.channelKey}" />
+                        <input type="hidden" name="botProfileId" value="${String(opts.botId ?? '')}" />
+                        <input type="hidden" name="anonymise" value="${p.anonymise ? 'off' : 'on'}" />
+                        <div class="mb-1">${badge(p.anonymise ? 'not named' : 'named', p.anonymise ? 'amber' : 'slate')}</div>
+                        <button type="submit" class="rounded-lg border border-slate-300 px-3 py-1.5 text-xs hover:bg-slate-100">
+                          ${p.anonymise ? `Name ${label}` : `Publish ${label} unnamed`}
+                        </button>
+                      </form>
+                    </td>
+                    <td class="py-2 text-xs text-slate-500">
+                      <div>Every archived announcement from <strong>${label}</strong>, on both surfaces.</div>
+                      <div class="mt-1 font-mono">${p.channelKey}</div>
+                      ${p.publish
+                        ? html`<div class="mt-1">Block id: <span class="font-mono">${p.publicId}</span></div>`
+                        : null}
+                    </td>
+                  </tr>`;
+                })}
+              </tbody>
+            </table>
+          </div>`}
+      <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+        <p>
+          <strong>Publishing a channel unnamed</strong> hides the channel and nothing else. The
+          post keeps every word it was sent with; what goes is the channel's name, including
+          where it appears inside the announcement's own attribution line, and the channel is
+          not named in either surface's filter either. Two consequences worth knowing: such a
+          post is not findable by searching the archive, because what a search reads is the
+          words of the post and the name was among them; and the name it was sent under stays
+          in your own records here, since this hides it from visitors rather than erasing it.
+        </p>
+        <p class="mt-2">
+          Naming the channel is the honest state and the default. Turn this on only where you
+          are republishing somebody else's channel and the source is not yours to advertise.
+        </p>
+      </div>
+      ${opts.unattributed > 0
+        ? html`<div class="mb-3 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <strong>${String(opts.unattributed)} archived announcement${opts.unattributed === 1 ? '' : 's'} cannot be
+            attributed to a channel, and can never be published.</strong>
+            The channel each came from was only ever recorded on the forward log, and that
+            record was already removed with its channel or its mapping before this became a
+            column on the announcement itself. There is nothing left to recover it from: the
+            only remaining starting point would be the group id, which is exactly the value a
+            rejoin changes. They stay in the archive, unpublished, and no switch will reach
+            them.
+          </div>`
+        : null}
+      <div class="mb-3 rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm">
+        <p>
+          <strong>In the community activity stream:</strong>
+          ${inStreamBadge(opts.inStream)}
+        </p>
+        <p class="mt-1 text-xs text-slate-500">
+          Publishing decides whether an announcement is public at all. This decides whether a
+          public announcement also appears beside your members' messages in the stream, which
+          is a second audience with a different promise. The standalone block below ignores it
+          on purpose: that block <em>is</em> the announcements, and emptying it from a stream
+          setting would be a control acting on something it does not name. Set it under
+          <a class="underline" href="/interaction/archiving">Interaction, Archiving</a>.
+        </p>
+      </div>
+      ${instance === undefined
+        ? html`<p class="text-sm text-slate-500">
+            Create an embed instance on the <a class="underline" href="/embeds">Embeds</a> page
+            to get the snippet for a standalone announcements block.
+          </p>`
+        : html`<h3 class="mb-1 mt-4 text-sm font-semibold text-slate-700">
+              The standalone announcements block
+            </h3>
+            <p class="mb-2 text-sm text-slate-500">
+              Announcements and nothing else, for a site that wants your announcements and none
+              of the consent machinery. A member's message cannot appear in it. Paste this into
+              a page; the auto-height script keeps the iframe sized. It does not live-update
+              like the stream does, so a switch changed here reaches it on the next page load.
+            </p>
+            ${publishedChannels.length === 0
+              ? html`<p class="mb-2 text-xs text-amber-800">
+                  Nothing is published yet, so this block would render empty. Switch a channel
+                  on above first.
+                </p>`
+              : null}
+            <label class="block">
+              <span class="mb-1 block text-xs font-medium text-slate-700">
+                Every published channel (${String(publishedChannels.length)}), through
+                ${instance.name}
+              </span>
+              <textarea
+                readonly
+                rows="4"
+                class="w-full rounded-lg border border-slate-300 bg-slate-50 p-2 font-mono text-xs"
+              >
+${channelBlockSnippet(opts.publicOrigin, instance.id, [])}</textarea
+              >
+            </label>
+            ${publishedChannels.map(
+              (p) => html`<label class="mt-2 block">
+                <span class="mb-1 block text-xs font-medium text-slate-700">
+                  Only ${p.channelName || p.channelKey}
+                </span>
+                <textarea
+                  readonly
+                  rows="4"
+                  class="w-full rounded-lg border border-slate-300 bg-slate-50 p-2 font-mono text-xs"
+                >
+${channelBlockSnippet(opts.publicOrigin, instance.id, [p.publicId])}</textarea
+                >
+              </label>`,
+            )}
+            <p class="mt-2 text-xs text-slate-500">
+              For a block carrying several but not all channels, repeat
+              <code>c=&lt;block id&gt;</code> in the URL, once per channel. Each channel's block
+              id is in the table above.
+            </p>`}`,
+  );
+}
+
+/** The stream's own state, said in both directions rather than only when it is off. */
+function inStreamBadge(on: boolean): SafeHtml {
+  return on
+    ? html`${badge('shown', 'green')}
+        <span class="text-xs text-slate-600">
+          Published announcements appear in the stream beside members' messages.
+        </span>`
+    : html`${badge('not shown', 'slate')}
+        <span class="text-xs text-slate-600">
+          Published announcements do not appear in the stream. They are still public in the
+          standalone block, and each still has its own permalink.
+        </span>`;
 }
 
 export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
@@ -180,6 +546,31 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
     const settings = plugins.channelBridgeSettings();
     const diag = bridgeDiagnostics();
     const suppressions = await listBridgeSuppressions(db, 20);
+
+    // ── PUBLICATION (CCB-S5-043, D-215) ────────────────────────────────────
+    //
+    // Keyed on the CHANNEL rather than on this bot's record of it, so the list is not
+    // filtered by the selected bot: two bots subscribed to one channel are subscribed to ONE
+    // channel, and one decision covers it. The rows a bot here does know are marked, and the
+    // orphans are marked too, because a switch still holding content public after its
+    // channel record is gone is the thing an operator will look for and not find otherwise.
+    const publications = await listChannelPublications(db);
+    // FROM `allChannels`, NOT the selectable list. `channels` is filtered by the live room
+    // index (D-204), so building this from it labelled every one of THIS bot's own channels
+    // "known to another bot" the moment the index had not resolved them - a sentence that was
+    // simply untrue, on a page whose whole job is saying what a control acts on.
+    const knownToThisBot = new Set(allChannels.map((c) => c.channelKey));
+    const selectableKeys = new Set(channels.map((c) => c.channelKey));
+    const pluginScopes = describePluginScopes(
+      (await listAllPluginOverrides(db)).filter((o) => o.pluginId === CHANNEL_BRIDGE_ID),
+      botProfiles.length,
+    );
+    const unattributed = await countBridgeMessagesWithoutOrigin(db);
+    // Whether a published announcement ALSO shows in the community stream. A different
+    // question from publication, and one this page must answer because the control lives on
+    // another page (D-205: name what the operator cannot see from here).
+    const inStream = ctx.archive.get().categories.bridge;
+    const embedInstances = await listEmbedInstances(db);
 
     const pendingByChannel = new Map<number, Awaited<ReturnType<typeof pendingBridgePosts>>>();
     for (const ch of channels) {
@@ -514,6 +905,24 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
               })}`,
         )}
 
+        ${publicationCard({
+          csrf,
+          publications,
+          knownToThisBot,
+          selectableKeys,
+          unattributed,
+          inStream,
+          publicOrigin: ctx.adminCfg.publicOrigin.replace(/\/+$/, ''),
+          instances: embedInstances.map((i) => ({ id: i.id, name: i.name })),
+          botId: selectedBotId,
+        })}
+
+        ${bridgeScopePanel(pluginScopes, botProfiles, selectedBotId, {
+          mappings: mappings.length,
+          channelsPublished: publications.filter((p) => p.publish).length,
+          channelsKnown: publications.length,
+        })}
+
         ${card(
           'Forward log',
           html`<form method="get" action="/bridge" class="mb-3 flex flex-wrap items-end gap-2">
@@ -844,6 +1253,49 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       const done = await dismissBridgePost(db, id);
       await writeAudit(db, req.session?.username ?? 'unknown', 'bridge.post.dismiss', `post:${String(id)}`, { done });
       return reply.redirect('/bridge?saved=1');
+    },
+  );
+
+  /**
+   * The two publication switches (CCB-S5-043, D-215).
+   *
+   * Keyed on `channelKey`, which is a value the page rendered from the database rather than
+   * anything a visitor can reach, and the write REFUSES an unknown key rather than creating
+   * a row: a POST that invented a publication row would be a publication path with nobody's
+   * decision behind it. A refusal is reported, because a successful-looking action followed
+   * by nothing changing is the pair D-205 is about.
+   */
+  const applyPublication = async (
+    body: unknown,
+    actor: string,
+    field: 'publish' | 'anonymise',
+  ): Promise<string> => {
+    const channelKey = bodyString(body, 'channelKey');
+    const on = bodyString(body, field) === 'on';
+    if (channelKey === '') return `error=${encodeURIComponent('No channel was named.')}`;
+    const updated = await setChannelPublication(db, channelKey, { [field]: on }, actor);
+    if (updated === null) {
+      return `error=${encodeURIComponent(
+        'That channel has no publication record, so nothing was changed. Refresh the page.',
+      )}`;
+    }
+    await writeAudit(db, actor, `bridge.publication.${field}`, `channel:${channelKey}`, {
+      [field]: on,
+      channelName: updated.channelName,
+    });
+    return 'saved=1';
+  };
+
+  app.post<{ Body: Record<string, unknown> }>('/bridge/publication/publish', async (req, reply) => {
+    const actor = req.session?.username ?? 'unknown';
+    return reply.redirect(back(req, await applyPublication(req.body, actor, 'publish')));
+  });
+
+  app.post<{ Body: Record<string, unknown> }>(
+    '/bridge/publication/anonymise',
+    async (req, reply) => {
+      const actor = req.session?.username ?? 'unknown';
+      return reply.redirect(back(req, await applyPublication(req.body, actor, 'anonymise')));
     },
   );
 

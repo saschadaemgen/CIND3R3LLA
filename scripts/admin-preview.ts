@@ -42,7 +42,10 @@ import {
   resolveBridgePost,
   upsertBridgeChannel,
 } from '../src/plugins/channel-bridge/store.js';
-import { buildOrigin } from '../src/plugins/channel-bridge/origin.js';
+import { buildOrigin, channelKeyFor } from '../src/plugins/channel-bridge/origin.js';
+import { setChannelPublication } from '../src/plugins/channel-bridge/publication.js';
+import { insertBotMessage } from '../src/db/bot-messages.js';
+import { createEmbedInstance } from '../src/db/embeds.js';
 import { refreshCaptureRooms } from '../src/capture/room-service.js';
 import type { T } from '@simplex-chat/types';
 import {
@@ -454,6 +457,34 @@ async function main(): Promise<void> {
     text: 'The bakery reopens tomorrow after the oven repair.',
     postedAt: new Date(Date.now() - 3 * 3_600_000),
   });
+  // Her side of the forward, archived exactly as the tick archives it: under the 'bridge'
+  // category and CARRYING ITS CHANNEL (CCB-S5-043, D-215), so the preview can show the
+  // publication switches acting on something real.
+  const previewChannelKey = channelKeyFor(
+    'https://simplex.chat/c#preview-placeholder-link',
+    previewBotId,
+    901,
+  );
+  const bridgePostedAt = new Date(Date.now() - 3 * 3_600_000);
+  const bridgeAnnouncement = await insertBotMessage(db, {
+    groupId: 4,
+    groupMsgId: 90501,
+    sharedMsgId: 'preview-sent-1',
+    senderMemberId: 'preview-bot-member',
+    senderDisplayName: 'CIND3R3LLA',
+    sentAt: bridgePostedAt.toISOString(),
+    text:
+      'The bakery reopens tomorrow after the oven repair.\n' +
+      `📣 From the channel TownCrier, ${bridgePostedAt.toISOString().slice(0, 10)}`,
+    category: 'bridge',
+    lang: 'en',
+    searchBody:
+      'The bakery reopens tomorrow after the oven repair. From the channel TownCrier',
+    mentions: [],
+    bridgeChannelKey: previewChannelKey,
+    bridgeChannelName: 'TownCrier',
+    rawJson: {},
+  });
   await recordBridgeForward(db, {
     mappingId: previewMappingId,
     postId: bridgeForwarded.id,
@@ -461,15 +492,59 @@ async function main(): Promise<void> {
     sentItemId: 501,
     sentSharedMsgId: 'preview-sent-1',
     origin: buildOrigin({
-      link: 'https://simplex.chat/c#preview-placeholder-link',
-      botProfileId: previewBotId,
-      sourceGroupId: 901,
+      channelKey: previewChannelKey,
       channelName: 'TownCrier',
-      postedAt: new Date(Date.now() - 3 * 3_600_000),
+      postedAt: bridgePostedAt,
       sharedMsgId: 'preview-shared-2',
     }),
-    messageId: null,
+    messageId: bridgeAnnouncement,
   });
+  // A SECOND channel, so the per-channel switches and the block's selector have more than
+  // one thing to choose between - the case the operator will actually be looking at.
+  await upsertBridgeChannel(db, {
+    botProfileId: previewBotId,
+    sourceGroupId: 902,
+    channelName: 'HarbourNotices',
+    link: 'https://simplex.chat/c#preview-placeholder-link-two',
+  });
+  const harbourKey = channelKeyFor(
+    'https://simplex.chat/c#preview-placeholder-link-two',
+    previewBotId,
+    902,
+  );
+  const harbourAt = new Date(Date.now() - 26 * 3_600_000);
+  await insertBotMessage(db, {
+    groupId: 4,
+    groupMsgId: 90502,
+    sharedMsgId: 'preview-sent-2',
+    senderMemberId: 'preview-bot-member',
+    senderDisplayName: 'CIND3R3LLA',
+    sentAt: harbourAt.toISOString(),
+    text:
+      'The east pier is closed to vehicles until the resurfacing is finished.\n' +
+      `📣 From the channel HarbourNotices, ${harbourAt.toISOString().slice(0, 10)}`,
+    category: 'bridge',
+    lang: 'en',
+    searchBody:
+      'The east pier is closed to vehicles until the resurfacing is finished. From the channel HarbourNotices',
+    mentions: [],
+    bridgeChannelKey: harbourKey,
+    bridgeChannelName: 'HarbourNotices',
+    rawJson: {},
+  });
+  // One channel published, one not, which is the state worth looking at: the page has to
+  // make the difference legible and the block has to contain exactly one of them.
+  await setChannelPublication(db, previewChannelKey, { publish: true }, 'preview');
+  // An embed instance, so the Bridge page can offer a real snippet and the public block and
+  // stream are both reachable in the preview. Without one, the snippet section renders its
+  // "create an instance first" branch and the public surfaces 404, which is the state the
+  // operator is least likely to be in and the one hardest to judge.
+  const previewInstance = await createEmbedInstance(db, 'Preview archive');
+  // The PORT this process actually bound, not the default: 8788 is regularly held by an
+  // older preview, and printing a URL that reaches a DIFFERENT build is how "I looked" ends
+  // up false in a way that feels true (D-212).
+  console.log(`  public stream:  http://127.0.0.1:${String(PORT)}/embed/${previewInstance.id}`);
+  console.log(`  channel block:  http://127.0.0.1:${String(PORT)}/embed/${previewInstance.id}/channels`);
   const bridgeSuppressed = await insertBridgePost(db, {
     botProfileId: previewBotId,
     sourceGroupId: 901,

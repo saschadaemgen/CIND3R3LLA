@@ -137,6 +137,12 @@ const backstopFiles = [
   join(ROOT, 'src/interaction/personality.ts'),
 ];
 walk(join(ROOT, 'src/plugins'), backstopFiles);
+// CCB-S5-043. THE PUBLIC ARCHIVE FRONT, which is what a VISITOR reads - and the rule has
+// always said "a member or a visitor". This tree was never in scope, so a page-title
+// separator had been emitting an em-dash on every filtered view since CCB-S2-004 and every
+// run of this check was green. Walking the standing checks against the tree a change touches
+// is the D-105 rule, and this is the third time it has paid.
+walk(join(ROOT, 'src/web/front'), backstopFiles);
 
 for (const file of backstopFiles) {
   const rel = file.slice(ROOT.length + 1).replace(/\\/g, '/');

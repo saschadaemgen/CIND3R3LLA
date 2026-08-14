@@ -20,6 +20,22 @@ import type { Queryable } from './pool.js';
 export const ARCHIVE_TYPES = ['text', 'image', 'video', 'voice', 'link', 'file'] as const;
 export type ArchiveType = (typeof ARCHIVE_TYPES)[number];
 
+/**
+ * Which of the two surfaces a read is for (CCB-S5-043, D-215).
+ *
+ * Both read the same records through the same consent gate. What differs is what a visitor
+ * is SHOWN and what he is promised, which is why this is a parameter rather than two copies
+ * of the query:
+ *
+ *   'stream'    the community's activity: members' messages, her replies, and channel
+ *               announcements only where the operator has said they belong beside them
+ *               (`in_stream`, from `categories.bridge`).
+ *   'channels'  announcements and nothing else. A customer embedding this is buying "my
+ *               announcements on my website", and a member's message appearing in it would
+ *               be a consent surface he never asked for and does not know he has.
+ */
+export type PublicScope = 'stream' | 'channels';
+
 export interface PublicFilters {
   /** Visitor media-type filter; must be one of ARCHIVE_TYPES or undefined. */
   type?: ArchiveType;
@@ -29,6 +45,14 @@ export interface PublicFilters {
   until?: string;
   /** Full-text query (Postgres websearch syntax over the generated tsvector). */
   q?: string;
+  /**
+   * Channel public ids to restrict to (CCB-S5-043). Absent or empty means every channel.
+   *
+   * PUBLIC ids, never `channelKey`: the key is derived from the channel's join link, so
+   * publishing it would let anybody holding that link confirm which channel an anonymised
+   * post came from. These values reach URLs and embed snippets.
+   */
+  channels?: readonly string[];
   page: number;
   pageSize: number;
 }
@@ -86,6 +110,17 @@ export interface PublicItem {
     startSeconds: number;
     title: string | null;
   } | null;
+  /**
+   * The channel this announcement came from (CCB-S5-043, D-215), or null for everything
+   * else in the archive.
+   *
+   * `name` is null when the operator publishes this channel WITHOUT naming it. The card is
+   * not re-labelled from these: the announcement's own attribution line is part of its text
+   * and the view has already replaced the name inside it, so rendering a second attribution
+   * here would either duplicate it or contradict it. This is what the surfaces FILTER and
+   * GROUP by, and what the standalone block names its selection with.
+   */
+  channel: { publicId: string; name: string | null } | null;
 }
 
 export interface PublicPage {
@@ -110,6 +145,8 @@ interface ItemRow {
   video_id: string | null;
   video_start: number | null;
   video_title: string | null;
+  bridge_channel_public_id: string | null;
+  bridge_channel_name: string | null;
   links: unknown;
 }
 
@@ -159,6 +196,7 @@ const ITEM_COLUMNS = `m.id, m.sender_display_name, m.sent_at, m.sent_at::text AS
             m.type::text AS type, m.text_body, m.formatted_text,
             (m.media_path IS NOT NULL) AS has_media, m.media_mime, m.is_bot, m.reply_to_id,
             m.video_provider, m.video_id, m.video_start, m.video_title,
+            m.bridge_channel_public_id, m.bridge_channel_name,
             COALESCE(
               (SELECT json_agg(json_build_object('url', l.url, 'title', l.title) ORDER BY l.id)
                FROM links l WHERE l.message_id = m.id),
@@ -190,6 +228,10 @@ function mapItem(r: ItemRow): PublicItem {
           title: r.video_title,
         }
       : null,
+    channel:
+      r.bridge_channel_public_id === null
+        ? null
+        : { publicId: r.bridge_channel_public_id, name: r.bridge_channel_name },
   };
 }
 
@@ -233,7 +275,8 @@ function toLinks(v: unknown): PublicLink[] {
  */
 function buildPublishedWhere(
   enabledTypes: readonly ArchiveType[],
-  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q'>,
+  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q' | 'channels'>,
+  scope: PublicScope = 'stream',
 ): { whereSql: string; params: unknown[] } {
   const where: string[] = [];
   const params: unknown[] = [];
@@ -242,10 +285,28 @@ function buildPublishedWhere(
     where.push(clause.replace('?', `$${params.length}`));
   };
 
+  // ── THE SCOPE (CCB-S5-043) ────────────────────────────────────────────────
+  //
+  // Applied FIRST and unconditionally, before any visitor input, because it is the
+  // difference between the two promises rather than a filter a visitor chose. Both are
+  // POSITIVE statements of what the surface contains, not exclusions of what it does not:
+  // an announcement gains `in_stream` only when the operator said so, and the channel block
+  // requires an origin rather than merely excluding members.
+  if (scope === 'stream') {
+    where.push('m.in_stream');
+  } else {
+    where.push('m.bridge_channel_public_id IS NOT NULL');
+  }
+
   // Instance media visibility (always applied) — never show a disabled type.
   // enabledTypes is a subset of the fixed ARCHIVE_TYPES whitelist (never user
   // input), so the IN-list is safe to inline; keeps the query param-array-free.
   where.push(`m.type IN (${enabledTypes.map((t) => `'${t}'`).join(', ')})`);
+  // The visitor's (or the embed's) channel selection. A bind parameter, never inlined: a
+  // public id arrives from a query string and from an operator-pasted snippet.
+  if (f.channels !== undefined && f.channels.length > 0) {
+    add('m.bridge_channel_public_id = ANY(?::text[])', [...f.channels]);
+  }
   // Visitor type filter (must itself be an enabled type; the caller validates).
   if (f.type) add('m.type = ?::message_type', f.type);
   // Time window — interpret the naive datetime-local input as UTC explicitly.
@@ -266,11 +327,12 @@ export async function listPublishedItems(
   db: Queryable,
   enabledTypes: readonly ArchiveType[],
   f: PublicFilters,
+  scope: PublicScope = 'stream',
 ): Promise<PublicPage> {
   // No enabled types → nothing is shown (and no query needed).
   if (enabledTypes.length === 0) return { items: [], total: 0 };
 
-  const { whereSql, params } = buildPublishedWhere(enabledTypes, f);
+  const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const countRes = await db.query<{ n: string }>(
     `SELECT count(*) AS n FROM published_messages m ${whereSql}`,
     params,
@@ -333,14 +395,15 @@ export interface CursorPage {
 export async function listPublishedItemsByCursor(
   db: Queryable,
   enabledTypes: readonly ArchiveType[],
-  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q'>,
+  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q' | 'channels'>,
   cursor: Cursor | null,
   dir: CursorDir,
   step: number,
+  scope: PublicScope = 'stream',
 ): Promise<CursorPage> {
   if (enabledTypes.length === 0) return { items: [], hasMore: false, nextCursor: null };
 
-  const { whereSql, params } = buildPublishedWhere(enabledTypes, f);
+  const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   let cursorClause = '';
   if (cursor) {
     const tsP = `$${params.length + 1}`;
@@ -417,10 +480,11 @@ export async function listPublishedIds(
   db: Queryable,
   enabledTypes: readonly ArchiveType[],
   f: PublicFilters,
+  scope: PublicScope = 'stream',
 ): Promise<PublishedState> {
   if (enabledTypes.length === 0) return { ids: [], hash: streamHash([]), total: 0 };
 
-  const { whereSql, params } = buildPublishedWhere(enabledTypes, f);
+  const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const countRes = await db.query<{ n: string }>(
     `SELECT count(*) AS n FROM published_messages m ${whereSql}`,
     params,
@@ -466,14 +530,15 @@ export interface SpanState {
 export async function listPublishedSpanState(
   db: Queryable,
   enabledTypes: readonly ArchiveType[],
-  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q'>,
+  f: Pick<PublicFilters, 'type' | 'since' | 'until' | 'q' | 'channels'>,
   bottom: Cursor,
   top: Cursor | null,
   cap: number,
+  scope: PublicScope = 'stream',
 ): Promise<SpanState> {
   if (enabledTypes.length === 0) return { ids: [], hash: streamHash([]), hasNewer: false };
 
-  const { whereSql, params } = buildPublishedWhere(enabledTypes, f);
+  const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const bTs = `$${params.length + 1}`;
   const bId = `$${params.length + 2}`;
   params.push(bottom.sentAt, bottom.id);
@@ -503,7 +568,7 @@ export async function listPublishedSpanState(
 
   let hasNewer = false;
   if (top) {
-    const { whereSql: w2, params: p2 } = buildPublishedWhere(enabledTypes, f);
+    const { whereSql: w2, params: p2 } = buildPublishedWhere(enabledTypes, f, scope);
     const nTs = `$${p2.length + 1}`;
     const nId = `$${p2.length + 2}`;
     p2.push(top.sentAt, top.id);
@@ -600,7 +665,11 @@ export async function getPublishedMedia(
 }
 
 /** Newest published item's `sent_at` (ISO), for sitemap/feed `lastmod`. Null when
- * nothing is published for the enabled types — the consent gate again. */
+ * nothing is published for the enabled types — the consent gate again.
+ *
+ * `in_stream` (CCB-S5-043): these artifacts describe the STREAM, which is the page they
+ * point at. An announcement the operator kept out of the stream still has a working
+ * permalink, because it is published; it must not move the stream's `lastmod`. */
 export async function publishedLastmod(
   db: Queryable,
   enabledTypes: readonly ArchiveType[],
@@ -608,7 +677,8 @@ export async function publishedLastmod(
   if (enabledTypes.length === 0) return null;
   const list = enabledTypes.map((t) => `'${t}'`).join(', ');
   const { rows } = await db.query<{ ts: string | null }>(
-    `SELECT max(sent_at) AS ts FROM published_messages WHERE type IN (${list})`,
+    `SELECT max(sent_at) AS ts FROM published_messages
+      WHERE in_stream AND type IN (${list})`,
   );
   const ts = rows[0]?.ts;
   return ts ? new Date(ts).toISOString() : null;
@@ -696,12 +766,59 @@ export async function listPublishedItemRefs(
   const list = enabledTypes.map((t) => `'${t}'`).join(', ');
   const { rows } = await db.query<{ id: string; ts: string }>(
     `SELECT id, sent_at::text AS ts FROM published_messages
-      WHERE type IN (${list})
+      WHERE in_stream AND type IN (${list})
       ORDER BY sent_at DESC, id DESC
       LIMIT $1`,
     [Math.max(0, Math.floor(limit))],
   );
   return rows.map((r) => ({ id: Number(r.id), lastmod: new Date(r.ts).toISOString() }));
+}
+
+/** One channel a visitor can select, on either surface (CCB-S5-043, D-215). */
+export interface PublicChannel {
+  /** The only channel identifier that ever reaches a visitor. */
+  publicId: string;
+  /** Null when the operator publishes this channel without naming it. */
+  name: string | null;
+  /** Published announcements from this channel, within the scope asked for. */
+  count: number;
+}
+
+/**
+ * The channels that have actually posted into a surface, for its selector.
+ *
+ * DERIVED FROM THE PUBLISHED ROWS, never from the publication table: a channel switched on
+ * with nothing archived yet would otherwise appear in the dropdown and select an empty page,
+ * and a channel switched off would linger. The dropdown therefore lists exactly what
+ * choosing an entry can find, which is the same rule the bridge console's own forward filter
+ * follows.
+ *
+ * `scope` matters: the stream's dropdown must not offer a channel whose announcements the
+ * operator kept out of the stream, because picking it would empty the page with nothing
+ * saying why.
+ */
+export async function listPublishedChannels(
+  db: Queryable,
+  enabledTypes: readonly ArchiveType[],
+  scope: PublicScope = 'stream',
+): Promise<PublicChannel[]> {
+  if (enabledTypes.length === 0) return [];
+  const list = enabledTypes.map((t) => `'${t}'`).join(', ');
+  const { rows } = await db.query<{ pid: string; name: string | null; n: string | number }>(
+    `SELECT bridge_channel_public_id AS pid,
+            max(bridge_channel_name) AS name,
+            count(*) AS n
+       FROM published_messages
+      WHERE bridge_channel_public_id IS NOT NULL
+        AND type IN (${list})
+        ${scope === 'stream' ? 'AND in_stream' : ''}
+      GROUP BY bridge_channel_public_id
+      ORDER BY max(bridge_channel_name) NULLS LAST, bridge_channel_public_id`,
+  );
+  // `max(name)` rather than a name per row: the name is stamped per announcement, so a
+  // channel renamed mid-life has several, and one label has to win. NULL throughout means
+  // anonymised, and `max` of all-NULL is NULL, so the anonymous case survives intact.
+  return rows.map((r) => ({ publicId: r.pid, name: r.name, count: Number(r.n) }));
 }
 
 /** The most recent published image, for OG/Twitter/`ItemList` preview imagery. */
@@ -712,7 +829,7 @@ export async function latestPublishedImageId(
   if (!enabledTypes.includes('image')) return null;
   const { rows } = await db.query<{ id: string }>(
     `SELECT id FROM published_messages
-     WHERE type = 'image'::message_type AND media_path IS NOT NULL
+     WHERE in_stream AND type = 'image'::message_type AND media_path IS NOT NULL
      ORDER BY sent_at DESC, id DESC
      LIMIT 1`,
   );

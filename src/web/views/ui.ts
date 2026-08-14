@@ -56,6 +56,167 @@ export function stat(label: string, value: string | number, tone: Tone = 'slate'
   </div>`;
 }
 
+/**
+ * One row of a scope panel: a control, where it lives, and who deviates.
+ *
+ * Deliberately structural rather than tied to either inventory. `SETTING_SCOPES` (interaction
+ * settings) and `PLUGIN_SETTING_SCOPES` (capabilities and their bounds) are two tables with
+ * two owners, and a third kind will arrive; what an operator needs to read off a page is the
+ * same three facts every time, so the RENDERER is shared and the inventories stay separate.
+ */
+export interface ScopeLine {
+  /** What the control is called. A dotted setting path, or a name an operator would use. */
+  key: string;
+  /**
+   * Where the control lives.
+   *
+   * `other` exists because two of them are NEITHER (CCB-S5-043): a channel's publication
+   * switch is per CHANNEL, and the first version of this panel badged it `shared: 2 bot(s)`
+   * under the heading "Shared across every bot", above a footer promising that editing it
+   * changes two bots. Every word of that was false, the control worked perfectly, and the
+   * reason line right beside it said "per CHANNEL, not per bot". That is the D-212 failure
+   * exactly, so the panel gained a third answer rather than the wrong one being tolerated.
+   */
+  scope: 'per-bot' | 'shared' | 'other';
+  /** Bots that have been given their own value. Empty for a deployment-wide control. */
+  deviatingBotIds: number[];
+  /** How many bots read the shared value. Excludes the deviating ones. */
+  sharedBotCount: number;
+  /** One line: why it lives where it lives. */
+  reason: string;
+  /**
+   * Replaces the derived badge.
+   *
+   * Required for `other`, which has nothing to derive from, and useful for a per-bot control
+   * that is not a setting: "per bot: none set" is the right sentence about an unset override
+   * and the wrong one about mappings, where none set means none exist.
+   */
+  badge?: string;
+}
+
+/**
+ * WHAT THIS PAGE CHANGES (CCB-S5-041/043, D-213).
+ *
+ * Lifted out of the Interaction page under CCB-S5-043 so the Bridge page renders the SAME
+ * surface rather than a second one beside it. The operator's standing requirement is that it
+ * must always be visible which settings are one bot's and which are the deployment's, and he
+ * has learned to read this shape: a badge per control, the deviating bots named, and a count
+ * on the warning. A page that invented its own version would make him learn it twice, and
+ * the two would drift.
+ *
+ * `switcherHref` builds the per-bot links. Null suppresses them, which is what a page whose
+ * bot is chosen by the sidebar switcher wants: two switchers for one choice is the "which of
+ * these am I editing" question the panel exists to answer.
+ */
+export function scopePanel(opts: {
+  lines: readonly ScopeLine[];
+  bots: readonly { id: number; displayName: string }[];
+  selectedBotId: number | null;
+  /** Builds the href for a bot's own view, or for the shared view when given null. */
+  switcherHref: ((botId: number | null) => string) | null;
+  /** Overrides the card title, for a page where "this page" is too broad. */
+  title?: string;
+}): SafeHtml | null {
+  const { lines, bots, selectedBotId, switcherHref } = opts;
+  if (lines.length === 0) return null;
+
+  const names = new Map(bots.map((b) => [b.id, b.displayName]));
+  const selected = selectedBotId === null ? null : (names.get(selectedBotId) ?? null);
+  const perBot = lines.filter((p) => p.scope === 'per-bot');
+  const shared = lines.filter((p) => p.scope === 'shared');
+  const other = lines.filter((p) => p.scope === 'other');
+
+  const line = (v: ScopeLine): SafeHtml => {
+    const deviating = v.deviatingBotIds.map((id) => names.get(id) ?? `bot ${String(id)}`).join(', ');
+    const derived =
+      v.scope === 'per-bot'
+        ? v.deviatingBotIds.length > 0
+          ? badge(`per bot: ${String(v.deviatingBotIds.length)} differ`, 'amber')
+          : badge('per bot: none set', 'slate')
+        : badge(`shared: ${String(v.sharedBotCount)} bot(s)`, 'slate');
+    return html`<li class="flex flex-wrap items-baseline gap-2 py-0.5">
+      <code class="text-xs text-slate-800">${v.key}</code>
+      ${v.badge === undefined ? derived : badge(v.badge, 'blue')}
+      <span class="text-xs text-slate-500">${v.reason}</span>
+      ${v.deviatingBotIds.length > 0
+        ? html`<span class="text-xs text-amber-800">Set for ${deviating}.</span>`
+        : null}
+    </li>`;
+  };
+
+  return card(
+    opts.title ?? 'What this page changes',
+    html`
+      ${bots.length > 1
+        ? html`<div class="mb-3 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm">
+            <p>
+              Editing <strong>${selected ?? 'the shared settings'}</strong>.
+              ${selected === null
+                ? html`Saving here changes the shared value, which reaches every bot that has
+                    not been given its own.`
+                : html`Saving a per-bot setting here changes <strong>${selected}</strong> only;
+                    the others keep what they have.`}
+            </p>
+            ${switcherHref === null
+              ? null
+              : html`<p class="mt-2 flex flex-wrap gap-2">
+                  <a
+                    class="rounded-lg px-2 py-1 text-xs ${selectedBotId === null
+                      ? 'bg-slate-900 font-medium text-white'
+                      : 'border border-slate-300 text-slate-700'}"
+                    href="${switcherHref(null)}"
+                    >Shared</a
+                  >
+                  ${bots.map(
+                    (b) =>
+                      html`<a
+                        class="rounded-lg px-2 py-1 text-xs ${b.id === selectedBotId
+                          ? 'bg-slate-900 font-medium text-white'
+                          : 'border border-slate-300 text-slate-700'}"
+                        href="${switcherHref(b.id)}"
+                        >${b.displayName}</a
+                      >`,
+                  )}
+                </p>`}
+          </div>`
+        : null}
+
+      ${perBot.length > 0
+        ? html`<div>
+            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">Set per bot</h4>
+            <ul class="mt-1">${perBot.map((p) => line(p))}</ul>
+          </div>`
+        : null}
+
+      ${shared.length > 0
+        ? html`<div class="${perBot.length > 0 ? 'mt-3' : ''}">
+            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Shared across every bot
+            </h4>
+            <ul class="mt-1">${shared.map((p) => line(p))}</ul>
+            <p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              These cannot be set for one bot, and the reason is beside each one. Editing any of
+              them changes <strong>${String(bots.length)}</strong> bot(s).
+            </p>
+          </div>`
+        : null}
+
+      ${other.length > 0
+        ? html`<div class="${perBot.length > 0 || shared.length > 0 ? 'mt-3' : ''}">
+            <h4 class="text-xs font-bold uppercase tracking-wide text-slate-500">
+              Neither: not a per-bot setting and not a deployment one
+            </h4>
+            <ul class="mt-1">${other.map((p) => line(p))}</ul>
+            <p class="mt-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Switching the bot above changes nothing about these. What each one acts on is
+              beside it.
+            </p>
+          </div>`
+        : null}
+    `,
+  );
+}
+
 export function truncate(value: string, length: number): string {
   return value.length > length ? `${value.slice(0, length)}...` : value;
 }

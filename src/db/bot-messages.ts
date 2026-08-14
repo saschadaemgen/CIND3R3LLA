@@ -50,6 +50,22 @@ export interface BotMessageRow {
   mentions: readonly BotMention[];
   /** The member message this answers, when there is one (CCB-S3-009). */
   replyToId?: number | null;
+  /**
+   * The channel this announcement came from, for a `bridge` row (CCB-S5-043, D-215).
+   *
+   * WRITTEN HERE AND NOWHERE ELSE, which is the whole point: the origin used to live only
+   * on `cinderella_bridge_forwards`, and that table is operational state a console action
+   * cascades away, so clearing a channel record stripped a PUBLISHED item of its
+   * provenance while it was still readable. On the record it is a claim about, nothing can
+   * take it away.
+   *
+   * The `key` is what publication and filtering derive from, and it is stable across a
+   * rename and a rejoin because it comes from the channel's link (`channelKeyFor`). The
+   * `name` is what renders. Migration 062 makes a half-filled pair unrepresentable, and
+   * refuses either on a row that is not a bridge row of hers.
+   */
+  bridgeChannelKey?: string | null;
+  bridgeChannelName?: string | null;
   rawJson: unknown;
 }
 
@@ -69,8 +85,10 @@ export async function insertBotMessage(db: Queryable, row: BotMessageRow): Promi
     `INSERT INTO messages
        (group_id, group_msg_id, shared_msg_id, sender_member_id, sender_display_name,
         sent_at, type, text_body, links_text, raw_json,
-        is_bot, bot_category, bot_lang, search_body, mentions_scanned, reply_to_id)
-     VALUES ($1, $2, $3, $4, $5, $6, 'text', $7, NULL, $8::jsonb, TRUE, $9, $10, $11, TRUE, $12)
+        is_bot, bot_category, bot_lang, search_body, mentions_scanned, reply_to_id,
+        bridge_channel_key, bridge_channel_name)
+     VALUES ($1, $2, $3, $4, $5, $6, 'text', $7, NULL, $8::jsonb, TRUE, $9, $10, $11, TRUE, $12,
+             $13, $14)
      ON CONFLICT (group_id, group_msg_id) DO NOTHING
      RETURNING id`,
     [
@@ -86,6 +104,8 @@ export async function insertBotMessage(db: Queryable, row: BotMessageRow): Promi
       row.lang,
       row.searchBody,
       row.replyToId ?? null,
+      row.bridgeChannelKey ?? null,
+      row.bridgeChannelName ?? null,
     ],
   );
   // DO NOTHING rather than DO UPDATE, deliberately: an UPDATE here could set
