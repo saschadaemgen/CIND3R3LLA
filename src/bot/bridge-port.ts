@@ -20,7 +20,7 @@
 import type { T } from '@simplex-chat/types';
 import { readFile } from 'node:fs/promises';
 import { log } from '../log.js';
-import { buildAvatarDataUri } from './avatar.js';
+import { buildCoverPreview } from './avatar.js';
 import { describeChatError } from './runtime/chat-error.js';
 
 export interface BridgeSentMessage {
@@ -49,7 +49,9 @@ async function bridgeImagePreview(filePath: string): Promise<string | null> {
     // The ladder descends sizes and qualities until the data URI fits MAX_DATA_URI_CHARS and
     // is the only thing here that knows that budget. Reusing it is also why this needs no
     // number of its own to drift.
-    return await buildAvatarDataUri(await readFile(filePath));
+    // `buildCoverPreview`, not the avatar builder: a bridged photo is not round, and
+    // cropping it square eats the top and bottom (D-214).
+    return await buildCoverPreview(await readFile(filePath));
   } catch (err) {
     log.warn(
       `bridge: could not build a preview for ${filePath} (${

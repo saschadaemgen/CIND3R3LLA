@@ -273,12 +273,22 @@ export function renderAnnouncement(
   },
 ): string {
   const blocks: string[] = [];
-  blocks.push(`${plan.full.text}\n${parts.attributionFor(plan.full)}`);
+  // ── TRAILING BLANK LINES ARE NOT CONTENT (CCB-S5-042, D-214) ──────────────
+  //
+  // `trimEnd`, not `trim`, and nothing else. A channel post that ends with a newline - which
+  // is most of them, since people press enter - carried those newlines into the caption, and
+  // the client rendered them as vertical space. The operator saw an unusually large gap
+  // between the caption and the image, and it was ours rather than the client's.
+  //
+  // This does NOT weaken the verbatim guarantee. Nothing is summarised, reworded or
+  // truncated; leading text and every internal line break are untouched. What goes is
+  // whitespace after the last visible character, which no reader can see and no writer meant.
+  blocks.push(`${plan.full.text.trimEnd()}\n${parts.attributionFor(plan.full)}`);
   for (const post of plan.summarized) {
     const excerpt =
       post.text.length > DIGEST_EXCERPT_CHARS
         ? `${post.text.slice(0, DIGEST_EXCERPT_CHARS - 1)}…`
-        : post.text;
+        : post.text.trimEnd();
     blocks.push(`• ${excerpt}\n  ${parts.attributionFor(post)}`);
   }
   if (plan.remainder > 0) blocks.push(parts.remainderLine(plan.remainder));

@@ -82,6 +82,44 @@ const MAX_DATA_URI_CHARS = 12000;
 const SIZES = [192, 160, 128];
 const QUALITIES = [72, 64, 56, 48, 40];
 
+/**
+ * A preview that KEEPS the image's shape, for anything that is not an avatar
+ * (CCB-S5-042, D-214).
+ *
+ * ── ITS OWN FUNCTION, NOT A FLAG ON THE AVATAR ONE ──────────────────────────
+ *
+ * {@link buildAvatarDataUri} crops to a SQUARE (`fit: 'cover'`) and is right to: an avatar is
+ * rendered round, so the corners are thrown away anyway and centring the crop is what makes a
+ * face look deliberate. A cover is not round. Cropping a 720x1319 sleeve to a square ate the
+ * top and the bottom, and the operator saw it immediately.
+ *
+ * The two could share one function with a mode. They should not. They answer different
+ * questions - "how do I fill a circle" and "how do I show this whole picture small" - and a
+ * shared function with a flag is how the next caller gets the wrong default without noticing,
+ * which is the shape of half the defects this season.
+ *
+ * The SIZE budget is shared, because that part is genuinely one question: the data URI rides
+ * inside the message, so it must fit the same envelope. Hence the same descent, and hence a
+ * bridged image that blew it produced `largeMsg` and lost its picture entirely.
+ */
+export async function buildCoverPreview(source: Buffer): Promise<string | null> {
+  for (const px of SIZES) {
+    for (const quality of QUALITIES) {
+      const buf = await sharp(source)
+        .rotate()
+        .resize(px, px, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality })
+        .toBuffer();
+      const uri = `data:image/jpg;base64,${buf.toString('base64')}`;
+      if (uri.length <= MAX_DATA_URI_CHARS) return uri;
+    }
+  }
+  // No fallback to the smallest attempt, unlike the avatar: an oversized preview is what
+  // makes the whole SEND fail, so none is strictly better than one that will not fit.
+  log.warn('Cover preview would not fit the message budget; sending without one.');
+  return null;
+}
+
 /** Downscales an image to a small square JPEG data URI under the size budget. */
 export async function buildAvatarDataUri(source: Buffer): Promise<string> {
   let best = '';
