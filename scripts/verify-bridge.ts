@@ -224,6 +224,44 @@ const MAPPING: BridgeMappingState = {
   createdAt: new Date(NOW.getTime() - 7 * 24 * 3_600_000),
 };
 
+/**
+ * A BRIDGED IMAGE RENDERS AS AN IMAGE (CCB-S5-042, D-214).
+ *
+ * The bridge sent `type: 'file'` for everything, so every picture arrived as an attachment to
+ * fetch. This suite was green for that entire time, because it asserts what the bridge DECIDES
+ * and never what content type it SENDS. Asserted over the source, since the choice is one
+ * expression and the rendering follows from it.
+ */
+async function sectionContentType(): Promise<void> {
+  console.log('');
+  console.log('Content type: a bridged image is sent AS an image (D-214)');
+  const { readFile } = await import('node:fs/promises');
+  const src = await readFile('src/bot/bridge-port.ts', 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  check(
+    'an image is sent as MsgContent.Image with a preview',
+    code.includes("{ type: 'image', text: caption, image: preview ?? '' }"),
+  );
+  check(
+    '  chosen from the MIME the intake stored, not guessed from the path',
+    /const isImage = \(mime \?\? ''\)\.startsWith\('image\/'\)/.test(code),
+  );
+  check(
+    '  MUTATION: `file` is no longer the unconditional content type',
+    !/msgContent: \{ type: 'file', text: caption \}, mentions/.test(code),
+  );
+  // POSITIVE CONTROL: every line above passes against a bridge that sends nothing but images.
+  check(
+    'POSITIVE CONTROL: a non-image is still sent as a file',
+    code.includes("{ type: 'file', text: caption }"),
+  );
+  const svc = await readFile('src/plugins/channel-bridge/service.ts', 'utf8');
+  check(
+    'and the caller passes the stored MIME through',
+    /sendFile\([\s\S]{0,120}featured\.mediaMime/.test(svc),
+  );
+}
+
 async function main(): Promise<void> {
   setLogLevel('error');
   const pg = new PGlite({ extensions: { vector } });
@@ -817,6 +855,7 @@ async function main(): Promise<void> {
     check('the mapping survived the whole exercise, enabled', finalMappings[0]?.enabled === true);
   }
 
+  await sectionContentType();
   console.log(
     failures === 0
       ? '\nAll bridge checks passed: two worlds, a cadence that accounts for every post, a loop that cannot be configured or replayed, and a suppression that cannot be silent.'

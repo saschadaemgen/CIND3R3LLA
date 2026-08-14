@@ -80,6 +80,21 @@ export interface BotSwitcher {
   fromUrl: boolean;
   /** Where to send the operator back to after switching. */
   returnTo: string;
+  /**
+   * WHAT THIS PAGE'S SETTINGS ARE SCOPED TO (CCB-S5-041, D-213).
+   *
+   * The switcher states the scope, so nobody reads a paragraph to learn what they are editing.
+   * The operator set one bot's greeting believing it was shared, because the page named no bot
+   * and the control said nothing either.
+   *
+   *   per-bot  the bots are selectable, as before
+   *   shared   "All bots" is preselected and the bots are NOT selectable, because choosing one
+   *            would promise something the page cannot do
+   *   mixed    both offered; the page says which blocks belong to which, as `knowledge` does
+   *
+   * Absent means `per-bot`, which is what every existing caller is.
+   */
+  scope?: 'per-bot' | 'shared' | 'mixed';
 }
 
 export interface NavItem {
@@ -535,13 +550,33 @@ function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): S
       <form method="post" action="/console/select-bot" class="admin-botpicker-list">
         <input type="hidden" name="_csrf" value="${csrfToken}" />
         <input type="hidden" name="returnTo" value="${sw.returnTo}" />
+        ${/*
+          THE SHARED ENTRY, ABOVE THE BOTS (D-213). A bot's name selected means you are editing
+          that bot; this means you are editing everything. On a shared page it is preselected
+          and the bots below are disabled - NOT hidden, and the dropdown is NOT blocked from
+          opening, because a control that will not open does not say why, which is the silent
+          control this whole thread is about.
+        */ ''}
+        ${sw.scope === 'shared' || sw.scope === 'mixed'
+          ? html`<button
+              type="submit"
+              name="botProfileId"
+              value="shared"
+              class="admin-botpicker-option admin-botpicker-shared"
+              ${sw.scope === 'shared' ? raw('aria-current="true"') : ''}
+            >
+              <span>All bots</span>
+              <span class="admin-botpicker-hint">shared settings</span>
+            </button>`
+          : ''}
         ${sw.bots.map(
           (b) => html`<button
             type="submit"
             name="botProfileId"
             value="${String(b.id)}"
             class="admin-botpicker-option"
-            ${b.id === sw.selectedId ? raw('aria-current="true"') : ''}
+            ${sw.scope === 'shared' ? raw('disabled aria-disabled="true"') : ''}
+            ${b.id === sw.selectedId && sw.scope !== 'shared' ? raw('aria-current="true"') : ''}
           >
             ${b.displayName}
           </button>`,

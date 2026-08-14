@@ -18,6 +18,7 @@
  */
 
 import type { T } from '@simplex-chat/types';
+import sharp from 'sharp';
 import { log } from '../log.js';
 import { describeChatError } from './runtime/chat-error.js';
 
@@ -28,13 +29,45 @@ export interface BridgeSentMessage {
   raw: unknown;
 }
 
+/**
+ * The still the client draws before the file is fetched (CCB-S5-042, D-214).
+ *
+ * Small on purpose: it rides in the message itself rather than over XFTP, so it shares the
+ * profile envelope's budget. The avatar's ladder already solves exactly this, and a preview
+ * that fails to build is NOT a reason to lose the picture - the image still sends, the reader
+ * just sees nothing until they tap, which is what happens today for every bridged image.
+ */
+async function bridgeImagePreview(filePath: string): Promise<string | null> {
+  try {
+    const buf = await sharp(filePath, { animated: false })
+      .resize(320, 320, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+    return `data:image/jpg;base64,${buf.toString('base64')}`;
+  } catch (err) {
+    log.warn(
+      `bridge: could not build a preview for ${filePath} (${
+        err instanceof Error ? err.message : String(err)
+      }); sending the image without one.`,
+    );
+    return null;
+  }
+}
+
 export interface BridgeSendPort {
   sendText(groupId: number, text: string): Promise<BridgeSentMessage>;
-  /** A file with its caption, arriving as ONE message (see send.ts). */
+  /**
+   * A file with its caption, arriving as ONE message (see send.ts).
+   *
+   * `mime` decides the CONTENT TYPE and therefore the rendering: an image goes as
+   * `MsgContent.Image` with a preview and renders as a picture, anything else as
+   * `MsgContent.File` and renders as an attachment (D-214).
+   */
   sendFile(
     groupId: number,
     filePath: string,
     caption: string,
+    mime?: string | null,
   ): Promise<BridgeSentMessage>;
   /** Edit one of her sent messages in place. */
   updateText(groupId: number, itemId: number, text: string): Promise<void>;
@@ -76,17 +109,37 @@ export function sdkBridgePort(runtime: BridgeRuntimePort): BridgeSendPort {
     async sendText(groupId, text) {
       return firstSent(await runtime.sendGroupTextAsOwner(groupId, text));
     },
-    async sendFile(groupId, filePath, caption) {
-      // `type: 'file'` with the bytes riding `fileSource` over XFTP; the caption
-      // and the file arrive together as one message (confirmed for images in
-      // send.ts against the shipped core; the file variant shares the shape).
+    async sendFile(groupId, filePath, caption, mime) {
+      // ── THE CONTENT TYPE DECIDES THE RENDERING (CCB-S5-042, D-214) ────────
+      //
+      // This sent `type: 'file'` for EVERYTHING, so a bridged post's picture arrived as an
+      // attachment the reader had to fetch rather than as a picture in the message. The
+      // operator has had it that way since the bridge shipped.
+      //
+      // The comment here used to say the file variant "shares the shape" as the image one. It
+      // shares the SHAPE and not the RENDERING, which is the whole point: `send.ts:127` and
+      // `recital-port.ts:81` both send `type: 'image'` with a preview and both render as
+      // pictures, and the difference was never the transport. Proven separately by sending an
+      // image from the bot's own path with `MsgContent.Image` and watching it arrive as an
+      // image (CCB-S5-042 stage 0).
+      //
+      // The preview is the still the client draws BEFORE the file is fetched - and the client
+      // fetches on first press for every received file, so without one there is nothing to
+      // look at until somebody taps. Built with the same ladder the avatar uses.
+      //
+      // Anything that is not an image keeps `type: 'file'`, which is correct for it.
+      const isImage = (mime ?? '').startsWith('image/');
+      const preview = isImage ? await bridgeImagePreview(filePath) : null;
+      const msgContent: T.MsgContent = isImage
+        ? { type: 'image', text: caption, image: preview ?? '' }
+        : { type: 'file', text: caption };
       // On failure the caption goes alone, loudly: an announcement without its
       // picture is a smaller loss than no announcement, same call the recital's
       // image path makes.
       try {
         return firstSent(
           await runtime.sendGroupComposedAsOwner(groupId, [
-            { fileSource: { filePath }, msgContent: { type: 'file', text: caption }, mentions: {} },
+            { fileSource: { filePath }, msgContent, mentions: {} },
           ]),
         );
       } catch (error) {

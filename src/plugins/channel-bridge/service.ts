@@ -316,7 +316,9 @@ async function tickOneMapping(
   const featured = await getBridgePost(deps.db, plan.announce.full.id);
   const sent =
     featured !== null && featured.mediaState === 'stored' && featured.mediaPath !== null
-      ? await port.sendFile(mapping.destGroupId, featured.mediaPath, text)
+      ? // The MIME the intake already stored decides image-versus-file, and therefore whether
+        // a bridged picture renders as a picture (D-214). It was recorded and never used.
+        await port.sendFile(mapping.destGroupId, featured.mediaPath, text, featured.mediaMime)
       : await port.sendText(mapping.destGroupId, text);
 
   const messageId = await archiveOwnSend(deps, sent, text, lines.lang);
