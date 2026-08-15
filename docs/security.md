@@ -1715,6 +1715,11 @@ stored, temp bytes removed in `finally`. The unknown-track reply
 deliberately echoes no member text (the searchResult lesson: an echoed phrase becomes
 publishable the day its category is switched on).
 
+**The audio preview stays inside the admin** (D-225): `GET /music/tracks/:id/audio` is an
+authenticated console route, addressed by track id and never by path (the admin-media rule),
+served `no-store` with Range support, and it writes no play row - the console listening is
+not a member receiving a track, and the budgets' basis stays what reached a room.
+
 **A failed send is a failed play** (D-223): the port's caption-as-text last resort is gone,
 total delivery failure reaches the member as a locked failure line and the dashboard as a
 counted fault, and no play row is written for a track that never reached the room - the

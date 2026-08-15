@@ -69,6 +69,12 @@ export interface PageOptions {
    * operator needs as much as the switcher itself.
    */
   botSwitcher?: BotSwitcher;
+  /**
+   * Live counts beside sidebar links, keyed by nav key (D-225): the music
+   * section shows how many tracks and playlists each sub-page holds. Static
+   * nav, per-request numbers.
+   */
+  sidebarBadges?: Record<string, string>;
 }
 
 /** What the sidebar needs to render the bot switcher. */
@@ -371,7 +377,12 @@ function megaNavigationPanels(active: string | undefined): SafeHtml {
   </div>`;
 }
 
-function sidebarNavigationItem(item: NavItem, active: string | undefined, depth: number): SafeHtml {
+function sidebarNavigationItem(
+  item: NavItem,
+  active: string | undefined,
+  depth: number,
+  badges?: Record<string, string>,
+): SafeHtml {
   const branchActive = containsActive(item, active);
 
   if (item.children && item.children.length > 0) {
@@ -385,12 +396,13 @@ function sidebarNavigationItem(item: NavItem, active: string | undefined, depth:
         <span class="admin-sidebar-chevron" aria-hidden="true"></span>
       </summary>
       <div class="admin-sidebar-group-items">
-        ${item.children.map((child) => sidebarNavigationItem(child, active, depth + 1))}
+        ${item.children.map((child) => sidebarNavigationItem(child, active, depth + 1, badges))}
       </div>
     </details>`;
   }
 
   const isActive = item.key === active;
+  const count = badges?.[item.key];
 
   return html`<a
     href="${item.href}"
@@ -399,7 +411,30 @@ function sidebarNavigationItem(item: NavItem, active: string | undefined, depth:
     ${isActive ? raw('aria-current="page"') : ''}
   >
     <span>${item.label}</span>
+    ${count !== undefined ? html`<span class="admin-sidebar-count">${count}</span>` : ''}
   </a>`;
+}
+
+/**
+ * The DEEPEST opened node that has children (D-225, the operator's sidebar
+ * rule): the sidebar shows only the sub-pages of the thing you have opened.
+ * Opening Music under Plugins gives the four music pages and nothing else;
+ * the top-level menu keeps its own entries and the sidebar stops echoing
+ * them. Recursion unwinds bottom-up, so the first assignment is the deepest.
+ */
+function deepestSectionFor(active: string | undefined): NavItem | undefined {
+  if (active === undefined) return undefined;
+  let best: NavItem | undefined;
+  const walk = (item: NavItem): boolean => {
+    const inChildren = (item.children ?? []).some((child) => walk(child));
+    const here = item.key === active || inChildren;
+    if (here && item.children !== undefined && item.children.length > 0 && best === undefined) {
+      best = item;
+    }
+    return here;
+  };
+  for (const item of navItems) walk(item);
+  return best;
 }
 
 function mobileNavigation(
@@ -707,24 +742,26 @@ export function page(options: PageOptions): string {
   // children - so the console lost its spine on the first page anyone sees. It renders
   // whenever there is chrome now; a section with no children simply contributes no links,
   // which is a thinner sidebar rather than no sidebar.
+  const sectionNode = deepestSectionFor(options.active) ?? activeRoot;
   const contextualSidebar = chrome
     ? html`<aside
         data-context-sidebar
-        data-section="${activeRoot?.key ?? 'dashboard'}"
+        data-section="${sectionNode?.key ?? 'dashboard'}"
         class="admin-sidebar"
       >
-        ${activeRoot
+        ${sectionNode
           ? html`<div class="admin-sidebar-brandline">
-              <span class="admin-sidebar-brand-icon">${activeRoot.icon}</span>
+              <span class="admin-sidebar-brand-icon">${sectionNode.icon}</span>
               <div>
                 <span class="admin-sidebar-kicker">Current section</span>
-                <strong>${activeRoot.label}</strong>
+                <strong>${sectionNode.label}</strong>
               </div>
             </div>`
           : null}
-        ${activeRoot?.children && activeRoot.children.length > 0
+        <div data-player-mount></div>
+        ${sectionNode?.children && sectionNode.children.length > 0
           ? html`<nav class="admin-sidebar-nav">
-              ${activeRoot.children.map((item) => sidebarNavigationItem(item, options.active, 0))}
+              ${sectionNode.children.map((item) => sidebarNavigationItem(item, options.active, 0, options.sidebarBadges))}
             </nav>`
           : null}
         <div class="admin-sidebar-foot">
@@ -756,7 +793,8 @@ export function page(options: PageOptions): string {
                 <script src="/assets/auth.js" defer></script>
                 <script src="/assets/admin-effects.js" defer></script>
                 <script src="/assets/admin-navigation.js" defer></script>
-                <script src="/assets/admin-clock.js" defer></script>`
+                <script src="/assets/admin-clock.js" defer></script>
+                <script src="/assets/admin-player.js" defer></script>`
             : html``
         }
         ${options.head ?? html``}

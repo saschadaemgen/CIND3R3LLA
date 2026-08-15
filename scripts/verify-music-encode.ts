@@ -398,6 +398,91 @@ async function main(): Promise<void> {
     check('POSITIVE CONTROL: the queue handler produced the encode', after.rows[0]?.encoded_path !== null);
     check('  and the file is real',
       after.rows[0]?.encoded_path !== null && (await stat(after.rows[0].encoded_path)).size > 0);
+
+    /* ── The D-225 routes, driven through the same instance ─────────────── */
+
+    console.log('\n7. The section redesign\'s five routes (D-225)');
+
+    // The audio preview: full, then a Range slice, original bytes both ways.
+    const full = await app.inject({
+      method: 'GET',
+      url: `/music/tracks/${String(json.trackId)}/audio`,
+      headers: { cookie },
+    });
+    check('the audio preview serves the ORIGINAL bytes in full',
+      full.statusCode === 200 && full.rawPayload.length === (await stat(taggedPath)).size,
+      `${String(full.statusCode)} ${String(full.rawPayload.length)}`);
+    check('  with no-store and accept-ranges declared',
+      full.headers['cache-control'] === 'no-store' && full.headers['accept-ranges'] === 'bytes');
+    const sliced = await app.inject({
+      method: 'GET',
+      url: `/music/tracks/${String(json.trackId)}/audio`,
+      headers: { cookie, range: 'bytes=0-99' },
+    });
+    check('  and answers Range with 206 and the exact slice',
+      sliced.statusCode === 206 && sliced.rawPayload.length === 100 &&
+        sliced.headers['content-range'] === `bytes 0-99/${String((await stat(taggedPath)).size)}`,
+      `${String(sliced.statusCode)} ${String(sliced.headers['content-range'])}`);
+    check('  A PREVIEW WRITES NO PLAY ROW: the console listening is not a member receiving',
+      Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_track_plays`)).rows[0]?.n) === 0);
+
+    // Order and rename.
+    const plCreated = await db.query<{ id: string }>(
+      `INSERT INTO cinderella_playlists (name) VALUES ('Route Order') RETURNING id`,
+    );
+    const plId = Number(plCreated.rows[0]?.id);
+    const drive = (url: string, fields: Record<string, string>) => {
+      const b = new URLSearchParams();
+      b.set('_csrf', csrf);
+      b.set('ajax', '1');
+      for (const k of Object.keys(fields)) b.set(k, fields[k] ?? '');
+      return app.inject({
+        method: 'POST', url,
+        headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+        payload: b.toString(),
+      });
+    };
+    await drive(`/music/playlists/${String(plId)}/order`, { trackIds: String(json.trackId) });
+    const ordered = await db.query<{ n: string }>(
+      `SELECT count(*) AS n FROM cinderella_playlist_tracks WHERE playlist_id = $1`, [plId],
+    );
+    check('the order route writes the list through setPlaylistTracks', Number(ordered.rows[0]?.n) === 1);
+    const renamed = await drive(`/music/playlists/${String(plId)}/rename`, { name: 'Route Order, corrected' });
+    const newName = await db.query<{ name: string }>(
+      `SELECT name FROM cinderella_playlists WHERE id = $1`, [plId],
+    );
+    check('the rename route corrects the name in place',
+      renamed.statusCode === 200 && newName.rows[0]?.name === 'Route Order, corrected',
+      String(newName.rows[0]?.name));
+
+    // Encode build: clears the stamp so the cache cannot serve, then queues.
+    await drive(`/music/tracks/${String(json.trackId)}/encode`, {});
+    const rebuilt = await db.query<{ encoded_path: string | null; n: string }>(
+      `SELECT t.encoded_path, (SELECT count(*) FROM jobs WHERE type = '${MUSIC_ENCODE_JOB}' AND state = 'queued') AS n
+         FROM cinderella_tracks t WHERE t.id = $1`,
+      [json.trackId],
+    );
+    check('the encode route clears the stamp and queues the rebuild (the 504 rule: never in the request)',
+      rebuilt.rows[0]?.encoded_path === null && Number(rebuilt.rows[0]?.n) >= 1,
+      JSON.stringify(rebuilt.rows[0]));
+
+    // Encode delete: the trio cleared, the file gone.
+    await musicEncodeHandler({ trackId: json.trackId }, {} as never);
+    const cachedRow = await db.query<{ encoded_path: string | null }>(
+      `SELECT encoded_path FROM cinderella_tracks WHERE id = $1`, [json.trackId],
+    );
+    const cachedPath = cachedRow.rows[0]?.encoded_path;
+    check('  (setup) the handler rebuilt the cache', cachedPath !== null && cachedPath !== undefined);
+    await drive(`/music/tracks/${String(json.trackId)}/encode/delete`, {});
+    const cleared = await db.query<{ encoded_path: string | null }>(
+      `SELECT encoded_path FROM cinderella_tracks WHERE id = $1`, [json.trackId],
+    );
+    const fileGone = cachedPath === null || cachedPath === undefined
+      ? false
+      : (await stat(cachedPath).catch(() => null)) === null;
+    check('the encode-delete route clears the trio AND removes the file',
+      cleared.rows[0]?.encoded_path === null && fileGone);
+
     setMusicJobDeps(null);
     await app.close();
   }

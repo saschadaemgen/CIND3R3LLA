@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="_ds/cinderella-design-system-593713c0-886d-47c0-ae3c-e42a39940fd4/tokens/fonts.css">
+  <link rel="stylesheet" href="assets/app.css">
+  <script src="_ds/cinderella-design-system-593713c0-886d-47c0-ae3c-e42a39940fd4/_ds_bundle.js"></script>
+  <style>
+    /* Layout glue only. Colours, fields, buttons, cards, stars and the clock glitch come from
+       the repo's own assets/app.css, linked above as a verbatim copy. */
+    html{scrollbar-color:#1A2740 #050A12}
+    body{margin:0}
+    /* The grey pills were the browser's own button chrome: the repo strips it through the
+       Tailwind preflight, which the prototype copy of app.css cannot import. Same reset here. */
+    button{font:inherit;border:0;background:none;color:inherit;cursor:pointer;text-align:left;padding:0}
+    /* Glass over the shell's gradients and stars, the operator's call: panels and modules
+       stay readable but let the ambient through. */
+    .admin-card{background:linear-gradient(180deg,rgba(69,189,209,.05),transparent 46%),rgba(11,18,32,.55);backdrop-filter:blur(14px) saturate(130%)}
+    .mus-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;padding:10px 14px;border:1px solid transparent;border-radius:10px;font-size:14px;font-weight:600;color:var(--text-muted);cursor:pointer;transition:background 140ms ease,color 140ms ease,border-color 140ms ease}
+    .mus-link:hover{background:var(--surface-hover);color:var(--text)}
+    .mus-link[aria-current="page"]{background:rgba(69,189,209,.1);color:var(--accent-strong)}
+    /* The operator's calls: no gradient sliver on cards, and fields get real inner spacing. */
+    .admin-card::before{content:none !important}
+    input:not([type="checkbox"]):not([type="radio"]),select,textarea{padding:0 12px}
+    select{padding-right:28px;appearance:none;-webkit-appearance:none;color-scheme:dark;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+    select option{background:#0e1626;color:#e8edf4}
+    input{color-scheme:dark}
+    .mus-play{width:24px;height:24px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--line-strong);color:var(--text-soft);background:rgba(69,189,209,.08);transition:background 120ms ease,color 120ms ease,border-color 120ms ease}
+    .mus-play:hover{background:rgba(69,189,209,.16);color:var(--text);border-color:var(--accent)}
+    .mus-play[data-on="1"]{color:var(--accent);background:rgba(69,189,209,.12)}
+    .mus-th{display:flex;align-items:center;gap:6px;color:var(--text-faint);font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;cursor:pointer;border:0;background:none;padding:0}
+    .mus-th:hover{color:var(--text-soft)}
+    .mus-caret{width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;flex:none}
+    .mus-act{min-height:26px;padding:2px 10px;font-size:11.5px;border-radius:9px}
+    .admin-action-button{white-space:nowrap;border-radius:7px;padding:4px 12px;min-height:28px;font-size:12.5px;line-height:1.1}
+    .admin-action-primary{background:rgba(69,189,209,.13);border:1px solid rgba(69,189,209,.45);color:var(--accent-strong);font-weight:600}
+    .admin-action-primary:hover{background:rgba(69,189,209,.22);border-color:var(--accent);color:#EAFEFF}
+    [data-row]{transition:background 120ms ease}
+    [data-row]:hover{background:var(--surface-hover)}
+    [data-dz="on"]{border-color:rgba(69,189,209,.62) !important;background:rgba(69,189,209,.07) !important}
+    input:not([type="checkbox"]),select{box-sizing:border-box}
+    @keyframes screenIn{from{opacity:0;transform:translateY(6px)}}
+    @media (max-width:1280px){[data-2col]{grid-template-columns:minmax(0,1fr) !important}[data-plsplit]{grid-template-columns:minmax(0,1fr) !important}}
+    @media (max-width:980px){[data-side]{position:static !important;height:auto !important;width:100% !important;flex:1 0 100% !important;flex-direction:row !important;align-items:center !important;overflow-x:auto;padding:8px 12px !important}[data-side] [data-sidefoot]{display:none !important}[data-workspace]{flex-wrap:wrap}[data-drawer]{width:100% !important}}
+    @media (prefers-reduced-motion:reduce){[data-drawer]{transition:none !important}}
+    [data-rm="on"] *,[data-rm="on"] *::before,[data-rm="on"] *::after{animation:none !important;transition:none !important}
+  </style>
+</helmet>
+<div data-rm="{{ rmAttr }}" class="admin-shell" style="padding-bottom:24px">
+  <div class="admin-stars" aria-hidden="true"></div>
+
+  <div data-workspace class="admin-workspace" style="min-height:100vh;align-items:stretch">
+
+    <aside data-side style="position:sticky;top:0;height:100vh;width:264px;flex:0 0 264px;z-index:2;background:rgba(5,10,18,.68);backdrop-filter:blur(16px) saturate(135%);display:flex;flex-direction:column;gap:3px;padding:14px 14px 16px;box-sizing:border-box">
+      <sc-if value="{{ pOn }}" hint-placeholder-val="{{ false }}">
+        <div style="margin:0 0 12px;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:rgba(69,189,209,.07)">
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px">
+            <span style="font-family:var(--font-mono);font-size:9px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-strong)">{{ pKicker }}</span>
+            <span style="font-family:var(--font-mono);font-size:9px;color:var(--text-faint);font-variant-numeric:tabular-nums">{{ pQPos }}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:9px;min-width:0">
+            <span style="width:30px;height:30px;flex:none;border-radius:6px;background:rgba(203,213,225,.07);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--text-muted)"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M11 18V6l10-2v12"/></svg></span>
+            <span style="min-width:0;flex:1">
+              <span aria-live="polite" style="display:block;font-size:12.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pTitleOnly }}</span>
+              <span style="display:block;font-size:11px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pArtist }}</span>
+            </span>
+          </div>
+          <button onClick="{{ pScrub }}" aria-label="Seek" style="width:100%;height:12px;display:flex;align-items:center;margin-top:7px">
+            <span style="width:100%;height:3px;border-radius:99px;background:rgba(141,225,236,.14);position:relative;display:block;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:{{ pPct }};border-radius:99px;background:var(--accent)"></span></span>
+          </button>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+            <button class="mus-play" data-on="1" onClick="{{ pToggle }}" aria-label="{{ pBtnLabel }}">
+              <sc-if value="{{ pPlaying }}" hint-placeholder-val="{{ true }}"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></sc-if>
+              <sc-if value="{{ pPaused }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg></sc-if>
+            </button>
+            <sc-if value="{{ pQueueOn }}" hint-placeholder-val="{{ false }}">
+              <button class="mus-play" onClick="{{ pNext }}" aria-label="Next track in the playlist"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M5 5l9 7-9 7z"/><path d="M16 5h3v14h-3z"/></svg></button>
+            </sc-if>
+            <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint);font-variant-numeric:tabular-nums">{{ pPos }} / {{ pDur }}</span>
+            <div style="flex:1"></div>
+            <button onClick="{{ pStop }}" style="font-family:var(--font-mono);font-size:10px;color:var(--text-muted)" style-hover="color:var(--text)">stop</button>
+          </div>
+          <p style="margin:6px 0 0;font-family:var(--font-mono);font-size:9px;color:var(--text-faint)">local preview, not sent to any chat</p>
+        </div>
+      </sc-if>
+      <button class="mus-link" aria-current="{{ curLib }}" onClick="{{ goLib }}"><span>Library</span><span style="font-family:var(--font-mono);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75">{{ nTracks }}</span></button>
+      <button class="mus-link" aria-current="{{ curPl }}" onClick="{{ goPl }}"><span>Playlists</span><span style="font-family:var(--font-mono);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75">{{ nPls }}</span></button>
+      <button class="mus-link" aria-current="{{ curAsg }}" onClick="{{ goAsg }}"><span>Assignments</span><span style="font-family:var(--font-mono);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums;opacity:.75">{{ nAsg }}</span></button>
+      <button class="mus-link" aria-current="{{ curSt }}" onClick="{{ goSt }}"><span>Storage</span><span style="font-family:var(--font-mono);font-size:11px;font-weight:400;opacity:.75">{{ diskShort }}</span></button>
+      <div data-sidefoot style="margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:7px;padding:16px 4px 6px;border-top:1px solid var(--line)">
+        <div class="admin-sidebar-meta" style="margin:0;border:0;padding:2px 0 0;justify-content:center">
+          <span class="admin-sidebar-meta-dot"></span>
+          <span>{{ metaShort }}</span>
+        </div>
+      </div>
+    </aside>
+
+    <main class="admin-main" style="position:relative;z-index:1">
+      <div class="admin-content" style="padding:30px 34px 40px">
+
+        <sc-if value="{{ isLib }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Library" style="animation:screenIn 240ms ease-out">
+          <div class="admin-page-header" style="margin-bottom:18px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+            <div style="min-width:0">
+              <h1 class="admin-page-title" style="margin:0;font-size:24px;color:var(--text)">Library</h1>
+              <p class="admin-page-subtitle" style="margin:4px 0 0;font-size:13.5px;color:var(--text-muted)">Tags are read from each file at upload. Tick tracks to fill a playlist, press play to hear what arrived, Edit opens the track panel.</p>
+            </div>
+            <div style="flex:1"></div>
+            <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint);white-space:nowrap">{{ metaLine }}</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <input value="{{ q }}" onChange="{{ hQ }}" placeholder="Search title, artist, album, file" aria-label="Search the library" style="flex:1;min-width:200px" />
+                <select value="{{ fKind }}" onChange="{{ hFKind }}" aria-label="Filter by kind" style="width:150px"><option value="">All kinds</option><option value="music">music</option><option value="audiobook">audiobook</option><option value="documentary">documentary</option><option value="spot">spot</option></select>
+                <select value="{{ fGenre }}" onChange="{{ hFGenre }}" aria-label="Filter by genre" style="width:160px"><option value="">All genres</option><sc-for list="{{ genreSel }}" as="g" hint-placeholder-count="5"><option value="{{ g.v }}">{{ g.n }}</option></sc-for></select>
+                <select value="{{ fX }}" onChange="{{ hFX }}" aria-label="Filter by state" style="width:200px"><option value="">Everything</option><option value="nocover">no cover</option><option value="novideo">cover, video not built</option><option value="video">video cached</option><option value="nopl">in no playlist</option><option value="nodur">duration unknown</option></select>
+                <sc-if value="{{ anyFilter }}" hint-placeholder-val="{{ false }}"><button class="admin-action-button" onClick="{{ clearF }}">Reset</button></sc-if>
+                <span style="font-family:var(--font-mono);font-size:11px;color:var(--text-faint);white-space:nowrap">{{ countLine }}</span>
+              </div>
+              <div data-dz="{{ dzAttr }}" onDragOver="{{ hDragOver }}" onDragLeave="{{ hDragLeave }}" onDrop="{{ hDrop }}" style="border:1px dashed var(--line-strong);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;transition:border-color 150ms ease,background 150ms ease">
+                <span style="font-size:13px;color:var(--text-soft)">Drop audio files here, or</span>
+                <label class="admin-action-button admin-action-primary" for="mus-files" style="cursor:pointer">Choose files</label>
+                <input id="mus-files" type="file" accept="audio/*" multiple onChange="{{ hFiles }}" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+                <span style="font-size:12px;color:var(--text-faint)">Title, artist, album, genre and often the cover are read from the file itself.</span>
+                <div style="flex:1"></div>
+                <button onClick="{{ demoFiles }}" style="border:0;background:none;cursor:pointer;font-family:var(--font-mono);font-size:11px;color:var(--accent);white-space:nowrap">add three example files</button>
+                <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);white-space:nowrap">{{ ceilLine }}</span>
+              </div>
+            </section>
+
+            <sc-if value="{{ hasStaged }}" hint-placeholder-val="{{ false }}">
+              <section class="admin-card" style="position:relative;border:1px solid rgba(69,189,209,.3);border-radius:16px;padding:0;overflow:hidden">
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid var(--line)">
+                  <h2 class="admin-card-title" style="margin:0;font-size:15px;color:var(--text)">Read from the files</h2>
+                  <span aria-live="polite" style="font-family:var(--font-mono);font-size:11px;color:var(--accent)">{{ stagedLine }}</span>
+                  <div style="flex:1"></div>
+                  <button class="admin-action-button admin-action-primary" onClick="{{ importAll }}" disabled="{{ noneReady }}" style="opacity:{{ importOp }}">Import all</button>
+                  <button class="admin-action-button" onClick="{{ discardAll }}">Discard</button>
+                </div>
+                <div style="overflow:auto"><div style="min-width:820px">
+                  <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,.9fr) 128px 110px 92px;gap:10px;align-items:center;padding:8px 18px;border-bottom:1px solid var(--line)">
+                    <span class="mus-th" style="cursor:default">Title</span><span class="mus-th" style="cursor:default">Artist</span><span class="mus-th" style="cursor:default">Genre</span><span class="mus-th" style="cursor:default">Kind</span><span class="mus-th" style="cursor:default">From the file</span><span></span>
+                  </div>
+                  <sc-for list="{{ staged }}" as="s" hint-placeholder-count="2">
+                    <div style="display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,.9fr) 128px 110px 92px;gap:10px;align-items:center;padding:8px 18px;border-bottom:1px solid var(--line)">
+                      <input value="{{ s.title }}" onChange="{{ s.hTitle }}" disabled="{{ s.busy }}" placeholder="{{ s.titlePh }}" aria-label="Title" style="width:100%" />
+                      <input value="{{ s.artist }}" onChange="{{ s.hArtist }}" disabled="{{ s.busy }}" placeholder="no artist in the tag" aria-label="Artist" style="width:100%" />
+                      <input value="{{ s.genre }}" onChange="{{ s.hGenre }}" disabled="{{ s.busy }}" placeholder="no genre in the tag" aria-label="Genre" style="width:100%" />
+                      <select value="{{ s.kind }}" onChange="{{ s.hKind }}" disabled="{{ s.busy }}" aria-label="Kind" style="width:100%"><option value="music">music</option><option value="audiobook">audiobook</option><option value="documentary">documentary</option><option value="spot">spot</option></select>
+                      <span style="font-family:var(--font-mono);font-size:10.5px;color:{{ s.stC }};line-height:1.35">{{ s.state }}</span>
+                      <button class="admin-action-button admin-action-primary" onClick="{{ s.imp }}" disabled="{{ s.busy }}" style="justify-self:end;opacity:{{ s.impOp }}">Import</button>
+                    </div>
+                  </sc-for>
+                </div></div>
+                <p style="margin:0;padding:10px 18px;font-size:11.5px;color:var(--text-faint)">Read in the browser. Nothing reaches the server until you press Import, and the fields you change here win over the tag.</p>
+              </section>
+            </sc-if>
+
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:0;overflow:hidden">
+              <sc-if value="{{ hasChecked }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 18px;background:rgba(232,56,159,.08);border-bottom:1px solid rgba(232,56,159,.3)">
+                  <span style="font-size:13px;font-weight:600;color:var(--text)" aria-live="polite">{{ checkedLine }}</span>
+                  <span style="font-size:12.5px;color:var(--text-muted)">add to</span>
+                  <select value="{{ bulkPl }}" onChange="{{ hBulkPl }}" aria-label="Target playlist" style="width:200px;min-height:34px"><sc-for list="{{ plOpts }}" as="o" hint-placeholder-count="6"><option value="{{ o.v }}">{{ o.n }}</option></sc-for></select>
+                  <button class="admin-action-button admin-action-primary" onClick="{{ bulkAdd }}">Add to playlist</button>
+                  <div style="flex:1"></div>
+                  <button class="admin-action-button" onClick="{{ clearChecked }}">Clear selection</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{ libNoteOn }}" hint-placeholder-val="{{ false }}">
+                <p aria-live="polite" style="margin:0;padding:9px 18px;border-bottom:1px solid var(--line);font-family:var(--font-mono);font-size:11px;color:var(--accent)">{{ libNote }}</p>
+              </sc-if>
+              <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+              <div style="overflow:auto;max-height:calc(100vh - 300px)"><div style="min-width:1080px">
+                <div style="display:grid;grid-template-columns:34px 34px 34px minmax(150px,1.5fr) minmax(100px,1fr) 92px 108px 54px 64px 58px 54px 138px;gap:9px;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2;background:rgba(11,18,32,.94)">
+                  <span style="display:flex"><input type="checkbox" checked="{{ allChecked }}" onChange="{{ toggleAll }}" aria-label="Select every shown track" title="Tick everything shown; tick again to clear" /></span>
+                  <span></span><span></span>
+                  <button class="mus-th" onClick="{{ hTitleSort }}" style="color:{{ sTitle.c }}">Track<span class="mus-caret" style="transform:{{ sTitle.rot }};opacity:{{ sTitle.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hArtistSort }}" style="color:{{ sArtist.c }}">Artist<span class="mus-caret" style="transform:{{ sArtist.rot }};opacity:{{ sArtist.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hKindSort }}" style="color:{{ sKind.c }}">Kind<span class="mus-caret" style="transform:{{ sKind.rot }};opacity:{{ sKind.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hGenreSort }}" style="color:{{ sGenre.c }}">Genre<span class="mus-caret" style="transform:{{ sGenre.rot }};opacity:{{ sGenre.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hDurSort }}" style="justify-content:flex-end;color:{{ sDur.c }}">Time<span class="mus-caret" style="transform:{{ sDur.rot }};opacity:{{ sDur.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hSizeSort }}" style="justify-content:flex-end;color:{{ sSize.c }}">Size<span class="mus-caret" style="transform:{{ sSize.rot }};opacity:{{ sSize.op }}"></span></button>
+                  <button class="mus-th" onClick="{{ hPlaysSort }}" style="justify-content:flex-end;color:{{ sPlays.c }}">Plays<span class="mus-caret" style="transform:{{ sPlays.rot }};opacity:{{ sPlays.op }}"></span></button>
+                  <span class="mus-th" style="cursor:default" title="Cached video">Video</span>
+                  <span class="mus-th" style="cursor:default;justify-content:flex-end">Actions</span>
+                </div>
+                <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+                  <div data-row style="display:grid;grid-template-columns:34px 34px 34px minmax(150px,1.5fr) minmax(100px,1fr) 92px 108px 54px 64px 58px 54px 138px;gap:9px;align-items:center;padding:6px 18px;border-bottom:1px solid var(--line);background:{{ r.bg }}">
+                    <span style="display:flex"><input type="checkbox" checked="{{ r.on }}" onChange="{{ r.check }}" aria-label="{{ r.checkLabel }}" /></span>
+                    <button class="mus-play" data-on="{{ r.pOn }}" onClick="{{ r.play }}" aria-label="{{ r.playLabel }}">
+                      <sc-if value="{{ r.playing }}" hint-placeholder-val="{{ false }}"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></sc-if>
+                      <sc-if value="{{ r.idle }}" hint-placeholder-val="{{ true }}"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg></sc-if>
+                    </button>
+                    <span style="width:28px;height:28px;border-radius:6px;background:{{ r.cvBg }};border:{{ r.cvBorder }};display:flex;align-items:center;justify-content:center;color:{{ r.cvC }}" title="{{ r.cvTitle }}"><sc-if value="{{ r.hasCover }}" hint-placeholder-val="{{ true }}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M11 18V6l10-2v12"/></svg></sc-if></span>
+                    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;color:var(--text)">{{ r.title }}</span>
+                    <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-muted)">{{ r.artist }}</span>
+                    <span style="font-family:var(--font-mono);font-size:10.5px;color:{{ r.kC }}">{{ r.kind }}</span>
+                    <button onClick="{{ r.gclick }}" title="Filter by this genre" style="border:0;background:none;cursor:pointer;padding:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:{{ r.gC }};text-align:left">{{ r.genre }}</button>
+                    <span style="font-family:var(--font-mono);font-size:12px;color:{{ r.dC }};text-align:right;font-variant-numeric:tabular-nums">{{ r.time }}</span>
+                    <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-soft);text-align:right;font-variant-numeric:tabular-nums">{{ r.size }}</span>
+                    <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-faint);text-align:right;font-variant-numeric:tabular-nums">{{ r.plays }}</span>
+                    <span style="font-family:var(--font-mono);font-size:10px;color:{{ r.vC }}" title="{{ r.vTitle }}">{{ r.vTxt }}</span>
+                    <span style="display:flex;gap:6px;justify-self:end">
+                      <button class="admin-action-button mus-act" onClick="{{ r.edit }}">Edit</button>
+                      <button class="admin-action-button admin-action-danger mus-act" onClick="{{ r.del }}" style="color:{{ r.delC }}">{{ r.delLabel }}</button>
+                    </span>
+                  </div>
+                </sc-for>
+              </div></div>
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:9px 18px">
+                <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">{{ footLine }}</span>
+              </div>
+              </sc-if>
+              <sc-if value="{{ noRows }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:38px 18px 42px;text-align:center">
+                  <p style="margin:0 auto;max-width:46ch;font-size:14px;color:var(--text-soft)">{{ emptyTitle }}</p>
+                  <p style="margin:6px auto 0;max-width:52ch;font-size:12.5px;color:var(--text-faint)">{{ emptyNote }}</p>
+                </div>
+              </sc-if>
+            </section>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isPl }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Playlists" style="animation:screenIn 240ms ease-out">
+          <div class="admin-page-header" style="margin-bottom:18px">
+            <h1 class="admin-page-title" style="margin:0;font-size:24px;color:var(--text)">Playlists</h1>
+            <p class="admin-page-subtitle" style="margin:4px 0 0;font-size:13.5px;color:var(--text-muted)">The unit of assignment. To fill one with many tracks at once, tick them in the Library and add them in one step.</p>
+          </div>
+          <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:0;overflow:hidden">
+            <div style="overflow:auto"><div style="min-width:760px">
+              <div style="display:grid;grid-template-columns:minmax(160px,1fr) 70px 84px minmax(150px,1fr) 186px;gap:11px;padding:10px 18px;border-bottom:1px solid var(--line)">
+                <span class="mus-th" style="cursor:default">Playlist</span>
+                <span class="mus-th" style="cursor:default;justify-content:flex-end">Tracks</span>
+                <span class="mus-th" style="cursor:default;justify-content:flex-end">Length</span>
+                <span class="mus-th" style="cursor:default">Held by</span>
+                <span class="mus-th" style="cursor:default;justify-content:flex-end">Actions</span>
+              </div>
+              <sc-for list="{{ plRows }}" as="p" hint-placeholder-count="6">
+                <div data-row style="display:grid;grid-template-columns:minmax(160px,1fr) 70px 84px minmax(150px,1fr) 186px;gap:11px;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);background:{{ p.bg }}">
+                  <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:600;color:var(--text)">{{ p.name }}</span>
+                  <span style="font-family:var(--font-mono);font-size:12px;color:{{ p.nC }};text-align:right;font-variant-numeric:tabular-nums">{{ p.n }}</span>
+                  <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-soft);text-align:right;font-variant-numeric:tabular-nums">{{ p.len }}</span>
+                  <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--font-mono);font-size:10.5px;color:{{ p.hC }}">{{ p.held }}</span>
+                  <span style="display:flex;gap:6px;justify-self:end">
+                    <button class="mus-play" onClick="{{ p.playAll }}" data-on="{{ p.pOn }}" aria-label="{{ p.playLabel }}"><svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg></button>
+                    <button class="admin-action-button mus-act" onClick="{{ p.edit }}">Edit</button>
+                    <button class="admin-action-button admin-action-danger mus-act" onClick="{{ p.del }}" style="color:{{ p.delC }}">{{ p.delLabel }}</button>
+                  </span>
+                </div>
+              </sc-for>
+              <div style="display:flex;align-items:center;gap:9px;padding:12px 18px;background:rgba(69,189,209,.05)">
+                <input value="{{ newPl }}" onChange="{{ hNewPl }}" placeholder="New playlist name" aria-label="New playlist name" style="flex:1;max-width:340px" />
+                <button class="admin-action-button admin-action-primary" onClick="{{ plCreate }}">Create</button>
+                <span style="font-size:12px;color:var(--text-faint)">Edit opens the playlist panel: order, adding tracks, rename.</span>
+              </div>
+            </div></div>
+            <p aria-live="polite" style="margin:0;padding:10px 18px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10.5px;color:{{ plNoteC }}">{{ plNote }}</p>
+          </section>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isAsg }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Assignments" style="animation:screenIn 240ms ease-out">
+          <div class="admin-page-header" style="margin-bottom:18px">
+            <h1 class="admin-page-title" style="margin:0;font-size:24px;color:var(--text)">Assignments</h1>
+            <p class="admin-page-subtitle" style="margin:4px 0 0;font-size:13.5px;color:var(--text-muted)">Every row belongs to the bot named in it. Nothing on this page is deployment-wide.</p>
+          </div>
+          <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:0;overflow:hidden">
+            <div style="overflow:auto"><div style="min-width:1000px">
+              <div style="display:grid;grid-template-columns:100px minmax(120px,1fr) 158px 96px 86px 100px 136px 168px;gap:11px;padding:10px 18px;border-bottom:1px solid var(--line)">
+                <span class="mus-th" style="cursor:default">Bot</span>
+                <span class="mus-th" style="cursor:default">Playlist</span>
+                <span class="mus-th" style="cursor:default">Rhythm</span>
+                <span class="mus-th" style="cursor:default">Into group</span>
+                <span class="mus-th" style="cursor:default">Minutes</span>
+                <span class="mus-th" style="cursor:default">Messages</span>
+                <span class="mus-th" style="cursor:default">State</span>
+                <span></span>
+              </div>
+              <sc-for list="{{ asgRows }}" as="a" hint-placeholder-count="4">
+                <div data-row style="display:grid;grid-template-columns:100px minmax(120px,1fr) 158px 96px 86px 100px 136px 168px;gap:11px;align-items:center;padding:9px 18px;border-bottom:1px solid var(--line);box-shadow:{{ a.bd }}">
+                  <span style="font-size:13.5px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.bot }}</span>
+                  <span style="font-size:13px;color:var(--text-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.pl }}</span>
+                  <select value="{{ a.mode }}" onChange="{{ a.hMode }}" aria-label="Rhythm" style="width:100%"><option value="on-request">on request only</option><option value="cadence">on a cadence</option></select>
+                  <input value="{{ a.dest }}" onChange="{{ a.hDest }}" disabled="{{ a.onReq }}" placeholder="{{ a.destPh }}" aria-label="Destination group id" style="width:100%;font-family:var(--font-mono);opacity:{{ a.fieldOp }}" />
+                  <input value="{{ a.mins }}" onChange="{{ a.hMins }}" disabled="{{ a.onReq }}" placeholder="{{ a.minsPh }}" aria-label="Every N minutes" style="width:100%;font-family:var(--font-mono);text-align:right;opacity:{{ a.fieldOp }}" />
+                  <input value="{{ a.msgs }}" onChange="{{ a.hMsgs }}" disabled="{{ a.onReq }}" placeholder="{{ a.msgsPh }}" aria-label="Every N member messages" style="width:100%;font-family:var(--font-mono);text-align:right;opacity:{{ a.fieldOp }}" />
+                  <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
+                    <span style="font-family:var(--font-mono);font-size:10.5px;letter-spacing:.05em;color:{{ a.stC }};white-space:nowrap">{{ a.st }}</span>
+                    <span style="font-family:var(--font-mono);font-size:9.5px;color:var(--text-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.stNote }}</span>
+                  </span>
+                  <span style="display:flex;gap:7px;justify-self:end">
+                    <button class="admin-action-button admin-action-primary mus-act" onClick="{{ a.apply }}" disabled="{{ a.clean }}" style="opacity:{{ a.applyOp }}">{{ a.applyLabel }}</button>
+                    <button class="admin-action-button admin-action-danger mus-act" onClick="{{ a.remove }}">Take away</button>
+                  </span>
+                </div>
+              </sc-for>
+              <sc-if value="{{ asgEmpty }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:24px 18px">
+                  <p style="margin:0;font-size:13.5px;color:var(--text-soft)">No bot holds a playlist yet.</p>
+                  <p style="margin:5px 0 0;font-size:12.5px;color:var(--text-faint)">A normal state, not a fault: she answers music questions and plays nothing until a playlist is assigned below.</p>
+                </div>
+              </sc-if>
+              <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:12px 18px;background:rgba(69,189,209,.05)">
+                <select value="{{ newBot }}" onChange="{{ hNewBot }}" aria-label="Bot" style="width:130px"><sc-for list="{{ botOpts }}" as="b" hint-placeholder-count="3"><option value="{{ b.v }}">{{ b.n }}</option></sc-for></select>
+                <span style="font-size:12.5px;color:var(--text-muted)">gets</span>
+                <select value="{{ newPlaylist }}" onChange="{{ hNewPlaylist }}" aria-label="Playlist" style="width:210px"><sc-for list="{{ plOpts }}" as="o" hint-placeholder-count="6"><option value="{{ o.v }}">{{ o.n }}</option></sc-for></select>
+                <button class="admin-action-button admin-action-primary" onClick="{{ asgAdd }}">Assign, on request</button>
+                <span style="font-size:12px;color:var(--text-faint)">Every new assignment starts on request only. A cadence is a deliberate second step.</span>
+              </div>
+            </div></div>
+            <p aria-live="polite" style="margin:0;padding:10px 18px;border-top:1px solid var(--line);font-family:var(--font-mono);font-size:10.5px;color:{{ asgNoteC }}">{{ asgNote }}</p>
+          </section>
+          <div data-2col style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px">
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:14px 18px">
+              <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">What a cadence can say</span>
+              <p style="margin:6px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5">A destination group and at least one trigger: every N minutes, every N member messages, or both, whichever comes first. Minutes run 1 to 10080, messages 1 to 10000. Nothing applies until you press Set cadence.</p>
+            </section>
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:14px 18px">
+              <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">What is not settable, on purpose</span>
+              <p style="margin:6px 0 0;font-size:13px;color:var(--text-muted);line-height:1.5">Track choice on a cadence is shuffle without replacement: every track plays once before any repeats, derived from the plays log. A member asking for a track consults no budget; the budgets under Storage bound only unbidden sends.</p>
+            </section>
+          </div>
+        </div>
+        </sc-if>
+
+        <sc-if value="{{ isSt }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Storage" style="animation:screenIn 240ms ease-out">
+          <div class="admin-page-header" style="margin-bottom:18px">
+            <h1 class="admin-page-title" style="margin:0;font-size:24px;color:var(--text)">Storage and diagnostics</h1>
+            <p class="admin-page-subtitle" style="margin:4px 0 0;font-size:13.5px;color:var(--text-muted)">Measured figures, not estimates. The budgets below apply to every bot on this deployment.</p>
+          </div>
+          <div class="admin-tiles">
+            <article class="admin-tile"><span class="admin-tile-label">Tracks</span><strong class="admin-tile-value" style="font-family:var(--font-mono)">{{ nTracks }}</strong><small class="admin-tile-note">{{ kindLine }}</small></article>
+            <article class="admin-tile"><span class="admin-tile-label">Originals and covers</span><strong class="admin-tile-value" style="font-family:var(--font-mono)">{{ origSize }}</strong><small class="admin-tile-note">byte-identical to what you uploaded</small></article>
+            <article class="admin-tile"><span class="admin-tile-label">Cached videos</span><strong class="admin-tile-value" style="font-family:var(--font-mono)">{{ encSize }}</strong><small class="admin-tile-note">{{ encLine }}</small></article>
+            <article class="admin-tile"><span class="admin-tile-label">Plays recorded</span><strong class="admin-tile-value" style="font-family:var(--font-mono)">{{ totalPlays }}</strong><small class="admin-tile-note">no member is recorded</small></article>
+          </div>
+          <div data-2col style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:18px;margin-top:18px">
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:14px 18px">
+              <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Genres held</span>
+              <p style="margin:5px 0 11px;font-size:12px;color:var(--text-faint);line-height:1.45">This list is her whole vocabulary: she cannot claim a genre it does not show.</p>
+              <sc-for list="{{ genreRows }}" as="g" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:minmax(0,130px) minmax(0,1fr) 32px;gap:11px;align-items:center;padding:3px 0">
+                  <span style="font-size:13px;color:{{ g.c }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ g.label }}</span>
+                  <span style="height:6px;border-radius:99px;background:rgba(141,225,236,.08);position:relative;overflow:hidden"><span style="position:absolute;left:0;top:0;bottom:0;width:{{ g.w }};border-radius:99px;background:{{ g.fill }};min-width:2px"></span></span>
+                  <span style="font-family:var(--font-mono);font-size:11.5px;color:var(--text-soft);text-align:right;font-variant-numeric:tabular-nums">{{ g.n }}</span>
+                </div>
+              </sc-for>
+            </section>
+            <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;padding:14px 18px">
+              <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Most played</span>
+              <p style="margin:5px 0 9px;font-size:12px;color:var(--text-faint);line-height:1.45">Grouped over the plays log at read time. Nothing is stored as a total, so deleting the rows leaves no ghost of them.</p>
+              <sc-for list="{{ topRows }}" as="tp" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:28px minmax(0,1fr) 48px 34px;gap:9px;align-items:center;padding:3px 0;border-bottom:1px solid var(--line)">
+                  <button class="mus-play" data-on="{{ tp.pOn }}" onClick="{{ tp.play }}" aria-label="{{ tp.playLabel }}"><svg viewBox="0 0 24 24" width="9" height="9" fill="currentColor" aria-hidden="true"><path d="M8 5l11 7-11 7z"/></svg></button>
+                  <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-soft)">{{ tp.title }}</span>
+                  <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:right">{{ tp.time }}</span>
+                  <span style="font-family:var(--font-mono);font-size:12px;color:var(--text);text-align:right;font-variant-numeric:tabular-nums">{{ tp.plays }}</span>
+                </div>
+              </sc-for>
+            </section>
+          </div>
+          <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;margin-top:18px;padding:0">
+            <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;padding:13px 18px 0">
+              <h2 class="admin-card-title" style="margin:0;font-size:15px;color:var(--text)">The unbidden budgets</h2>
+              <span style="font-family:var(--font-mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--text-muted)">applies to every bot</span>
+              <div style="flex:1"></div>
+              <sc-if value="{{ setDirty }}" hint-placeholder-val="{{ false }}">
+                <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--warning)">{{ setCount }}</span>
+                <button class="admin-action-button" onClick="{{ setRevert }}">Revert</button>
+                <button class="admin-action-button admin-action-primary" onClick="{{ setSave }}">Save</button>
+              </sc-if>
+              <sc-if value="{{ setClean }}" hint-placeholder-val="{{ true }}">
+                <span aria-live="polite" style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">{{ setSavedLine }}</span>
+              </sc-if>
+            </div>
+            <p style="margin:0;padding:7px 18px 11px;font-size:12.5px;color:var(--text-muted);max-width:80ch;line-height:1.5">What a room may receive without anyone asking, per day, with a minimum quiet between. Separate for music and for spots: one budget would let a busy music day silently buy advertising quiet, or the reverse. A member asking for a track consults neither budget.</p>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px 16px;padding:0 18px 13px">
+              <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px">Unbidden music, per room per day</span><input value="{{ set.musicDailyCap }}" onChange="{{ set.hMusicDailyCap }}" type="number" min="1" max="48" style="width:100%;font-family:var(--font-mono)" /></label>
+              <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px">Minimum gap, minutes</span><input value="{{ set.musicGapMinutes }}" onChange="{{ set.hMusicGapMinutes }}" type="number" min="0" max="1440" style="width:100%;font-family:var(--font-mono)" /></label>
+              <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px">Spots, per room per day</span><input value="{{ set.spotDailyCap }}" onChange="{{ set.hSpotDailyCap }}" type="number" min="1" max="48" style="width:100%;font-family:var(--font-mono)" /></label>
+              <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px">Minimum gap between spots</span><input value="{{ set.spotGapMinutes }}" onChange="{{ set.hSpotGapMinutes }}" type="number" min="0" max="1440" style="width:100%;font-family:var(--font-mono)" /></label>
+              <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:5px">Largest member file, MB</span><input value="{{ set.memberUploadMb }}" onChange="{{ set.hMemberUploadMb }}" type="number" min="1" max="1024" style="width:100%;font-family:var(--font-mono)" /></label>
+            </div>
+            <p style="margin:0;padding:0 18px 14px;font-size:11.5px;color:var(--text-faint);max-width:84ch;line-height:1.5">She re-sends a member's own mp3 without keeping it, checked by name and by first bytes. Whether she accepts them at all is a per-bot switch on the Plugins page, shipped off. Your own uploads are bounded separately, at {{ ceilOnly }} per file.</p>
+          </section>
+          <section class="admin-card" style="position:relative;border:1px solid var(--line);border-radius:16px;margin-top:18px;padding:14px 18px">
+            <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Diagnostics</span>
+            <div style="display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin-top:8px;font-size:13px">
+              <span style="color:var(--text-faint)">Last tick</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ diagTick }}</span>
+              <span style="color:var(--text-faint)">Plays sent this process</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ diagSent }}</span>
+              <span style="color:var(--text-faint)">Cadence slots skipped</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ diagSkips }}</span>
+              <span style="color:var(--text-faint)">Encode faults</span><span style="font-family:var(--font-mono);color:{{ diagErrC }}">{{ diagErr }}</span>
+            </div>
+            <p style="margin:10px 0 0;font-size:12px;color:var(--text-faint);max-width:84ch;line-height:1.5">A skipped slot is the budgets working, not a fault: budget-spent means the room had its fill today, gap-too-recent means the minimum quiet is being kept. A failed encode degrades the send to title plus voice player rather than losing the track.</p>
+          </section>
+        </div>
+        </sc-if>
+
+      </div>
+    </main>
+  </div>
+
+  <datalist id="mus-genres"><sc-for list="{{ genreSel }}" as="go" hint-placeholder-count="6"><option value="{{ go.v }}"></option></sc-for></datalist>
+
+  <aside data-drawer aria-hidden="{{ drawerHidden }}" style="position:fixed;top:0;right:0;bottom:0;width:376px;z-index:70;background:rgba(5,10,18,.78);backdrop-filter:blur(18px) saturate(135%);transform:translateX({{ drawerTx }});transition:transform 300ms cubic-bezier(.2,.8,.2,1);overflow-y:auto;box-shadow:-30px 0 70px rgba(0,0,0,.6);padding:16px 18px 70px;box-sizing:border-box">
+  <sc-if value="{{ drawerTrack }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint)">Track</span>
+      <sc-if value="{{ drDirty }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--font-mono);font-size:10.5px;color:var(--warning);white-space:nowrap">{{ drCount }}</span></sc-if>
+      <sc-if value="{{ drClean }}" hint-placeholder-val="{{ true }}"><span aria-live="polite" style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);white-space:nowrap">{{ drSavedLine }}</span></sc-if>
+      <div style="flex:1"></div>
+      <button class="admin-action-button mus-act" onClick="{{ drawerClose }}" aria-label="Close the track panel">Close</button>
+    </div>
+
+    <div style="display:flex;gap:13px;margin-top:14px">
+      <span style="width:64px;height:64px;flex:none;border-radius:8px;background:{{ selCvBg }};border:{{ selCvBorder }};display:flex;align-items:center;justify-content:center;color:{{ selCvC }}"><sc-if value="{{ selHasCover }}" hint-placeholder-val="{{ true }}"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="18" r="3"/><circle cx="18" cy="16" r="3"/><path d="M11 18V6l10-2v12"/></svg></sc-if></span>
+      <div style="min-width:0;flex:1">
+        <div style="font-size:15px;font-weight:600;color:var(--text);line-height:1.25;overflow:hidden;text-overflow:ellipsis">{{ selTitle }}</div>
+        <div style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);margin-top:3px">{{ selMeta }}</div>
+        <div style="font-size:12px;color:{{ selShapeC }};margin-top:6px;line-height:1.45">{{ selShape }}</div>
+      </div>
+    </div>
+    <sc-if value="{{ selHidden }}" hint-placeholder-val="{{ false }}">
+      <p style="margin:9px 0 0;font-family:var(--font-mono);font-size:10.5px;color:var(--warning)">Outside the current filter, still open here.</p>
+    </sc-if>
+
+    <div style="display:grid;gap:10px;margin-top:14px">
+      <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px">Title</span><input value="{{ dr.title }}" onChange="{{ dr.hTitle }}" style="width:100%" /></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px">Artist</span><input value="{{ dr.artist }}" onChange="{{ dr.hArtist }}" placeholder="not in the tag" style="width:100%" /></label>
+        <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px">Album</span><input value="{{ dr.album }}" onChange="{{ dr.hAlbum }}" placeholder="not in the tag" style="width:100%" /></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px">Genre</span><input value="{{ dr.genre }}" onChange="{{ dr.hGenre }}" list="mus-genres" placeholder="no genre" style="width:100%" /></label>
+        <label style="display:block"><span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);margin-bottom:4px">Kind</span><select value="{{ dr.kind }}" onChange="{{ dr.hKind }}" style="width:100%"><option value="music">music</option><option value="audiobook">audiobook</option><option value="documentary">documentary</option><option value="spot">spot</option></select></label>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;margin-top:13px">
+      <button class="admin-action-button admin-action-primary" onClick="{{ drSave }}" disabled="{{ drClean }}" style="opacity:{{ drSaveOp }}">Save changes</button>
+      <sc-if value="{{ drDirty }}" hint-placeholder-val="{{ false }}"><button class="admin-action-button" onClick="{{ drRevert }}">Revert</button></sc-if>
+    </div>
+
+    <div style="margin-top:15px;padding-top:13px;border-top:1px solid var(--line)">
+      <span style="display:block;font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Cover</span>
+      <p style="margin:4px 0 9px;font-size:12.5px;color:var(--text-muted);line-height:1.45">{{ coverLine }}</p>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <label class="admin-action-button" for="mus-cover" style="cursor:pointer">Choose an image</label>
+        <input id="mus-cover" type="file" accept="image/*" onChange="{{ hCover }}" style="position:absolute;width:1px;height:1px;opacity:0;overflow:hidden" />
+        <button class="admin-action-button admin-action-primary" onClick="{{ coverApply }}" disabled="{{ noCoverPick }}" style="opacity:{{ coverOp }}">Upload and replace</button>
+      </div>
+      <p aria-live="polite" style="margin:8px 0 0;font-family:var(--font-mono);font-size:10.5px;color:{{ coverStC }}">{{ coverState }}</p>
+    </div>
+
+    <div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+        <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Cached video</span>
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--text-faint)">{{ vidVer }}</span>
+      </div>
+      <p style="margin:4px 0 9px;font-size:12.5px;color:var(--text-muted);line-height:1.45">{{ vidLine }}</p>
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <button class="admin-action-button" onClick="{{ vidBuild }}" disabled="{{ vidNoCover }}" style="opacity:{{ vidBuildOp }}">{{ vidBuildLabel }}</button>
+        <sc-if value="{{ vidHas }}" hint-placeholder-val="{{ false }}"><button class="admin-action-button admin-action-danger" onClick="{{ vidDelete }}">Delete the cache</button></sc-if>
+      </div>
+      <p aria-live="polite" style="margin:8px 0 0;font-family:var(--font-mono);font-size:10.5px;color:var(--accent)">{{ vidNote }}</p>
+    </div>
+
+    <div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--line);display:grid;grid-template-columns:auto minmax(0,1fr);gap:5px 13px;font-size:12.5px">
+      <span style="color:var(--text-faint)">File</span><span style="font-family:var(--font-mono);color:var(--text-soft);overflow:hidden;text-overflow:ellipsis">{{ selFile }}</span>
+      <span style="color:var(--text-faint)">Type</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ selMime }}</span>
+      <span style="color:var(--text-faint)">Size</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ selSize }}</span>
+      <span style="color:var(--text-faint)">Duration</span><span style="font-family:var(--font-mono);color:{{ selDurC }}">{{ selDur }}</span>
+      <span style="color:var(--text-faint)">Uploaded</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ selUp }}</span>
+      <span style="color:var(--text-faint)">Changed</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ selUpd }}</span>
+      <span style="color:var(--text-faint)">Plays</span><span style="font-family:var(--font-mono);color:var(--text-soft)">{{ selPlays }}</span>
+      <span style="color:var(--text-faint)">In playlists</span><span style="color:var(--text-soft)">{{ selIn }}</span>
+    </div>
+
+    <div style="margin-top:13px;padding-top:13px;border-top:1px solid var(--line);display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+      <button class="admin-action-button admin-action-danger" onClick="{{ delPress }}">{{ delLabel }}</button>
+      <span style="font-size:11.5px;color:{{ delC }};max-width:26ch;line-height:1.4">{{ delNote }}</span>
+    </div>
+  </sc-if>
+  <sc-if value="{{ drawerPl }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="font-family:var(--font-mono);font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint)">Playlist</span>
+      <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint)">{{ plSelMeta }}</span>
+      <div style="flex:1"></div>
+      <button class="admin-action-button mus-act" onClick="{{ drawerClose }}" aria-label="Close the playlist panel">Close</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:9px;margin-top:14px">
+      <input value="{{ plNameDraft }}" onChange="{{ hPlName }}" aria-label="Playlist name" style="flex:1;font-weight:600" />
+      <button class="admin-action-button" onClick="{{ plRename }}" disabled="{{ plNameClean }}">Rename</button>
+    </div>
+    <p style="margin:8px 0 0;font-size:12px;color:var(--text-faint);line-height:1.45">{{ plSelHeld }}</p>
+    <p aria-live="polite" style="margin:6px 0 0;font-family:var(--font-mono);font-size:10.5px;color:{{ plNoteC }}">{{ plNote }}</p>
+    <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:7px">
+        <span style="font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint)">Order</span>
+        <span style="font-size:11.5px;color:var(--text-faint)">what she plays, top to bottom</span>
+      </div>
+      <sc-if value="{{ plHasTracks }}" hint-placeholder-val="{{ true }}">
+        <sc-for list="{{ plTracks }}" as="pt" hint-placeholder-count="4">
+          <div style="display:grid;grid-template-columns:20px minmax(0,1fr) 46px 84px;gap:9px;align-items:center;padding:5px 0;border-bottom:1px solid var(--line);transition:transform 240ms ease,opacity 240ms ease;transform:{{ pt.tx }};opacity:{{ pt.opc }}">
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);font-variant-numeric:tabular-nums">{{ pt.pos }}</span>
+            <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;color:var(--text-soft)">{{ pt.title }}</span>
+            <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:right">{{ pt.time }}</span>
+            <span style="display:flex;gap:5px;justify-self:end">
+              <button onClick="{{ pt.up }}" aria-label="Move up" title="Move up" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--line);color:var(--text-muted)"><span style="width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(225deg) translate(-1px,-1px)"></span></button>
+              <button onClick="{{ pt.down }}" aria-label="Move down" title="Move down" style="width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid var(--line);color:var(--text-muted)"><span style="width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg) translate(-1px,-1px)"></span></button>
+              <button onClick="{{ pt.rm }}" aria-label="{{ pt.rmLabel }}" title="{{ pt.rmLabel }}" style="height:22px;min-width:22px;padding:0 {{ pt.rmPad }};display:flex;align-items:center;justify-content:center;border-radius:6px;border:1px solid rgba(229,100,110,{{ pt.rmBd }});color:{{ pt.rmC }};background:{{ pt.rmBg }};font-family:var(--font-mono);font-size:10px;white-space:nowrap;transition:background 160ms ease,color 160ms ease">{{ pt.rmTxt }}</button>
+            </span>
+          </div>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{ plEmpty }}" hint-placeholder-val="{{ false }}">
+        <p style="margin:4px 0 0;font-size:12.5px;color:var(--text-soft)">Empty. A normal state: she holds it and plays nothing from it until tracks are added.</p>
+      </sc-if>
+    </div>
+    <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+        <button class="admin-action-button admin-action-primary" onClick="{{ pickToggle }}">{{ pickLabel }}</button>
+        <sc-if value="{{ pickOpen }}" hint-placeholder-val="{{ false }}">
+          <button class="admin-action-button" onClick="{{ pickAdd }}" disabled="{{ pickNone }}">{{ pickAddLabel }}</button>
+        </sc-if>
+      </div>
+      <sc-if value="{{ pickOpen }}" hint-placeholder-val="{{ false }}">
+        <input value="{{ pickQ }}" onChange="{{ hPickQ }}" placeholder="Search the library" aria-label="Search tracks to add" style="width:100%;margin-top:9px" />
+        <div style="margin-top:7px;max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:10px">
+          <sc-for list="{{ pickRows }}" as="pk" hint-placeholder-count="6">
+            <label style="display:grid;grid-template-columns:20px minmax(0,1fr) 48px;gap:9px;align-items:center;padding:6px 11px;border-bottom:1px solid var(--line);cursor:pointer;font-size:13px;color:var(--text-soft)">
+              <input type="checkbox" checked="{{ pk.on }}" onChange="{{ pk.toggle }}" />
+              <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pk.label }}</span>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--text-faint);text-align:right">{{ pk.time }}</span>
+            </label>
+          </sc-for>
+          <sc-if value="{{ pickEmpty }}" hint-placeholder-val="{{ false }}">
+            <p style="margin:0;padding:9px 11px;font-size:12px;color:var(--text-faint)">Nothing matches, or everything is already in this playlist.</p>
+          </sc-if>
+        </div>
+      </sc-if>
+      <p style="margin:9px 0 0;font-size:11.5px;color:var(--text-faint);line-height:1.45">For many tracks at once: tick them in the Library and use "Add to playlist" there.</p>
+    </div>
+    <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--line);display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+      <button class="admin-action-button admin-action-danger" onClick="{{ plDelPress }}">{{ plDelLabel }}</button>
+      <span style="font-size:11.5px;color:{{ plDelC }};max-width:26ch;line-height:1.4">{{ plDelNote }}</span>
+    </div>
+  </sc-if>
+  </aside>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;library&quot;,&quot;playlists&quot;,&quot;assignments&quot;,&quot;storage&quot;],&quot;default&quot;:&quot;library&quot;,&quot;tsType&quot;:&quot;'library' | 'playlists' | 'assignments' | 'storage'&quot;,&quot;section&quot;:&quot;Review&quot;},&quot;emptyLibrary&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Review&quot;,&quot;label&quot;:&quot;Fresh install, nothing uploaded&quot;},&quot;reducedMotion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Review&quot;}}">
+class Component extends DCLogic {
+  /* Shapes from the repo, values are sample data: cinderella_tracks (genre is ONE text
+     column, duration nullable, encode trio), playlists, assignments (on-request | cadence
+     with dest group + interval and/or message count), MUSIC_DEFAULTS. */
+  BOTS = [{ id: 4, name: 'Aria' }, { id: 7, name: 'Echo' }, { id: 9, name: 'Lumen' }];
+  ENCODE_VERSION = 3;
+  CEIL = 104857600;
+  TR = [
+    { id: 't1', kind: 'music', title: 'Nachtluft', artist: 'Ilse Kranz', album: 'Hafenkante', genre: 'Ambient', dur: 227, file: 'track.mp3', mime: 'audio/mpeg', size: 5412000, cover: 1, vid: 12100000, vidAt: '2026-07-02 21:22', plays: 42, up: '2026-07-02 21:14', upd: '2026-07-02 21:20' },
+    { id: 't2', kind: 'music', title: 'Kupferdraht', artist: 'Ilse Kranz', album: 'Hafenkante', genre: 'Electronic', dur: 198, file: 'track.mp3', mime: 'audio/mpeg', size: 4730000, cover: 1, vid: 10800000, vidAt: '2026-07-02 21:24', plays: 31, up: '2026-07-02 21:15', upd: '2026-07-02 21:15' },
+    { id: 't3', kind: 'music', title: 'Second shift', artist: 'Mara Oduya', album: '', genre: 'Jazz', dur: 314, file: 'second-shift.mp3', mime: 'audio/mpeg', size: 7580000, cover: 1, vid: 0, vidAt: '', plays: 18, up: '2026-07-04 09:02', upd: '2026-07-11 18:31' },
+    { id: 't4', kind: 'music', title: 'Rain on tarmac', artist: 'Field Unit', album: 'Sonden', genre: 'Field recording', dur: 402, file: 'rain-on-tarmac.mp3', mime: 'audio/mpeg', size: 9810000, cover: 0, vid: 0, vidAt: '', plays: 7, up: '2026-07-05 12:40', upd: '2026-07-05 12:40' },
+    { id: 't5', kind: 'audiobook', title: 'Der Kanal, Kapitel 1', artist: 'Jonas Reiter', album: 'Der Kanal', genre: 'Spoken word', dur: 2712, file: 'kanal-01.mp3', mime: 'audio/mpeg', size: 38400000, cover: 1, vid: 0, vidAt: '', plays: 12, up: '2026-07-06 20:11', upd: '2026-07-06 20:11' },
+    { id: 't6', kind: 'audiobook', title: 'Der Kanal, Kapitel 2', artist: 'Jonas Reiter', album: 'Der Kanal', genre: 'Spoken word', dur: 2588, file: 'kanal-02.mp3', mime: 'audio/mpeg', size: 36900000, cover: 1, vid: 0, vidAt: '', plays: 9, up: '2026-07-06 20:14', upd: '2026-07-06 20:14' },
+    { id: 't7', kind: 'music', title: 'Halbschatten', artist: 'Ilse Kranz', album: 'Hafenkante', genre: 'Ambient', dur: 265, file: 'track.mp3', mime: 'audio/mpeg', size: 6300000, cover: 1, vid: 14200000, vidAt: '2026-07-08 08:02', plays: 27, up: '2026-07-08 07:58', upd: '2026-07-08 07:58' },
+    { id: 't8', kind: 'music', title: 'Winterhafen', artist: 'Ostfeld', album: 'Zwei Kilometer', genre: 'Folk', dur: 241, file: 'winterhafen.m4a', mime: 'audio/mp4', size: 5800000, cover: 1, vid: 12900000, vidAt: '2026-07-09 19:41', plays: 21, up: '2026-07-09 19:37', upd: '2026-07-09 19:37' },
+    { id: 't9', kind: 'documentary', title: 'Wie ein Kanal gebaut wird', artist: 'Studio Nord', album: '', genre: 'Spoken word', dur: 1844, file: 'kanalbau.mp3', mime: 'audio/mpeg', size: 27500000, cover: 1, vid: 0, vidAt: '', plays: 5, up: '2026-07-12 11:20', upd: '2026-07-12 11:26' },
+    { id: 't10', kind: 'spot', title: 'Community rules, 30 s', artist: 'Studio Nord', album: '', genre: '', dur: 30, file: 'rules-30.mp3', mime: 'audio/mpeg', size: 730000, cover: 0, vid: 0, vidAt: '', plays: 96, up: '2026-07-14 15:02', upd: '2026-07-30 09:12' },
+    { id: 't11', kind: 'spot', title: 'Support the archive, 20 s', artist: 'Studio Nord', album: '', genre: '', dur: 20, file: 'support-20.mp3', mime: 'audio/mpeg', size: 510000, cover: 1, vid: 1400000, vidAt: '2026-07-14 15:09', plays: 88, up: '2026-07-14 15:06', upd: '2026-07-14 15:06' },
+    { id: 't12', kind: 'music', title: 'Trockendock', artist: 'Ostfeld', album: 'Zwei Kilometer', genre: 'Folk', dur: 288, file: 'trockendock.m4a', mime: 'audio/mp4', size: 6900000, cover: 1, vid: 0, vidAt: '', plays: 14, up: '2026-07-19 22:03', upd: '2026-07-19 22:03' },
+    { id: 't13', kind: 'music', title: 'Neon Ost', artist: 'Mara Oduya', album: '', genre: 'Electronic', dur: 352, file: 'neon-ost.mp3', mime: 'audio/mpeg', size: 8400000, cover: 1, vid: 18100000, vidAt: '2026-07-22 10:15', plays: 33, up: '2026-07-22 10:11', upd: '2026-07-22 10:11' },
+    { id: 't14', kind: 'music', title: 'Sonde 4', artist: 'Field Unit', album: 'Sonden', genre: 'Field recording', dur: null, file: 'sonde-4.wav', mime: 'audio/wav', size: 11400000, cover: 0, vid: 0, vidAt: '', plays: 3, up: '2026-07-28 16:44', upd: '2026-07-28 16:44' },
+    { id: 't15', kind: 'music', title: 'Abendrot', artist: 'Ostfeld', album: 'Zwei Kilometer', genre: '', dur: 209, file: 'abendrot.m4a', mime: 'audio/mp4', size: 5000000, cover: 1, vid: 11200000, vidAt: '2026-08-01 18:22', plays: 25, up: '2026-08-01 18:19', upd: '2026-08-04 07:40' },
+    { id: 't16', kind: 'audiobook', title: 'Der Kanal, Kapitel 3', artist: 'Jonas Reiter', album: 'Der Kanal', genre: 'Spoken word', dur: 2450, file: 'kanal-03.mp3', mime: 'audio/mpeg', size: 35100000, cover: 0, vid: 0, vidAt: '', plays: 4, up: '2026-08-09 21:02', upd: '2026-08-09 21:02' }
+  ];
+  PL = [
+    { id: 'p1', name: 'Late shift', tracks: ['t1', 't7', 't2', 't15'] },
+    { id: 'p2', name: 'Morning desk', tracks: ['t3', 't13', 't8'] },
+    { id: 'p3', name: 'Der Kanal, complete', tracks: ['t5', 't6', 't16'] },
+    { id: 'p4', name: 'Spots', tracks: ['t10', 't11'] },
+    { id: 'p5', name: 'Field notes', tracks: ['t4', 't14'] },
+    { id: 'p6', name: 'New, unsorted', tracks: [] }
+  ];
+  AS = [
+    { id: 'a1', bot: 4, pl: 'p1', mode: 'cadence', dest: '881', mins: '45', msgs: '', last: '2026-08-15 16:58' },
+    { id: 'a2', bot: 4, pl: 'p4', mode: 'cadence', dest: '881', mins: '', msgs: '120', last: '2026-08-15 14:12' },
+    { id: 'a3', bot: 7, pl: 'p2', mode: 'on-request', dest: '', mins: '', msgs: '', last: '2026-08-14 18:40' },
+    { id: 'a4', bot: 9, pl: 'p3', mode: 'on-request', dest: '', mins: '', msgs: '', last: '' }
+  ];
+  SET0 = { musicDailyCap: '3', musicGapMinutes: '60', spotDailyCap: '3', spotGapMinutes: '60', memberUploadMb: '10' };
+  SETF = ['musicDailyCap', 'musicGapMinutes', 'spotDailyCap', 'spotGapMinutes', 'memberUploadMb'];
+  EX = [
+    { name: 'Ilse Kranz - Abriss.mp3', size: 6120000, dur: 254, genre: 'Ambient', album: 'Hafenkante' },
+    { name: 'Ostfeld - Zwei Kilometer.m4a', size: 5470000, dur: 228, genre: 'Folk', album: 'Zwei Kilometer' },
+    { name: 'aufnahme-04.mp3', size: 8990000, dur: 371, genre: '', album: '' }
+  ];
+
+  state = (() => {
+    const empty = this.props.emptyLibrary ?? false;
+    return {
+      screen: this.props.startScreen ?? 'library',
+      tracks: empty ? [] : this.TR.map(t => ({ ...t })),
+      pls: empty ? [] : this.PL.map(p => ({ ...p, tracks: p.tracks.slice() })),
+      asg: empty ? [] : this.AS.map(a => ({ ...a })),
+      q: '', sort: 'up', dir: 'desc', fKind: '', fGenre: '', fX: '',
+      checked: [], bulkPl: empty ? '' : 'p1', libNote: '',
+      sel: null, drawer: false, drawerKind: 'track', dr: null, drSavedAt: '', delArm: false, delArmRow: null,
+      cpk: '', coverState: '', coverStOk: false, vidNote: '',
+      staged: [], sSeq: 0, dzOn: false,
+      plSel: empty ? null : 'p1', plNameDraft: empty ? '' : 'Late shift', newPl: '', plNote: '', plNoteOk: true, plDelArm: false, plDelArmRow: null,
+      pickOpen: false, picked: [], pickQ: '',
+      newBot: '4', newPlaylist: empty ? '' : 'p1', asgNote: '', asgNoteOk: true, asgSeq: 0,
+      set: { ...this.SET0 }, setSaved: null, setAt: '',
+      pid: null, ppos: 0, pon: false, queue: [], qIdx: 0, qName: '',
+      rmArm: null, rmGoing: null, t: 0, now: '--:--', dateLine: ''
+    };
+  })();
+
+  componentDidMount() { this.armLive(); this.tick(); }
+  /* Idempotent re-arm through a window handle: this preview runtime can swap the logic
+     instance and skip the new instance's componentDidMount. The repo mounts once.
+     [DO NOT PORT] */
+  armLive() {
+    if (window.__muTimer) clearInterval(window.__muTimer);
+    this.timer = window.__muTimer = setInterval(() => { if (!this._dead) this.tick(); }, 1000);
+    this._live = true;
+  }
+  ensureLive() { if (!this._live) this.armLive(); }
+  componentWillUnmount() {
+    this._dead = true; this._live = false;
+    clearInterval(this.timer);
+    if (window.__muTimer === this.timer) window.__muTimer = null;
+    if (this._tt) Object.keys(this._tt).forEach(k => clearTimeout(this._tt[k]));
+  }
+  rm() { return (this.props.reducedMotion ?? false) || (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }
+
+  tick() {
+    this.setState(s => {
+      const d = new Date(), p = x => String(x).padStart(2, '0');
+      const g = { t: s.t + 1, now: p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) };
+      const DW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], MO = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      g.dateLine = DW[d.getUTCDay()] + ' · ' + p(d.getUTCDate()) + ' ' + MO[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+      if (s.pon && s.pid) {
+        const tr = s.tracks.find(x => x.id === s.pid);
+        const dd = tr && tr.dur ? tr.dur : 0;
+        if (s.ppos + 1 >= dd) {
+          /* Playlist preview advances by itself, in the stored ORDER: the console previews
+             the order as authored; shuffle without replacement is the bot's own behaviour. */
+          if (s.queue.length && s.qIdx + 1 < s.queue.length) { g.qIdx = s.qIdx + 1; g.pid = s.queue[g.qIdx]; g.ppos = 0; }
+          else { g.ppos = dd; g.pon = false; if (s.queue.length) { g.queue = []; g.qIdx = 0; g.qName = ''; } }
+        } else g.ppos = s.ppos + 1;
+      }
+      return g;
+    });
+  }
+  clock() { const d = new Date(), p = x => String(x).padStart(2, '0'); return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()); }
+  today() { const d = new Date(), p = x => String(x).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()); }
+  mb(b) { if (!b) return '0 bytes'; if (b < 1048576) return String(Math.max(1, Math.round(b / 1024))) + ' KB'; if (b < 1073741824) return (b / 1048576).toFixed(1) + ' MB'; return (b / 1073741824).toFixed(2) + ' GB'; }
+  mbShort(b) { if (!b) return '0'; if (b < 1073741824) return Math.round(b / 1048576) + ' MB'; return (b / 1073741824).toFixed(1) + ' GB'; }
+  mmss(s) { if (s === null || s === undefined) return 'unknown'; const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), q = s % 60; const p = x => String(x).padStart(2, '0'); return h ? h + ':' + p(m) + ':' + p(q) : m + ':' + p(q); }
+  glyph(t) { return (t.title || '?').trim().charAt(0).toUpperCase(); }
+  tint(t) { const n = (t.id || '').length + (t.title || '').length;
+    const base = ['linear-gradient(135deg,#A62468,#1F6B7C)', 'linear-gradient(135deg,#1F7487,#87215C)', 'linear-gradient(160deg,#5C2E8A,#1F6B7C)', 'linear-gradient(160deg,#8A2447,#24557C)'][n % 4];
+    return 'radial-gradient(130% 100% at 18% 10%, rgba(255,255,255,.32), transparent 46%),' + base; }
+
+  go(screen) { this.setState({ screen, delArm: false, plDelArm: false, drawer: false, delArmRow: null, plDelArmRow: null }); }
+  draftOf(id) { const t = this.state.tracks.find(x => x.id === id); return t ? { title: t.title, artist: t.artist, album: t.album, genre: t.genre, kind: t.kind } : null; }
+  edit(id) { this.setState({ sel: id, dr: this.draftOf(id), drawer: true, drawerKind: 'track', delArm: false, cpk: '', coverState: '', vidNote: '', drSavedAt: '' }); }
+  drSet(k, v) { this.setState(s => ({ dr: { ...s.dr, [k]: v } })); }
+  drSave() {
+    this.setState(s => ({
+      tracks: s.tracks.map(t => t.id === s.sel ? { ...t, ...s.dr, upd: this.today() + ' ' + this.clock().slice(0, 5) } : t),
+      drSavedAt: this.clock()
+    }));
+  }
+
+  hCover(e) { const f = e.target.files && e.target.files[0]; if (f) this.setState({ cpk: f.name, coverState: 'chosen, not uploaded yet: ' + f.name, coverStOk: false }); }
+  coverApply() {
+    if (!this.state.cpk) return;
+    this.setState(s => ({
+      tracks: s.tracks.map(t => t.id === s.sel ? { ...t, cover: 1, vid: 0, vidAt: '' } : t),
+      cpk: '', coverState: 'replaced at ' + this.clock() + ', re-encode queued', coverStOk: true
+    }));
+  }
+  vidBuild() {
+    const id = this.state.sel;
+    this.setState({ vidNote: 'queued at ' + this.clock() + ', the encoder runs outside this request' });
+    clearTimeout((this._tt = this._tt || {}).vid);
+    this._tt.vid = setTimeout(() => { if (this._dead) return;
+      this.setState(s => { const t = s.tracks.find(x => x.id === id); if (!t || !t.cover) return null;
+        return { tracks: s.tracks.map(x => x.id === id ? { ...x, vid: Math.round(x.size * 2.1), vidAt: this.today() + ' ' + this.clock().slice(0, 5) } : x), vidNote: 'built, cached for every later send' }; });
+    }, 2200);
+  }
+  vidDelete() { this.setState(s => ({ tracks: s.tracks.map(t => t.id === s.sel ? { ...t, vid: 0, vidAt: '' } : t), vidNote: 'cache deleted, the next send rebuilds it' })); }
+  removeTrack(id) {
+    this.setState(s => ({
+      tracks: s.tracks.filter(t => t.id !== id),
+      pls: s.pls.map(p => ({ ...p, tracks: p.tracks.filter(x => x !== id) })),
+      checked: s.checked.filter(x => x !== id),
+      sel: s.sel === id ? null : s.sel, drawer: s.sel === id ? false : s.drawer,
+      pid: s.pid === id ? null : s.pid, pon: s.pid === id ? false : s.pon,
+      delArm: false, delArmRow: null,
+      libNote: 'track deleted, with its file, its cover, its cached video and its plays'
+    }));
+  }
+  delPress() { if (!this.state.delArm) { this.setState({ delArm: true }); return; } this.removeTrack(this.state.sel); }
+  rowDel(id) {
+    if (this.state.delArmRow !== id) {
+      this.setState({ delArmRow: id });
+      clearTimeout((this._tt = this._tt || {}).rowdel);
+      this._tt.rowdel = setTimeout(() => { if (!this._dead) this.setState(s => (s.delArmRow === id ? { delArmRow: null } : null)); }, 2800);
+      return;
+    }
+    this.removeTrack(id);
+  }
+
+  addFiles(list) {
+    const now = this.state.sSeq;
+    const rows = list.map((f, i) => ({ key: 'u' + (now + i + 1), name: f.name, size: f.size, dur: f.dur === undefined ? Math.round(f.size / 16000) : f.dur, exGenre: f.genre, exAlbum: f.album, state: 'reading', title: '', artist: '', genre: '', album: '', kind: /(^|[^a-z])(spot|jingle|werbung)/i.test(f.name) ? 'spot' : 'music' }));
+    this.setState(s => ({ staged: s.staged.concat(rows), sSeq: s.sSeq + rows.length, dzOn: false }));
+    rows.forEach((r, i) => {
+      clearTimeout((this._tt = this._tt || {})[r.key]);
+      this._tt[r.key] = setTimeout(() => { if (this._dead) return;
+        const base = r.name.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+        const parts = base.split(' - ');
+        const artist = parts.length > 1 ? parts[0].trim() : '';
+        const title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : base;
+        this.setState(s => ({ staged: s.staged.map(x => x.key === r.key ? { ...x, state: 'ready', title, artist, album: r.exAlbum || '', genre: r.exGenre || '' } : x) }));
+      }, 500 + i * 260);
+    });
+  }
+  hFiles(e) { const fs = Array.from(e.target.files || []).map(f => ({ name: f.name, size: f.size })); if (fs.length) this.addFiles(fs); e.target.value = ''; }
+  hDrop(e) { e.preventDefault(); const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || []).map(f => ({ name: f.name, size: f.size })); this.setState({ dzOn: false }); if (fs.length) this.addFiles(fs); }
+  demoFiles() { this.addFiles(this.EX.map(x => ({ ...x }))); }
+  stSet(key, k, v) { this.setState(s => ({ staged: s.staged.map(x => x.key === key ? { ...x, [k]: v } : x) })); }
+  stImport(key) {
+    const row = this.state.staged.find(x => x.key === key); if (!row || row.state !== 'ready') return;
+    this.setState(s => ({ staged: s.staged.map(x => x.key === key ? { ...x, state: 'importing' } : x) }));
+    clearTimeout((this._tt = this._tt || {})['i' + key]);
+    this._tt['i' + key] = setTimeout(() => { if (this._dead) return;
+      this.setState(s => {
+        const id = 'n' + key;
+        const tr = { id, kind: row.kind, title: (row.title || '').trim() || row.name, artist: (row.artist || '').trim(), album: (row.album || '').trim(), genre: (row.genre || '').trim(), dur: row.dur, file: row.name, mime: /\.m4a$/i.test(row.name) ? 'audio/mp4' : /\.wav$/i.test(row.name) ? 'audio/wav' : 'audio/mpeg', size: row.size, cover: 0, vid: 0, vidAt: '', plays: 0, up: this.today() + ' ' + this.clock().slice(0, 5), upd: this.today() + ' ' + this.clock().slice(0, 5) };
+        return { tracks: [tr].concat(s.tracks), staged: s.staged.filter(x => x.key !== key), sort: 'up', dir: 'desc', libNote: 'imported "' + tr.title + '", no cover yet, so it sends as a voice player' };
+      });
+    }, 900);
+  }
+  importAll() { this.state.staged.filter(x => x.state === 'ready').forEach(x => this.stImport(x.key)); }
+
+  bulkAdd() {
+    this.setState(s => {
+      const p = s.pls.find(x => x.id === s.bulkPl); if (!p || !s.checked.length) return null;
+      const add = s.checked.filter(id => p.tracks.indexOf(id) < 0 && s.tracks.some(t => t.id === id));
+      const skipped = s.checked.length - add.length;
+      return { pls: s.pls.map(x => x.id === p.id ? { ...x, tracks: x.tracks.concat(add) } : x), checked: [],
+        libNote: add.length + (add.length === 1 ? ' track' : ' tracks') + ' added to "' + p.name + '"' + (skipped ? ', ' + skipped + ' already in it' : '') };
+    });
+  }
+
+  plPick(id) { this.setState(s => { const p = s.pls.find(x => x.id === id); return { plSel: id, plNameDraft: p ? p.name : '', pickOpen: false, picked: [], pickQ: '', plDelArm: false, plNote: '' }; }); }
+  plEdit(id) { this.plPick(id); this.setState({ drawer: true, drawerKind: 'playlist' }); }
+  plRowDel(id) {
+    if (this.state.plDelArmRow !== id) {
+      this.setState({ plDelArmRow: id });
+      clearTimeout((this._tt = this._tt || {}).pldel);
+      this._tt.pldel = setTimeout(() => { if (!this._dead) this.setState(s => (s.plDelArmRow === id ? { plDelArmRow: null } : null)); }, 2800);
+      return;
+    }
+    this.setState(s => { const rest = s.pls.filter(p => p.id !== id); const nx = rest.length ? rest[0] : null;
+      return { pls: rest, asg: s.asg.filter(a => a.pl !== id), plDelArmRow: null,
+        drawer: s.drawerKind === 'playlist' && s.plSel === id ? false : s.drawer,
+        plSel: s.plSel === id ? (nx ? nx.id : null) : s.plSel,
+        plNameDraft: s.plSel === id ? (nx ? nx.name : '') : s.plNameDraft,
+        plNote: 'deleted, the tracks themselves stay', plNoteOk: true }; });
+  }
+  plCreate() {
+    const name = (this.state.newPl || '').trim();
+    if (!name) { this.setState({ plNote: 'A playlist needs a name.', plNoteOk: false }); return; }
+    if (this.state.pls.some(p => p.name.toLowerCase() === name.toLowerCase())) { this.setState({ plNote: 'A playlist called "' + name + '" already exists.', plNoteOk: false }); return; }
+    this.setState(s => { const id = 'p' + (s.pls.length + 1) + '-' + s.sSeq;
+      return { pls: s.pls.concat([{ id, name, tracks: [] }]), newPl: '', plSel: id, plNameDraft: name, plNote: 'created, empty until you add tracks', plNoteOk: true }; });
+  }
+  plRename() {
+    const name = (this.state.plNameDraft || '').trim(); if (!name) return;
+    this.setState(s => ({ pls: s.pls.map(p => p.id === s.plSel ? { ...p, name } : p), plNote: 'renamed at ' + this.clock(), plNoteOk: true }));
+  }
+  plMove(id, dir) {
+    this.setState(s => ({ pls: s.pls.map(p => { if (p.id !== s.plSel) return p;
+      const a = p.tracks.slice(); const i = a.indexOf(id); const j = i + dir;
+      if (i < 0 || j < 0 || j >= a.length) return p;
+      a[i] = a[j]; a[j] = id; return { ...p, tracks: a }; }) }));
+  }
+  /* Removing from the ORDER wants a confirmation and a visible exit: first press arms the
+     control (it turns solid and says sure?, disarming itself after 2.8s), the second press
+     slides the row out and only then edits the order. */
+  plRmPress(id) {
+    const st = this.state;
+    if (st.rmGoing === id) return;
+    if (st.rmArm !== id) {
+      this.setState({ rmArm: id });
+      clearTimeout((this._tt = this._tt || {}).rmarm);
+      this._tt.rmarm = setTimeout(() => { if (!this._dead) this.setState(s => (s.rmArm === id ? { rmArm: null } : null)); }, 2800);
+      return;
+    }
+    this.setState({ rmGoing: id, rmArm: null });
+    clearTimeout((this._tt = this._tt || {}).rmgo);
+    this._tt.rmgo = setTimeout(() => { if (this._dead) return;
+      this.setState(s => ({ pls: s.pls.map(p => p.id === s.plSel ? { ...p, tracks: p.tracks.filter(x => x !== id) } : p), rmGoing: null,
+        plNote: 'removed from this playlist, the track stays in the library', plNoteOk: true }));
+    }, this.rm() ? 0 : 250);
+  }
+  plRemoveTrack(id) { this.setState(s => ({ pls: s.pls.map(p => p.id === s.plSel ? { ...p, tracks: p.tracks.filter(x => x !== id) } : p) })); }
+  pickAdd() {
+    this.setState(s => {
+      const p = s.pls.find(x => x.id === s.plSel); if (!p) return null;
+      const add = s.picked.filter(id => p.tracks.indexOf(id) < 0);
+      return { pls: s.pls.map(x => x.id === p.id ? { ...x, tracks: x.tracks.concat(add) } : x), picked: [], pickOpen: false, plNote: add.length + (add.length === 1 ? ' track added' : ' tracks added'), plNoteOk: true };
+    });
+  }
+  plDelPress() {
+    if (!this.state.plDelArm) { this.setState({ plDelArm: true }); return; }
+    this.setState(s => { const rest = s.pls.filter(p => p.id !== s.plSel); const nx = rest.length ? rest[0] : null;
+      return { pls: rest, asg: s.asg.filter(a => a.pl !== s.plSel), plSel: nx ? nx.id : null, plNameDraft: nx ? nx.name : '', plDelArm: false, drawer: false, plNote: 'deleted, the tracks themselves stay', plNoteOk: true }; });
+  }
+
+  asgSet(id, k, v) {
+    this.setState(s => ({ asg: s.asg.map(a => { if (a.id !== id) return a;
+      const n = { ...a, [k]: v, dirty: 1 };
+      if (k === 'mode' && v === 'on-request') { n.dest = ''; n.mins = ''; n.msgs = ''; }
+      return n; }) }));
+  }
+  asgApply(id) {
+    const a = this.state.asg.find(x => x.id === id); if (!a) return;
+    if (a.mode === 'cadence') {
+      if (!String(a.dest).trim()) { this.setState({ asgNote: 'A cadence needs a destination group.', asgNoteOk: false }); return; }
+      if (!String(a.mins).trim() && !String(a.msgs).trim()) { this.setState({ asgNote: 'At least one trigger is required: an interval, a message count, or both.', asgNoteOk: false }); return; }
+    }
+    this.setState(s => ({ asg: s.asg.map(x => x.id === id ? { ...x, dirty: 0, appliedAt: this.clock() } : x),
+      asgNote: a.mode === 'cadence' ? 'cadence set for ' + this.botName(a.bot) + ', it speaks unbidden from now on' : 'back to on request only for ' + this.botName(a.bot), asgNoteOk: true }));
+  }
+  asgRemove(id) { this.setState(s => ({ asg: s.asg.filter(a => a.id !== id), asgNote: 'the playlist was taken away, the tracks and the playlist stay', asgNoteOk: true })); }
+  asgAdd() {
+    const bot = +this.state.newBot, pl = this.state.newPlaylist;
+    if (!pl) { this.setState({ asgNote: 'Create a playlist first.', asgNoteOk: false }); return; }
+    if (this.state.asg.some(a => a.bot === bot && a.pl === pl)) { this.setState({ asgNote: this.botName(bot) + ' already holds that playlist.', asgNoteOk: false }); return; }
+    this.setState(s => ({ asg: s.asg.concat([{ id: 'a' + (s.asgSeq + 5), bot, pl, mode: 'on-request', dest: '', mins: '', msgs: '', last: '', appliedAt: this.clock() }]), asgSeq: s.asgSeq + 1, asgNote: 'assigned to ' + this.botName(bot) + ', on request only', asgNoteOk: true }));
+  }
+  botName(id) { const b = this.BOTS.find(x => x.id === +id); return b ? b.name : 'bot ' + id; }
+  plName(id) { const p = this.state.pls.find(x => x.id === id); return p ? p.name : 'deleted playlist'; }
+
+  setSet(k, v) { this.setState(s => ({ set: { ...s.set, [k]: v } })); }
+
+  play(id) { this.setState(s => (s.pid === id ? { pon: !s.pon } : { pid: id, ppos: 0, pon: true, queue: [], qIdx: 0, qName: '' })); }
+  /* Preview of a playlist: the stored order, top to bottom. */
+  playPl(id) {
+    this.setState(s => {
+      const p = s.pls.find(x => x.id === id); if (!p) return null;
+      const q = p.tracks.filter(tid => s.tracks.some(t => t.id === tid));
+      if (!q.length) return { plNote: '"' + p.name + '" is empty, nothing to play', plNoteOk: false };
+      return { queue: q, qIdx: 0, qName: p.name, pid: q[0], ppos: 0, pon: true };
+    });
+  }
+  pNext() {
+    this.setState(s => {
+      if (!s.queue.length) return null;
+      const n = s.qIdx + 1;
+      if (n >= s.queue.length) return { queue: [], qIdx: 0, qName: '', pid: null, pon: false, ppos: 0 };
+      return { qIdx: n, pid: s.queue[n], ppos: 0, pon: true };
+    });
+  }
+  pScrub(e) {
+    const r = e.currentTarget.getBoundingClientRect();
+    const f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    this.setState(s => { const t = s.tracks.find(x => x.id === s.pid); const d = t && t.dur ? t.dur : 0; return { ppos: Math.round(d * f) }; });
+  }
+
+  toggleIn(arr, v) { return arr.indexOf(v) < 0 ? arr.concat([v]) : arr.filter(x => x !== v); }
+  inAnyPl(s, id) { return s.pls.some(p => p.tracks.indexOf(id) >= 0); }
+  match(t) {
+    const s = this.state, q = (s.q || '').trim().toLowerCase();
+    if (q) { const hay = (t.title + ' ' + t.artist + ' ' + t.album + ' ' + t.file + ' ' + t.genre).toLowerCase(); if (hay.indexOf(q) < 0) return false; }
+    if (s.fKind && t.kind !== s.fKind) return false;
+    if (s.fGenre && (t.genre || '(no genre)') !== s.fGenre) return false;
+    if (s.fX === 'nocover' && t.cover) return false;
+    if (s.fX === 'novideo' && !(t.cover && !t.vid)) return false;
+    if (s.fX === 'video' && !(t.vid > 0)) return false;
+    if (s.fX === 'nopl' && this.inAnyPl(s, t.id)) return false;
+    if (s.fX === 'nodur' && t.dur !== null) return false;
+    return true;
+  }
+
+  renderVals() {
+    this.ensureLive();
+    const s = this.state, rm = this.rm();
+    const orig = s.tracks.reduce((n, t) => n + t.size + (t.cover ? 184000 : 0), 0);
+    const enc = s.tracks.reduce((n, t) => n + t.vid, 0);
+    const plays = s.tracks.reduce((n, t) => n + t.plays, 0);
+    const inPl = id => s.pls.filter(p => p.tracks.indexOf(id) >= 0).map(p => p.name);
+
+    const gAll = [];
+    s.tracks.forEach(t => { const g = t.genre || '(no genre)'; if (gAll.indexOf(g) < 0) gAll.push(g); });
+    gAll.sort((a, b) => a === '(no genre)' ? 1 : b === '(no genre)' ? -1 : a.localeCompare(b));
+
+    const K = { title: 'title', artist: 'artist', kind: 'kind', genre: 'genre', dur: 'dur', size: 'size', plays: 'plays', up: 'up' }[s.sort] || 'up';
+    const list = s.tracks.filter(t => this.match(t)).sort((a, b) => {
+      const x = a[K], y = b[K], d = s.dir === 'asc' ? 1 : -1;
+      if (typeof x === 'number' || typeof y === 'number' || x === null || y === null) {
+        const nx = x === null || x === undefined ? -1 : x, ny = y === null || y === undefined ? -1 : y;
+        return (nx - ny) * d;
+      }
+      return String(x || '').localeCompare(String(y || '')) * d;
+    });
+    const hd = key => ({ c: s.sort === key ? 'var(--accent)' : 'var(--text-faint)', rot: s.dir === 'asc' ? 'rotate(225deg)' : 'rotate(45deg)', op: s.sort === key ? 1 : 0 });
+    const sortBy = key => this.setState(st => ({ sort: key, dir: st.sort === key ? (st.dir === 'asc' ? 'desc' : 'asc') : (key === 'title' || key === 'artist' || key === 'genre' || key === 'kind' ? 'asc' : 'desc') }));
+
+    const shownIds = list.map(t => t.id);
+    const allChecked = shownIds.length > 0 && shownIds.every(id => s.checked.indexOf(id) >= 0);
+
+    const rows = list.map(t => {
+      const playing = s.pid === t.id && s.pon;
+      const armed = s.delArmRow === t.id;
+      return { title: t.title, artist: t.artist || 'no artist in the tag',
+        kind: t.kind, kC: t.kind === 'spot' ? 'var(--warning)' : 'var(--text-muted)',
+        genre: t.genre || 'no genre', gC: t.genre ? 'var(--text-soft)' : 'var(--text-faint)',
+        time: this.mmss(t.dur), dC: t.dur === null ? 'var(--warning)' : 'var(--text-soft)',
+        size: this.mb(t.size), plays: t.plays,
+        hasCover: !!t.cover, cvTitle: t.cover ? 'Cover from the file' : 'No cover. Sent as title plus voice player.',
+        cvBg: t.cover ? 'rgba(203,213,225,.07)' : 'transparent', cvBorder: t.cover ? '1px solid var(--line)' : '1px dashed rgba(148,163,184,.35)',
+        cvC: t.cover ? 'var(--text-muted)' : 'var(--text-faint)',
+        vTxt: !t.cover ? 'n/a' : t.vid > 0 ? 'cached' : 'not built',
+        vC: !t.cover ? 'var(--text-faint)' : t.vid > 0 ? 'var(--success)' : 'var(--text-muted)',
+        vTitle: !t.cover ? 'No cover, so there is nothing to encode' : t.vid > 0 ? 'Cached video, ' + this.mb(t.vid) : 'Built on first send, or from the track panel',
+        playing, idle: !playing, playLabel: (playing ? 'Pause ' : 'Play ') + t.title,
+        pOn: playing ? '1' : '0',
+        bg: s.drawer && s.sel === t.id ? 'rgba(69,189,209,.07)' : 'transparent',
+        on: s.checked.indexOf(t.id) >= 0, checkLabel: 'Select ' + t.title,
+        check: () => this.setState(st => ({ checked: this.toggleIn(st.checked, t.id) })),
+        play: () => this.play(t.id),
+        gclick: () => this.setState({ fGenre: t.genre || '(no genre)' }),
+        edit: () => this.edit(t.id),
+        del: () => this.rowDel(t.id),
+        delLabel: armed ? 'Again?' : 'Delete',
+        delC: armed ? '#fff' : 'var(--danger)' };
+    });
+
+    const sel = s.tracks.find(t => t.id === s.sel) || null;
+    const dr = s.dr || { title: '', artist: '', album: '', genre: '', kind: 'music' };
+    const drKeys = sel ? ['title', 'artist', 'album', 'genre', 'kind'].filter(k => (dr[k] || '') !== (sel[k] || '')) : [];
+    const pTrack = s.tracks.find(t => t.id === s.pid) || null;
+    const pDurN = pTrack && pTrack.dur ? pTrack.dur : 0;
+
+    const plSel = s.pls.find(p => p.id === s.plSel) || null;
+    const plLen = p => p.tracks.reduce((n, id) => { const t = s.tracks.find(x => x.id === id); return n + (t && t.dur ? t.dur : 0); }, 0);
+    const heldBy = pid => s.asg.filter(a => a.pl === pid).map(a => this.botName(a.bot) + (a.mode === 'cadence' ? ' (cadence)' : ''));
+    const gMax = Math.max(1, ...gAll.map(g => s.tracks.filter(t => (t.genre || '(no genre)') === g).length));
+    const pickQ = (s.pickQ || '').trim().toLowerCase();
+
+    const setBase = s.setSaved || this.SET0;
+    const setDk = this.SETF.filter(k => s.set[k] !== setBase[k]);
+    const setObj = {};
+    this.SETF.forEach(k => { setObj[k] = s.set[k]; setObj['h' + k.charAt(0).toUpperCase() + k.slice(1)] = e => this.setSet(k, e.target.value); });
+
+    return {
+      rmAttr: rm ? 'on' : 'off', now: s.now, dateLine: s.dateLine,
+      isLib: s.screen === 'library', isPl: s.screen === 'playlists', isAsg: s.screen === 'assignments', isSt: s.screen === 'storage',
+      curLib: s.screen === 'library' ? 'page' : 'false', curPl: s.screen === 'playlists' ? 'page' : 'false',
+      curAsg: s.screen === 'assignments' ? 'page' : 'false', curSt: s.screen === 'storage' ? 'page' : 'false',
+      goLib: () => this.go('library'), goPl: () => this.go('playlists'), goAsg: () => this.go('assignments'), goSt: () => this.go('storage'),
+      nTracks: s.tracks.length, nPls: s.pls.length, nAsg: s.asg.length, diskShort: this.mbShort(orig + enc),
+      metaShort: 'library online · ' + s.tracks.length + ' tracks',
+      metaLine: s.tracks.length + ' tracks · ' + s.pls.length + ' playlists · ' + this.mb(orig + enc) + ' on disk',
+
+      q: s.q, hQ: e => this.setState({ q: e.target.value }),
+      fKind: s.fKind, hFKind: e => this.setState({ fKind: e.target.value }),
+      fGenre: s.fGenre, hFGenre: e => this.setState({ fGenre: e.target.value }),
+      fX: s.fX, hFX: e => this.setState({ fX: e.target.value }),
+      genreSel: gAll.map(g => ({ v: g, n: g })),
+      anyFilter: !!(s.q || s.fKind || s.fGenre || s.fX),
+      clearF: () => this.setState({ q: '', fKind: '', fGenre: '', fX: '' }),
+      countLine: list.length === s.tracks.length ? s.tracks.length + ' tracks' : list.length + ' of ' + s.tracks.length + ' tracks',
+      footLine: list.length + ' shown · ' + this.mb(list.reduce((n, t) => n + t.size, 0)) + ' · ' + this.mmss(list.reduce((n, t) => n + (t.dur || 0), 0)) + ' of audio · a click on a genre filters by it',
+      ceilLine: 'up to ' + this.mb(this.CEIL) + ' per file', ceilOnly: this.mb(this.CEIL),
+      dzAttr: s.dzOn ? 'on' : 'off',
+      hDragOver: e => { e.preventDefault(); if (!s.dzOn) this.setState({ dzOn: true }); },
+      hDragLeave: () => this.setState({ dzOn: false }),
+      hDrop: e => this.hDrop(e), hFiles: e => this.hFiles(e), demoFiles: () => this.demoFiles(),
+
+      hasStaged: s.staged.length > 0,
+      stagedLine: s.staged.filter(x => x.state === 'ready').length + ' of ' + s.staged.length + ' read and ready',
+      noneReady: !s.staged.some(x => x.state === 'ready'),
+      importOp: s.staged.some(x => x.state === 'ready') ? 1 : 0.45,
+      importAll: () => this.importAll(), discardAll: () => this.setState({ staged: [] }),
+      staged: s.staged.map(x => ({
+        title: x.title, artist: x.artist, genre: x.genre, kind: x.kind,
+        titlePh: x.state === 'reading' ? '' : 'no title in the tag',
+        state: x.state === 'reading' ? 'reading the tag' : x.state === 'importing' ? 'importing' : this.mb(x.size) + ' · ' + this.mmss(x.dur),
+        stC: x.state === 'ready' ? 'var(--text-faint)' : 'var(--accent)',
+        busy: x.state !== 'ready', impOp: x.state === 'ready' ? 1 : 0.45,
+        hTitle: e => this.stSet(x.key, 'title', e.target.value), hArtist: e => this.stSet(x.key, 'artist', e.target.value),
+        hGenre: e => this.stSet(x.key, 'genre', e.target.value), hKind: e => this.stSet(x.key, 'kind', e.target.value),
+        imp: () => this.stImport(x.key)
+      })),
+
+      hasChecked: s.checked.length > 0,
+      checkedLine: s.checked.length + (s.checked.length === 1 ? ' track selected' : ' tracks selected'),
+      bulkPl: s.bulkPl, hBulkPl: e => this.setState({ bulkPl: e.target.value }),
+      bulkAdd: () => this.bulkAdd(), clearChecked: () => this.setState({ checked: [] }),
+      libNote: s.libNote, libNoteOn: !!s.libNote,
+      allChecked,
+      toggleAll: () => this.setState(st => ({ checked: allChecked ? st.checked.filter(id => shownIds.indexOf(id) < 0) : Array.from(new Set(st.checked.concat(shownIds))) })),
+      hasRows: list.length > 0, noRows: list.length === 0,
+      emptyTitle: s.tracks.length === 0 ? 'The library is empty.' : 'Nothing matches these filters.',
+      emptyNote: s.tracks.length === 0 ? 'Drop audio files above to start. An empty library on a fresh install is a normal state, not a fault.' : 'Reset the filters above, or search for something else. The tracks are still there.',
+      rows,
+      sTitle: hd('title'), sArtist: hd('artist'), sKind: hd('kind'), sGenre: hd('genre'), sDur: hd('dur'), sSize: hd('size'), sPlays: hd('plays'),
+      hTitleSort: () => sortBy('title'), hArtistSort: () => sortBy('artist'), hKindSort: () => sortBy('kind'),
+      hGenreSort: () => sortBy('genre'), hDurSort: () => sortBy('dur'), hSizeSort: () => sortBy('size'), hPlaysSort: () => sortBy('plays'),
+
+      drawerTrack: s.drawerKind !== 'playlist', drawerPl: s.drawerKind === 'playlist',
+      drawerTx: s.drawer ? '0' : '104%', drawerHidden: s.drawer ? 'false' : 'true',
+      drawerClose: () => this.setState({ drawer: false, delArm: false }),
+      dr: { title: dr.title, artist: dr.artist, album: dr.album, genre: dr.genre, kind: dr.kind,
+        hTitle: e => this.drSet('title', e.target.value), hArtist: e => this.drSet('artist', e.target.value),
+        hAlbum: e => this.drSet('album', e.target.value), hGenre: e => this.drSet('genre', e.target.value),
+        hKind: e => this.drSet('kind', e.target.value) },
+      drDirty: drKeys.length > 0, drClean: drKeys.length === 0,
+      drCount: drKeys.length + (drKeys.length === 1 ? ' unsaved change' : ' unsaved changes'),
+      drSavedLine: s.drSavedAt ? 'saved ' + s.drSavedAt : 'no pending changes',
+      drSaveOp: drKeys.length ? 1 : 0.45,
+      drSave: () => this.drSave(), drRevert: () => this.setState({ dr: this.draftOf(s.sel) }),
+      selTitle: sel ? sel.title : 'No track open', selHidden: !!(sel && s.drawer && !this.match(sel)),
+      selMeta: sel ? sel.kind + ' · ' + (sel.album || 'no album') + ' · ' + this.mmss(sel.dur) : '',
+      selShape: sel ? (sel.cover ? 'With a cover she sends one video message: the cover as the picture, the audio as the sound.' : 'Without a cover she sends the title as text plus a bare voice player. Two messages, and a normal state.') : '',
+      selShapeC: sel && sel.cover ? 'var(--text-muted)' : 'var(--warning)',
+      selHasCover: !!(sel && sel.cover), selCvBg: sel && sel.cover ? 'rgba(203,213,225,.07)' : 'transparent',
+      selCvBorder: sel && sel.cover ? '1px solid var(--line)' : '1px dashed rgba(148,163,184,.35)',
+      selCvC: sel && sel.cover ? 'var(--text-muted)' : 'var(--text-faint)',
+      selCvGlyph: sel && sel.cover ? this.glyph(sel) : '',
+      selFile: sel ? sel.file : '', selMime: sel ? sel.mime : '', selSize: sel ? this.mb(sel.size) : '',
+      selDur: sel ? this.mmss(sel.dur) : '', selDurC: sel && sel.dur === null ? 'var(--warning)' : 'var(--text-soft)',
+      selUp: sel ? sel.up : '', selUpd: sel ? sel.upd : '', selPlays: sel ? sel.plays : '',
+      selIn: sel ? (inPl(sel.id).length ? inPl(sel.id).join(', ') : 'in no playlist') : '',
+      coverLine: sel && sel.cover ? 'Choosing an image does not replace anything yet. The second press uploads it and queues a re-encode.' : 'No cover. Choosing an image does not add it yet: the second press uploads it.',
+      hCover: e => this.hCover(e), coverApply: () => this.coverApply(),
+      noCoverPick: !s.cpk, coverOp: s.cpk ? 1 : 0.45,
+      coverState: s.coverState || 'nothing chosen', coverStC: s.coverStOk ? 'var(--success)' : s.cpk ? 'var(--warning)' : 'var(--text-faint)',
+      vidHas: !!(sel && sel.vid > 0), vidNoCover: !!(sel && !sel.cover), vidBuildOp: sel && sel.cover ? 1 : 0.45,
+      vidBuildLabel: sel && sel.vid > 0 ? 'Rebuild it' : 'Build it now',
+      vidVer: sel && sel.vid > 0 ? 'recipe v' + this.ENCODE_VERSION : '',
+      vidLine: !sel ? '' : !sel.cover ? 'Nothing to encode: the video is the cover plus the audio, and this track has no cover.' : sel.vid > 0 ? 'Cached, ' + this.mb(sel.vid) + ', built ' + sel.vidAt + '. A repeat send never re-encodes.' : 'Not built. The first send builds it, which is a wait a member can feel, so build it here instead.',
+      vidNote: s.vidNote, vidBuild: () => this.vidBuild(), vidDelete: () => this.vidDelete(),
+      delLabel: s.delArm ? 'Press again to delete' : 'Delete this track',
+      delNote: s.delArm ? 'The file, the cover, the cached video and its play records go with it.' : 'Two presses, because the file and its plays go with it.',
+      delC: s.delArm ? 'var(--danger)' : 'var(--text-faint)', delPress: () => this.delPress(),
+
+      plRows: s.pls.map(p => ({ name: p.name, n: p.tracks.length, nC: p.tracks.length ? 'var(--text)' : 'var(--text-faint)',
+        len: this.mmss(plLen(p)), held: heldBy(p.id).length ? heldBy(p.id).join(', ') : 'no bot yet',
+        hC: heldBy(p.id).length ? 'var(--text-soft)' : 'var(--text-faint)',
+        bg: s.drawer && s.drawerKind === 'playlist' && s.plSel === p.id ? 'rgba(69,189,209,.07)' : 'transparent',
+        edit: () => this.plEdit(p.id), del: () => this.plRowDel(p.id),
+        delLabel: s.plDelArmRow === p.id ? 'Again?' : 'Delete',
+        delC: s.plDelArmRow === p.id ? '#fff' : 'var(--danger)',
+        playAll: () => this.playPl(p.id), pOn: s.qName === p.name && s.pon ? '1' : '0',
+        playLabel: 'Play "' + p.name + '" from the top' })),
+      newPl: s.newPl, hNewPl: e => this.setState({ newPl: e.target.value }), plCreate: () => this.plCreate(),
+      plNote: s.plNote, plNoteC: s.plNoteOk ? 'var(--accent)' : 'var(--danger)',
+      plSelMeta: plSel ? plSel.tracks.length + ' tracks · ' + this.mmss(plLen(plSel)) : 'none open',
+      plNameDraft: s.plNameDraft, hPlName: e => this.setState({ plNameDraft: e.target.value }),
+      plRename: () => this.plRename(),
+      plNameClean: !plSel || (s.plNameDraft || '').trim() === plSel.name || !(s.plNameDraft || '').trim(),
+      plSelHeld: plSel ? (heldBy(plSel.id).length ? 'Held by ' + heldBy(plSel.id).join(', ') + '. Changing the order changes what those bots play.' : 'No bot holds it yet. Assign it under Assignments.') : 'Click a playlist to open it.',
+      plHasTracks: !!(plSel && plSel.tracks.length), plEmpty: !!(plSel && !plSel.tracks.length),
+      plTracks: plSel ? plSel.tracks.map((id, i) => { const t = s.tracks.find(x => x.id === id) || { title: 'deleted track', dur: null };
+        return { pos: i + 1, title: t.title, time: this.mmss(t.dur), tx: s.rmGoing === id ? 'translateX(52px)' : 'none', opc: s.rmGoing === id ? 0 : 1,
+        rmTxt: s.rmArm === id ? 'sure?' : 'x', rmPad: s.rmArm === id ? '8px' : '4px',
+        rmC: s.rmArm === id ? '#fff' : 'var(--danger)', rmBg: s.rmArm === id ? 'var(--danger)' : 'transparent',
+        rmBd: s.rmArm === id ? '.9' : '.3', rmLabel: s.rmArm === id ? 'Press again to remove' : 'Remove from playlist',
+        up: () => this.plMove(id, -1), down: () => this.plMove(id, 1), rm: () => this.plRmPress(id) }; }) : [],
+      pickOpen: s.pickOpen, pickToggle: () => this.setState(st => ({ pickOpen: !st.pickOpen, picked: [], pickQ: '' })),
+      pickLabel: s.pickOpen ? 'Close the picker' : 'Add tracks',
+      pickAddLabel: 'Add ' + s.picked.length + ' ticked',
+      pickNone: s.picked.length === 0, pickAdd: () => this.pickAdd(),
+      pickQ: s.pickQ, hPickQ: e => this.setState({ pickQ: e.target.value }),
+      pickRows: plSel ? s.tracks.filter(t => plSel.tracks.indexOf(t.id) < 0 && (!pickQ || (t.title + ' ' + t.artist).toLowerCase().indexOf(pickQ) >= 0)).map(t => ({
+        label: t.title + (t.artist ? ' · ' + t.artist : ''), time: this.mmss(t.dur), on: s.picked.indexOf(t.id) >= 0,
+        toggle: () => this.setState(st => ({ picked: this.toggleIn(st.picked, t.id) })) })) : [],
+      pickEmpty: !!(plSel && s.pickOpen && s.tracks.filter(t => plSel.tracks.indexOf(t.id) < 0 && (!pickQ || (t.title + ' ' + t.artist).toLowerCase().indexOf(pickQ) >= 0)).length === 0),
+      plDelLabel: s.plDelArm ? 'Press again to delete' : 'Delete this playlist',
+      plDelNote: s.plDelArm ? 'Assignments to it go too. The tracks stay in the library.' : 'The tracks stay in the library.',
+      plDelC: s.plDelArm ? 'var(--danger)' : 'var(--text-faint)', plDelPress: () => this.plDelPress(),
+
+      asgRows: s.asg.map(a => {
+        const onReq = a.mode === 'on-request';
+        return { bot: this.botName(a.bot), pl: this.plName(a.pl), mode: a.mode, onReq,
+          dest: a.dest, mins: a.mins, msgs: a.msgs,
+          destPh: onReq ? 'not used' : 'group id', minsPh: onReq ? '' : '1 to 10080', msgsPh: onReq ? '' : '1 to 10000',
+          fieldOp: onReq ? 0.4 : 1,
+          st: a.dirty ? 'not applied' : onReq ? 'on request only' : 'cadence active',
+          stC: a.dirty ? 'var(--warning)' : onReq ? 'var(--text-muted)' : 'var(--success)',
+          stNote: a.dirty ? 'press Apply to make it real' : a.appliedAt ? 'applied ' + a.appliedAt : a.last ? 'last sent ' + a.last : 'never sent',
+          clean: !a.dirty, applyOp: a.dirty ? 1 : 0.45,
+          applyLabel: a.mode === 'cadence' ? 'Set cadence' : 'Apply',
+          bd: a.dirty ? 'inset 3px 0 0 var(--warning)' : 'none',
+          hMode: e => this.asgSet(a.id, 'mode', e.target.value),
+          hDest: e => this.asgSet(a.id, 'dest', e.target.value),
+          hMins: e => this.asgSet(a.id, 'mins', e.target.value),
+          hMsgs: e => this.asgSet(a.id, 'msgs', e.target.value),
+          apply: () => this.asgApply(a.id), remove: () => this.asgRemove(a.id) };
+      }),
+      asgEmpty: s.asg.length === 0,
+      botOpts: this.BOTS.map(b => ({ v: String(b.id), n: b.name })),
+      plOpts: s.pls.map(p => ({ v: p.id, n: p.name })),
+      newBot: s.newBot, hNewBot: e => this.setState({ newBot: e.target.value }),
+      newPlaylist: s.newPlaylist, hNewPlaylist: e => this.setState({ newPlaylist: e.target.value }),
+      asgAdd: () => this.asgAdd(), asgNote: s.asgNote || 'nothing changed yet', asgNoteC: s.asgNoteOk ? 'var(--accent)' : 'var(--danger)',
+
+      origSize: this.mb(orig), encSize: this.mb(enc), totalPlays: plays,
+      kindLine: ['music', 'audiobook', 'documentary', 'spot'].map(k => k + ' ' + s.tracks.filter(t => t.kind === k).length).join(' · '),
+      encLine: s.tracks.filter(t => t.vid > 0).length + ' of ' + s.tracks.length + ' cached, your decision',
+      genreRows: gAll.map(g => { const n = s.tracks.filter(t => (t.genre || '(no genre)') === g).length;
+        return { label: g, n, w: Math.round(n / gMax * 100) + '%', c: g === '(no genre)' ? 'var(--text-faint)' : 'var(--text-soft)',
+          fill: g === '(no genre)' ? 'rgba(148,163,184,.4)' : 'linear-gradient(90deg,rgba(232,56,159,.7),rgba(69,189,209,.7))' }; }),
+      topRows: s.tracks.slice().sort((a, b) => b.plays - a.plays).slice(0, 6).map(t => ({
+        title: t.title, plays: t.plays, time: this.mmss(t.dur),
+        playLabel: 'Play ' + t.title, pOn: s.pid === t.id && s.pon ? '1' : '0', play: () => this.play(t.id) })),
+      set: setObj, setDirty: setDk.length > 0, setClean: setDk.length === 0,
+      setCount: setDk.length + (setDk.length === 1 ? ' unsaved change' : ' unsaved changes'),
+      setSavedLine: s.setAt ? 'saved ' + s.setAt : 'no pending changes',
+      setSave: () => this.setState(st => ({ setSaved: { ...st.set }, setAt: this.clock() })),
+      setRevert: () => this.setState(st => ({ set: { ...(st.setSaved || this.SET0) } })),
+      diagTick: '2026-08-15 19:14 UTC', diagSent: '12',
+      diagSkips: 'budget-spent: 4 · gap-too-recent: 9',
+      diagErr: 'none this process', diagErrC: 'var(--success)',
+
+      pOn: !!pTrack, pOff: !pTrack,
+      pPlaying: s.pon, pPaused: !s.pon,
+      pBtnLabel: s.pon ? 'Pause' : 'Play',
+      pKicker: s.qName ? 'Playlist · ' + s.qName : 'Library preview',
+      pQPos: s.queue.length ? (s.qIdx + 1) + ' / ' + s.queue.length : '',
+      pQueueOn: s.queue.length > 0, pNext: () => this.pNext(),
+      pTitleOnly: pTrack ? pTrack.title : '', pArtist: pTrack ? (pTrack.artist || 'no artist in the tag') : '',
+      pPos: this.mmss(s.ppos), pDur: pTrack ? this.mmss(pTrack.dur) : '',
+      pPct: pDurN ? Math.min(100, Math.round(s.ppos / pDurN * 100)) + '%' : '0%',
+      pToggle: () => this.setState(st => ({ pon: !st.pon })),
+      pStop: () => this.setState({ pid: null, pon: false, ppos: 0, queue: [], qIdx: 0, qName: '' }),
+      pScrub: e => this.pScrub(e)
+    };
+  }
+}
+</script>
+</body>
+</html>

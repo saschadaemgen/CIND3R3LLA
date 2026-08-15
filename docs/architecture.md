@@ -4021,7 +4021,11 @@ minutes later through `runtime.readGroupItemsAsOwner`, and a file that never sta
 uploading is a dashboard error, not a hand query). `bot/music-port.ts` is the transport
 (recital-port pattern; `MsgContent.Video {text, image, duration}` and `MsgContent.Voice
 {text: "", duration}`, with the D-214 two-step degrade). `music.tick` is the bridge's
-self-chaining minute-bucket job. The MUSIC intent enters the catalog per bot through
+self-chaining minute-bucket job. The console section is FOUR pages since D-225 (Library, Playlists, Assignments, Storage),
+built one to one from the operator's design deliverable: routes and data in
+`web/views/music.ts`, behaviour in `assets/admin-music.js`, the console-wide preview
+player in `assets/admin-player.js`, and the contextual sidebar rule (children of the
+deepest opened node) in `web/html.ts`. The MUSIC intent enters the catalog per bot through
 `capabilitiesFor`; the deterministic patterns and the D-183 bar (`asksForMusic`) hold the
 lane; the engine's handler parses the four asks itself and sends NO text line on a successful
 play - the track arriving is the reply. Her captions archive under `bot_category = 'music'`,

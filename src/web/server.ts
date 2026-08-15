@@ -671,12 +671,29 @@ export function registerNav(): void {
         // use. It still appears on the Plugins LIST, with its switch, linking here.
         ...dedupeByAdminPath(listPlugins())
           .filter((plugin) => plugin.livesUnderNav === undefined)
-          .map((plugin) => ({
-            key: `plugin:${plugin.id}`,
-            href: plugin.adminPath,
-            label: plugin.name,
-            icon: icon('plugin'),
-          })),
+          .map((plugin) =>
+            plugin.id === 'music'
+              ? {
+                  // The music section (D-225): four sub-pages under the plugin, which
+                  // the contextual sidebar shows as the section's own nav.
+                  key: `plugin:${plugin.id}`,
+                  href: plugin.adminPath,
+                  label: plugin.name,
+                  icon: icon('plugin'),
+                  children: [
+                    { key: 'music:library', href: '/music', label: 'Library', icon: icon('plugin') },
+                    { key: 'music:playlists', href: '/music/playlists', label: 'Playlists', icon: icon('plugin') },
+                    { key: 'music:assignments', href: '/music/assignments', label: 'Assignments', icon: icon('plugin') },
+                    { key: 'music:storage', href: '/music/storage', label: 'Storage', icon: icon('plugin') },
+                  ],
+                }
+              : {
+                  key: `plugin:${plugin.id}`,
+                  href: plugin.adminPath,
+                  label: plugin.name,
+                  icon: icon('plugin'),
+                },
+          ),
       ],
     },
     {

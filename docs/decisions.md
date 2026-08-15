@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 223 decisions</strong> — newest first. Highest allocated: <strong>D-224</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 224 decisions</strong> — newest first. Highest allocated: <strong>D-225</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-225 | The music area is a section, built one to one from the operator's design | IMPLEMENTED |
 | D-224 | A send command returning is not the file arriving | IMPLEMENTED |
 | D-223 | A play that does not play says so, and nothing it sends reads as success | IMPLEMENTED |
 | D-222 | Loud, advancing, and honest about her own holdings | IMPLEMENTED |
@@ -252,6 +253,51 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-225 - The music area is a section, built one to one from the operator's design
+
+**Status: IMPLEMENTED** (CCB-S5-044, the design deliverable in `design/deliverable-music`).
+The operator's rule for this build, kept: the design is the specification, not a suggestion,
+and disagreements were asked, not improvised. His four answers: the genre stays ONE free-text
+field (the comma convention keeps splitting in the DJ sheet); Music registers UNDER Plugins,
+not top-level; the preview player spans the WHOLE console; and both implied additions - the
+cached-video routes and a home for the D-224 File delivery card - were approved.
+
+**One page became four** - Library, Playlists, Assignments, Storage and diagnostics - with
+the prototype's copy as the copy and its timings as the timings (the two-press disarm is
+2800 ms because the prototype's is). The behaviour lives in `assets/admin-music.js`, whose
+specification is the prototype's own logic, digested string by string; where the prototype
+faked server work (a tag read from the file name, a 2200 ms encode), the console does the
+real thing - the ID3 read in the browser, the queue's encode - and keeps the honest wording.
+
+**The sidebar rule is the operator's, console-wide**: the contextual sidebar shows the
+children of the DEEPEST opened node, so opening Music under Plugins gives the four music
+pages and nothing else, with live counts beside each link, and the sidebar stops echoing the
+header's own entries. The preview player is one card at the top of that sidebar on every
+console page (`assets/admin-player.js`): a real audio element over the new preview route,
+its state in sessionStorage so it survives page changes, and its own footer saying what it
+is - `local preview, not sent to any chat`.
+
+**Every existing route kept its path, method and body**; mutation routes additionally answer
+`ajax=1` with JSON for the new client. Five routes were added, each small and each proven in
+`verify:music-encode` §7: the audio preview (by id, never by path; `no-store`; answers
+Range with 206; serves the ORIGINAL bytes because the preview must prove what was uploaded;
+and writes NO play row - a play record means a member received a track), playlist order,
+playlist rename, encode build (clears the stamp so the cache cannot serve, then queues - the
+504 rule) and encode delete (the trio cleared, the file removed). The library gained a
+per-track play count (derived, no stored aggregate - the D-217 rule holds) and the
+assignments table shows every bot with the bot named in each row.
+
+**Added surface, said plainly**: the File delivery card (D-224) postdates the design and is
+not in the template. It sits on Storage under the design's own idiom, and its caption says on
+the page itself that it was added after the design was drawn, so the operator can look at it
+deliberately.
+
+**Found by operating before pushing**: the rename route's first draft referenced an
+`updated_at` column the playlists table does not have - the 500 surfaced on the second
+press of the flow, not in any static check, which is D-178 doing its job.
+
 ---
 
 ### D-224 - A send command returning is not the file arriving

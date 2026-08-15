@@ -37,6 +37,7 @@ export interface Track {
   encodedAt: Date | null;
   encodeVersion: number | null;
   uploadedAt: Date;
+  updatedAt: Date;
 }
 
 interface TrackRow {
@@ -74,6 +75,7 @@ function mapTrack(r: TrackRow): Track {
     encodedAt: r.encoded_at === null ? null : new Date(r.encoded_at),
     encodeVersion: r.encode_version,
     uploadedAt: new Date(r.uploaded_at),
+    updatedAt: new Date((r as { updated_at?: string | Date }).updated_at ?? r.uploaded_at),
   };
 }
 
@@ -184,6 +186,14 @@ export async function listPlaylists(db: Queryable): Promise<Playlist[]> {
       ORDER BY p.name`,
   );
   return rows.map((r) => ({ id: Number(r.id), name: r.name, trackCount: Number(r.n) }));
+}
+
+export async function renamePlaylist(db: Queryable, id: number, name: string): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE cinderella_playlists SET name = $2 WHERE id = $1`,
+    [id, name],
+  );
+  return result.rowCount === 1;
 }
 
 export async function deletePlaylist(db: Queryable, id: number): Promise<boolean> {
@@ -710,6 +720,14 @@ export async function nextTrackForBot(
     [botProfileId, groupId],
   );
   return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+/** Plays per track, derived per read (D-217: no stored aggregate anywhere). */
+export async function trackPlayCounts(db: Queryable): Promise<Map<number, number>> {
+  const { rows } = await db.query<{ track_id: string | number; n: string | number }>(
+    `SELECT track_id, count(*) AS n FROM cinderella_track_plays GROUP BY track_id`,
+  );
+  return new Map(rows.map((r) => [Number(r.track_id), Number(r.n)]));
 }
 
 /** The room's most recent play, whatever asked for it - what "next" follows. */

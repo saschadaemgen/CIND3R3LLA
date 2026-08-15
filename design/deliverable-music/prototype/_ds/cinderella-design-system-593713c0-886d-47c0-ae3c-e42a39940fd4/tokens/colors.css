@@ -1,0 +1,36 @@
+/* Cinderella color system — cyber black, neon cyan-blue, slate text. Dark is the default theme. */
+:root{
+/* Ink — background depths */
+--ink-950:#050A12;--ink-900:#080D18;--ink-850:#0B1220;--ink-800:#0E1626;--ink-700:#131D31;--ink-600:#1A2740;
+/* Cyan — the neon UI accent */
+--cyan-200:#B5EBF2;--cyan-300:#8FE1EC;--cyan-400:#6DD0DF;--cyan-500:#45BDD1;--cyan-600:#2E9DB0;--cyan-700:#1F7A8A;--cyan-800:#155765;
+/* Magenta — the character/brand neon (from the avatar ring + crown) */
+--magenta-300:#FBA9D6;--magenta-400:#F45CB0;--magenta-500:#E8389F;--magenta-600:#C21E80;--magenta-700:#8A1259;
+/* Slate — text ramp */
+--slate-50:#E8EDF4;--slate-200:#CBD5E1;--slate-400:#94A3B8;--slate-500:#64748B;--slate-600:#475569;--slate-700:#334155;
+/* Semantic hues — muted, restrained */
+--green-400:#4ADE9E;--green-600:#1E9E6C;--amber-400:#E0B454;--amber-600:#B08A2E;--red-400:#E5646E;--red-600:#C2434E;
+}
+/* Semantic aliases — dark (default) */
+:root{
+--text-body:var(--slate-200);--text-bright:var(--slate-50);--text-muted:var(--slate-400);--text-faint:var(--slate-500);--text-accent:var(--cyan-300);--text-link:var(--cyan-300);--text-on-accent:#04121A;
+--surface-page:var(--ink-950);--surface-raised:var(--ink-900);--surface-card:var(--ink-850);--surface-field:rgba(5,10,18,.55);--surface-hover:rgba(203,213,225,.06);--surface-accent-weak:rgba(69,189,209,.08);
+--border-hairline:rgba(69,189,209,.12);--border-strong:rgba(69,189,209,.28);--border-neutral:rgba(203,213,225,.09);
+--primary:var(--cyan-500);--primary-hover:var(--cyan-400);--primary-active:var(--cyan-600);
+--accent:var(--cyan-500);--accent-hover:var(--cyan-400);
+--neon:var(--magenta-500);--neon-hover:var(--magenta-400);--neon-weak:rgba(232,56,159,.1);--text-neon:var(--magenta-300);
+--success:var(--green-400);--success-surface:rgba(74,222,158,.1);--warning:var(--amber-400);--warning-surface:rgba(224,180,84,.1);--danger:var(--red-400);--danger-surface:rgba(229,100,110,.1);--info:var(--cyan-400);--info-surface:rgba(69,189,209,.1);
+--focus-ring:0 0 0 3px rgba(69,189,209,.3);
+--scrim:rgba(2,5,10,.7);
+}
+/* Light theme — optional, secondary */
+[data-theme="light"]{
+--text-body:#334155;--text-bright:#0F1B2D;--text-muted:#64748B;--text-faint:#94A3B8;--text-accent:var(--cyan-700);--text-link:var(--cyan-700);--text-on-accent:#04121A;
+--surface-page:#F4F7FA;--surface-raised:#FFFFFF;--surface-card:#FFFFFF;--surface-field:#FFFFFF;--surface-hover:rgba(15,27,45,.05);--surface-accent-weak:rgba(46,157,176,.08);
+--border-hairline:rgba(31,122,138,.16);--border-strong:rgba(31,122,138,.34);--border-neutral:rgba(15,27,45,.1);
+--primary:var(--cyan-600);--primary-hover:var(--cyan-500);--primary-active:var(--cyan-700);
+--accent:var(--cyan-600);--accent-hover:var(--cyan-500);
+--success:var(--green-600);--success-surface:rgba(30,158,108,.1);--warning:var(--amber-600);--warning-surface:rgba(176,138,46,.12);--danger:var(--red-600);--danger-surface:rgba(194,67,78,.1);--info:var(--cyan-600);--info-surface:rgba(46,157,176,.12);
+--focus-ring:0 0 0 3px rgba(46,157,176,.3);
+--scrim:rgba(15,27,45,.4);
+}

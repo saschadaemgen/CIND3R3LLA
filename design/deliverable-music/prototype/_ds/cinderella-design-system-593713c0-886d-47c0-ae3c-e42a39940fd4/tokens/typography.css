@@ -1,0 +1,10 @@
+:root{
+--font-sans:'Source Sans 3',-apple-system,'Segoe UI',sans-serif;
+--font-mono:'JetBrains Mono',ui-monospace,'SF Mono',monospace;
+/* Back-compat alias */
+--font-body:var(--font-sans);--font-display:var(--font-sans);
+--size-hero:76px;--size-display:46px;--size-title:32px;--size-heading:22px;--size-subheading:17px;--size-body:16px;--size-body-sm:14px;--size-caption:13px;--size-micro:11px;
+--leading-display:1.03;--leading-heading:1.22;--leading-body:1.6;
+--tracking-display:-0.03em;--tracking-body:0;--tracking-caps:0.14em;
+--weight-body:400;--weight-medium:600;--weight-semibold:600;--weight-bold:700;
+}

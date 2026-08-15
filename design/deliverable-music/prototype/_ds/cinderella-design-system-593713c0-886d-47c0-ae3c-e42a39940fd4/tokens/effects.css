@@ -1,0 +1,24 @@
+:root{
+/* Radii — 12px system: 8 controls, 12 cards, 16 dialogs */
+--radius-xs:4px;--radius-sm:8px;--radius-md:12px;--radius-lg:16px;--radius-xl:20px;--radius-pill:999px;
+/* Depth — black shadows + neon glow, both restrained */
+--shadow-1:0 1px 2px rgba(0,0,0,.4),0 8px 24px rgba(0,0,0,.3);
+--shadow-2:0 2px 4px rgba(0,0,0,.45),0 16px 48px rgba(0,0,0,.4);
+--shadow-3:0 4px 8px rgba(0,0,0,.5),0 32px 80px rgba(0,0,0,.5);
+--glow-accent:0 0 24px rgba(69,189,209,.22);/* @kind shadow */
+--glow-accent-strong:0 0 20px rgba(69,189,209,.35),0 0 60px rgba(69,189,209,.18);/* @kind shadow */
+--glow-neon:0 0 40px rgba(232,56,159,.45);/* @kind shadow */
+--glow-neon-sm:0 0 18px rgba(232,56,159,.4);/* @kind shadow */
+--edge-lit:inset 0 1px 0 rgba(141,225,236,.08);/* @kind shadow */
+--grad-accent:linear-gradient(115deg,#B5EBF2,#45BDD1 55%,#2E9DB0);/* @kind other */
+--shadow-glow-lg:0 0 90px rgba(69,189,209,.16);/* @kind shadow */
+/* Card face — faint cyan light from the top edge */
+--card-sheen:linear-gradient(180deg,rgba(69,189,209,.05),rgba(69,189,209,0) 42%);/* @kind other */
+/* Motion — subtle & smooth; honor prefers-reduced-motion (see base.css) */
+--ease:ease;/* @kind other */
+--ease-in-out:cubic-bezier(.45,0,.25,1);/* @kind other */
+--ease-out:cubic-bezier(.2,.7,.2,1);/* @kind other */
+--duration-fast:150ms;/* @kind other */
+--duration-base:300ms;/* @kind other */
+--duration-slow:500ms;/* @kind other */
+}
