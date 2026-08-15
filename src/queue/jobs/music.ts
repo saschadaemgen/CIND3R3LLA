@@ -15,6 +15,7 @@ import type { Queryable } from '../../db/pool.js';
 import { log } from '../../log.js';
 import { runMusicTick, type MusicDeps } from '../../plugins/music/service.js';
 import { ensureEncoded } from '../../plugins/music/library.js';
+import { ENCODE_VERSION } from '../../media/encode.js';
 import { getTrack } from '../../plugins/music/store.js';
 import { PermanentJobError } from '../types.js';
 import { noteMusicTick } from '../../plugins/music/music-log.js';
@@ -56,6 +57,26 @@ export const musicTickHandler: JobHandler = async () => {
     log.debug('music: tick ran before the deps were registered; the chain continues.');
     return;
   }
+  // D-222: encodes stamped with an older version are retired stock. Re-queue
+  // them here so a version bump heals in the queue within minutes of deploy,
+  // rather than synchronously inside the first send of every stale track -
+  // the 504 lesson's cost, moved onto the bot path. The idempotency key
+  // collapses repeats, so re-listing every minute enqueues each track once.
+  try {
+    const stale = await resolved.db.query<{ id: string | number }>(
+      `SELECT id FROM cinderella_tracks
+        WHERE cover_path IS NOT NULL
+          AND (encode_version IS NULL OR encode_version <> $1)
+        ORDER BY id LIMIT 50`,
+      [ENCODE_VERSION],
+    );
+    for (const row of stale.rows) {
+      await enqueueMusicEncode(resolved.db, Number(row.id), ENCODE_VERSION);
+    }
+  } catch (error) {
+    resolved.onFault(`Music: re-queueing stale encodes failed: ${String(error)}`);
+  }
+
   await runMusicTick(resolved);
 };
 

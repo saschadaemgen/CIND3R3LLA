@@ -42,8 +42,38 @@ import ffmpegPath from 'ffmpeg-static';
 
 const run = promisify(execFile);
 
-/** Bump when the recipe changes; cached encodes with an older stamp re-encode. */
-export const ENCODE_VERSION = 1;
+/**
+ * Bump when the recipe changes; cached encodes with an older stamp re-encode.
+ *
+ * 2 (D-222): the black-bars invalidation. The committed recipe never changed,
+ * but Stage 0's hands-on session ran an uncommitted PADDING recipe on the
+ * host the day before this file landed (its own commit message records a
+ * measured 720x1320 output, which is what padding produces), and those
+ * encodes were stamped v1 - byte-indistinguishable from the crop recipe's
+ * work, served forever. The bump retires every v1 encode; the tick re-queues
+ * them and the next play self-heals. `verify:music-encode` pins the pair
+ * (ENCODE_RECIPE fingerprint, ENCODE_VERSION), so the next recipe edit that
+ * forgets to bump goes red instead of serving stale.
+ */
+export const ENCODE_VERSION = 2;
+
+/**
+ * The still-image recipe, one authored copy (D-222): audio byte-copied, crop
+ * not pad (measured, 241 -> 240), two frames a second, faststart. Named so
+ * the harness can fingerprint it against the version above.
+ */
+export const ENCODE_RECIPE: readonly string[] = Object.freeze([
+  '-map', '0:v',
+  '-map', '1:a',
+  '-c:a', 'copy',
+  '-c:v', 'libx264',
+  '-tune', 'stillimage',
+  '-pix_fmt', 'yuv420p',
+  '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2',
+  '-r', '2',
+  '-shortest',
+  '-movflags', '+faststart',
+]);
 
 /** A minute of still-image H.264 is small; the audio dominates. Bound the child anyway. */
 const ENCODE_TIMEOUT_MS = 5 * 60_000;
@@ -99,16 +129,7 @@ export async function encodeMusicVideo(input: {
         '-loop', '1',
         '-i', input.coverPath,
         '-i', input.audioPath,
-        '-map', '0:v',
-        '-map', '1:a',
-        '-c:a', 'copy',
-        '-c:v', 'libx264',
-        '-tune', 'stillimage',
-        '-pix_fmt', 'yuv420p',
-        '-vf', 'crop=trunc(iw/2)*2:trunc(ih/2)*2',
-        '-r', '2',
-        '-shortest',
-        '-movflags', '+faststart',
+        ...ENCODE_RECIPE,
         input.outPath,
       ],
       { timeout: ENCODE_TIMEOUT_MS, windowsHide: true },

@@ -400,6 +400,8 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   musicGenreYes: { label: 'Music: a genre she holds, confirmed with its own count and an offer', vars: '{genre} {tracks}' },
   musicGenresSome: { label: 'Music: several named genres confirmed at once, each with its count', vars: '{list}' },
   musicNotHeld: { label: 'Music: a have-ask naming nothing she holds (echo-free on purpose)', vars: '' },
+  musicGenreTracks: { label: 'Music: the numbered listing of one genre (locked: the list is application fact)', vars: '{genre} {tracks}' },
+  musicNothingToFollow: { label: 'Music: asked for the next one in a room where nothing has played yet', vars: '' },
   musicUploadNotAudio: { label: 'Member upload: refused, not an MP3 (the allow-list, both sides)', vars: '' },
   musicUploadTooLarge: { label: 'Member upload: refused, over the size bound (the live bound, so raising it cannot stale the line)', vars: '{limit}' },
   musicUploadNoFile: { label: 'Member upload: asked to play back with no file of theirs in sight', vars: '' },

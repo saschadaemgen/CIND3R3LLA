@@ -959,8 +959,10 @@ four refusals, the profile fence's member_id-NULL invariant, and no model on the
 structurally),
 `verify:music-encode` (the real ffmpeg: the crop-not-pad settlement measured on an odd-height
 cover, byte-copied audio confirmed off the stream table, the tag read including an APIC cover,
-the encode cache proven to serve without re-encoding, and a member upload end to end with real
-bytes, played and not stored, temp bytes gone),
+the encode cache proven to serve without re-encoding AND to re-encode a row stamped with an
+older version, the recipe sha256 PINNED beside ENCODE_VERSION so an unbumped recipe edit goes
+red (D-222, the black-bars lesson), and a member upload end to end with real bytes, played and
+not stored, temp bytes gone),
 `verify:member-data` (D-217's sweep: information_schema over every migration against the
 registry, both directions, the profile class's promises, and the mutation of an unregistered
 member table going red),

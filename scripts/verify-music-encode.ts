@@ -28,7 +28,8 @@ import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
-import { ENCODE_VERSION, encodeMusicVideo, probeMedia } from '../src/media/encode.js';
+import { createHash } from 'node:crypto';
+import { ENCODE_RECIPE, ENCODE_VERSION, encodeMusicVideo, probeMedia } from '../src/media/encode.js';
 import { ensureEncoded, readTags } from '../src/plugins/music/library.js';
 import { getTrack, insertTrack } from '../src/plugins/music/store.js';
 import { playMemberUpload, type MusicDeps } from '../src/plugins/music/service.js';
@@ -153,6 +154,20 @@ async function main(): Promise<void> {
   check('duration from the PROBE, not the tag (the VBR lesson)',
     tags.durationSeconds !== null && Math.abs(tags.durationSeconds - 2) < 1);
 
+  console.log('\n4a. The recipe is PINNED to its version (D-222)');
+  // Stage 0's uncommitted padding recipe ran on the host, stamped its encodes
+  // v1, and the committed crop recipe - also v1 - could never tell them apart:
+  // black bars on three sides, served forever. The pair below is the guard.
+  // CHANGING THE RECIPE: bump ENCODE_VERSION in src/media/encode.ts and update
+  // BOTH pinned values here in the same commit - that pair IS the review.
+  const RECIPE_PIN = 'c0d13cb66ea07ef34edfb04b2a239a3235605280fc1b402a7c13cc5f369844c8';
+  const VERSION_PIN = 2;
+  const fingerprint = createHash('sha256').update(ENCODE_RECIPE.join(' ')).digest('hex');
+  check('the recipe fingerprint matches the pin (a change here demands a version bump)',
+    fingerprint === RECIPE_PIN, fingerprint);
+  check('and ENCODE_VERSION matches the version pinned beside it',
+    ENCODE_VERSION === VERSION_PIN, String(ENCODE_VERSION));
+
   console.log('\n4. The cache: encode once, serve from disk after');
   const pg = new PGlite({ extensions: { vector } });
   const db: Queryable = {
@@ -172,6 +187,13 @@ async function main(): Promise<void> {
   const first = await ensureEncoded(db, ROOT, track as never, (m) => faults.push(m));
   check('the first call encodes and stamps the row',
     first !== null && (await getTrack(db, trackId))?.encodeVersion === ENCODE_VERSION);
+  // D-222: a row stamped with an OLDER version is retired stock - ensureEncoded
+  // must re-encode it, never serve it, whatever file its old path holds.
+  await db.query(`UPDATE cinderella_tracks SET encode_version = 1 WHERE id = $1`, [trackId]);
+  const reEncoded = await ensureEncoded(db, ROOT, (await getTrack(db, trackId)) as never, (m) => faults.push(m));
+  check('a cached encode with an older version stamp is RE-ENCODED, not served (D-222)',
+    reEncoded !== null && (await getTrack(db, trackId))?.encodeVersion === ENCODE_VERSION,
+    `re-stamped: ${String((await getTrack(db, trackId))?.encodeVersion)}`);
   const mtime = first === null ? 0 : (await stat(first)).mtimeMs;
   const again = await ensureEncoded(db, ROOT, (await getTrack(db, trackId)) as never, (m) => faults.push(m));
   check('the second call serves the cache: same path, file untouched',

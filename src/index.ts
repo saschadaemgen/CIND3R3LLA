@@ -63,10 +63,13 @@ import {
   findTrackForBot,
   getTrack as musicGetTrack,
   libraryFactsForBot as musicLibraryFactsForBot,
-  randomTrackByGenreForBot,
+  lastPlayedInGroup as musicLastPlayedInGroup,
+  nextTrackByArtistForBot,
+  nextTrackByGenreForBot,
+  nextTrackForBot,
+  nextTrackFromPlaylistForBot,
+  tracksByGenreForBot as musicTracksByGenreForBot,
   playlistTracks as musicPlaylistTracks,
-  randomTrackForBot,
-  randomTrackFromPlaylistForBot,
   trackReachableByBot,
 } from './plugins/music/store.js';
 import { MUSIC_ID, MUSIC_UPLOADS_ID } from './plugins/music/plugin.js';
@@ -355,7 +358,9 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
     },
     playFromPlaylist: async (groupId: number, name: string) => {
-      const track = await randomTrackFromPlaylistForBot(deps.db, botProfileId, name);
+      // Per-room ADVANCE (D-222): two members asking minutes apart get two
+      // different tracks, and the playlist plays through before repeating.
+      const track = await nextTrackFromPlaylistForBot(deps.db, botProfileId, groupId, name);
       if (track === null) return 'empty' as const;
       const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
         requested: true,
@@ -374,7 +379,7 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       };
     },
     playByGenre: async (groupId: number, genre: string) => {
-      const track = await randomTrackByGenreForBot(deps.db, botProfileId, genre);
+      const track = await nextTrackByGenreForBot(deps.db, botProfileId, groupId, genre);
       if (track === null) return 'empty' as const;
       const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
         requested: true,
@@ -391,8 +396,45 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       });
       return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
     },
+    playByArtist: async (groupId: number, artist: string) => {
+      const track = await nextTrackByArtistForBot(deps.db, botProfileId, groupId, artist);
+      if (track === null) return 'empty' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playNext: async (groupId: number) => {
+      // What "next" follows (D-222): the room's last play - its genre when it
+      // has one, else anything reachable - through the same per-room advance,
+      // so the just-played track is the last candidate to come around again.
+      const last = await musicLastPlayedInGroup(deps.db, botProfileId, groupId);
+      if (last === null) return 'empty' as const;
+      const firstGenre = last.genre?.split(',')[0]?.trim();
+      const track =
+        firstGenre !== undefined && firstGenre !== ''
+          ? ((await nextTrackByGenreForBot(deps.db, botProfileId, groupId, firstGenre)) ??
+            (await nextTrackForBot(deps.db, botProfileId, groupId)))
+          : await nextTrackForBot(deps.db, botProfileId, groupId);
+      if (track === null) return 'empty' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    tracksOfGenre: async (genre: string) => {
+      const tracks = await musicTracksByGenreForBot(deps.db, botProfileId, genre);
+      if (tracks.length === 0) return null;
+      return {
+        genre,
+        items: tracks.map((t) => ({ id: t.id, title: t.title })),
+        total: tracks.length,
+      };
+    },
     playSomething: async (groupId: number) => {
-      const track = await randomTrackForBot(deps.db, botProfileId);
+      const track = await nextTrackForBot(deps.db, botProfileId, groupId);
       if (track === null) return 'empty' as const;
       const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
         requested: true,

@@ -157,6 +157,12 @@ export interface MusicOps {
   playFromPlaylist(groupId: number, name: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   /** A random track of one genre this bot can reach - the ladder's last rung (D-220). */
   playByGenre(groupId: number, genre: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  /** "play Aurora Night" where that is the ARTIST (D-222): folded equality, per-room advance. */
+  playByArtist(groupId: number, artist: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  /** What follows the room's last play (D-222): its genre when it has one, else anything reachable. */
+  playNext(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  /** The numbered listing of one genre, for "what's on cyberpunk" (D-222). */
+  tracksOfGenre(genre: string): Promise<{ genre: string; items: { id: number; title: string }[]; total: number } | null>;
   playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   /** The DJ sheet's numbers, for the overview and the genre cards. All derived. */
   facts(): Promise<{ tracks: number; genres: { name: string; count: number }[]; playlists: number }>;
@@ -216,13 +222,51 @@ function musicEscapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
 
-/** Does the text name this genre or playlist as a whole word, case-folded? */
+/** Case-fold and drop everything that is not a letter or digit (D-222). */
+function musicSquash(value: string): string {
+  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+/**
+ * Does the text name this genre or playlist? Whole word first; then the
+ * squashed forms, because 'Cyber Punk' in a tag and 'cyberpunk' in a message
+ * are one word and the denial of a held genre is the fault this whole
+ * sequence started with (D-222). The four-character floor keeps a squashed
+ * 'pop' out of 'popular'.
+ */
 function musicNamesWord(text: string, name: string): boolean {
-  return new RegExp(
+  const whole = new RegExp(
     `(?<![\\p{L}\\p{N}])${musicEscapeRegExp(name.toLowerCase())}(?![\\p{L}\\p{N}])`,
     'u',
   ).test(text);
+  if (whole) return true;
+  const squashed = musicSquash(name);
+  return squashed.length >= 4 && musicSquash(text).includes(squashed);
 }
+
+/**
+ * Every reply the music lane sends is EXEMPT from the rate limiter (D-222).
+ * The limiter dropped the honest-miss line after a real ask and the member
+ * stared at silence - the journal ended at "Saved message" with no send and
+ * no error, because the drop logs at info and returns false. A music reply
+ * is 1:1 with an explicit addressed ask, the same shape as the exempt
+ * consent outcomes; it still COUNTS against the allowance of other lanes.
+ */
+const MUSIC_REPLY = { bypassLimit: true } as const;
+
+/** "next" / "another one" / "noch eins", whole-message, with an optional named source. */
+const MUSIC_NEXT_BARE = /^(?:next|another(?:\s+one)?|one\s+more|weiter|noch\s+ein(?:s|en)?|n(?:ae|ä)chste\w*)\b(?:\s+(.{0,60}?))?\s*[!.?]*$/;
+
+/**
+ * The bare next-words that route an UNCLAIMED message into the lane (D-222):
+ * 'next' and its unambiguous friends only. 'another' and 'one more' alone are
+ * deliberately absent - "tell me another" is a joke follow-up, not a play -
+ * and become plays only behind 'play' or beside a named genre or playlist.
+ */
+const MUSIC_NEXT_HOOK = /^(?:next(?:\s+(?:one|song|track|title))?|weiter|n(?:ae|ä)chste[rs]?(?:\s+(?:song|track|lied|titel))?)\s*[!.?]*$/;
+
+/** The same next-phrase as a play argument: "play another", "play the next one". */
+const MUSIC_NEXT_ARG = /^(?:another(?:\s+one)?|one\s+more|the\s+next(?:\s+one)?|next|weiter|noch\s+ein(?:s|en)?|n(?:ae|ä)chste\w*)\b(?:\s+(.*))?$/;
 
 function trackCountPhrase(count: number, lang: string): string {
   if (lang === 'de') return count === 1 ? '1 Titel' : `${String(count)} Titel`;
@@ -682,6 +726,8 @@ const AI_LOCKED_KEYS = new Set<PersonaKey>([
   // D-221: the genre cards. The numbers stay ours; the sentence is hers.
   'musicGenreYes',
   'musicGenresSome',
+  // D-222: the genre listing, locked like its playlist twin.
+  'musicGenreTracks',
 ]);
 
 /**
@@ -1311,7 +1357,7 @@ export class InteractionEngine {
         return this.answerPrice(msg, s, lang, result.slots, now, carried);
 
       case 'MUSIC':
-        return this.answerMusic(msg, s, lang, instruction);
+        return this.answerMusicSafely(msg, s, lang, instruction);
 
       case 'LOOKUP':
         return this.answerLookup(msg, s, lang, result.slots, instruction);
@@ -1347,7 +1393,7 @@ export class InteractionEngine {
         // OWN vocabulary, the DJ sheet - a deterministic, data-driven
         // predicate over the text, never a model's claim (D-183).
         if (await this.unclaimedMusicAsk(msg, instruction)) {
-          return await this.answerMusic(msg, s, lang, instruction);
+          return await this.answerMusicSafely(msg, s, lang, instruction);
         }
 
         if (await this.freeConversation(msg, s, lang)) return true;
@@ -2492,10 +2538,19 @@ export class InteractionEngine {
     ) {
       return true;
     }
-    if (!MUSIC_HAVE_ASK.test(text)) return false;
+    if (MUSIC_NEXT_HOOK.test(text)) return true;
     try {
+      const nextNamed = MUSIC_NEXT_BARE.exec(text);
+      const rest = nextNamed?.[1]?.trim() ?? '';
+      if (!MUSIC_HAVE_ASK.test(text) && (nextNamed === null || rest === '')) return false;
+      const subject = rest !== '' ? rest : text;
       const facts = await this.musicPromptFacts();
-      if (facts !== undefined && facts.genres.some((g) => musicNamesWord(text, g))) return true;
+      if (facts !== undefined && facts.genres.some((g) => musicNamesWord(subject, g))) return true;
+      if (nextNamed !== null && rest !== '') {
+        const view = await music.view();
+        return view.playlists.some((pl) => musicNamesWord(rest, pl.name));
+      }
+      if (!MUSIC_HAVE_ASK.test(text)) return false;
       const view = await music.view();
       return view.playlists.some((pl) => musicNamesWord(text, pl.name));
     } catch {
@@ -2514,6 +2569,32 @@ export class InteractionEngine {
    * The tail is now the locked overview: what she holds and how to ask.
    * A successful play still sends NO text line - the track is the reply.
    */
+  /**
+   * D-222: a play that throws must not leave the member staring at silence.
+   * The fault reaches the log AND the dashboard, and the member gets the
+   * honest unavailable line, exempt from the limiter like every music reply.
+   */
+  private async answerMusicSafely(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+    instruction: string,
+  ): Promise<boolean> {
+    try {
+      return await this.answerMusic(msg, s, lang, instruction);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      log.error(`music: the lane failed answering group ${String(msg.groupId)}: ${detail}`);
+      status.error(`Music: answering a member in group ${String(msg.groupId)} failed: ${detail}`);
+      try {
+        await this.reply(msg, s, lang, 'musicUnavailable', {}, MUSIC_REPLY);
+      } catch {
+        // The reply path's own failure already logged and surfaced in sendReply.
+      }
+      return true;
+    }
+  }
+
   private async answerMusic(
     msg: CapturedMessage,
     s: InteractionSettings,
@@ -2522,7 +2603,7 @@ export class InteractionEngine {
   ): Promise<boolean> {
     const music = this.deps.music?.() ?? null;
     if (music === null) {
-      await this.reply(msg, s, lang, 'musicUnavailable', {});
+      await this.reply(msg, s, lang, 'musicUnavailable', {}, MUSIC_REPLY);
       return true;
     }
     const text = instruction.toLowerCase().trim();
@@ -2546,7 +2627,7 @@ export class InteractionEngine {
               : outcome === 'empty'
                 ? 'musicNoPlaylists'
                 : 'musicUnavailable';
-      if (key !== null) await this.reply(msg, s, lang, key, {});
+      if (key !== null) await this.reply(msg, s, lang, key, {}, MUSIC_REPLY);
     };
     const overview = async (): Promise<boolean> => {
       const facts = await music.facts();
@@ -2554,7 +2635,7 @@ export class InteractionEngine {
         tracks: facts.tracks,
         genres: facts.genres.length === 0 ? 'no genres yet' : facts.genres.map((g) => g.name).join(', '),
         playlists: facts.playlists,
-      });
+      }, MUSIC_REPLY);
       return true;
     };
     const listTracksOf = async (nameOrIndex: string): Promise<boolean> => {
@@ -2570,20 +2651,35 @@ export class InteractionEngine {
           fromContext = (await music.view()).playlists[n - 1]?.name;
         }
         if (fromContext === undefined) {
-          await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
+          await this.reply(msg, s, lang, 'musicUnknownPlaylist', {}, MUSIC_REPLY);
           return true;
         }
         name = fromContext;
       }
       const found = name === '' ? null : await music.tracksOf(name);
       if (found === null) {
-        await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
+        // Not a playlist - but "what's on cyberpunk" may name a GENRE she
+        // holds, and answering "no playlist by that name" to her own genre
+        // vocabulary is a false statement about her holdings (D-222).
+        const genreHit =
+          name === ''
+            ? undefined
+            : (await music.facts()).genres.find((g) => musicNamesWord(name, g.name) || musicSquash(g.name) === musicSquash(name));
+        const genreList = genreHit === undefined ? null : await music.tracksOfGenre(genreHit.name);
+        if (genreList !== null && genreList.items.length > 0) {
+          remember({ kind: 'tracks', tracks: genreList.items });
+          const shownG = genreList.items.slice(0, 15).map((t, idx) => `${String(idx + 1)}. ${t.title}`).join(', ');
+          const tracksG = genreList.total > 15 ? `${shownG}, and ${String(genreList.total - 15)} more` : shownG;
+          await this.reply(msg, s, lang, 'musicGenreTracks', { genre: genreList.genre, tracks: tracksG }, MUSIC_REPLY);
+          return true;
+        }
+        await this.reply(msg, s, lang, 'musicUnknownPlaylist', {}, MUSIC_REPLY);
         return true;
       }
       remember({ kind: 'tracks', tracks: found.items });
       const shown = found.items.slice(0, 15).map((t, idx) => `${String(idx + 1)}. ${t.title}`).join(', ');
       const tracks = found.total > 15 ? `${shown}, and ${String(found.total - 15)} more` : shown;
-      await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
+      await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks }, MUSIC_REPLY);
       return true;
     };
 
@@ -2608,7 +2704,7 @@ export class InteractionEngine {
                     ? 'musicUploadOff'
                     : 'musicUnavailable';
       if (key !== null) {
-        await this.reply(msg, s, lang, key, key === 'musicUploadTooLarge' ? { limit: limitMb } : {});
+        await this.reply(msg, s, lang, key, key === 'musicUploadTooLarge' ? { limit: limitMb } : {}, MUSIC_REPLY);
       }
       return true;
     }
@@ -2638,14 +2734,14 @@ export class InteractionEngine {
       }
       const view = await music.view();
       if (view.playlists.length === 0) {
-        await this.reply(msg, s, lang, 'musicNoPlaylists', {});
+        await this.reply(msg, s, lang, 'musicNoPlaylists', {}, MUSIC_REPLY);
         return true;
       }
       remember({ kind: 'playlists', playlists: view.playlists.map((pl) => pl.name) });
       const playlists = view.playlists
         .map((pl, idx) => `${String(idx + 1)}. ${pl.name} (${String(pl.trackCount)})`)
         .join(', ');
-      await this.reply(msg, s, lang, 'musicPlaylists', { playlists });
+      await this.reply(msg, s, lang, 'musicPlaylists', { playlists }, MUSIC_REPLY);
       return true;
     }
 
@@ -2657,6 +2753,46 @@ export class InteractionEngine {
       // playlist reference and answers as one, honestly when unknown - it no
       // longer falls through to anything that could play.
       return await listTracksOf(name);
+    }
+
+    // "next" / "another one" / "next chillstep song" (D-222): the two most
+    // natural things anyone says after a track ends. A named source wins;
+    // otherwise she continues from this room's last play; a room where
+    // nothing has played yet is told so honestly.
+    const playNextFrom = async (rest: string, fallthrough: boolean): Promise<boolean | null> => {
+      const named = rest.trim();
+      if (named !== '') {
+        const f = await music.facts();
+        const g = f.genres.find((x) => musicNamesWord(named, x.name));
+        if (g !== undefined) {
+          await playOutcomeReply(await music.playByGenre(msg.groupId, g.name));
+          return true;
+        }
+        const v = await music.view();
+        const pl = v.playlists.find((x) => musicNamesWord(named, x.name));
+        if (pl !== undefined) {
+          await playOutcomeReply(await music.playFromPlaylist(msg.groupId, pl.name));
+          return true;
+        }
+        // Named something that is neither genre nor playlist: the caller
+        // decides - the play branch falls through to the title ladder
+        // ("play one more time" is a TITLE), the bare form answers honestly.
+        if (fallthrough) return null;
+        await this.reply(msg, s, lang, 'musicNotHeld', {}, MUSIC_REPLY);
+        return true;
+      }
+      const out = await music.playNext(msg.groupId);
+      if (out === 'empty') {
+        await this.reply(msg, s, lang, 'musicNothingToFollow', {}, MUSIC_REPLY);
+        return true;
+      }
+      await playOutcomeReply(out);
+      return true;
+    };
+    const bareNext = MUSIC_NEXT_BARE.exec(text);
+    if (bareNext !== null) {
+      const handled = await playNextFrom(bareNext[1] ?? '', false);
+      if (handled !== null) return handled;
     }
 
     // "play ..." - ONLY here does anything play.
@@ -2673,7 +2809,7 @@ export class InteractionEngine {
         if (live?.kind === 'tracks') {
           const item = live.tracks?.[n - 1];
           if (item === undefined) {
-            await this.reply(msg, s, lang, 'musicUnknownTrack', {});
+            await this.reply(msg, s, lang, 'musicUnknownTrack', {}, MUSIC_REPLY);
             return true;
           }
           await playOutcomeReply(await music.playById(msg.groupId, item.id));
@@ -2689,9 +2825,15 @@ export class InteractionEngine {
           return true;
         }
         // A bare number with nothing listed recently means nothing.
-        await this.reply(msg, s, lang, 'musicUnknownTrack', {});
+        await this.reply(msg, s, lang, 'musicUnknownTrack', {}, MUSIC_REPLY);
         return true;
       }
+      const nextArg = MUSIC_NEXT_ARG.exec(arg);
+      if (nextArg !== null) {
+        const handled = await playNextFrom(nextArg[1] ?? '', true);
+        if (handled !== null) return handled;
+      }
+
       // THE LADDER (D-220, from the live test): "play Chillstep" named a
       // playlist and a genre she holds and was answered "no track by that
       // name"; "play Aurora Night - Alusion for us" named an exact title in a
@@ -2704,11 +2846,19 @@ export class InteractionEngine {
       const courtesy = /\s+(?:for\s+(?:us|me|the\s+room)|fuer\s+(?:uns|mich)|f\u00fcr\s+(?:uns|mich)|please|bitte)\s*$/i;
       let bare = arg;
       for (let pass = 0; pass < 3 && courtesy.test(bare); pass++) bare = bare.replace(courtesy, '').trim();
-      const dashed = bare.includes(' - ') ? (bare.split(' - ')[0] ?? '').trim() : '';
-      const rungs = [...new Set([arg, bare, dashed].filter((c) => c !== ''))];
+      // BOTH dash halves (D-222): members write "Title - Artist" and
+      // "Artist - Title" in equal ignorance of the tags, and the live test's
+      // miss was an artist on the left.
+      const dashedL = bare.includes(' - ') ? (bare.split(' - ')[0] ?? '').trim() : '';
+      const dashedR = bare.includes(' - ') ? (bare.split(' - ')[1] ?? '').trim() : '';
+      const rungs = [...new Set([arg, bare, dashedL, dashedR].filter((c) => c !== ''))];
       for (const c of rungs) {
         const outcome = await music.playByTitle(msg.groupId, c);
         if (outcome !== 'unknown') { await playOutcomeReply(outcome); return true; }
+      }
+      for (const c of rungs) {
+        const outcome = await music.playByArtist(msg.groupId, c);
+        if (outcome !== 'empty') { await playOutcomeReply(outcome); return true; }
       }
       for (const c of rungs) {
         const outcome = await music.playFromPlaylist(msg.groupId, c);
@@ -2745,14 +2895,14 @@ export class InteractionEngine {
       await this.reply(msg, s, lang, 'musicGenreYes', {
         genre: asked[0].name,
         tracks: trackCountPhrase(asked[0].count, lang),
-      });
+      }, MUSIC_REPLY);
       return true;
     }
     if (asked.length > 1) {
       const list = asked
         .map((g) => `${g.name} (${trackCountPhrase(g.count, lang)})`)
         .join(', ');
-      await this.reply(msg, s, lang, 'musicGenresSome', { list });
+      await this.reply(msg, s, lang, 'musicGenresSome', { list }, MUSIC_REPLY);
       return true;
     }
     const askedList = (await music.view()).playlists.find((pl) => musicNamesWord(text, pl.name));
@@ -2768,7 +2918,7 @@ export class InteractionEngine {
         .split(/[^\p{L}\p{N}]+/u)
         .filter((t) => t.length > 0);
       if (leftovers.every((t) => MUSIC_GENERIC_WORDS.has(t))) return await overview();
-      await this.reply(msg, s, lang, 'musicNotHeld', {});
+      await this.reply(msg, s, lang, 'musicNotHeld', {}, MUSIC_REPLY);
       return true;
     }
     return await overview();

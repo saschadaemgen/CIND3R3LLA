@@ -40,6 +40,7 @@ import { vector } from '@electric-sql/pglite-pgvector';
 import { readFileSync } from 'node:fs';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
+import { ENCODE_VERSION } from '../src/media/encode.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { normalizeInteraction, type InteractionSettings } from '../src/interaction/settings.js';
@@ -67,6 +68,12 @@ import {
   randomTrackFromPlaylistForBot,
   randomTrackByGenreForBot,
   libraryFactsForBot,
+  lastPlayedInGroup,
+  nextTrackByArtistForBot,
+  nextTrackByGenreForBot,
+  nextTrackForBot,
+  nextTrackFromPlaylistForBot,
+  tracksByGenreForBot,
   trackReachableByBot,
   unbiddenSpend,
   libraryFacts,
@@ -168,7 +175,7 @@ async function main(): Promise<void> {
     mime: 'audio/mpeg', coverPath: `${root}/1/cover.jpg`,
   });
   await db.query(
-    `UPDATE cinderella_tracks SET encoded_path = $2, encoded_at = now(), encode_version = 1 WHERE id = $1`,
+    `UPDATE cinderella_tracks SET encoded_path = $2, encoded_at = now(), encode_version = ${String(ENCODE_VERSION)} WHERE id = $1`,
     [covered, `${root}/1/video-v1.mp4`],
   );
   const coverless = await insertTrack(db, {
@@ -217,6 +224,7 @@ async function main(): Promise<void> {
   await assignPlaylist(db, RICK, rickList);
 
   let uploadOutcome: 'off' | 'too-large' = 'off';
+  let musicBoom = false;
   const musicOpsFor = (botId: number) => ({
     view: () => botMusicView(deps, botId),
     tracksOf: async (name: string) => {
@@ -238,7 +246,7 @@ async function main(): Promise<void> {
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
     playFromPlaylist: async (groupId: number, name: string) => {
-      const track = await randomTrackFromPlaylistForBot(db, botId, name);
+      const track = await nextTrackFromPlaylistForBot(db, botId, groupId, name);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
@@ -254,19 +262,44 @@ async function main(): Promise<void> {
       };
     },
     playByGenre: async (groupId: number, genre: string) => {
-      const track = await randomTrackByGenreForBot(db, botId, genre);
+      const track = await nextTrackByGenreForBot(db, botId, groupId, genre);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
     playByTitle: async (groupId: number, title: string) => {
+      if (musicBoom) throw new Error('the library exploded');
       const track = await findTrackForBot(db, botId, title);
       if (track === null) return 'unknown' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
+    playByArtist: async (groupId: number, artist: string) => {
+      const track = await nextTrackByArtistForBot(db, botId, groupId, artist);
+      if (track === null) return 'empty' as const;
+      const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
+      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playNext: async (groupId: number) => {
+      const last = await lastPlayedInGroup(db, botId, groupId);
+      if (last === null) return 'empty' as const;
+      const firstGenre = last.genre?.split(',')[0]?.trim();
+      const track =
+        firstGenre !== undefined && firstGenre !== ''
+          ? ((await nextTrackByGenreForBot(db, botId, groupId, firstGenre)) ??
+            (await nextTrackForBot(db, botId, groupId)))
+          : await nextTrackForBot(db, botId, groupId);
+      if (track === null) return 'empty' as const;
+      const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
+      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    tracksOfGenre: async (genre: string) => {
+      const tracks = await tracksByGenreForBot(db, botId, genre);
+      if (tracks.length === 0) return null;
+      return { genre, items: tracks.map((t) => ({ id: t.id, title: t.title })), total: tracks.length };
+    },
     playSomething: async (groupId: number) => {
-      const track = await randomTrackForBot(db, botId);
+      const track = await nextTrackForBot(db, botId, groupId);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
@@ -806,6 +839,143 @@ async function main(): Promise<void> {
   check('two named genres: one confirming line carrying both counts',
     replies.length === 1 && (replies[0] ?? '').includes('Chillstep') && (replies[0] ?? '').includes('Progressive'),
     replies[0] ?? '(none)');
+
+  /* ══ 9. THE THIRD LIVE TEST (D-222) ══════════════════════════════════════
+   *
+   * Silence, repeats, no "next", and a held genre denied. Every fault below
+   * reproduced in production while the harness was green.
+   */
+
+  console.log('\n9. The third live test: loud, advancing, and honest about genres');
+
+  // His library shape: an ARTIST called Aurora Night, and a genre tagged
+  // with a space that members type as one word.
+  const only = await insertTrack(db, {
+    kind: 'music', title: 'Only With You', artist: 'Aurora Night', album: null, genre: 'EDM',
+    durationSeconds: 180, filePath: '/x/only.mp3', fileSize: 4_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const neon = await insertTrack(db, {
+    kind: 'music', title: 'Neon Rain', artist: 'Aurora Night', album: null, genre: 'EDM',
+    durationSeconds: 175, filePath: '/x/neon.mp3', fileSize: 4_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const night = await insertTrack(db, {
+    kind: 'music', title: 'Night City', artist: 'V', album: null, genre: 'Cyber Punk',
+    durationSeconds: 160, filePath: '/x/night.mp3', fileSize: 4_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const beats = await createPlaylist(db, 'Beats');
+  await setPlaylistTracks(db, beats, [only, neon, night]);
+  await assignPlaylist(db, DJ, beats);
+
+  // LOUD OVER SILENT (the 5078 signature): two asks in the SAME minute both
+  // get their answer - the honest miss was droppable by the reply limiter
+  // before, and the journal ended at "Saved message" with nothing after it.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA which playlists do you have?'));
+  await dj.handle(makeMsg('CIND3R3LLA play Vaporwave Dreams'));
+  check('SAME MINUTE, both answered: the honest miss cannot be dropped by the limiter',
+    replies.length === 2 && (replies[1] ?? '').includes('no track by that name'),
+    JSON.stringify(replies));
+
+  // A THROW is a loud fault, not silence: the member gets the honest line.
+  replies.length = 0; calls.length = 0;
+  musicBoom = true;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Deep Waters'));
+  musicBoom = false;
+  check('A THROW inside the ladder: the member gets the unavailable line, never silence',
+    replies.length === 1 && (replies[0] ?? '').includes('cannot reach my library'),
+    JSON.stringify(replies));
+
+  // THE ADVANCE: the same ask twice plays two DIFFERENT tracks (a 2-track
+  // playlist plays through before anything repeats), per room.
+  const ROOM2 = 8801;
+  const playedTitles = (): string[] => calls.filter((c) => c.kind === 'text').map((c) => c.caption ?? '');
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Chillstep', ROOM2));
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Chillstep', ROOM2));
+  const two = playedTitles();
+  check('THE ADVANCE: the same playlist ask twice plays two different tracks',
+    two.length === 2 && two[0] !== two[1], JSON.stringify(two));
+
+  // "play another": follows the room's last play by genre, still advancing.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play another', ROOM2));
+  // The tie-break among never-played tracks is random, so derive the
+  // expectation from what ACTUALLY played last: 'another' stays in that
+  // track's genre and advances past it.
+  const GENRE_OF: Record<string, string> = {
+    'Aurora Night': 'Chillstep', 'Deep Waters': 'Chillstep',
+    'Rise Structure': 'progressive', 'Fall Structure': 'progressive',
+  };
+  const lastTitle = (two[1] ?? '').split(' - ')[0] ?? '';
+  const anotherTitle = (playedTitles()[0] ?? '').split(' - ')[0] ?? '';
+  check("'play another' follows the last play BY GENRE, still advancing",
+    anotherTitle !== lastTitle && GENRE_OF[anotherTitle] === GENRE_OF[lastTitle],
+    JSON.stringify({ lastTitle, anotherTitle }));
+
+  // "next chillstep song": the named source wins.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA next chillstep song', ROOM2));
+  check("'next chillstep song' plays from the named genre, not the overview",
+    calls.length > 0 && replies.every((r) => !r.includes('I keep a library here')),
+    JSON.stringify({ calls, replies }));
+
+  // Bare "next" in a room where nothing has played: told so, honestly.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA next', 8809));
+  check("bare 'next' with no history: the honest nothing-to-follow line, no play",
+    calls.length === 0 && replies.length === 1 && (replies[0] ?? '').includes('Nothing has played'),
+    JSON.stringify(replies));
+
+  // THE ARTIST RUNG: his exact sentence, with the artist on the LEFT of the
+  // dash - the miss that ended in silence in production.
+  const ROOM3 = 8802;
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Aurora Night - Alusion for us', ROOM3));
+  check("'play Aurora Night - Alusion for us': the ARTIST rung resolves it and something plays",
+    calls.length > 0 && replies.every((r) => !r.includes('no track by that name')),
+    JSON.stringify({ calls, replies }));
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Aurora Night', ROOM3));
+  check("'play Aurora Night' (a TITLE and an artist): the title wins, most specific rung first",
+    playedTitles().some((t) => t.startsWith('Aurora Night')),
+    JSON.stringify(calls));
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Anon', ROOM3));
+  check("'play Anon' (ONLY an artist): the artist rung plays one of theirs",
+    playedTitles().some((t) => t.startsWith('Rise Structure') || t.startsWith('Fall Structure')),
+    JSON.stringify(calls));
+
+  // THE DENIED GENRE: 'Cyber Punk' in the tag, 'cyberpunk' in the message.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have cyberpunk?'));
+  check("'do you have cyberpunk?' against a 'Cyber Punk' tag: the genre card, not a denial",
+    replies.length === 1 && (replies[0] ?? '').includes('Cyber Punk') && (replies[0] ?? '').includes('1 track'),
+    replies[0] ?? '(none)');
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg("CIND3R3LLA what's on cyberpunk?"));
+  check("'what's on cyberpunk?': the genre's own numbered listing, never 'no playlist by that name'",
+    replies.length === 1 && (replies[0] ?? '').includes('In the genre Cyber Punk') && (replies[0] ?? '').includes('Night City'),
+    replies[0] ?? '(none)');
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play cyberpunk'));
+  check("'play cyberpunk': the genre rung plays through the squashed match",
+    playedTitles().some((t) => t.startsWith('Night City')), JSON.stringify(calls));
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

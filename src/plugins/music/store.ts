@@ -572,7 +572,8 @@ export async function randomTrackByGenreForBot(
         WHERE t.genre IS NOT NULL
           AND EXISTS (
             SELECT 1 FROM unnest(string_to_array(t.genre, ',')) AS g
-             WHERE lower(btrim(g)) = lower(btrim($2))
+             WHERE regexp_replace(lower(btrim(g)), '[^a-z0-9]+', '', 'g')
+                 = regexp_replace(lower(btrim($2)), '[^a-z0-9]+', '', 'g')
           )
      ) s ORDER BY random() LIMIT 1`,
     [botProfileId, genre],
@@ -614,6 +615,140 @@ export async function libraryFactsForBot(
     tracks: Number(total.rows[0]?.n ?? 0),
     genres: genres.rows.map((r) => ({ name: r.genre, count: Number(r.n) })),
   };
+}
+
+/**
+ * THE PER-ROOM ADVANCE (D-222): every requested pick orders by how often this
+ * ROOM has heard each candidate, oldest-heard first among ties, random among
+ * the untouched. Two members asking for the same playlist minutes apart get
+ * two different tracks; the whole playlist plays before anything repeats -
+ * the cadence's shuffle-without-replacement, scoped to the room instead of
+ * the assignment, because a requested play belongs to the room that asked.
+ */
+const ADVANCE_ORDER = `GROUP BY t.id
+      ORDER BY count(pl.id) ASC, max(pl.played_at) ASC NULLS FIRST, random()
+      LIMIT 1`;
+
+export async function nextTrackFromPlaylistForBot(
+  db: Queryable,
+  botProfileId: number,
+  groupId: number,
+  playlistName: string,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT t.* FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+       JOIN cinderella_playlists p ON p.id = pt.playlist_id
+       LEFT JOIN cinderella_track_plays pl ON pl.track_id = t.id AND pl.group_id = $3
+      WHERE lower(p.name) = lower($2)
+      ${ADVANCE_ORDER}`,
+    [botProfileId, playlistName, groupId],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+export async function nextTrackByGenreForBot(
+  db: Queryable,
+  botProfileId: number,
+  groupId: number,
+  genre: string,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT t.* FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+       LEFT JOIN cinderella_track_plays pl ON pl.track_id = t.id AND pl.group_id = $3
+      WHERE t.genre IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM unnest(string_to_array(t.genre, ',')) AS g
+           WHERE regexp_replace(lower(btrim(g)), '[^a-z0-9]+', '', 'g')
+               = regexp_replace(lower(btrim($2)), '[^a-z0-9]+', '', 'g')
+        )
+      ${ADVANCE_ORDER}`,
+    [botProfileId, genre, groupId],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+/** "play Aurora Night" where Aurora Night is the ARTIST (D-222): folded equality. */
+export async function nextTrackByArtistForBot(
+  db: Queryable,
+  botProfileId: number,
+  groupId: number,
+  artist: string,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT t.* FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+       LEFT JOIN cinderella_track_plays pl ON pl.track_id = t.id AND pl.group_id = $3
+      WHERE t.artist IS NOT NULL
+        AND regexp_replace(lower(btrim(t.artist)), '[^a-z0-9]+', '', 'g')
+          = regexp_replace(lower(btrim($2)), '[^a-z0-9]+', '', 'g')
+      ${ADVANCE_ORDER}`,
+    [botProfileId, artist, groupId],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+export async function nextTrackForBot(
+  db: Queryable,
+  botProfileId: number,
+  groupId: number,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT t.* FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+       LEFT JOIN cinderella_track_plays pl ON pl.track_id = t.id AND pl.group_id = $2
+      ${ADVANCE_ORDER}`,
+    [botProfileId, groupId],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+/** The room's most recent play, whatever asked for it - what "next" follows. */
+export async function lastPlayedInGroup(
+  db: Queryable,
+  botProfileId: number,
+  groupId: number,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT t.* FROM cinderella_track_plays pl
+       JOIN cinderella_tracks t ON t.id = pl.track_id
+      WHERE pl.bot_profile_id = $1 AND pl.group_id = $2
+      ORDER BY pl.played_at DESC LIMIT 1`,
+    [botProfileId, groupId],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+/** Every reachable track of one genre, for the numbered genre listing (D-222). */
+export async function tracksByGenreForBot(
+  db: Queryable,
+  botProfileId: number,
+  genre: string,
+): Promise<Track[]> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT DISTINCT t.* FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+      WHERE t.genre IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM unnest(string_to_array(t.genre, ',')) AS g
+           WHERE regexp_replace(lower(btrim(g)), '[^a-z0-9]+', '', 'g')
+               = regexp_replace(lower(btrim($2)), '[^a-z0-9]+', '', 'g')
+        )
+      ORDER BY t.title ASC, t.id ASC`,
+    [botProfileId, genre],
+  );
+  return rows.map(mapTrack);
 }
 
 /** A random track from this bot's playlists - "play me something". */

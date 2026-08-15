@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 220 decisions</strong> — newest first. Highest allocated: <strong>D-221</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 221 decisions</strong> — newest first. Highest allocated: <strong>D-222</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-222 | Loud, advancing, and honest about her own holdings | IMPLEMENTED |
 | D-221 | She answers the question that was asked, and the vocabulary is folded once | IMPLEMENTED |
 | D-220 | The words a person uses: the lane, the ladder, and the second level | IMPLEMENTED |
 | D-219 | Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound | IMPLEMENTED |
@@ -249,6 +250,57 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-222 - Loud, advancing, and honest about her own holdings
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, the third live test). Five faults, each
+diagnosed before anything moved.
+
+**1. THE BLACK BARS WERE STALE STOCK, NOT THE RECIPE.** The git audit found exactly ONE
+committed ffmpeg recipe in the repository's whole history - the crop - landing in the same
+commit as `ENCODE_VERSION = 1`. But Stage 0's hands-on session ran an UNCOMMITTED padding
+recipe on the host the day before (its own commit message records a measured 720x1320 output,
+which is what padding produces), and those encodes were stamped v1: byte-indistinguishable
+from the crop's work and served forever, because `ensureEncoded` re-encodes only on a version
+MISMATCH. `ENCODE_VERSION` is 2 now, which retires every v1 encode; the tick re-queues stale
+encodes through the queue (up to 50 a minute, idempotent), so the bump heals in the background
+rather than synchronously inside the first send; and the recipe is a named constant
+(`ENCODE_RECIPE`) whose sha256 is PINNED beside the version in `verify:music-encode` - the
+next recipe edit that forgets to bump goes red instead of serving stale. The harness also
+drives a v1-stamped row through `ensureEncoded` and asserts it re-encodes.
+
+**2. THE SILENCE HAD THE LIMITER'S SIGNATURE.** A reply the rate limiter drops logs at info
+and returns false: the journal ends at "Saved message" with no model call, no send and no
+error - exactly the 5078 record. Every music-lane reply now carries `bypassLimit` (the
+consent-outcome reasoning: it is 1:1 with an explicit addressed ask, and it still COUNTS
+against the allowance of other lanes), and the harness proves two asks in the same minute
+both get their answer. And a THROW anywhere in the lane now lands in `answerMusicSafely`:
+log, `status.error` to the dashboard, and the honest unavailable line to the member - a play
+that finds nothing says so, and one that throws does not leave anyone staring at silence.
+
+**3. A REQUESTED PLAY ADVANCES PER ROOM.** The playlist rung picked at random, which repeats
+half the time on a two-track playlist; every requested pick (playlist, genre, artist,
+"something") now orders by how often THIS ROOM has heard each candidate, oldest-heard first
+among ties, random among the untouched - the cadence's shuffle-without-replacement scoped to
+the room. Two members asking minutes apart get two different tracks, and the playlist plays
+through before anything repeats.
+
+**4. "NEXT" EXISTS.** "next", "next chillstep song" and "play another" resolve: a named
+genre or playlist wins; otherwise she follows the room's last play (from the plays log) by
+its genre, still advancing; a room where nothing has played is told so honestly, with a line
+of its own. Bare "another" and "one more" deliberately reach the lane only behind "play" or
+beside a named source, because "tell me another" is a joke follow-up, not a play.
+
+**5. A HELD GENRE CAN NO LONGER BE DENIED BY ITS SPELLING.** 'Cyber Punk' in a tag and
+'cyberpunk' in a message are one word now: genre matching squashes case and separators on
+both sides, in the engine's vocabulary scan and in the store's SQL. "what's on cyberpunk"
+gets the genre's own numbered listing (locked, like its playlist twin) instead of "no
+playlist by that name". And the ladder gained the ARTIST rung plus the RIGHT half of a
+dashed argument, because members write "Artist - Title" and "Title - Artist" in equal
+ignorance of the tags - the production miss was an artist on the left. A name that is both
+a title and an artist resolves as the title: most specific rung first, proven.
+
 ---
 
 ### D-221 - She answers the question that was asked, and the vocabulary is folded once
