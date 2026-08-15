@@ -4002,7 +4002,7 @@ bound: MP3 only, 10 MB default since the D-219 activation), `plugin.ts` (TWO ids
 aggregate: the DJ sheet - PER BOT since D-220, what she can reach and never the whole
 shelf - the budgets, shuffle-without-replacement as a query, and the assignment-scoped
 lookups that ARE the playlist boundary: title, playlist name, and genre, the three rungs of
-D-220's play ladder), `library.ts` (files under
+D-220's play ladder; the genre vocabulary folded once and displayed initcap, D-221), `library.ts` (files under
 MUSIC_ROOT by track id; tags read with `music-metadata` and corrected by the operator;
 duration from the ffmpeg probe, never the tag - the VBR lesson; the cached encode),
 `cadence.ts` (pure: the bridge's whichever-first plus the budget verdict with named skips),

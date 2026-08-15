@@ -369,7 +369,7 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       const f = await musicLibraryFactsForBot(deps.db, botProfileId);
       return {
         tracks: f.tracks,
-        genres: f.genres,
+        genres: f.genres, // {name, count}: the cards need the counts (D-221)
         playlists: (await musicAssignmentsForBot(deps.db, botProfileId)).length,
       };
     },

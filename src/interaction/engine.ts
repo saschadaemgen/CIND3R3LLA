@@ -158,8 +158,8 @@ export interface MusicOps {
   /** A random track of one genre this bot can reach - the ladder's last rung (D-220). */
   playByGenre(groupId: number, genre: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
-  /** The DJ sheet's numbers, for the locked overview line. All derived. */
-  facts(): Promise<{ tracks: number; genres: string[]; playlists: number }>;
+  /** The DJ sheet's numbers, for the overview and the genre cards. All derived. */
+  facts(): Promise<{ tracks: number; genres: { name: string; count: number }[]; playlists: number }>;
   playUpload(
     groupId: number,
     senderMemberId: string,
@@ -175,14 +175,59 @@ export interface MusicOps {
  * means nothing again - the follow-up-window shape.
  */
 interface MusicListContext {
-  kind: 'playlists' | 'tracks';
+  kind: 'playlists' | 'tracks' | 'genre';
   /** Playlist names in shown order, or track (id,title) pairs in shown order. */
   playlists?: string[];
   tracks?: { id: number; title: string }[];
+  /** The genre a card just confirmed - the subject a short affirmative takes. */
+  genre?: string;
   expiresAt: number;
 }
 
 const MUSIC_LIST_CONTEXT_MS = 10 * 60_000;
+
+/** "do you have ..." in either language - the ask a genre card answers (D-221). */
+const MUSIC_HAVE_ASK = /(?:do you have|have you got|hast du|gibt es|haben sie)\b/;
+
+/**
+ * The words that make a have-ask GENERAL rather than named (D-221): after the
+ * have-phrase is stripped, a question whose every remaining word sits in this
+ * set named nothing - "what music do you have?", "do you have any tracks?" -
+ * and gets the overview, where a leftover word is a SUBJECT and gets the card
+ * or the echo-free miss.
+ */
+const MUSIC_GENERIC_WORDS = new Set([
+  'what', 'which', 'any', 'some', 'got', 'more', 'still', 'a', 'the', 'me', 'us', 'for', 'please',
+  'music', 'track', 'tracks', 'song', 'songs', 'tune', 'tunes', 'playlist', 'playlists',
+  'genre', 'genres', 'audiobook', 'audiobooks', 'kind', 'kinds', 'sort', 'sorts', 'of',
+  'was', 'welche', 'welches', 'etwas', 'irgendwas', 'noch', 'auch', 'da', 'hier', 'denn',
+  'eigentlich', 'eine', 'einen', 'ein', 'die', 'der', 'das', 'mir', 'uns', 'bitte',
+  'musik', 'lied', 'lieder', 'titel', 'hoerbuch', 'hoerbuecher', 'art', 'arten', 'von',
+]);
+
+/**
+ * The OFFER TAKEN (D-221): a short whole-message affirmative while a genre
+ * card is live. Anchored both ends so "yes but tell me about X" never plays;
+ * 'play one' is deliberately absent because 'play' claims the lane by itself.
+ */
+const MUSIC_AFFIRMATIVE = /^(?:yes(?:\s+please)?|ja(?:\s+bitte)?|go\s+on|put\s+one\s+on|mach\s+an|leg\s+los)\s*[.!?]*$/;
+
+function musicEscapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
+}
+
+/** Does the text name this genre or playlist as a whole word, case-folded? */
+function musicNamesWord(text: string, name: string): boolean {
+  return new RegExp(
+    `(?<![\\p{L}\\p{N}])${musicEscapeRegExp(name.toLowerCase())}(?![\\p{L}\\p{N}])`,
+    'u',
+  ).test(text);
+}
+
+function trackCountPhrase(count: number, lang: string): string {
+  if (lang === 'de') return count === 1 ? '1 Titel' : `${String(count)} Titel`;
+  return count === 1 ? '1 track' : `${String(count)} tracks`;
+}
 
 export interface InteractionDeps {
   db: Queryable;
@@ -634,6 +679,9 @@ const AI_LOCKED_KEYS = new Set<PersonaKey>([
   'musicPlaylists',
   'musicTracks',
   'musicOverview',
+  // D-221: the genre cards. The numbers stay ours; the sentence is hers.
+  'musicGenreYes',
+  'musicGenresSome',
 ]);
 
 /**
@@ -1293,6 +1341,15 @@ export class InteractionEngine {
         // model can speak, and stays silent on a weak signal when it cannot, rather
         // than saying a canned sentence to something that may not have been aimed at
         // her. Strict mode is untouched, because a bare name never gets this far.
+        // D-221: two asks that carry no lexicon token and are still hers.
+        // A short affirmative while a genre card is live is the offer being
+        // taken; "do you have <thing she holds>" names its subject out of HER
+        // OWN vocabulary, the DJ sheet - a deterministic, data-driven
+        // predicate over the text, never a model's claim (D-183).
+        if (await this.unclaimedMusicAsk(msg, instruction)) {
+          return await this.answerMusic(msg, s, lang, instruction);
+        }
+
         if (await this.freeConversation(msg, s, lang)) return true;
 
         if (s.addressing.silenceOnUnknown && !strong) {
@@ -2405,7 +2462,8 @@ export class InteractionEngine {
       return this.musicFactsCache.facts;
     }
     try {
-      const facts = await music.facts();
+      const f = await music.facts();
+      const facts = { tracks: f.tracks, genres: f.genres.map((g) => g.name), playlists: f.playlists };
       this.musicFactsCache = { at: now, facts };
       return facts;
     } catch (error) {
@@ -2413,6 +2471,35 @@ export class InteractionEngine {
       // that says nothing about music - never one that guesses.
       log.warn(`music: prompt facts unavailable (${String(error)}); the prompt stays silent about the library.`);
       return undefined;
+    }
+  }
+
+  /**
+   * Does an UNCLAIMED message belong to the music lane anyway (D-221)?
+   * True for a short affirmative while a genre card is live, and for a
+   * have-ask naming a genre or playlist she actually holds. Both are
+   * deterministic predicates over the text and her own data; a failure to
+   * answer is a false and stays in conversation.
+   */
+  private async unclaimedMusicAsk(msg: CapturedMessage, instruction: string): Promise<boolean> {
+    const music = this.deps.music?.() ?? null;
+    if (music === null) return false;
+    const text = instruction.toLowerCase().trim();
+    const live = this.musicLists.get(msg.groupId);
+    if (
+      live !== undefined && live.expiresAt > this.now() &&
+      live.kind === 'genre' && MUSIC_AFFIRMATIVE.test(text)
+    ) {
+      return true;
+    }
+    if (!MUSIC_HAVE_ASK.test(text)) return false;
+    try {
+      const facts = await this.musicPromptFacts();
+      if (facts !== undefined && facts.genres.some((g) => musicNamesWord(text, g))) return true;
+      const view = await music.view();
+      return view.playlists.some((pl) => musicNamesWord(text, pl.name));
+    } catch {
+      return false;
     }
   }
 
@@ -2465,7 +2552,7 @@ export class InteractionEngine {
       const facts = await music.facts();
       await this.reply(msg, s, lang, 'musicOverview', {
         tracks: facts.tracks,
-        genres: facts.genres.length === 0 ? 'no genres yet' : facts.genres.join(', '),
+        genres: facts.genres.length === 0 ? 'no genres yet' : facts.genres.map((g) => g.name).join(', '),
         playlists: facts.playlists,
       });
       return true;
@@ -2635,12 +2722,55 @@ export class InteractionEngine {
       return true;
     }
 
-    // ── THE TAIL THAT USED TO PLAY (the behaviour fault) ────────────────────
+    // ── PER-QUESTION ANSWERS (D-221) ────────────────────────────────────────
     //
-    // Everything else that reached this lane - a lone keyword, a question about
-    // a track, "next track" with no context - now gets the locked overview:
-    // what she holds and how to ask, application numbers throughout. Nothing
-    // down here can start a transfer.
+    // He asked about ONE genre and received an inventory. The tail answers
+    // the question that was asked: a standing offer taken by a short
+    // affirmative plays; a named genre gets its own card with its own count;
+    // a named playlist gets its listing; a have-ask naming nothing she holds
+    // gets an echo-free honest miss; and only a question that names NOTHING
+    // gets the general overview. Every number in every card is the
+    // application's - the model may open the line (AI_LOCKED_KEYS) and can
+    // contradict nothing - and nothing down here can start a transfer except
+    // the affirmative, which is a member taking an offer she just made.
+    if (live?.kind === 'genre' && live.genre !== undefined && MUSIC_AFFIRMATIVE.test(text)) {
+      this.musicLists.delete(msg.groupId);
+      await playOutcomeReply(await music.playByGenre(msg.groupId, live.genre));
+      return true;
+    }
+    const facts = await music.facts();
+    const asked = facts.genres.filter((g) => musicNamesWord(text, g.name));
+    if (asked.length === 1 && asked[0] !== undefined) {
+      remember({ kind: 'genre', genre: asked[0].name });
+      await this.reply(msg, s, lang, 'musicGenreYes', {
+        genre: asked[0].name,
+        tracks: trackCountPhrase(asked[0].count, lang),
+      });
+      return true;
+    }
+    if (asked.length > 1) {
+      const list = asked
+        .map((g) => `${g.name} (${trackCountPhrase(g.count, lang)})`)
+        .join(', ');
+      await this.reply(msg, s, lang, 'musicGenresSome', { list });
+      return true;
+    }
+    const askedList = (await music.view()).playlists.find((pl) => musicNamesWord(text, pl.name));
+    if (askedList !== undefined) return await listTracksOf(askedList.name);
+    if (MUSIC_HAVE_ASK.test(text)) {
+      // "what music do you have?" wears the have-phrase and names NOTHING: it
+      // is the general question and gets the overview. A leftover non-generic
+      // word is a subject she does not hold, answered by the echo-free miss
+      // (the searchResult lesson: an echoed phrase becomes publishable the
+      // day its category is switched on).
+      const leftovers = text
+        .replace(MUSIC_HAVE_ASK, ' ')
+        .split(/[^\p{L}\p{N}]+/u)
+        .filter((t) => t.length > 0);
+      if (leftovers.every((t) => MUSIC_GENERIC_WORDS.has(t))) return await overview();
+      await this.reply(msg, s, lang, 'musicNotHeld', {});
+      return true;
+    }
     return await overview();
   }
 

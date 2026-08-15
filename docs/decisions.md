@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 219 decisions</strong> — newest first. Highest allocated: <strong>D-220</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 220 decisions</strong> — newest first. Highest allocated: <strong>D-221</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-221 | She answers the question that was asked, and the vocabulary is folded once | IMPLEMENTED |
 | D-220 | The words a person uses: the lane, the ladder, and the second level | IMPLEMENTED |
 | D-219 | Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound | IMPLEMENTED |
 | D-218 | She knows her own player, a list is numbered, and only an explicit play plays | IMPLEMENTED |
@@ -250,6 +251,41 @@ This has gone wrong twice.
 ---
 ---
 
+### D-221 - She answers the question that was asked, and the vocabulary is folded once
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, the second live test). Two faults, and the
+first was a design one: the locked overview was answering questions it was not asked. "do you
+have Chillstep Music?" got the full catalogue - every count, every genre, the how-to-use
+paragraph - because D-220 §1 made the overview the lane's whole tail. The facts staying
+application-supplied was right; fixing the SHAPE of every answer to one inventory was not.
+
+**The tail answers per question now.** A named genre gets its own card - "Yes, I have
+Chillstep: 2 tracks. Want the playlist, or shall I put one on?" - with the count computed by
+the application and the card in AI_LOCKED_KEYS, so the model may open the line and can
+contradict nothing: the numbers stay ours, the sentence is hers. Several named genres get one
+line with each count; a named playlist gets its listing; a have-ask naming nothing she holds
+gets an echo-free honest miss (the searchResult lesson); and only a question that names
+NOTHING - "what music do you have?", "do you have any tracks?", decided by a generic-word
+set over what remains after the have-phrase - still gets the general overview.
+
+**The offer is not decoration: it works.** The card remembers its genre in the same
+ten-minute context the numbered lists use, and a short whole-message affirmative - "yes",
+"put one on", "ja bitte" - plays a track of THAT genre and consumes the offer. Anchored both
+ends so "yes but tell me about X" never plays, proven with the no-offer negative control.
+And because "do you have Chillstep?" carries no lexicon token at all, the UNKNOWN dispatch
+now asks a data-driven predicate before falling to conversation: does the text name a genre
+or playlist SHE HOLDS, out of her own DJ sheet, beside a have-phrase. That is a deterministic
+bar over the text and her own data (D-183), not a model's claim.
+
+**The vocabulary is folded once.** The genre list read "progressive, Chillstep, Progressive,
+Trance, euphoric, house" - two entries for one genre and casing as it arrived in the tags.
+Both DJ sheets (deployment and per-bot) now GROUP BY the case-folded genre and display
+initcap, decided in one place; the stored tag keeps the operator's string, the play-by-genre
+rung already matched case-folded, and the harness pins 'progressive' + 'Progressive' landing
+as ONE 'Progressive' counting both tracks.
+
+---
+
 ### D-220 - The words a person uses: the lane, the ladder, and the second level
 
 **Status: IMPLEMENTED** (CCB-S5-044 follow-up, from the operator's live test). Three faults,
@@ -267,7 +303,9 @@ correctly downgraded any resolver claim, and the question fell to free conversat
 the model denied a genre she holds (see §4). 'music', 'musik', 'genre' and 'genres' are
 keywords now. The wide net is safe because these patterns only ever see a message ADDRESSED
 to her, and the lane's tail is the locked overview: honest application numbers whatever the
-question was.
+question was. *(Superseded the same day by D-221: the tail answers per question - a genre
+card, a listing, an echo-free miss - and the overview keeps only the questions that name
+nothing.)*
 
 **2. THE LADDER.** "play Chillstep" named a playlist and a genre she holds; "play Aurora
 Night - Alusion for us" named an exact title in a member's own words - title, dash, artist,

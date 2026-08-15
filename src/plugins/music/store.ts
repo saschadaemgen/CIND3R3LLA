@@ -452,11 +452,14 @@ export async function libraryFacts(db: Queryable, now: Date): Promise<LibraryFac
   // Comma-separated genres SPLIT (the first-use report): "Folk, Shanty" is two
   // genres on one track, and the vocabulary she is handed must say so. Derived
   // at read like everything else here - the column keeps the operator's string.
+  // Folded ONCE (D-221): 'progressive' and 'Progressive' are one genre, and
+  // the display form is decided here - initcap of the folded form - rather
+  // than however the tag arrived. The stored tag keeps the operator's string.
   const genres = await db.query<{ genre: string; n: string | number }>(
-    `SELECT btrim(g) AS genre, count(*) AS n
+    `SELECT initcap(lower(btrim(g))) AS genre, count(*) AS n
        FROM cinderella_tracks, unnest(string_to_array(genre, ',')) AS g
       WHERE genre IS NOT NULL AND btrim(g) <> ''
-      GROUP BY btrim(g) ORDER BY count(*) DESC, btrim(g)`,
+      GROUP BY lower(btrim(g)) ORDER BY count(*) DESC, initcap(lower(btrim(g)))`,
   );
   const most = await db.query<{ title: string; artist: string | null; n: string | number }>(
     `SELECT t.title, t.artist, count(*) AS n
@@ -588,7 +591,7 @@ export async function randomTrackByGenreForBot(
 export async function libraryFactsForBot(
   db: Queryable,
   botProfileId: number,
-): Promise<{ tracks: number; genres: string[] }> {
+): Promise<{ tracks: number; genres: { name: string; count: number }[] }> {
   const total = await db.query<{ n: string | number }>(
     `SELECT count(DISTINCT t.id) AS n FROM cinderella_tracks t
        JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
@@ -596,18 +599,21 @@ export async function libraryFactsForBot(
          ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1`,
     [botProfileId],
   );
-  const genres = await db.query<{ genre: string }>(
-    `SELECT btrim(g) AS genre, count(DISTINCT t.id) AS n
+  const genres = await db.query<{ genre: string; n: string | number }>(
+    `SELECT initcap(lower(btrim(g))) AS genre, count(DISTINCT t.id) AS n
        FROM cinderella_tracks t
        JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
        JOIN cinderella_playlist_assignments a
          ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1,
        unnest(string_to_array(t.genre, ',')) AS g
       WHERE t.genre IS NOT NULL AND btrim(g) <> ''
-      GROUP BY btrim(g) ORDER BY count(DISTINCT t.id) DESC, btrim(g)`,
+      GROUP BY lower(btrim(g)) ORDER BY count(DISTINCT t.id) DESC, initcap(lower(btrim(g)))`,
     [botProfileId],
   );
-  return { tracks: Number(total.rows[0]?.n ?? 0), genres: genres.rows.map((r) => r.genre) };
+  return {
+    tracks: Number(total.rows[0]?.n ?? 0),
+    genres: genres.rows.map((r) => ({ name: r.genre, count: Number(r.n) })),
+  };
 }
 
 /** A random track from this bot's playlists - "play me something". */

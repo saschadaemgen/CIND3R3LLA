@@ -1698,9 +1698,10 @@ config loader REFUSES a nested music root exactly as it refuses a nested bridge 
 
 **No model on the play path**, asserted structurally by `verify:music`: captions are the
 track's own title and artist, refusals are persona strings the application fills, and content
-that plays into a group on a timer must not be a place a prompt injection can steer. The two
-list replies (playlists, tracks) are LOCKED: the model writes a bounded opening line and the
-application appends the list unchanged.
+that plays into a group on a timer must not be a place a prompt injection can steer. The list
+and card replies (playlists, tracks, the overview, the D-221 genre cards) are LOCKED: the
+model writes a bounded opening line and the application's facts stand unchanged, so she can
+confirm one genre with its own count and still invent nothing.
 
 **Part 4b is an allow-list with its own switch.** A member handing her a file to re-send is a
 small abuse surface, so: MP3 ONLY since the activation decision (D-219), and the allow-list

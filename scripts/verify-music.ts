@@ -569,8 +569,8 @@ async function main(): Promise<void> {
   check('no per-member aggregate is stored: the migration carries no member counter column',
     !/member[a-z_]*count|count[a-z_]*member/i.test(migration));
   const dj2 = await libraryFacts(db, clock);
-  check('the DJ sheet is derived per read: genres are the library\'s own GROUP BY',
-    dj2.byGenre.every((g) => ['folk', 'rock'].includes(g.genre)),
+  check('the DJ sheet is derived per read: genres are the library\'s own GROUP BY, folded and initcap (D-221)',
+    dj2.byGenre.every((g) => ['Folk', 'Rock'].includes(g.genre)),
     JSON.stringify(dj2.byGenre));
 
   /* ══ 6. Part 4b's refusals ═══════════════════════════════════════════════ */
@@ -662,15 +662,19 @@ async function main(): Promise<void> {
   replies.length = 0; calls.length = 0;
   clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA do you have Chillstep Music'));
-  check("'do you have Chillstep Music': the OVERVIEW answers, naming the genre she holds",
-    replies.length === 1 && (replies[0] ?? '').includes('Chillstep'), replies[0] ?? '(none)');
+  check("'do you have Chillstep Music': HER CARD - the genre confirmed with its own count, NOT the inventory (D-221)",
+    replies.length === 1 && (replies[0] ?? '').includes('Chillstep') && (replies[0] ?? '').includes('2 tracks')
+      && !(replies[0] ?? '').includes('I keep a library here'),
+    replies[0] ?? '(none)');
   check('  and asking is not playing: nothing was sent', calls.length === 0, JSON.stringify(calls));
 
   replies.length = 0;
   clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA what music do you have?'));
-  check("'what music do you have?': the overview again, not silence",
-    replies.length === 1 && (replies[0] ?? '').includes('Chillstep'), replies[0] ?? '(none)');
+  check("'what music do you have?': a question naming NOTHING still gets the general overview",
+    replies.length === 1 && (replies[0] ?? '').includes('I keep a library here')
+      && (replies[0] ?? '').includes('Chillstep'),
+    replies[0] ?? '(none)');
 
   // The second level: list the playlists, then ask in his words.
   replies.length = 0;
@@ -726,6 +730,82 @@ async function main(): Promise<void> {
   await rick.handle(makeMsg('CIND3R3LLA play Chillstep'));
   check('THE BOUNDARY HOLDS on the ladder: the other bot cannot play a playlist it was not given',
     calls.length === 0, JSON.stringify(calls));
+
+  // ── D-221: per-question answers, the offer, and the folded vocabulary ──
+
+  // A have-ask with NO lexicon token at all still finds the lane, because the
+  // subject is drawn from HER OWN vocabulary - a data-driven predicate.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have Chillstep?'));
+  check("'do you have Chillstep?' (no lexicon word): the genre card still answers",
+    replies.length === 1 && (replies[0] ?? '').includes('Chillstep') && (replies[0] ?? '').includes('2 tracks'),
+    replies[0] ?? '(none)');
+  check('  the card is an answer, not a play: nothing was sent', calls.length === 0, JSON.stringify(calls));
+
+  // THE OFFER TAKEN: the card stands, a short affirmative plays from it.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA yes'));
+  check("the offer works: 'yes' after the card plays a track of THAT genre",
+    calls.some((c) => c.kind === 'voice' || c.kind === 'video'), JSON.stringify(calls));
+
+  // NEGATIVE CONTROL: an affirmative with no standing offer plays nothing.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA yes', 9922));
+  check('POSITIVE CONTROL of the offer: a bare yes with NO card live plays nothing',
+    calls.length === 0, JSON.stringify(calls));
+
+  // A general have-ask names nothing and stays general.
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have any music?'));
+  check("'do you have any music?': generic words name nothing, the overview answers",
+    replies.length === 1 && (replies[0] ?? '').includes('I keep a library here'),
+    replies[0] ?? '(none)');
+
+  // The honest miss is echo-free (the searchResult lesson).
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have Vaporwave Music'));
+  check('a have-ask naming nothing she holds: the honest miss, with NO echo of the name',
+    replies.length === 1 && !(replies[0] ?? '').includes('Vaporwave') && (replies[0] ?? '').includes('nothing by that name'),
+    replies[0] ?? '(none)');
+
+  // A named PLAYLIST in a have-ask gets its listing.
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have Evening Set?'));
+  check("'do you have Evening Set?': the playlist's own listing answers",
+    replies.length === 1 && (replies[0] ?? '').includes('On the playlist Evening Set'),
+    replies[0] ?? '(none)');
+
+  // THE FOLD: 'progressive' and 'Progressive' are ONE genre, displayed one way.
+  const prog1 = await insertTrack(db, {
+    kind: 'music', title: 'Rise Structure', artist: 'Anon', album: null, genre: 'progressive',
+    durationSeconds: 100, filePath: '/x/p1.mp3', fileSize: 1000, mime: 'audio/mpeg', coverPath: null,
+  });
+  const prog2 = await insertTrack(db, {
+    kind: 'music', title: 'Fall Structure', artist: 'Anon', album: null, genre: 'Progressive',
+    durationSeconds: 100, filePath: '/x/p2.mp3', fileSize: 1000, mime: 'audio/mpeg', coverPath: null,
+  });
+  await setPlaylistTracks(db, chillstepList, [aurora, deepW, prog1, prog2]);
+  const folded = await libraryFactsForBot(db, DJ);
+  check("the genre vocabulary is FOLDED: 'progressive' and 'Progressive' are one entry",
+    folded.genres.filter((g) => g.name.toLowerCase() === 'progressive').length === 1,
+    JSON.stringify(folded.genres));
+  check('  displayed the decided way, with both tracks counted',
+    folded.genres.some((g) => g.name === 'Progressive' && g.count === 2),
+    JSON.stringify(folded.genres));
+
+  // Several named genres in one ask: one line, each with its count.
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have Chillstep or Progressive?'));
+  check('two named genres: one confirming line carrying both counts',
+    replies.length === 1 && (replies[0] ?? '').includes('Chillstep') && (replies[0] ?? '').includes('Progressive'),
+    replies[0] ?? '(none)');
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

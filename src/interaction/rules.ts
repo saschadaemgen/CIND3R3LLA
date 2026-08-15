@@ -460,8 +460,9 @@ const LEXICON: LexEntry[] = [
     // 'music' and 'genre' joined after the live test (D-220): "do you have
     // Chillstep Music" named her whole capability and never reached this lane,
     // so the model answered against no data and denied a genre she holds.
-    // Addressed-only messages make the wide net safe: the lane's tail is the
-    // locked overview, which is honest whatever the question was.
+    // Addressed-only messages make the wide net safe: the lane's tail answers
+    // per question since D-221 - a genre card, a listing, an honest miss -
+    // and falls back to the locked overview only when nothing was named.
     keywords: ['playlist', 'track', 'song', 'tune', 'audiobook', 'music', 'genre', 'genres'],
   },
   {
