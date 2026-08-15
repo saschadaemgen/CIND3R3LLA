@@ -19,6 +19,13 @@
   var D = JSON.parse(island.textContent || '{}');
   var csrf = D.csrf || '';
 
+  // The drawer must paint OVER the sticky header, but any ancestor with its
+  // own stacking context traps its z-index below it (the operator watched the
+  // panel vanish under the main menu). A portal to <body> frees it.
+  document.querySelectorAll('[data-mus="drawer"]').forEach(function (d) {
+    document.body.appendChild(d);
+  });
+
   /* ── helpers (the prototype's own rules) ─────────────────────────────── */
 
   function mmss(s) {

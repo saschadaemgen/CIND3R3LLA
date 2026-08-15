@@ -237,6 +237,10 @@ samp {
   border-right: 1px solid var(--line);
   background: rgba(10, 13, 18, 0.58);
   padding: 30px 20px;
+  /* A flex column, so the foot's margin-top:auto really means the BOTTOM:
+     the operator moved Sign out down there when the clock left. */
+  display: flex;
+  flex-direction: column;
 }
 
 .admin-sidebar-heading {
@@ -5607,6 +5611,7 @@ input[type='radio'] {
 .music-page [data-row]:hover{background:var(--surface-hover)}
 .music-page [data-dz="on"]{border-color:rgba(69,189,209,.62) !important;background:rgba(69,189,209,.07) !important}
 
+.music-page > * + *{margin-top:18px}
 .music-stack{display:flex;flex-direction:column;gap:14px}
 .music-head{margin-bottom:18px;display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap}
 .music-head-text{min-width:0}

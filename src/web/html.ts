@@ -625,39 +625,6 @@ function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): S
     : null}`;
 }
 
-/**
- * The sidebar clock (CCB-S5-036, D-194).
- *
- * Decoration, wanted, and built properly rather than apologetically. Three things keep it
- * honest:
- *
- * ── IT COSTS ONE TIMER AND ONE TEXT WRITE A SECOND ───────────────────────────
- *
- * The markup is server-rendered with the current time already in it, so the clock is correct
- * on arrival with no script at all; `admin-clock.js` only keeps it moving. There is no
- * per-frame JavaScript: the tick is one `setInterval` at 1000 ms writing one text node, and
- * the glitch is CSS, which the compositor runs without waking the main thread. On a machine
- * already doing inference that distinction is the whole point - a `requestAnimationFrame`
- * loop would take main-thread time away from everything else on the page, and this does not.
- *
- * ── AND IT STOPS WHEN THE SYSTEM ASKS ────────────────────────────────────────
- *
- * `prefers-reduced-motion: reduce` removes the glitch animation entirely in CSS. A glitch
- * effect is exactly the kind of animation that makes some people ill, and the honest version
- * of "glitchy" is one that is not glitchy for them. The TIME still updates: reduced motion is
- * a request about movement, not about information.
- *
- * The accent colour is `--accent`, taken from the console's own tokens rather than chosen.
- */
-function consoleClock(): SafeHtml {
-  const now = new Date();
-  const hh = String(now.getUTCHours()).padStart(2, '0');
-  const mm = String(now.getUTCMinutes()).padStart(2, '0');
-  return html`<div class="admin-clock" data-admin-clock aria-hidden="true">
-    <span class="admin-clock-face" data-clock-face data-text="${hh}:${mm}">${hh}:${mm}</span>
-    <span class="admin-clock-zone">UTC</span>
-  </div>`;
-}
 
 function fixedFooter(): SafeHtml {
   return html`<footer class="admin-footer" data-admin-footer>
@@ -772,7 +739,6 @@ export function page(options: PageOptions): string {
               <span>Sign out</span>
             </button>
           </form>
-          ${consoleClock()}
         </div>
       </aside>`
     : html``;
@@ -793,7 +759,6 @@ export function page(options: PageOptions): string {
                 <script src="/assets/auth.js" defer></script>
                 <script src="/assets/admin-effects.js" defer></script>
                 <script src="/assets/admin-navigation.js" defer></script>
-                <script src="/assets/admin-clock.js" defer></script>
                 <script src="/assets/admin-player.js" defer></script>`
             : html``
         }
