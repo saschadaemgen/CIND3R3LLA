@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 216 decisions</strong> — newest first. Highest allocated: <strong>D-217</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 217 decisions</strong> — newest first. Highest allocated: <strong>D-218</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-218 | She knows her own player, a list is numbered, and only an explicit play plays | IMPLEMENTED |
 | D-217 | A profile is categories over registered sources, and the music plugin goes first | SHAPE IMPLEMENTED AND ENFORCED; the profile itself is PLANNED |
 | D-216 | The cover decides the shape, a playlist is a boundary, and the cadence is the bridge's | IMPLEMENTED, DEMONSTRATED |
 | D-215 | Announcements are public per channel, and the origin belongs on the record | IMPLEMENTED, DEMONSTRATED |
@@ -245,6 +246,62 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-218 - She knows her own player, a list is numbered, and only an explicit play plays
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, from the operator's first real conversation with
+the capability).
+
+**1. THE FAILURE WAS THE WEB SEARCH'S, AGAIN.** He asked her about the music player and she
+could not answer - not what she holds, not what it does, not how to use it. A capability she
+has and is not aware of. The fix is the clock's shape exactly (migration 064, condition
+`has-music`, the D-138 origin-family pattern): `music.capability` hands her the DJ sheet as
+placeholder values - {{musicTracks}}, {{musicGenres}}, {{musicPlaylists}}, application-derived,
+so she cannot invent a genre or a count, and the genre vocabulary IS the library's GROUP BY;
+`music.not-a-manual` (constitutional) keeps it explained-when-asked, never recited unprompted;
+`music.no-invention` (constitutional) makes the numbers the whole truth. The facts ride the
+reply request the way the clock does (engine `musicPromptFacts()`, cached a minute), and a bot
+the plugin is off for carries no condition, no values and no mention. prompt-identity gained
+the `conversation.with-music` case and was re-baselined; the diff is the three sentences.
+Comma-separated genres now SPLIT in the derivation, so "Folk, Shanty" is two genres and not a
+third one nobody typed.
+
+**2. NUMBER OR NAME, AT EVERY STEP.** Every list she gives is numbered, and the last list she
+showed in a group is remembered for ten minutes (the follow-up-window shape): "what's on 1"
+resolves against the playlists she just listed, "play 2" against the tracks, a number past the
+list answers honestly. The number path re-checks the playlist boundary by id
+(`trackReachableByBot`): a stale context or a crafted number cannot reach past the
+assignments the title path enforces.
+
+**3. THE BEHAVIOUR FAULT, AND WHAT THE PATTERNS ACTUALLY MATCHED.** He asked which track was
+on the list and she played one. Measured before changing (the probe is in the session record):
+the MUSIC bar matches KEYWORDS as well as phrases, so a lone "track" or "song" in an addressed
+sentence claims the lane at 0.6-0.75; the first build's handler tail treated any claim with no
+parsable ask as "play me something"; and "what is on X" with an unknown X fell through to that
+same tail at 0.96. Both ends are fixed at the deterministic layer (D-183: the engine is the
+bar): the tail is now the LOCKED overview - what she holds and how to ask, application numbers
+throughout - and an unknown playlist answers `musicUnknownPlaylist`. The wide keyword claim
+STAYS, deliberately: wide-claim-plus-non-playing-default is what makes a music-adjacent
+question get a music answer. Only the explicit play verbs reach a transfer, held by
+`verify:music` with the operator's own sentence.
+
+**4. THE CONSOLE'S SHARE.** The assignment card states its stored mode in words - "cadence
+active" with the full rhythm, or "on request only" with an amber warning that the cadence
+below is NOT active until Set cadence is pressed (the third applied-vs-not control this week,
+after the clear button and the profile apply). The track list shows the cover it holds, the
+album (TALB, read from the tag in the browser and on the server, editable at upload), and
+membership badges instead of an Add picker that pretended a track was unassigned; assignment
+is a multi-select above the list - checkboxes bound to one form via the HTML `form`
+attribute, so forty tracks are one press with a counted outcome.
+
+**Verification.** `verify:music` (the operator's sentence plays nothing and gets the overview;
+the numbered conversation end to end by number alone; the number path's boundary; the
+reply-budget lesson is in the harness itself, which advances the clock between asks because
+twelve questions at one frozen instant run the per-chat budget dry by design);
+`verify:prompt-identity` (29 cases, 66 critical rules, re-baselined with the three-line diff
+as the record). The console screenshotted per D-212.
+
 ---
 
 ### D-217 - A profile is categories over registered sources, and the music plugin goes first

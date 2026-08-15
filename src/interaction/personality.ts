@@ -802,11 +802,19 @@ export interface DialledPromptInputs {
  * rule that needed one and did not get it THROWS, which turns a wiring mistake into a loud
  * failure instead of a prompt that quietly lost a fact.
  */
+/** The DJ sheet's numbers, as the prompt receives them (CCB-S5-044, D-218). */
+export interface MusicPromptFacts {
+  tracks: number;
+  genres: string[];
+  playlists: number;
+}
+
 export function dialledPromptInputs(
   rules: PromptRuleSet,
   personality: BotPersonality | null,
   identity?: BotIdentity,
   time?: CurrentTime,
+  music?: MusicPromptFacts,
 ): DialledPromptInputs {
   // Normalized once. It was called three times before and the origin would have made it
   // four, on a function that trims and slices two paragraphs of prose per call.
@@ -838,6 +846,10 @@ export function dialledPromptInputs(
     hasModel: model !== '',
     hasNicknames: nicknames.length > 0,
     hasClock: stamp !== null,
+    // The library reaches her the way the clock does: facts or nothing. A bot
+    // the plugin is off for carries no condition and no values, so the rules
+    // that would describe the capability are simply not in its prompt.
+    hasMusic: music !== undefined,
     hasWebResults: false,
     hasKnowledge: false,
     hasHistory: false,
@@ -861,6 +873,12 @@ export function dialledPromptInputs(
   if (stamp !== null && time) {
     values['now'] = stamp;
     values['timeZone'] = time.timeZone;
+  }
+  if (music !== undefined) {
+    values['musicTracks'] = String(music.tracks);
+    values['musicGenres'] =
+      music.genres.length === 0 ? 'no genres tagged yet' : music.genres.join(', ');
+    values['musicPlaylists'] = String(music.playlists);
   }
   if (dialled !== null) values[DIAL_AXES_PLACEHOLDER] = dialAxesBlock(rules, dialled);
 

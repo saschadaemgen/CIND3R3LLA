@@ -185,6 +185,16 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
 
       const playlistContents = new Map<number, Awaited<ReturnType<typeof playlistTracks>>>();
       for (const pl of playlists) playlistContents.set(pl.id, await playlistTracks(db, pl.id));
+      // Which playlists each track sits in, for the membership badges: a track
+      // already assigned must SAY so rather than offer Add as if it were not.
+      const membership = new Map<number, string[]>();
+      for (const pl of playlists) {
+        for (const t of playlistContents.get(pl.id) ?? []) {
+          const list = membership.get(t.id) ?? [];
+          list.push(pl.name);
+          membership.set(t.id, list);
+        }
+      }
 
       const kindOptions = (selected: TrackKind): SafeHtml =>
         html`${TRACK_KINDS.map(
@@ -295,25 +305,51 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
             'Tracks',
             tracks.length === 0
               ? html`<p class="text-sm text-slate-500">None yet. Upload one above.</p>`
-              : html`<div class="overflow-x-auto">
+              : html`${playlists.length === 0
+                  ? html`<p class="mb-3 text-sm text-slate-500">Create a playlist below to start assigning.</p>`
+                  : html`<form method="post" action="/music/playlists/add-tracks" id="music-bulk-add" class="mb-3 flex flex-wrap items-end gap-2">
+                      <input type="hidden" name="_csrf" value="${csrf}" />
+                      ${labelled(
+                        'Add the tracks ticked below to',
+                        html`<select name="playlistId" class="${INPUT_CLS}">
+                          ${playlists.map((pl) => html`<option value="${String(pl.id)}">${pl.name}</option>`)}
+                        </select>`,
+                        'Tick any number of rows; forty tracks are one press.',
+                      )}
+                      <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
+                        Add selected
+                      </button>
+                    </form>`}
+                <div class="overflow-x-auto">
                   <table class="w-full text-left text-sm">
                     <thead>
                       <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                        <th class="py-2 pr-2"><span class="sr-only">Select</span></th>
+                        <th class="py-2 pr-2">Cover</th>
                         <th class="py-2 pr-3">Track</th>
                         <th class="py-2 pr-3">Kind / genre</th>
                         <th class="py-2 pr-3">Cover / encode</th>
-                        <th class="py-2 pr-3">Add to playlist</th>
+                        <th class="py-2 pr-3">In playlists</th>
                         <th class="py-2">Remove</th>
                       </tr>
                     </thead>
                     <tbody>
                       ${tracks.map(
                         (t) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="py-2 pr-2 align-middle">
+                            <input type="checkbox" name="trackIds" value="${String(t.id)}" form="music-bulk-add" class="rounded" aria-label="select ${t.title}" />
+                          </td>
+                          <td class="py-2 pr-2">
+                            ${t.coverPath !== null
+                              ? html`<img src="/music/tracks/${String(t.id)}/cover.jpg" alt="" class="h-14 w-14 rounded border border-slate-200 object-cover" />`
+                              : html`<div class="flex h-14 w-14 items-center justify-center rounded border border-dashed border-slate-300 text-xs text-slate-400">no cover</div>`}
+                          </td>
                           <td class="py-2 pr-3">
                             <form method="post" action="/music/tracks/${String(t.id)}/meta" class="flex flex-col gap-1">
                               <input type="hidden" name="_csrf" value="${csrf}" />
                               <input type="text" name="title" value="${t.title}" class="${INPUT_CLS}" />
                               <input type="text" name="artist" value="${t.artist ?? ''}" placeholder="artist" class="${INPUT_CLS}" />
+                              <input type="text" name="album" value="${t.album ?? ''}" placeholder="album" class="${INPUT_CLS}" />
                               <div class="text-xs text-slate-500">
                                 ${t.durationSeconds === null ? 'duration unknown' : `${String(Math.floor(t.durationSeconds / 60))}:${String(t.durationSeconds % 60).padStart(2, '0')}`},
                                 ${mb(t.fileSize)}
@@ -344,16 +380,11 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                             </form>
                           </td>
                           <td class="py-2 pr-3">
-                            ${playlists.length === 0
-                              ? html`<span class="text-xs text-slate-500">create a playlist first</span>`
-                              : html`<form method="post" action="/music/playlists/add-track" class="flex gap-1">
-                                  <input type="hidden" name="_csrf" value="${csrf}" />
-                                  <input type="hidden" name="trackId" value="${String(t.id)}" />
-                                  <select name="playlistId" class="${INPUT_CLS}">
-                                    ${playlists.map((pl) => html`<option value="${String(pl.id)}">${pl.name}</option>`)}
-                                  </select>
-                                  <button type="submit" class="rounded border border-slate-300 px-2 py-1 text-xs hover:bg-slate-100">Add</button>
-                                </form>`}
+                            ${(membership.get(t.id) ?? []).length === 0
+                              ? html`<span class="text-xs text-slate-400">in no playlist</span>`
+                              : html`<div class="flex flex-wrap gap-1">
+                                  ${(membership.get(t.id) ?? []).map((name) => badge(name, 'blue'))}
+                                </div>`}
                           </td>
                           <td class="py-2">
                             <form method="post" action="/music/tracks/${String(t.id)}/delete" class="flex items-center gap-1">
@@ -435,13 +466,21 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                     (a) => html`<div class="mb-3 rounded-lg border border-slate-200 p-3">
                       <div class="mb-2 flex flex-wrap items-center gap-2">
                         <span class="text-sm font-medium">${a.playlistName}</span>
-                        ${badge(a.mode, a.mode === 'cadence' ? 'green' : 'slate')}
                         ${a.mode === 'cadence'
-                          ? html`<span class="text-xs text-slate-500">
-                              into group ${String(a.destGroupId)}, last sent
-                              ${a.lastSentAt ? fmtDate(a.lastSentAt.toISOString()) : 'never'}
+                          ? badge('cadence active', 'green')
+                          : badge('on request only', 'slate')}
+                        ${a.mode === 'cadence'
+                          ? html`<span class="text-xs text-slate-600">
+                              plays into group ${String(a.destGroupId)}
+                              ${a.intervalMinutes !== null ? `every ${String(a.intervalMinutes)} min` : ''}
+                              ${a.intervalMinutes !== null && a.messageCount !== null ? ' or ' : ''}
+                              ${a.messageCount !== null ? `every ${String(a.messageCount)} member messages` : ''},
+                              last sent ${a.lastSentAt ? fmtDate(a.lastSentAt.toISOString()) : 'never'}
                             </span>`
-                          : ''}
+                          : html`<span class="text-xs text-amber-800">
+                              The cadence below is NOT active until you press Set cadence; she
+                              only answers and plays when asked.
+                            </span>`}
                       </div>
                       <form method="post" action="/music/assignments/${String(a.id)}/cadence" class="mb-2 grid gap-2 md:grid-cols-4">
                         <input type="hidden" name="_csrf" value="${csrf}" />
@@ -568,6 +607,7 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
       const typedTitle = bodyString(req.body, 'title').trim();
       const typedArtist = bodyString(req.body, 'artist').trim();
       const typedGenre = bodyString(req.body, 'genre').trim();
+      const typedAlbum = bodyString(req.body, 'album').trim();
       const coverData = bodyString(req.body, 'coverData');
       const wantsJson = bodyString(req.body, 'ajax') === '1';
       const fail = (message: string) => {
@@ -588,6 +628,7 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
           kind,
           title,
           artist: typedArtist || tags.artist,
+          album: typedAlbum || tags.album,
           genre: typedGenre || tags.genre,
           durationSeconds: tags.durationSeconds,
           filePath: tempPath,
@@ -635,6 +676,7 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
         kind: (TRACK_KINDS as readonly string[]).includes(kindRaw) ? (kindRaw as TrackKind) : 'music',
         title: bodyString(req.body, 'title').trim() || 'Untitled',
         artist: bodyString(req.body, 'artist').trim() || null,
+        album: bodyString(req.body, 'album').trim() || null,
         genre: bodyString(req.body, 'genre').trim() || null,
       });
       await writeAudit(db, req.session?.username ?? 'unknown', 'music.track.meta', `track:${String(id)}`, { ok });
@@ -704,6 +746,43 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
       return reply.redirect(back(ok ? 'saved=1' : 'error=No+such+playlist.'));
     },
   );
+
+  /** The cover thumbnail, by track id, never by path (the admin-media rule). */
+  app.get<{ Params: { id: string } }>('/music/tracks/:id/cover.jpg', async (req, reply) => {
+    const id = Number.parseInt(req.params.id, 10);
+    const track = Number.isInteger(id) ? await getTrack(db, id) : null;
+    if (track === null || track.coverPath === null) {
+      return reply.code(404).type('text/plain').send('Not found');
+    }
+    const { readFile } = await import('node:fs/promises');
+    const bytes = await readFile(track.coverPath).catch(() => null);
+    if (bytes === null) return reply.code(404).type('text/plain').send('Not found');
+    reply.header('cache-control', 'no-store');
+    reply.type('image/jpeg');
+    return reply.send(bytes);
+  });
+
+  /** Forty tracks, one press: the ticked rows into one playlist. */
+  app.post<{ Body: Record<string, unknown> }>('/music/playlists/add-tracks', async (req, reply) => {
+    const playlistId = bodyInt(req.body, 'playlistId');
+    if (playlistId === null) return reply.redirect(back('error=Pick+a+playlist.'));
+    const raw = (req.body)['trackIds'];
+    const picked = (Array.isArray(raw) ? raw : raw === undefined ? [] : [raw])
+      .map((v) => Number.parseInt(String(v), 10))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    if (picked.length === 0) {
+      return reply.redirect(back('error=' + encodeURIComponent('Nothing was ticked, so nothing was added.')));
+    }
+    const current = (await playlistTracks(db, playlistId)).map((t) => t.id);
+    const merged = [...current, ...picked.filter((id) => !current.includes(id))];
+    await setPlaylistTracks(db, playlistId, merged);
+    await writeAudit(db, req.session?.username ?? 'unknown', 'music.playlist.add-tracks', `playlist:${String(playlistId)}`, {
+      added: merged.length - current.length,
+      ticked: picked.length,
+    });
+    return reply.redirect(back('notice=' + encodeURIComponent(
+      `${String(merged.length - current.length)} added (${String(picked.length - (merged.length - current.length))} were already in it).`)));
+  });
 
   app.post<{ Body: Record<string, unknown> }>('/music/playlists/add-track', async (req, reply) => {
     const playlistId = bodyInt(req.body, 'playlistId');

@@ -60,6 +60,8 @@ import {
   randomTrackForBot,
   setAssignmentCadence,
   setPlaylistTracks,
+  randomTrackFromPlaylistForBot,
+  trackReachableByBot,
   unbiddenSpend,
   libraryFacts,
   type Track,
@@ -155,7 +157,7 @@ async function main(): Promise<void> {
   await writeF(`${root}/1/cover.jpg`, Buffer.from('jpg'));
   await writeF(`${root}/1/video-v1.mp4`, Buffer.from('mp4'));
   const covered = await insertTrack(db, {
-    kind: 'music', title: 'Harbour Lights', artist: 'The Quay', genre: 'folk',
+    kind: 'music', title: 'Harbour Lights', artist: 'The Quay', album: null, genre: 'folk',
     durationSeconds: 200, filePath: `${root}/1/track.mp3`, fileSize: 7_400_000,
     mime: 'audio/mpeg', coverPath: `${root}/1/cover.jpg`,
   });
@@ -164,7 +166,7 @@ async function main(): Promise<void> {
     [covered, `${root}/1/video-v1.mp4`],
   );
   const coverless = await insertTrack(db, {
-    kind: 'music', title: 'Bare Voice', artist: null, genre: 'folk',
+    kind: 'music', title: 'Bare Voice', artist: null, album: null, genre: 'folk',
     durationSeconds: 90, filePath: '/x/2/track.mp3', fileSize: 3_000_000,
     mime: 'audio/mpeg', coverPath: null,
   });
@@ -200,7 +202,7 @@ async function main(): Promise<void> {
   await assignPlaylist(db, DJ, djList);
   // Rick gets a DIFFERENT playlist so his positive control can play SOMETHING.
   const rickOnly = await insertTrack(db, {
-    kind: 'music', title: 'Rick Anthem', artist: null, genre: 'rock',
+    kind: 'music', title: 'Rick Anthem', artist: null, album: null, genre: 'rock',
     durationSeconds: 100, filePath: '/x/3/track.mp3', fileSize: 1_000_000,
     mime: 'audio/mpeg', coverPath: null,
   });
@@ -216,7 +218,31 @@ async function main(): Promise<void> {
         ?? assignments.find((a) => a.playlistName.toLowerCase().includes(name.toLowerCase()));
       if (hit === undefined) return null;
       const tracks = await playlistTracks(db, hit.playlistId);
-      return { playlist: hit.playlistName, titles: tracks.map((t) => t.title), total: tracks.length };
+      return {
+        playlist: hit.playlistName,
+        items: tracks.map((t) => ({ id: t.id, title: t.title })),
+        total: tracks.length,
+      };
+    },
+    playById: async (groupId: number, trackId: number) => {
+      if (!(await trackReachableByBot(db, botId, trackId))) return 'unknown' as const;
+      const track = await findTrackAnyBot(db, trackId);
+      const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
+      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playFromPlaylist: async (groupId: number, name: string) => {
+      const track = await randomTrackFromPlaylistForBot(db, botId, name);
+      if (track === null) return 'empty' as const;
+      const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
+      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    facts: async () => {
+      const f = await libraryFacts(db, clock);
+      return {
+        tracks: f.totalTracks,
+        genres: f.byGenre.map((g) => g.genre),
+        playlists: (await assignmentsForBot(db, botId)).length,
+      };
     },
     playByTitle: async (groupId: number, title: string) => {
       const track = await findTrackForBot(db, botId, title);
@@ -271,31 +297,76 @@ async function main(): Promise<void> {
   const rick = engineFor(RICK);
 
   replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA which playlists do you have?'));
   check('which playlists: the application list, with the count',
     replies.length === 1 && (replies[0] ?? '').includes('Evening Set (2)'), replies[0] ?? '(none)');
 
   replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg("CIND3R3LLA what's on Evening Set?"));
   check("what's on: the titles",
     replies.length === 1 && (replies[0] ?? '').includes('Harbour Lights') && (replies[0] ?? '').includes('Bare Voice'),
     replies[0] ?? '(none)');
 
   replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA play Harbour Lights'));
   check('play by title: the track goes out', calls.some((c) => c.kind === 'video'));
   check('  and NO text reply rides with it - the track is the reply', replies.length === 0, replies.join(' | '));
 
   replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA play me something'));
   check('play me something: something went out', calls.length > 0);
 
   replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA play The Unheld Title'));
   check('an unknown title: the honest line, with no echo of the title',
     replies.length === 1 && (replies[0] ?? '').includes('no track by that name') && !(replies[0] ?? '').includes('Unheld'),
     replies[0] ?? '(none)');
   check('  and nothing was sent', calls.length === 0);
+
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA which track is on the list?'));
+  check('THE BEHAVIOUR FAULT, held down: asking ABOUT a track plays NOTHING',
+    calls.length === 0, JSON.stringify(calls));
+  check('  and answers the locked overview with the application numbers',
+    replies.length === 1 && (replies[0] ?? '').includes('3 tracks') && (replies[0] ?? '').includes('1 playlists'),
+    replies[0] ?? '(none)');
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA what is on the list?'));
+  check('"what is on the list" answers honestly instead of falling through to a play',
+    calls.length === 0 && replies.length === 1 && (replies[0] ?? '').includes('no playlist by that name'),
+    replies[0] ?? '(none)');
+
+  // The numbered conversation the operator asked for, end to end by NUMBER alone.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA which playlists do you have?'));
+  check('the playlists come NUMBERED', (replies[0] ?? '').includes('1. Evening Set'), replies[0] ?? '');
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg("CIND3R3LLA what's on 1?"));
+  check('what\'s-on-a-NUMBER resolves against what she just listed',
+    replies.length === 1 && (replies[0] ?? '').includes('1. Harbour Lights') && (replies[0] ?? '').includes('2. Bare Voice'),
+    replies[0] ?? '(none)');
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play 2'));
+  check('"play 2" plays the SECOND track of that list, by id',
+    calls.length > 0 && calls.some((c) => c.caption === 'Bare Voice' || c.kind === 'voice'),
+    JSON.stringify(calls));
+  check('  with no text reply riding along', replies.length === 0, replies.join(' | '));
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play 9'));
+  check('a number past the list answers honestly and plays nothing',
+    calls.length === 0 && (replies[0] ?? '').includes('no track by that name'),
+    replies[0] ?? '(none)');
 
   console.log('\n3. The playlist boundary (the briefing-named mutation)');
   check('data layer: the title resolves for the bot that was GIVEN it',
@@ -303,10 +374,12 @@ async function main(): Promise<void> {
   check('data layer: and NOT for the bot that was not',
     (await findTrackForBot(db, RICK, 'Harbour Lights')) === null);
   replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await rick.handle(makeMsg('CIND3R3LLA play Harbour Lights'));
   check('through the engine: the ungiven bot answers the honest line and sends nothing',
     calls.length === 0 && replies.length === 1 && (replies[0] ?? '').includes('no track by that name'));
   replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await rick.handle(makeMsg('CIND3R3LLA play Rick Anthem'));
   check('POSITIVE CONTROL: the same bot plays from its OWN playlist',
     calls.some((c) => c.kind === 'voice'), JSON.stringify(calls));
@@ -346,6 +419,7 @@ async function main(): Promise<void> {
   resetInFlight();
 
   replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
   await dj.handle(makeMsg('CIND3R3LLA make it playable'));
   check('4b through the engine while OFF: the honest off line',
     replies.length === 1 && (replies[0] ?? '').includes('switched off'), replies[0] ?? '(none)');
@@ -406,7 +480,7 @@ async function main(): Promise<void> {
 
   // SEPARATE BUDGETS: the music budget is spent; a spot still has its own.
   const spot = await insertTrack(db, {
-    kind: 'spot', title: 'Visit The Bakery', artist: null, genre: null,
+    kind: 'spot', title: 'Visit The Bakery', artist: null, album: null, genre: null,
     durationSeconds: 20, filePath: '/x/4/track.mp3', fileSize: 500_000,
     mime: 'audio/mpeg', coverPath: null,
   });

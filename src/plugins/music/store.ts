@@ -26,6 +26,7 @@ export interface Track {
   kind: TrackKind;
   title: string;
   artist: string | null;
+  album: string | null;
   genre: string | null;
   durationSeconds: number | null;
   filePath: string;
@@ -43,6 +44,7 @@ interface TrackRow {
   kind: string;
   title: string;
   artist: string | null;
+  album: string | null;
   genre: string | null;
   duration_seconds: number | null;
   file_path: string;
@@ -61,6 +63,7 @@ function mapTrack(r: TrackRow): Track {
     kind: r.kind as TrackKind,
     title: r.title,
     artist: r.artist,
+    album: r.album,
     genre: r.genre,
     durationSeconds: r.duration_seconds,
     filePath: r.file_path,
@@ -78,6 +81,7 @@ export interface NewTrack {
   kind: TrackKind;
   title: string;
   artist: string | null;
+  album: string | null;
   genre: string | null;
   durationSeconds: number | null;
   filePath: string;
@@ -89,10 +93,10 @@ export interface NewTrack {
 export async function insertTrack(db: Queryable, t: NewTrack): Promise<number> {
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO cinderella_tracks
-       (kind, title, artist, genre, duration_seconds, file_path, file_size, mime, cover_path)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (kind, title, artist, album, genre, duration_seconds, file_path, file_size, mime, cover_path)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id`,
-    [t.kind, t.title, t.artist, t.genre, t.durationSeconds, t.filePath, t.fileSize, t.mime, t.coverPath],
+    [t.kind, t.title, t.artist, t.album, t.genre, t.durationSeconds, t.filePath, t.fileSize, t.mime, t.coverPath],
   );
   return Number(rows[0]?.id);
 }
@@ -100,13 +104,13 @@ export async function insertTrack(db: Queryable, t: NewTrack): Promise<number> {
 export async function updateTrackMeta(
   db: Queryable,
   id: number,
-  m: { kind: TrackKind; title: string; artist: string | null; genre: string | null },
+  m: { kind: TrackKind; title: string; artist: string | null; album: string | null; genre: string | null },
 ): Promise<boolean> {
   const result = await db.query(
     `UPDATE cinderella_tracks
-        SET kind = $2, title = $3, artist = $4, genre = $5, updated_at = now()
+        SET kind = $2, title = $3, artist = $4, album = $5, genre = $6, updated_at = now()
       WHERE id = $1`,
-    [id, m.kind, m.title, m.artist, m.genre],
+    [id, m.kind, m.title, m.artist, m.album, m.genre],
   );
   return result.rowCount === 1;
 }
@@ -445,10 +449,14 @@ export async function libraryFacts(db: Queryable, now: Date): Promise<LibraryFac
   const kinds = await db.query<{ kind: string; n: string | number }>(
     `SELECT kind, count(*) AS n FROM cinderella_tracks GROUP BY kind ORDER BY count(*) DESC`,
   );
+  // Comma-separated genres SPLIT (the first-use report): "Folk, Shanty" is two
+  // genres on one track, and the vocabulary she is handed must say so. Derived
+  // at read like everything else here - the column keeps the operator's string.
   const genres = await db.query<{ genre: string; n: string | number }>(
-    `SELECT genre, count(*) AS n FROM cinderella_tracks
-      WHERE genre IS NOT NULL AND genre <> ''
-      GROUP BY genre ORDER BY count(*) DESC, genre`,
+    `SELECT btrim(g) AS genre, count(*) AS n
+       FROM cinderella_tracks, unnest(string_to_array(genre, ',')) AS g
+      WHERE genre IS NOT NULL AND btrim(g) <> ''
+      GROUP BY btrim(g) ORDER BY count(*) DESC, btrim(g)`,
   );
   const most = await db.query<{ title: string; artist: string | null; n: string | number }>(
     `SELECT t.title, t.artist, count(*) AS n
@@ -496,6 +504,49 @@ export async function findTrackForBot(
     [botProfileId, title],
   );
   return partial.rows[0] === undefined ? null : mapTrack(partial.rows[0]);
+}
+
+/**
+ * Is this exact track reachable by this bot through ANY of its assignments?
+ * The number path resolves a track id out of a list SHE showed, but the check
+ * stays: a stale context, a removed assignment, or a crafted number must not
+ * let a bot play past the playlist boundary (the briefing-named mutation's
+ * guarantee, held for ids exactly as for titles).
+ */
+export async function trackReachableByBot(
+  db: Queryable,
+  botProfileId: number,
+  trackId: number,
+): Promise<boolean> {
+  const { rows } = await db.query<{ one: number }>(
+    `SELECT 1 AS one FROM cinderella_playlist_tracks pt
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+      WHERE pt.track_id = $2
+      LIMIT 1`,
+    [botProfileId, trackId],
+  );
+  return rows.length > 0;
+}
+
+/** A random track from ONE named playlist, scoped to the bot - "play 2" over a playlists list. */
+export async function randomTrackFromPlaylistForBot(
+  db: Queryable,
+  botProfileId: number,
+  playlistName: string,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT * FROM (
+       SELECT DISTINCT t.* FROM cinderella_tracks t
+         JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+         JOIN cinderella_playlist_assignments a
+           ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+         JOIN cinderella_playlists p ON p.id = pt.playlist_id
+        WHERE lower(p.name) = lower($2)
+     ) s ORDER BY random() LIMIT 1`,
+    [botProfileId, playlistName],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
 }
 
 /** A random track from this bot's playlists - "play me something". */

@@ -162,6 +162,12 @@ export const PERSONA_KEYS = [
   // is a refusal, a fact list, or an honest inability.
   'musicPlaylists',
   'musicNoPlaylists',
+  // CCB-S5-044 follow-up: the answer for a music-adjacent question that asks to
+  // play nothing - what she holds and how to use it, LOCKED because every number
+  // in it is an application fact. This line replacing a surprise play is the
+  // whole fix for "asking about a track played one".
+  'musicOverview',
+  'musicUnknownPlaylist',
   'musicTracks',
   'musicUnknownTrack',
   'musicBusy',
@@ -251,6 +257,8 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   bridgeAnonymousChannel: 'bridge',
   musicPlaylists: 'music',
   musicNoPlaylists: 'music',
+  musicOverview: 'music',
+  musicUnknownPlaylist: 'music',
   musicTracks: 'music',
   musicUnknownTrack: 'music',
   musicBusy: 'music',
@@ -527,8 +535,11 @@ const PERSONA_EN: PersonaStrings = {
   // CCB-S5-044. No line deliberately echoes member text: the searchResult
   // lesson - an echoed phrase becomes publishable the day the category is
   // switched on, so the unknown-track line names no title.
-  musicPlaylists: '🎵 My playlists: {playlists}',
+  musicPlaylists: '🎵 My playlists: {playlists}. Ask what is on one, by number or name.',
   musicNoPlaylists: '🎵 I hold no playlists yet.',
+  musicOverview:
+    '🎵 I keep a library here: {tracks} tracks across {genres}, in {playlists} playlists. Ask me which playlists I have, what is on one, or tell me to play something - a number or a name works at every step, and I play one track at a time.',
+  musicUnknownPlaylist: '🎵 I looked, and I hold no playlist by that name. Ask me which playlists I have.',
   musicTracks: '🎵 On the playlist {playlist}: {tracks}',
   musicUnknownTrack: '🎵 I looked, and I hold no track by that name.',
   musicBusy: '🎵 One is already on its way to this room. Ask me again when it lands.',
@@ -720,8 +731,11 @@ const PERSONA_DE: PersonaStrings = {
   // Kanal anonym veroeffentlicht wird. Es steht dort, wo ein NAME stand, also muss es sich
   // wie ein Name lesen: "Aus dem Kanal einem Kanal" waere falsch, daher die Klammern.
   bridgeAnonymousChannel: '(nicht genannt)',
-  musicPlaylists: '🎵 Meine Playlists: {playlists}',
+  musicPlaylists: '🎵 Meine Playlists: {playlists}. Frag, was auf einer liegt, mit Nummer oder Namen.',
   musicNoPlaylists: '🎵 Ich habe noch keine Playlists.',
+  musicOverview:
+    '🎵 Ich fuehre hier eine Bibliothek: {tracks} Titel aus {genres}, in {playlists} Playlists. Frag mich, welche Playlists ich habe, was auf einer liegt, oder sag mir, dass ich etwas spielen soll - Nummer oder Name geht bei jedem Schritt, und ich spiele einen Titel nach dem anderen.',
+  musicUnknownPlaylist: '🎵 Ich habe nachgesehen, eine Playlist mit diesem Namen habe ich nicht. Frag mich, welche Playlists ich habe.',
   musicTracks: '🎵 Auf der Playlist {playlist}: {tracks}',
   musicUnknownTrack: '🎵 Ich habe nachgesehen, einen Titel mit diesem Namen habe ich nicht.',
   musicBusy: '🎵 Eines ist schon unterwegs in diesen Raum. Frag mich nochmal, wenn es da ist.',

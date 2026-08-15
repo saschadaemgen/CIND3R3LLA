@@ -71,6 +71,7 @@ import { formatAmount, formatValue, describeAge } from '../price/format.js';
 import { candidateMetric } from '../plugins/crypto-prices/service.js';
 import { formatOutbound, type OutboundReply } from './reply.js';
 import type { Intent } from './intent.js';
+import type { MusicPromptFacts } from './personality.js';
 import { buildHelpReply, buildHelpTopic, parseHelpTopic, type HelpLang } from './help.js';
 import type { AiReplyMode, AiReplyRequest } from './ollama-reply.js';
 import {
@@ -148,14 +149,36 @@ import { applySanction, type EnforcementPort } from '../moderation/apply.js';
  */
 export interface MusicOps {
   view(): Promise<{ playlists: { name: string; trackCount: number; mode: string }[] }>;
-  tracksOf(name: string): Promise<{ playlist: string; titles: string[]; total: number } | null>;
+  tracksOf(
+    name: string,
+  ): Promise<{ playlist: string; items: { id: number; title: string }[]; total: number } | null>;
   playByTitle(groupId: number, title: string): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
+  playById(groupId: number, trackId: number): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
+  playFromPlaylist(groupId: number, name: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  /** The DJ sheet's numbers, for the locked overview line. All derived. */
+  facts(): Promise<{ tracks: number; genres: string[]; playlists: number }>;
   playUpload(
     groupId: number,
     senderMemberId: string,
   ): Promise<'sent' | 'busy' | 'not-audio' | 'too-large' | 'no-file' | 'off' | 'unavailable'>;
 }
+
+/**
+ * What she last LISTED in a group (CCB-S5-044 follow-up): the context that lets
+ * "what's on 2" and "play 3" answer with a number, which is what makes the
+ * exchange a conversation rather than a menu. Ten minutes, then a bare number
+ * means nothing again - the follow-up-window shape.
+ */
+interface MusicListContext {
+  kind: 'playlists' | 'tracks';
+  /** Playlist names in shown order, or track (id,title) pairs in shown order. */
+  playlists?: string[];
+  tracks?: { id: number; title: string }[];
+  expiresAt: number;
+}
+
+const MUSIC_LIST_CONTEXT_MS = 10 * 60_000;
 
 export interface InteractionDeps {
   db: Queryable;
@@ -606,6 +629,7 @@ const AI_LOCKED_KEYS = new Set<PersonaKey>([
   // 4's pattern one lane early): the model writes an opening line, never the list.
   'musicPlaylists',
   'musicTracks',
+  'musicOverview',
 ]);
 
 /**
@@ -2016,6 +2040,7 @@ export class InteractionEngine {
             personality: this.deps.personality?.() ?? null,
             identity: this.facts(s),
             now: { at: new Date(this.now()), timeZone: this.timeZone },
+            music: await this.musicPromptFacts(),
           })
         )?.trim() || null;
     } catch (error) {
@@ -2319,6 +2344,7 @@ export class InteractionEngine {
             personality: this.deps.personality?.() ?? null,
             identity: this.facts(s),
             now: { at: new Date(this.now()), timeZone: this.timeZone },
+            music: await this.musicPromptFacts(),
             // The untrusted material. Fenced and labelled by `systemPrompt`; see the
             // field's own documentation for why it rides in the user message.
             webResults: results,
@@ -2351,6 +2377,48 @@ export class InteractionEngine {
    * A successful play sends NO reply line: the track arriving is the reply,
    * and a confirmation sentence on top of it would be noise.
    */
+  /** The last list she showed per group; see MusicListContext. */
+  private readonly musicLists = new Map<number, MusicListContext>();
+
+  /** The DJ facts for the prompt, cached briefly: counts change slowly and every
+   * conversational reply would otherwise pay three queries for them. */
+  private musicFactsCache: { at: number; facts: MusicPromptFacts } | null = null;
+
+  /**
+   * The music facts as the PROMPT receives them (D-218, the clock's contract):
+   * undefined when the plugin is off for this bot, so the has-music rules are
+   * simply not in its prompt; the numbers otherwise, derived and cacheable.
+   */
+  private async musicPromptFacts(): Promise<MusicPromptFacts | undefined> {
+    const music = this.deps.music?.() ?? null;
+    if (music === null) return undefined;
+    const now = this.now();
+    if (this.musicFactsCache !== null && now - this.musicFactsCache.at < 60_000) {
+      return this.musicFactsCache.facts;
+    }
+    try {
+      const facts = await music.facts();
+      this.musicFactsCache = { at: now, facts };
+      return facts;
+    } catch (error) {
+      // A library that cannot be counted is a fault worth logging, and a prompt
+      // that says nothing about music - never one that guesses.
+      log.warn(`music: prompt facts unavailable (${String(error)}); the prompt stays silent about the library.`);
+      return undefined;
+    }
+  }
+
+  /**
+   * The MUSIC lane (CCB-S5-044, reworked after first use): four asks parsed
+   * deterministically, every list NUMBERED, a number or a name accepted at
+   * every step, and - the behaviour fault this rework exists for - ONLY AN
+   * EXPLICIT PLAY PLAYS. The first build's tail treated any MUSIC claim with
+   * no parsable ask as "play me something", so asking WHICH track was on the
+   * list played one; the probe showed a lone keyword ('track', 'song') reaches
+   * this handler, which is fine for answering and was disastrous for playing.
+   * The tail is now the locked overview: what she holds and how to ask.
+   * A successful play still sends NO text line - the track is the reply.
+   */
   private async answerMusic(
     msg: CapturedMessage,
     s: InteractionSettings,
@@ -2359,14 +2427,66 @@ export class InteractionEngine {
   ): Promise<boolean> {
     const music = this.deps.music?.() ?? null;
     if (music === null) {
-      // Off for this bot: MUSIC should not be in the catalog, second line of defence.
       await this.reply(msg, s, lang, 'musicUnavailable', {});
       return true;
     }
     const text = instruction.toLowerCase().trim();
+    const now = this.now();
+    const context = this.musicLists.get(msg.groupId);
+    const live = context !== undefined && context.expiresAt > now ? context : undefined;
 
-    // 4b first: "make it playable" must not fall through to a title search for
-    // a track literally called "it playable".
+    const remember = (ctx: Omit<MusicListContext, 'expiresAt'>): void => {
+      this.musicLists.set(msg.groupId, { ...ctx, expiresAt: now + MUSIC_LIST_CONTEXT_MS });
+    };
+    const playOutcomeReply = async (
+      outcome: 'sent' | 'busy' | 'unknown' | 'empty' | 'unavailable',
+    ): Promise<void> => {
+      const key =
+        outcome === 'sent'
+          ? null
+          : outcome === 'busy'
+            ? 'musicBusy'
+            : outcome === 'unknown'
+              ? 'musicUnknownTrack'
+              : outcome === 'empty'
+                ? 'musicNoPlaylists'
+                : 'musicUnavailable';
+      if (key !== null) await this.reply(msg, s, lang, key, {});
+    };
+    const overview = async (): Promise<boolean> => {
+      const facts = await music.facts();
+      await this.reply(msg, s, lang, 'musicOverview', {
+        tracks: facts.tracks,
+        genres: facts.genres.length === 0 ? 'no genres yet' : facts.genres.join(', '),
+        playlists: facts.playlists,
+      });
+      return true;
+    };
+    const listTracksOf = async (nameOrIndex: string): Promise<boolean> => {
+      let name = nameOrIndex.trim();
+      const index = /^([0-9]{1,3})\.?$/.exec(name);
+      if (index !== null) {
+        const n = Number(index[1]);
+        const fromContext = live?.kind === 'playlists' ? live.playlists?.[n - 1] : undefined;
+        if (fromContext === undefined) {
+          await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
+          return true;
+        }
+        name = fromContext;
+      }
+      const found = name === '' ? null : await music.tracksOf(name);
+      if (found === null) {
+        await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
+        return true;
+      }
+      remember({ kind: 'tracks', tracks: found.items });
+      const shown = found.items.slice(0, 15).map((t, idx) => `${String(idx + 1)}. ${t.title}`).join(', ');
+      const tracks = found.total > 15 ? `${shown}, and ${String(found.total - 15)} more` : shown;
+      await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
+      return true;
+    };
+
+    // 4b first: "make it playable" must not read as a title.
     if (/(playable|abspielbar)/.test(text)) {
       const outcome = await music.playUpload(msg.groupId, msg.senderMemberId);
       const key =
@@ -2387,80 +2507,80 @@ export class InteractionEngine {
       return true;
     }
 
-    // "which playlists" / "what's on X".
+    // "which playlists" and friends.
     if (/playlist/.test(text) && !/^(play|spiel)/.test(text)) {
       const on = /(?:what(?:'?s| is)? (?:on|in)|was (?:ist|liegt) (?:auf|in))\s+(.+)$/.exec(text);
       if (on !== null) {
         const name = (on[1] ?? '').replace(/["'?.!]/g, '').replace(/\bplaylist\b/g, '').trim();
-        const found = name === '' ? null : await music.tracksOf(name);
-        if (found === null) {
-          await this.reply(msg, s, lang, 'musicUnknownTrack', {});
-          return true;
-        }
-        const shown = found.titles.slice(0, 10).join(', ');
-        const tracks =
-          found.total > 10 ? `${shown}, and ${String(found.total - 10)} more` : shown;
-        await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
-        return true;
+        return await listTracksOf(name);
       }
       const view = await music.view();
       if (view.playlists.length === 0) {
         await this.reply(msg, s, lang, 'musicNoPlaylists', {});
         return true;
       }
+      remember({ kind: 'playlists', playlists: view.playlists.map((pl) => pl.name) });
       const playlists = view.playlists
-        .map((pl) => `${pl.name} (${String(pl.trackCount)})`)
+        .map((pl, idx) => `${String(idx + 1)}. ${pl.name} (${String(pl.trackCount)})`)
         .join(', ');
       await this.reply(msg, s, lang, 'musicPlaylists', { playlists });
       return true;
     }
 
-    // "what's on X" without the word playlist.
+    // "what's on X" - a name or a number, playlist word optional.
     const onBare = /(?:what(?:'?s| is)? on|was (?:ist|liegt) auf)\s+(.+)$/.exec(text);
     if (onBare !== null) {
-      const name = (onBare[1] ?? '').replace(/["'?.!]/g, '').trim();
-      const found = name === '' ? null : await music.tracksOf(name);
-      if (found !== null) {
-        const shown = found.titles.slice(0, 10).join(', ');
-        const tracks =
-          found.total > 10 ? `${shown}, and ${String(found.total - 10)} more` : shown;
-        await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
-        return true;
-      }
-      // Not a playlist she holds: fall through to the play parse, which will
-      // answer honestly if it is nothing playable either.
+      const name = (onBare[1] ?? '').replace(/["'?.!]/g, '').replace(/^(?:der|die|das|the)\s+/, '').trim();
+      // "the list" with a live tracks context re-shows it; otherwise it is a
+      // playlist reference and answers as one, honestly when unknown - it no
+      // longer falls through to anything that could play.
+      return await listTracksOf(name);
     }
 
-    // "play ..." - something, or a title.
+    // "play ..." - ONLY here does anything play.
     const play = /^(?:play|spiele?)\s+(?:me\s+|mir\s+|us\s+|uns\s+)?(.+)$/.exec(text);
-    const wantsSomething =
-      play !== null && /^(something|anything|etwas|irgendwas|irgendetwas|a song|ein lied|music|musik)\b/.test((play[1] ?? '').trim());
-    if (play !== null && !wantsSomething) {
-      const title = (play[1] ?? '').replace(/["'?.!]/g, '').trim();
-      const outcome = await music.playByTitle(msg.groupId, title);
-      const key =
-        outcome === 'sent'
-          ? null
-          : outcome === 'busy'
-            ? 'musicBusy'
-            : outcome === 'unknown'
-              ? 'musicUnknownTrack'
-              : 'musicUnavailable';
-      if (key !== null) await this.reply(msg, s, lang, key, {});
+    if (play !== null) {
+      const arg = (play[1] ?? '').replace(/["'?.!]/g, '').trim();
+      if (/^(something|anything|etwas|irgendwas|irgendetwas|a song|ein lied|music|musik)\b/.test(arg)) {
+        await playOutcomeReply(await music.playSomething(msg.groupId));
+        return true;
+      }
+      const index = /^(?:number |nummer |track |titel )?([0-9]{1,3})\.?$/.exec(arg);
+      if (index !== null) {
+        const n = Number(index[1]);
+        if (live?.kind === 'tracks') {
+          const item = live.tracks?.[n - 1];
+          if (item === undefined) {
+            await this.reply(msg, s, lang, 'musicUnknownTrack', {});
+            return true;
+          }
+          await playOutcomeReply(await music.playById(msg.groupId, item.id));
+          return true;
+        }
+        if (live?.kind === 'playlists') {
+          const name = live.playlists?.[n - 1];
+          if (name === undefined) {
+            await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
+            return true;
+          }
+          await playOutcomeReply(await music.playFromPlaylist(msg.groupId, name));
+          return true;
+        }
+        // A bare number with nothing listed recently means nothing.
+        await this.reply(msg, s, lang, 'musicUnknownTrack', {});
+        return true;
+      }
+      await playOutcomeReply(await music.playByTitle(msg.groupId, arg));
       return true;
     }
-    // "play me something", "next track", or any MUSIC claim with no parsable ask.
-    const outcome = await music.playSomething(msg.groupId);
-    const key =
-      outcome === 'sent'
-        ? null
-        : outcome === 'busy'
-          ? 'musicBusy'
-          : outcome === 'empty'
-            ? 'musicNoPlaylists'
-            : 'musicUnavailable';
-    if (key !== null) await this.reply(msg, s, lang, key, {});
-    return true;
+
+    // ── THE TAIL THAT USED TO PLAY (the behaviour fault) ────────────────────
+    //
+    // Everything else that reached this lane - a lone keyword, a question about
+    // a track, "next track" with no context - now gets the locked overview:
+    // what she holds and how to ask, application numbers throughout. Nothing
+    // down here can start a transfer.
+    return await overview();
   }
 
   private async answerPrice(
@@ -3573,6 +3693,7 @@ export class InteractionEngine {
         // disagree with the date a sanction was counted at. Sent on every request; the
         // prompt builder renders it in the dialled modes only.
         now: { at: new Date(this.now()), timeZone: this.timeZone },
+        music: await this.musicPromptFacts(),
       });
       return personalized?.trim() || deterministicDraft;
     } catch (error) {
@@ -3806,6 +3927,7 @@ export class InteractionEngine {
               // conversation is where somebody asks what year it is, and where she
               // answered from two-year-old training data because nobody had told her.
               now: { at: new Date(this.now()), timeZone: this.timeZone },
+            music: await this.musicPromptFacts(),
             })
           )?.trim() || null;
       } catch (error) {

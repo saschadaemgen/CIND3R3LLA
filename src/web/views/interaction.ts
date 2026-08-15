@@ -391,6 +391,8 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   },
   musicPlaylists: { label: 'Music: the playlists this bot holds (locked: the list is application fact)', vars: '{playlists}' },
   musicNoPlaylists: { label: 'Music: asked for playlists while holding none', vars: '' },
+  musicOverview: { label: 'Music: what she holds and how to use it, for a music question that plays nothing (locked)', vars: '{tracks} {genres} {playlists}' },
+  musicUnknownPlaylist: { label: 'Music: asked what is on a playlist she does not hold', vars: '' },
   musicTracks: { label: 'Music: what is on a named playlist (locked: the list is application fact)', vars: '{playlist} {tracks}' },
   musicUnknownTrack: { label: 'Music: asked to play a title she does not hold (names no title on purpose)', vars: '' },
   musicBusy: { label: 'Music: asked while a send is still on its way to this room', vars: '' },

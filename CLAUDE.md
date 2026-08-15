@@ -693,7 +693,12 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   work delivers the opt-in, no stored aggregate anywhere so deletion can never leave a
   ghost, `kind_at_play` frozen per play because the budget decision's basis must survive a
   later edit; plus the 'music' publication category as a view replacement, shipped
-  EXCLUDED - the 013/027/033/057 pattern).
+  EXCLUDED - the 013/027/033/057 pattern)
+  · 064 her music self-knowledge (CCB-S5-044 follow-up, D-218: the `has-music` condition and
+  three rules in the D-138 shape - the DJ facts as placeholders she cannot contradict, the
+  not-a-manual prohibition, the no-invention fence - plus `album` on the tracks, because it
+  is in the tag and the first build dropped it. Re-baselined prompt-identity; the diff is the
+  three sentences).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -701,7 +706,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **063**, since 063 landed with the music library). Stated as a rule
+  (currently **064**, since 064 landed with her music self-knowledge). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour

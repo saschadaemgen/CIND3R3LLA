@@ -39,6 +39,7 @@ import { getTrack, setTrackCover, setTrackEncoded, type Track } from './store.js
 export interface ReadTags {
   title: string | null;
   artist: string | null;
+  album: string | null;
   genre: string | null;
   durationSeconds: number | null;
   /** The embedded cover's bytes, when the tag carries one. */
@@ -61,6 +62,7 @@ export async function readTags(filePath: string): Promise<ReadTags> {
   return {
     title: meta?.common.title?.trim() || null,
     artist: meta?.common.artist?.trim() || null,
+    album: meta?.common.album?.trim() || null,
     genre: meta?.common.genre?.[0]?.trim() || null,
     durationSeconds:
       probe.durationSeconds === null ? null : Math.round(probe.durationSeconds),

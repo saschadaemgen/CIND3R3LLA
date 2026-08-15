@@ -163,7 +163,7 @@ async function main(): Promise<void> {
   };
   for (const m of await loadMigrationFiles()) await pg.exec(m.sql);
   const trackId = await insertTrack(db, {
-    kind: 'music', title: 'Cache Case', artist: null, genre: null,
+    kind: 'music', title: 'Cache Case', artist: null, album: null, genre: null,
     durationSeconds: 2, filePath: sinePath, fileSize: (await stat(sinePath)).size,
     mime: 'audio/mpeg', coverPath,
   });

@@ -61,8 +61,12 @@ import {
 import {
   assignmentsForBot as musicAssignmentsForBot,
   findTrackForBot,
+  getTrack as musicGetTrack,
+  libraryFacts as musicLibraryFacts,
   playlistTracks as musicPlaylistTracks,
   randomTrackForBot,
+  randomTrackFromPlaylistForBot,
+  trackReachableByBot,
 } from './plugins/music/store.js';
 import { MUSIC_ID, MUSIC_UPLOADS_ID } from './plugins/music/plugin.js';
 import { status as webStatus } from './web/status.js';
@@ -331,7 +335,40 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         ?? assignments.find((a) => a.playlistName.toLowerCase().includes(name.toLowerCase()));
       if (hit === undefined) return null;
       const tracks = await musicPlaylistTracks(deps.db, hit.playlistId);
-      return { playlist: hit.playlistName, titles: tracks.map((t) => t.title), total: tracks.length };
+      return {
+        playlist: hit.playlistName,
+        items: tracks.map((t) => ({ id: t.id, title: t.title })),
+        total: tracks.length,
+      };
+    },
+    playById: async (groupId: number, trackId: number) => {
+      // The number came out of a list SHE showed, and the boundary still holds:
+      // a stale context or a crafted number must not reach past the assignments.
+      if (!(await trackReachableByBot(deps.db, botProfileId, trackId))) return 'unknown' as const;
+      const track = await musicGetTrack(deps.db, trackId);
+      if (track === null) return 'unknown' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playFromPlaylist: async (groupId: number, name: string) => {
+      const track = await randomTrackFromPlaylistForBot(deps.db, botProfileId, name);
+      if (track === null) return 'empty' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    facts: async () => {
+      const f = await musicLibraryFacts(deps.db, new Date());
+      return {
+        tracks: f.totalTracks,
+        genres: f.byGenre.map((g) => g.genre),
+        playlists: (await musicAssignmentsForBot(deps.db, botProfileId)).length,
+      };
     },
     playByTitle: async (groupId: number, title: string) => {
       const track = await findTrackForBot(deps.db, botProfileId, title);

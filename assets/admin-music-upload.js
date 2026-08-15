@@ -67,7 +67,7 @@
 
   /** TIT2/TPE1/TCON + APIC out of an ID3v2.3/2.4 header; nulls when absent. */
   function readId3(buffer) {
-    var out = { title: '', artist: '', genre: '', cover: null };
+    var out = { title: '', artist: '', album: '', genre: '', cover: null };
     var b = new Uint8Array(buffer);
     if (b.length < 10 || b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return out;
     var version = b[3];
@@ -82,6 +82,7 @@
       var body = b.subarray(i + 10, i + 10 + size);
       if (id === 'TIT2') out.title = decodeText(body);
       else if (id === 'TPE1') out.artist = decodeText(body);
+      else if (id === 'TALB') out.album = decodeText(body);
       else if (id === 'TCON') out.genre = decodeText(body).replace(/^\(\d+\)/, '');
       else if (id === 'APIC' && out.cover === null) {
         // enc byte, NUL-terminated mime, picture type, NUL-terminated description, bytes.
@@ -168,7 +169,8 @@
 
     var title = textInput(tag.title, 'Title (the file name if left empty)');
     var artist = textInput(tag.artist, 'Artist');
-    var genre = textInput(tag.genre, 'Genre');
+    var album = textInput(tag.album, 'Album');
+    var genre = textInput(tag.genre, 'Genre (commas make several)');
     var kind = document.createElement('select');
     kind.className = 'w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm';
     ['music', 'audiobook', 'documentary', 'spot'].forEach(function (k) {
@@ -200,13 +202,14 @@
     card.appendChild(head);
     card.appendChild(field('Title', title));
     card.appendChild(field('Artist', artist));
+    card.appendChild(field('Album', album));
     card.appendChild(field('Genre', genre));
     card.appendChild(field('Kind', kind));
     card.appendChild(field('Cover (from the tag when it has one; choose a file to replace it)', coverPick));
 
     row.el = card;
     row.stateEl = state;
-    row.fields = { title: title, artist: artist, genre: genre, kind: kind };
+    row.fields = { title: title, artist: artist, album: album, genre: genre, kind: kind };
     return row;
   }
 
@@ -271,6 +274,7 @@
       body.set('fileName', row.file.name);
       body.set('title', row.fields.title.value.trim());
       body.set('artist', row.fields.artist.value.trim());
+      body.set('album', row.fields.album.value.trim());
       body.set('genre', row.fields.genre.value.trim());
       body.set('kind', row.fields.kind.value);
       body.set('coverData', row.coverB64);

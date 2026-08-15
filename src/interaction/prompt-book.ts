@@ -80,6 +80,7 @@ const EVERYTHING_IN_SCOPE: PromptRuleContext = {
   hasModel: true,
   hasNicknames: true,
   hasClock: true,
+  hasMusic: true,
   hasWebResults: true,
     hasKnowledge: true,
   hasHistory: true,

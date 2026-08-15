@@ -10,6 +10,7 @@ import type { LocalAiConfig } from '../config.js';
 import type { FetchLike } from './ollama-resolver.js';
 import {
   dialledPromptInputs,
+  type MusicPromptFacts,
   replyCharBudget,
   retortCharBudget,
   type BotIdentity,
@@ -133,6 +134,12 @@ export interface AiReplyRequest {
    * written before this briefing gets by default.
    */
   now?: CurrentTime;
+  /**
+   * The music library's facts for THIS bot (CCB-S5-044, D-218), the clock's
+   * contract: present means the has-music rules render with these values;
+   * absent means the prompt says nothing about a library at all.
+   */
+  music?: MusicPromptFacts | undefined;
   /**
    * Search results, as UNTRUSTED QUOTED MATERIAL (CCB-S4-037, D-141).
    *
@@ -483,6 +490,7 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
         request.personality ?? null,
         request.identity,
         request.now,
+        request.music,
       )
     : { context: NOTHING_IN_SCOPE, values: {} as Record<string, string> };
 

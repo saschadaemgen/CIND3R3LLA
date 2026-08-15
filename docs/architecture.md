@@ -4019,6 +4019,15 @@ lane; the engine's handler parses the four asks itself and sends NO text line on
 play - the track arriving is the reply. Her captions archive under `bot_category = 'music'`,
 shipped excluded, the standard bot branch.
 
+**She knows the player exists** (D-218): the `has-music` prompt condition carries the DJ
+facts as placeholder values on every dialled reply (engine `musicPromptFacts()`, cached a
+minute; absent when the plugin is off for the bot, so its prompt says nothing about a
+library). Lists are NUMBERED and the last list per group is remembered ten minutes, so a
+number or a name works at every step - with the boundary re-checked by id, since a number
+must not reach past what a title cannot. Only the explicit play verbs play; every other
+MUSIC-claimed sentence gets the locked overview, which is what fixed "asking about a track
+played one" (D-218 §3 records what the patterns matched).
+
 **The profile fence** (`members/data-registry.ts`, D-217): every member-columned table
 registered and classed; `verify:member-data` sweeps the real schema both directions;
 `cinderella_track_plays` is the one profile-class source and its member column is written
