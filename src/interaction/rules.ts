@@ -429,6 +429,59 @@ const LEXICON: LexEntry[] = [
     keywords: [],
   },
   {
+    // CCB-S5-044. The library's asks. Multi-word windows on purpose: a bare
+    // "play" claims "play fair"; "play me something" claims only itself.
+    intent: 'MUSIC',
+    lang: 'en',
+    phrases: [
+      'which playlists',
+      'what playlists',
+      'your playlists',
+      'list your playlists',
+      'what is on',
+      'whats on',
+      'play me something',
+      'play something',
+      'play me',
+      'play the',
+      'play a',
+      // Bare 'play': these patterns only ever see a message ADDRESSED to her
+      // (wake word or follow-up), and "CIND3R3LLA play X" is a music ask
+      // whatever X is; the handler answers honestly when X is nothing she holds.
+      'play',
+      'next track',
+      'make it playable',
+      'make this playable',
+      'make that playable',
+      'make my file playable',
+      'play my file',
+      'play it back',
+    ],
+    keywords: ['playlist', 'track', 'song', 'tune', 'audiobook'],
+  },
+  {
+    intent: 'MUSIC',
+    lang: 'de',
+    phrases: [
+      'welche playlists',
+      'deine playlists',
+      'was ist auf',
+      'was liegt auf',
+      'spiel mir etwas',
+      'spiel etwas',
+      'spiel mir',
+      'spiel die',
+      'spiel ein',
+      'spiel',
+      'spiele',
+      'naechster titel',
+      'mach das abspielbar',
+      'mach die datei abspielbar',
+      'spiel meine datei',
+    ],
+    keywords: ['playlist', 'titel', 'lied', 'song', 'hoerbuch'],
+  },
+  {
     intent: 'PRICE',
     lang: 'en',
     phrases: [
@@ -1608,6 +1661,15 @@ export function namesTheArchive(text: string): boolean {
  */
 export function asksToLookItUp(text: string): boolean {
   return matchesIntentPattern(text, 'LOOKUP');
+}
+
+/**
+ * The MUSIC bar (CCB-S5-044, the D-183 rule): a resolver may only claim MUSIC
+ * for a message that deterministically asks to play or asks about the
+ * playlists. Talking ABOUT music stays conversation.
+ */
+export function asksForMusic(text: string): boolean {
+  return matchesIntentPattern(text, 'MUSIC');
 }
 
 /**

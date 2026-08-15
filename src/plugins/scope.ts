@@ -53,6 +53,8 @@ import { WELCOME_ID } from './welcome/plugin.js';
 // every other capability here comes to exist. Capture has no settings document, so `enabled`
 // is its only key and `expectedPluginSettingKeys` supplies that for every plugin.
 import { CAPTURE_ID } from './capture/plugin.js';
+import { MUSIC_DEFAULTS } from './music/settings.js';
+import { MUSIC_ID, MUSIC_UPLOADS_ID } from './music/plugin.js';
 import { listPlugins, type PluginStates } from './registry.js';
 
 /** Where a plugin setting lives. */
@@ -430,6 +432,68 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     reason:
       'Fall back to the group, or do not greet. Both are defensible; silently doing neither is not, so this is a choice rather than a default buried in code.',
   },
+  /* ── Music (CCB-S5-044) ─────────────────────────────────────────────────── */
+  //
+  // The PLAYLISTS a bot holds are per bot without appearing here, because an
+  // assignment is a row (absence = no playlist), the knowledge-base grant shape.
+  // Every numeric bound is deployment-wide by D-175 question 3: the caps and the
+  // gap protect ROOMS, and a safety bound with N values is a bound nobody can
+  // state. The upload switch is its own plugin id because a member-driven
+  // fetch-and-resend is its own risk surface.
+  {
+    pluginId: MUSIC_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Music library enabled',
+    reason:
+      'Whether this bot answers for the library and plays at all. One bot that plays beside one that stays quiet is the capability.',
+  },
+  {
+    pluginId: MUSIC_ID,
+    key: 'musicDailyCap',
+    scope: 'shared',
+    label: 'Unbidden music per room per day',
+    reason:
+      'A bound on what a ROOM receives unbidden, whoever sends it. Per bot it would multiply: two bots at three each is six a room, a total nobody set.',
+  },
+  {
+    pluginId: MUSIC_ID,
+    key: 'musicGapMinutes',
+    scope: 'shared',
+    label: 'Minimum gap between unbidden music',
+    reason: 'The same bound in its other unit; it travels with the cap it qualifies.',
+  },
+  {
+    pluginId: MUSIC_ID,
+    key: 'spotDailyCap',
+    scope: 'shared',
+    label: 'Spots per room per day',
+    reason:
+      "The advertising bound, SEPARATE from music by the operator's decision: one budget would let a busy music day silently buy advertising quiet, or the reverse.",
+  },
+  {
+    pluginId: MUSIC_ID,
+    key: 'spotGapMinutes',
+    scope: 'shared',
+    label: 'Minimum gap between spots',
+    reason: "The spot bound's other unit; it travels with its cap.",
+  },
+  {
+    pluginId: MUSIC_ID,
+    key: 'memberUploadMaxBytes',
+    scope: 'shared',
+    label: 'Largest member upload she plays back',
+    reason:
+      'A safety bound on member-supplied bytes she will carry, one number or nobody can state it (the web-search budget reasoning).',
+  },
+  {
+    pluginId: MUSIC_UPLOADS_ID,
+    key: ENABLED_KEY,
+    scope: 'per-bot',
+    label: 'Member uploads played back',
+    reason:
+      "Whether THIS bot re-sends a member's own audio as a player (Part 4b). A member-driven fetch-and-resend is its own risk surface, so it is its own switch, off by default.",
+  },
   {
     pluginId: CAPTURE_ID,
     key: ENABLED_KEY,
@@ -571,5 +635,9 @@ export function expectedPluginSettingKeys(): Map<string, string[]> {
   add(WEB_SEARCH_ID, Object.keys(WEB_SEARCH_DEFAULTS));
   add(KNOWLEDGE_BASE_ID, Object.keys(KNOWLEDGE_DEFAULTS));
   add(CHANNEL_BRIDGE_ID, Object.keys(CHANNEL_BRIDGE_DEFAULTS));
+  add(MUSIC_ID, Object.keys(MUSIC_DEFAULTS));
+  // MUSIC_UPLOADS has no settings document: its only key is `enabled`, which
+  // expectedPluginSettingKeys already supplies for every registered plugin.
+  void MUSIC_UPLOADS_ID;
   return out;
 }

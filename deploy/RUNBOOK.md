@@ -222,6 +222,15 @@ env $(grep -v '^#' /etc/cinderella/cinderella.env | xargs) node dist/db/migrate.
 systemctl restart cinderella   # sessions survive this now
 ```
 
+### Migration 063 brings the music library (CCB-S5-044)
+
+No operator step: core built-ins only, no extension, no superuser, and `deploy.sh` covers it.
+`MUSIC_ROOT` is optional and defaults to a sibling of MEDIA_ROOT (`music-library/`); set it
+in the env file only to move it. Two per-bot switches ship OFF (`music`, `music-uploads` on
+the Plugins page), so nothing plays and nothing is accepted from members until each is enabled
+deliberately. The unbidden budgets default to 3 per room per day with a 60-minute gap,
+separate for music and spots, raisable on the Music page.
+
 ### Migration 062 changes what publishes a channel announcement (CCB-S5-043, D-215)
 
 **No operator step is needed to APPLY it** - it uses only core built-ins, needs no extension and

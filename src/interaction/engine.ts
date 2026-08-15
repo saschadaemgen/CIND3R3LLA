@@ -141,6 +141,22 @@ import {
 import { countViolations, recordSanction, recordViolation } from '../moderation/store.js';
 import { applySanction, type EnforcementPort } from '../moderation/apply.js';
 
+/**
+ * What the MUSIC lane needs (CCB-S5-044). Implemented over the music service in
+ * index.ts, scoped to one bot; every answer is a plain outcome string so the
+ * copy stays in the persona and the logic stays in the plugin.
+ */
+export interface MusicOps {
+  view(): Promise<{ playlists: { name: string; trackCount: number; mode: string }[] }>;
+  tracksOf(name: string): Promise<{ playlist: string; titles: string[]; total: number } | null>;
+  playByTitle(groupId: number, title: string): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
+  playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playUpload(
+    groupId: number,
+    senderMemberId: string,
+  ): Promise<'sent' | 'busy' | 'not-audio' | 'too-large' | 'no-file' | 'off' | 'unavailable'>;
+}
+
 export interface InteractionDeps {
   db: Queryable;
   /**
@@ -355,6 +371,13 @@ export interface InteractionDeps {
    */
   knowledge?: () => KnowledgeLookup | null;
   webSearch?: () => WebSearchLookup | null;
+  /**
+   * The music library (CCB-S5-044). Null when the plugin is off for this bot;
+   * MUSIC then never enters the catalog and this is the second line of defence.
+   * The operations answer with plain strings the handler maps to persona lines,
+   * so the engine holds no music logic and the service holds no copy.
+   */
+  music?: () => MusicOps | null;
   moderationRules?: () => ModerationRules | null;
   /**
    * The capability that makes a sanction real (CCB-S4-035, D-139).
@@ -576,7 +599,14 @@ export const AI_PERSONALIZED_KEYS = new Set<PersonaKey>([
  * deterministic text unchanged and the model only writes the opening line, so the member
  * still gets an individualized reply and the fact is immutable. See D-116.
  */
-const AI_LOCKED_KEYS = new Set<PersonaKey>(['priceAmbiguous', 'status']);
+const AI_LOCKED_KEYS = new Set<PersonaKey>([
+  'priceAmbiguous',
+  'status',
+  // CCB-S5-044: the playlist and track lists are application facts (D-217 rule
+  // 4's pattern one lane early): the model writes an opening line, never the list.
+  'musicPlaylists',
+  'musicTracks',
+]);
 
 /**
  * Is this fragment pure reaction rather than an instruction (§1)?
@@ -1203,6 +1233,9 @@ export class InteractionEngine {
 
       case 'PRICE':
         return this.answerPrice(msg, s, lang, result.slots, now, carried);
+
+      case 'MUSIC':
+        return this.answerMusic(msg, s, lang, instruction);
 
       case 'LOOKUP':
         return this.answerLookup(msg, s, lang, result.slots, instruction);
@@ -2310,6 +2343,124 @@ export class InteractionEngine {
     if (!spoken) return null;
 
     return { text: spoken, sources: attributionFor(results, used) };
+  }
+
+  /**
+   * The MUSIC lane (CCB-S5-044): four asks, parsed deterministically HERE, so
+   * what the member gets never depends on a model reading the sub-question.
+   * A successful play sends NO reply line: the track arriving is the reply,
+   * and a confirmation sentence on top of it would be noise.
+   */
+  private async answerMusic(
+    msg: CapturedMessage,
+    s: InteractionSettings,
+    lang: string,
+    instruction: string,
+  ): Promise<boolean> {
+    const music = this.deps.music?.() ?? null;
+    if (music === null) {
+      // Off for this bot: MUSIC should not be in the catalog, second line of defence.
+      await this.reply(msg, s, lang, 'musicUnavailable', {});
+      return true;
+    }
+    const text = instruction.toLowerCase().trim();
+
+    // 4b first: "make it playable" must not fall through to a title search for
+    // a track literally called "it playable".
+    if (/(playable|abspielbar)/.test(text)) {
+      const outcome = await music.playUpload(msg.groupId, msg.senderMemberId);
+      const key =
+        outcome === 'sent'
+          ? null
+          : outcome === 'busy'
+            ? 'musicBusy'
+            : outcome === 'not-audio'
+              ? 'musicUploadNotAudio'
+              : outcome === 'too-large'
+                ? 'musicUploadTooLarge'
+                : outcome === 'no-file'
+                  ? 'musicUploadNoFile'
+                  : outcome === 'off'
+                    ? 'musicUploadOff'
+                    : 'musicUnavailable';
+      if (key !== null) await this.reply(msg, s, lang, key, {});
+      return true;
+    }
+
+    // "which playlists" / "what's on X".
+    if (/playlist/.test(text) && !/^(play|spiel)/.test(text)) {
+      const on = /(?:what(?:'?s| is)? (?:on|in)|was (?:ist|liegt) (?:auf|in))\s+(.+)$/.exec(text);
+      if (on !== null) {
+        const name = (on[1] ?? '').replace(/["'?.!]/g, '').replace(/\bplaylist\b/g, '').trim();
+        const found = name === '' ? null : await music.tracksOf(name);
+        if (found === null) {
+          await this.reply(msg, s, lang, 'musicUnknownTrack', {});
+          return true;
+        }
+        const shown = found.titles.slice(0, 10).join(', ');
+        const tracks =
+          found.total > 10 ? `${shown}, and ${String(found.total - 10)} more` : shown;
+        await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
+        return true;
+      }
+      const view = await music.view();
+      if (view.playlists.length === 0) {
+        await this.reply(msg, s, lang, 'musicNoPlaylists', {});
+        return true;
+      }
+      const playlists = view.playlists
+        .map((pl) => `${pl.name} (${String(pl.trackCount)})`)
+        .join(', ');
+      await this.reply(msg, s, lang, 'musicPlaylists', { playlists });
+      return true;
+    }
+
+    // "what's on X" without the word playlist.
+    const onBare = /(?:what(?:'?s| is)? on|was (?:ist|liegt) auf)\s+(.+)$/.exec(text);
+    if (onBare !== null) {
+      const name = (onBare[1] ?? '').replace(/["'?.!]/g, '').trim();
+      const found = name === '' ? null : await music.tracksOf(name);
+      if (found !== null) {
+        const shown = found.titles.slice(0, 10).join(', ');
+        const tracks =
+          found.total > 10 ? `${shown}, and ${String(found.total - 10)} more` : shown;
+        await this.reply(msg, s, lang, 'musicTracks', { playlist: found.playlist, tracks });
+        return true;
+      }
+      // Not a playlist she holds: fall through to the play parse, which will
+      // answer honestly if it is nothing playable either.
+    }
+
+    // "play ..." - something, or a title.
+    const play = /^(?:play|spiele?)\s+(?:me\s+|mir\s+|us\s+|uns\s+)?(.+)$/.exec(text);
+    const wantsSomething =
+      play !== null && /^(something|anything|etwas|irgendwas|irgendetwas|a song|ein lied|music|musik)\b/.test((play[1] ?? '').trim());
+    if (play !== null && !wantsSomething) {
+      const title = (play[1] ?? '').replace(/["'?.!]/g, '').trim();
+      const outcome = await music.playByTitle(msg.groupId, title);
+      const key =
+        outcome === 'sent'
+          ? null
+          : outcome === 'busy'
+            ? 'musicBusy'
+            : outcome === 'unknown'
+              ? 'musicUnknownTrack'
+              : 'musicUnavailable';
+      if (key !== null) await this.reply(msg, s, lang, key, {});
+      return true;
+    }
+    // "play me something", "next track", or any MUSIC claim with no parsable ask.
+    const outcome = await music.playSomething(msg.groupId);
+    const key =
+      outcome === 'sent'
+        ? null
+        : outcome === 'busy'
+          ? 'musicBusy'
+          : outcome === 'empty'
+            ? 'musicNoPlaylists'
+            : 'musicUnavailable';
+    if (key !== null) await this.reply(msg, s, lang, key, {});
+    return true;
   }
 
   private async answerPrice(

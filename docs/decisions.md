@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 214 decisions</strong> — newest first. Highest allocated: <strong>D-215</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 216 decisions</strong> — newest first. Highest allocated: <strong>D-217</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-217 | A profile is categories over registered sources, and the music plugin goes first | SHAPE IMPLEMENTED AND ENFORCED; the profile itself is PLANNED |
+| D-216 | The cover decides the shape, a playlist is a boundary, and the cadence is the bridge's | IMPLEMENTED, DEMONSTRATED |
 | D-215 | Announcements are public per channel, and the origin belongs on the record | IMPLEMENTED, DEMONSTRATED |
 | D-214 | A bridged image is sent AS an image, and it degrades to the attachment rather than to nothing | IMPLEMENTED |
 | D-213 | The picker states the scope, and every view declares what kind of page it is | PARTIALLY IMPLEMENTED |
@@ -243,6 +245,125 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-217 - A profile is categories over registered sources, and the music plugin goes first
+
+**Status: SHAPE IMPLEMENTED AND ENFORCED; the profile itself is PLANNED** (CCB-S5-044; the
+memory briefing builds the consent, the recital and the deletion paths on this shape).
+
+The operator's requirement, in his words: per-member optional, off unless they agree; she
+answers honestly when asked what she knows about someone; and it is deletable in parts -
+"delete only my music preferences, and the rest stays". The third is a schema decision, cheap
+now and expensive later, and the music plugin is about to create the first profile-class
+storage this product has - so the shape is fixed now, with a fence that cannot be added to
+silently, and the profile work lands on it later.
+
+**THE FIVE RULES.** (1) A profile is named CATEGORIES over registered row-sources, never a
+blob: deletion is per category and touches nothing else. (2) Everything recited is DERIVED at
+read; no living per-member aggregate is ever stored, so deletion leaves no ghost - "which
+tastes" is GROUP BY over request rows at the moment of asking (the moderation ladder's
+precedent; the one legitimate frozen aggregate is a snapshot of what a DECISION was taken on,
+the sanctions pattern). (3) Profile-class rows exist only forward from that member's MEMORY
+opt-in, a second consent never inferred from the archive one: "the world may read what I said"
+and "she may remember me" are different promises. (4) Honesty is derived from the registry
+across EVERY class, including what a member cannot delete, with the reason - consent
+provenance is retained because deleting the record of consent decisions destroys what proves
+consent, and moderation history because a member deleting their own violations defeats
+moderation. The recital is application-computed and locked, the STATUS pattern. (5) The
+registry is DATA with a structural verifier: `src/members/data-registry.ts` classes every
+member-columned table (archive / consent / safety / profile), and `verify:member-data` sweeps
+information_schema over all migrations and goes red on an unregistered table, both directions,
+mutation-proven. Fourteen tables registered at the seed.
+
+**THE MUSIC PLUGIN'S FIT, AND THE DEFERRAL SAID PLAINLY.** `cinderella_track_plays` is the
+first profile-class source, category `music`, and its member column is written NULL by every
+caller this briefing ships: nothing personal accrues before the machinery to agree exists,
+because data arriving ahead of the recital and the deletion is the shape this season has paid
+for repeatedly. **What that costs the operator, so he reads it here rather than discovering
+it: member-linked requests, "play me something I like", and audiobook resume - all three asked
+for by name - wait for the memory briefing.** The DJ sheet needs none of them: popularity and
+the genre vocabulary aggregate over anonymous rows.
+
+**IDENTITY.** `member_id` is the room-scoped wire id (D-190); the profile inherits consent's
+identity model, and cross-room linking, if ever, is the memory work's question alone.
+
+---
+
+### D-216 - The cover decides the shape, a playlist is a boundary, and the cadence is the bridge's
+
+**Status: IMPLEMENTED, DEMONSTRATED** (CCB-S5-044). The music plugin: a library of tracks,
+audiobooks, documentaries and advertising spots; playlists assigned per bot; the two proven
+send shapes; the asks; and the cadence with the operator's budgets.
+
+**1. THE TWO SEND SHAPES, AND WHAT DECIDES BETWEEN THEM.** The cover does, and nothing else.
+With one: ONE message, `MsgContent.Video` carrying the static-image MP4, the title as caption,
+the shape-preserving preview, the duration. Without one: the title as its own message, then
+the bare voice player - `MsgContent.Voice` with `text: ""`, which is what produces the bare
+player (Stage 0, measured). A coverless track is a normal state that changes the shape, never
+an error. The encoder is the Stage-0 recipe as code (`src/media/encode.ts`): audio BYTE-COPIED
+so full quality survives, `-tune stillimage`, faststart, and the odd-dimension answer is
+`crop=trunc/2*2` - **measured, because the record contradicted itself**: `1c23e55` argued for
+cropping one row and reported a padded-looking 720x1320. `verify:music-encode` feeds an
+odd-height cover through the real ffmpeg and asserts 241 -> 240: the recipe CROPS, no black
+pixels, and the measurement is the settlement. Encodes are CACHED beside the track (the
+operator's decision; storage is cheap and the first press already starts a transfer he cannot
+speed up), stamped with a recipe version so a recipe change re-encodes.
+
+**2. A PLAYLIST IS A BOUNDARY, NOT A LABEL.** Assignment rows (bot, playlist) are the
+capability's edge: `findTrackForBot` and `randomTrackForBot` join THROUGH the assignment, so a
+title in a playlist a bot was never given is unfindable at the data layer, honest at the
+engine ("no track by that name", deliberately echoing nothing - the searchResult lesson), and
+the briefing-named mutation is in `verify:music`: the query without the join finds it, so the
+join is what holds. Every new assignment starts ON-REQUEST (the operator's decision: a cadence
+is a deliberate choice, never a default), and the schema makes a half-configured cadence
+unrepresentable.
+
+**3. THE CADENCE IS THE BRIDGE'S, REUSED RATHER THAN REINVENTED.** Whichever-comes-first over
+an interval and a member-message count, anchored on last-send-or-creation; a self-chaining
+minute-bucket queue job (`music.tick`); at-least-once with the same crash-window statement.
+What music adds is the operator's bounds, at his halved numbers: **3 unbidden sends per room
+per day with a 60-minute minimum gap, SEPARATE budgets for music and spots** - his correction
+of the shared-budget proposal, because a requested track and an unbidden advert are different
+things to a member, and one budget lets a busy music day silently buy advertising quiet or the
+reverse. A member ASKING consults no budget. Every refused slot is a counted skip with its
+reason on the console (`budget-spent` calls for a raised cap; `gap-too-recent` is the rhythm
+working), never silence. A spot is a track with `kind = 'spot'`: the machinery is
+content-agnostic and the kind is consulted only where a human reads it - labels, the archive
+category, and the budget class frozen per play (`kind_at_play`, because kind is editable
+later).
+
+**4. ONE AT A TIME, AND THE DJ SHEET.** One send in flight per group: a member asking
+mid-transfer gets the honest busy line, never a queue (invisible state), and a cadence slot
+landing mid-transfer is skipped and counted. The DJ facts are the STATUS pattern over the
+library: totals, per-kind and per-genre counts, most-played and popular-now, all derived per
+read - the genre vocabulary IS the library's GROUP BY, so she cannot claim a genre she does
+not hold, and the two list replies are LOCKED (the model writes an opening line, never the
+list).
+
+**5. PART 4B, AND WHAT SHE REFUSES.** A member's own audio, made playable: the file is already
+on disk under capture's custody, so "she fetches it" is a decrypting read through
+`media/at-rest.ts` - no new transfer machinery, no second copy kept, played WITHOUT being
+stored (the default inherited from the briefing). The allow-list refuses with the reason:
+audio extensions only, the deployment size bound, and its own per-bot switch
+(`music-uploads`), off by default, because a member-driven fetch-and-resend is its own risk
+surface. NO model anywhere on the play path, asserted structurally - content that plays into a
+group on a timer must not be a place an injection can steer.
+
+**6. TWO PIECES OF HOUSE MACHINERY EARNED THEIR KEEP DURING THE BUILD.** The D-184 byte trap
+fired IN this briefing's own patch: a heredoc turned two `\b` word boundaries into literal
+BACKSPACE bytes in the engine's new regexes, and lint plus `verify:searchable` (hardened for
+exactly this byte) caught them before they could ship as dead patterns. And `music-metadata`'s
+install surfaced the `extract-zip` advisory riding `simplex-chat` - established as
+install-time-only with no runtime call site (D-174: reachability before urgency), and NOT
+"fixed", because the offered fix downgrades the SDK to the deprecated 0.3.x daemon line.
+
+**Verification.** `verify:music` (the shapes, the engine asks, the boundary with its named
+mutation and positive controls, the budgets at both orderings, the profile fence),
+`verify:music-encode` (real ffmpeg: the crop measurement, the tag read including APIC, the
+cache, 4b end to end with real bytes), `verify:member-data` (D-217's sweep). The console was
+operated and screenshotted per D-178/D-212.
+
 ---
 
 ### D-215 - Announcements are public per channel, and the origin belongs on the record

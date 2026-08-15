@@ -1688,3 +1688,29 @@ sibling of MEDIA_ROOT so the destruction sweeper never walks it) is PLAINTEXT: t
 encryption (D-075) protects member privacy, and a channel file is the operator's own broadcast
 that every carrying relay could already read. Encrypting it would spend the hot path on a
 secrecy the content never had.
+
+## 17. The music plugin: operator content, member uploads, and no model near either (CCB-S5-044)
+
+**MUSIC_ROOT is plaintext and outside MEDIA_ROOT**, both halves of the bridge-media reasoning
+(§16): the at-rest encryption protects MEMBER media, and a library track is the operator's own
+broadcast content; the destruction sweeper walks MEDIA_ROOT matching id-shaped names, so the
+config loader REFUSES a nested music root exactly as it refuses a nested bridge root.
+
+**No model on the play path**, asserted structurally by `verify:music`: captions are the
+track's own title and artist, refusals are persona strings the application fills, and content
+that plays into a group on a timer must not be a place a prompt injection can steer. The two
+list replies (playlists, tracks) are LOCKED: the model writes a bounded opening line and the
+application appends the list unchanged.
+
+**Part 4b is an allow-list with its own switch.** A member handing her a file to re-send is a
+small abuse surface, so: audio extensions only (stated in the refusal), the deployment size
+bound, a separate per-bot plugin id (`music-uploads`) off by default, and the bytes are the
+CAPTURED file read back through `media/at-rest.ts` - no new transfer machinery, no second
+copy, played without being stored, temp bytes removed in `finally`. The unknown-track reply
+deliberately echoes no member text (the searchResult lesson: an echoed phrase becomes
+publishable the day its category is switched on).
+
+**The unbidden budgets are the room's protection**: 3 per room per day with a 60-minute gap,
+separate for music and spots, derived from the plays log per read so they cannot drift, and
+every refused slot is a counted skip with its reason - a bounded cadence that went quiet must
+be legible as the budgets working, not as a fault.

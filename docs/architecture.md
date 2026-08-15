@@ -3987,3 +3987,40 @@ announcements whose provenance the backfill could not recover. `scopePanel` move
 than a second one, and gained a third answer, `other`, because publication is per CHANNEL: the
 first version badged it "shared: 2 bot(s)" under "Shared across every bot" above a footer
 promising it changed two bots, every word of which was false while the control worked (D-212).
+
+## 55. The music plugin (CCB-S5-044, D-216/D-217)
+
+A library the operator uploads into, playlists as the unit of assignment, the two proven send
+shapes, the bridge's cadence with his budgets on top, and the first profile-class member data
+this product has - fenced before the first row existed. The full reasoning is D-216 (the
+plugin) and D-217 (the profile shape); this section is the map.
+
+**The tree.** `plugins/music/`: `settings.ts` (the deployment bounds: two SEPARATE unbidden
+budgets - music and spots, 3/day/room, 60-minute gap, his numbers - and the member-upload
+bound), `plugin.ts` (TWO ids: `music` carries the MUSIC intent; `music-uploads` is Part
+4b's own risk surface, off by default), `store.ts` (migration 063's tables and every derived
+aggregate: the DJ sheet, the budgets, shuffle-without-replacement as a query, the
+assignment-scoped title search that IS the playlist boundary), `library.ts` (files under
+MUSIC_ROOT by track id; tags read with `music-metadata` and corrected by the operator;
+duration from the ffmpeg probe, never the tag - the VBR lesson; the cached encode),
+`cadence.ts` (pure: the bridge's whichever-first plus the budget verdict with named skips),
+`service.ts` (orchestration: the send in both shapes, the tick, 4b; one send in flight per
+group; no model anywhere), `music-log.ts` (the skip counters the console shows).
+
+**The seams it rides.** `media/encode.ts` wraps the pinned ffmpeg-static: audio byte-copied,
+`-tune stillimage`, faststart, odd dimensions CROPPED - `verify:music-encode` measures
+241 -> 240 against the real binary, settling the Stage-0 record's self-contradiction (1c23e55
+argued crop and reported a pad-shaped number). `bot/music-port.ts` is the transport
+(recital-port pattern; `MsgContent.Video {text, image, duration}` and `MsgContent.Voice
+{text: "", duration}`, with the D-214 two-step degrade). `music.tick` is the bridge's
+self-chaining minute-bucket job. The MUSIC intent enters the catalog per bot through
+`capabilitiesFor`; the deterministic patterns and the D-183 bar (`asksForMusic`) hold the
+lane; the engine's handler parses the four asks itself and sends NO text line on a successful
+play - the track arriving is the reply. Her captions archive under `bot_category = 'music'`,
+shipped excluded, the standard bot branch.
+
+**The profile fence** (`members/data-registry.ts`, D-217): every member-columned table
+registered and classed; `verify:member-data` sweeps the real schema both directions;
+`cinderella_track_plays` is the one profile-class source and its member column is written
+NULL until the memory work delivers the opt-in - the deferral (member-linked requests, "play
+me something I like", audiobook resume) is stated in D-217, on the operator's own decision.

@@ -16,6 +16,7 @@ import { registerRecital } from './recital.js';
 import { registerAiProfiles } from './ai-profiles.js';
 import { registerPlugins } from './plugins.js';
 import { registerBridge } from './bridge.js';
+import { registerMusic } from './music.js';
 import { registerCapturePage } from './capture.js';
 import { registerWelcomePage } from './welcome.js';
 import { registerKnowledge } from './knowledge.js';
@@ -44,6 +45,7 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerAiProfiles(app, ctx);
   registerPlugins(app, ctx);
   registerBridge(app, ctx);
+  registerMusic(app, ctx);
   registerCapturePage(app, ctx);
   registerWelcomePage(app, ctx);
   registerKnowledge(app, ctx);

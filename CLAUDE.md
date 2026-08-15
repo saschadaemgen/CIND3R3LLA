@@ -427,7 +427,8 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
   deployment** (CCB-S5-021, D-175). The per-bot settings are the `enabled` switches, one per
-  plugin (**six**: crypto prices, web search, knowledge base, channel bridge, welcome, capture
+  plugin (**eight**: crypto prices, web search, knowledge base, channel bridge, welcome, capture,
+  music, music-uploads
   - and this number keeps going stale, because a new plugin adds one and nothing points at
   this line. It said "exactly two" until CCB-S5-032, "three" until the knowledge base, "four"
   until welcome and capture, and was corrected again under CCB-S5-043. The count that cannot
@@ -477,7 +478,24 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   rather than the operator's own text. Two surfaces read those records: the activity stream with
   a channel dropdown, and `GET /embed/:id/channels`, a standalone announcements block a site can
   embed WITHOUT the stream (`renderChannelBlockPage`), which is two promises rather than one
-  filtered surface. `settings/`,
+  filtered surface.
+  **`plugins/music/` is the music library** (CCB-S5-044, D-216): tracks the operator uploads
+  with their tags read rather than retyped, playlists as the unit of assignment (a bot may
+  only find and play what its assignments reach - the briefing-named mutation), the two
+  proven send shapes decided by the cover alone (one `MsgContent.Video` message with one;
+  title line plus bare `MsgContent.Voice` player without), the bridge's cadence reused with
+  the operator's budgets on top (3 unbidden per room per day, 60-minute gap, SEPARATE for
+  music and spots, his numbers), the DJ sheet as derived locked facts so she cannot claim a
+  genre she does not hold, and Part 4b's member-upload playback behind its own per-bot
+  switch (`music-uploads`), allow-listed, played without being stored. The encoder is
+  `media/encode.ts` (ffmpeg-static, audio byte-copied, odd dimensions CROPPED - measured,
+  because the Stage-0 record contradicted itself); the transport is `bot/music-port.ts`
+  (recital-port pattern); the rhythm is `music.tick`.
+  **`members/data-registry.ts` is the profile fence** (D-217): every table carrying a
+  member-identifying column, classed archive / consent / safety / profile, with
+  `verify:member-data` sweeping information_schema so a member-data table that nobody
+  registered goes red instead of unnoticed. The profile itself is the memory briefing's;
+  this is the shape it must not violate. `settings/`,
   `queue/` (durable Postgres-backed background jobs: store, worker, registry, handlers),
   `bot/runtime/` (**the multi-profile runtime, and the bot now runs on it**: one core, many
   SimpleX profiles, a serialized active-user scheduler, event routing by receiving `userId`.
@@ -667,7 +685,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   from the channel's public link and publishing it would defeat anonymisation; and both publish
   views rebuilt, where a `bridge` row now publishes on the per-channel switch ALONE and
   `categories.bridge` becomes `in_stream`, the separate question of whether a public
-  announcement also stands beside members' messages).
+  announcement also stands beside members' messages)
+  · 063 the music library (CCB-S5-044, D-216/D-217: tracks with kinds - music, audiobook,
+  documentary, spot - playlists, per-bot assignments whose cadence CHECK makes a
+  half-configured cadence unrepresentable, and the plays log, which is the FIRST
+  profile-class member-data source: member_id NULLABLE and written NULL until the memory
+  work delivers the opt-in, no stored aggregate anywhere so deletion can never leave a
+  ghost, `kind_at_play` frozen per play because the budget decision's basis must survive a
+  later edit; plus the 'music' publication category as a view replacement, shipped
+  EXCLUDED - the 013/027/033/057 pattern).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -675,7 +701,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **062**, since 062 landed with channel publication). Stated as a rule
+  (currently **063**, since 063 landed with the music library). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -919,6 +945,20 @@ passes against a block that is empty. Anonymisation asserted over all four exits
 the column, the text, the search text and the structured runs - with the post's own words proven
 intact character for character. The console section PRESSES the real routes and reads the effect
 back out of the database, including the refusal for a channel that has no record),
+`verify:music` (the music plugin, CCB-S5-044, D-216: the cover deciding the shape with both
+shapes asserted call for call, the asks through the REAL engine including the no-reply-on-play
+rule, the playlist boundary with the briefing-named mutation and its positive controls, the
+cadence at both trigger orderings, the SEPARATE budgets proven against each other with a
+requested play consuming neither, the gap, one-send-per-group with the busy line, Part 4b's
+four refusals, the profile fence's member_id-NULL invariant, and no model on the path
+structurally),
+`verify:music-encode` (the real ffmpeg: the crop-not-pad settlement measured on an odd-height
+cover, byte-copied audio confirmed off the stream table, the tag read including an APIC cover,
+the encode cache proven to serve without re-encoding, and a member upload end to end with real
+bytes, played and not stored, temp bytes gone),
+`verify:member-data` (D-217's sweep: information_schema over every migration against the
+registry, both directions, the profile class's promises, and the mutation of an unregistered
+member table going red),
 `verify:protected-text` (the lines the application writes and she may not, CCB-S5-027, D-180:
 that the protected set is DERIVED from the persona rather than listed, that a forgery is removed
 whether it stands on its own line or is tacked onto the end of a sentence, that a draft she was

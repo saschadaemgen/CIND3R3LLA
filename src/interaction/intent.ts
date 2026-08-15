@@ -27,6 +27,7 @@ export const INTENTS = [
   'PRICE', // what is an asset worth (CCB-S3-004)
   'RESTORE', // bring hidden content back (CCB-S3-013)
   'LOOKUP', // look something up on the web (CCB-S4-037)
+  'MUSIC', // the library: which playlists, what's on one, play something (CCB-S5-044)
   'UNKNOWN', // not understood
 ] as const;
 

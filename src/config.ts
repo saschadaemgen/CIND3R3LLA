@@ -69,6 +69,11 @@ export interface Config {
    */
   bridgeMediaRoot: string;
   /**
+   * Where the music library lives (CCB-S5-044). A sibling of MEDIA_ROOT for the
+   * destruction-sweeper reason resolveMusicRoot states.
+   */
+  musicRoot: string;
+  /**
    * Path to the bot's avatar image (jpg/png/webp). Re-applied to the SimpleX
    * profile on every startup (bot.run blanks it otherwise). Optional — if the
    * file is absent the profile image is left as-is.
@@ -261,6 +266,7 @@ export function loadConfig(): Config {
     quarantineRoot: resolveQuarantineRoot(),
     assetRoot: resolveAssetRoot(),
     bridgeMediaRoot: resolveBridgeMediaRoot(),
+    musicRoot: resolveMusicRoot(),
     avatarPath: resolveAvatarPath(),
     databaseUrl: required('DATABASE_URL'),
     logLevel: parseLogLevel(process.env['LOG_LEVEL']),
@@ -340,6 +346,31 @@ export function resolveAssetRoot(): string {
  * message 123 is destroyed. Channel media is the operator's broadcast content
  * and is governed by nothing in the consent machinery; it gets its own tree.
  */
+/**
+ * Where the music library lives (CCB-S5-044, D-216).
+ *
+ * A SIBLING of MEDIA_ROOT for the bridge-media reason exactly: the destruction
+ * sweeper walks all of MEDIA_ROOT matching id-shaped names, and the operator's
+ * own tracks are governed by nothing in the consent machinery - a track file
+ * with an id-shaped name inside that tree would be swept when a message with
+ * that id is destroyed. Plaintext for the bridge-media reason too (security
+ * §16): the at-rest encryption protects MEMBER media, and a library track is
+ * the operator's own content that he uploads to be broadcast.
+ */
+export function resolveMusicRoot(): string {
+  const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
+  const configured = process.env['MUSIC_ROOT'];
+  const root = configured ? resolve(configured) : resolve(dirname(media), 'music-library');
+  if (root === media || root.startsWith(media + sep)) {
+    throw new Error(
+      `MUSIC_ROOT (${root}) must not be inside MEDIA_ROOT (${media}). Member media is ` +
+        'consent-governed and swept by the destruction jobs; the operator\'s library is ' +
+        'neither, and a track with an id-shaped name inside that tree would be swept with it.',
+    );
+  }
+  return root;
+}
+
 export function resolveBridgeMediaRoot(): string {
   const media = resolve(process.env['MEDIA_ROOT'] ?? './media');
   const configured = process.env['BRIDGE_MEDIA_ROOT'];

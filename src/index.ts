@@ -34,6 +34,7 @@ import { flushAvatarToGroups } from './bot/avatar.js';
 import { sendViaRuntime } from './bot/send.js';
 import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
 import { bridgeSendPort, sdkBridgePort, setBridgeSendPort } from './bot/bridge-port.js';
+import { musicSendPort, sdkMusicPort, setMusicSendPort } from './bot/music-port.js';
 import { registerBridgeIntake, bridgeMediaStore } from './plugins/channel-bridge/intake.js';
 import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
@@ -49,6 +50,22 @@ import {
 } from './db/group-memberships.js';
 import { listCaptureAssignments } from './db/capture-assignments.js';
 import { seedBridgeTick, setBridgeJobDeps } from './queue/jobs/bridge.js';
+import { seedMusicTick, setMusicJobDeps } from './queue/jobs/music.js';
+import {
+  botMusicView,
+  latestMemberAudio,
+  playMemberUpload,
+  playTrackToGroup,
+  type MusicDeps,
+} from './plugins/music/service.js';
+import {
+  assignmentsForBot as musicAssignmentsForBot,
+  findTrackForBot,
+  playlistTracks as musicPlaylistTracks,
+  randomTrackForBot,
+} from './plugins/music/store.js';
+import { MUSIC_ID, MUSIC_UPLOADS_ID } from './plugins/music/plugin.js';
+import { status as webStatus } from './web/status.js';
 import { RECITAL_JOB, setRecitalJobDeps } from './queue/jobs/recital.js';
 import {
   startRecital,
@@ -282,6 +299,74 @@ function makeBridgeDeps(
   };
 }
 
+function makeMusicDeps(
+  cfg: Config,
+  interaction: InteractionService,
+  plugins: PluginService,
+): MusicDeps {
+  return {
+    db: getPool(),
+    port: () => musicSendPort(),
+    isEnabledFor: (botProfileId) => plugins.isEnabledFor(botProfileId, MUSIC_ID),
+    uploadsEnabledFor: (botProfileId) => plugins.isEnabledFor(botProfileId, MUSIC_UPLOADS_ID),
+    langFor: (botProfileId) => interaction.get(botProfileId).defaultLanguage,
+    musicRoot: cfg.musicRoot,
+    settings: () => plugins.musicSettings(),
+    onFault: (message) => webStatus.error(message),
+  };
+}
+
+/**
+ * The MUSIC lane's operations for ONE bot (CCB-S5-044): thin verbs over the
+ * service, scoped so a bot can only see and play its own assignments - the
+ * absent-capability property the harness mutates.
+ */
+function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: PluginService, botProfileId: number) {
+  const deps = makeMusicDeps(cfg, interaction, plugins);
+  return {
+    view: () => botMusicView(deps, botProfileId),
+    tracksOf: async (name: string) => {
+      const assignments = await musicAssignmentsForBot(deps.db, botProfileId);
+      const hit = assignments.find((a) => a.playlistName.toLowerCase() === name.toLowerCase())
+        ?? assignments.find((a) => a.playlistName.toLowerCase().includes(name.toLowerCase()));
+      if (hit === undefined) return null;
+      const tracks = await musicPlaylistTracks(deps.db, hit.playlistId);
+      return { playlist: hit.playlistName, titles: tracks.map((t) => t.title), total: tracks.length };
+    },
+    playByTitle: async (groupId: number, title: string) => {
+      const track = await findTrackForBot(deps.db, botProfileId, title);
+      if (track === null) return 'unknown' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playSomething: async (groupId: number) => {
+      const track = await randomTrackForBot(deps.db, botProfileId);
+      if (track === null) return 'empty' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+    },
+    playUpload: async (groupId: number, senderMemberId: string) => {
+      if (!deps.uploadsEnabledFor(botProfileId)) return 'off' as const;
+      const file = await latestMemberAudio(deps.db, groupId, senderMemberId);
+      const out = await playMemberUpload(deps, botProfileId, groupId, file);
+      if (out.ok) return 'sent' as const;
+      switch (out.refusal) {
+        case 'capability-off': return 'off' as const;
+        case 'no-file': return 'no-file' as const;
+        case 'not-audio': return 'not-audio' as const;
+        case 'too-large': return 'too-large' as const;
+        default: return 'unavailable' as const;
+      }
+    },
+  };
+}
+
 function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
   const { cfg, interaction, plugins, prices, webSearch } = deps;
   const botProfileId = bot.config.botProfileId;
@@ -479,6 +564,12 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
     // line of defence rather than the first. The service holds no chat client, so
     // the only thing that can come back through here is text.
     webSearch: () => (plugins.isEnabledFor(botProfileId, WEB_SEARCH_ID) ? webSearch : null),
+    // The music library (CCB-S5-044), same terms again: off means MUSIC is not
+    // in this bot's catalog, and this getter is the second line of defence.
+    music: () =>
+      plugins.isEnabledFor(botProfileId, MUSIC_ID)
+        ? musicOpsFor(cfg, interaction, plugins, botProfileId)
+        : null,
     // Null when the knowledge base is off FOR THIS BOT. For a plugin that contributes no
     // intent this IS the absent-capability property: nothing is embedded, nothing is
     // searched, and no passage reaches the model. Read live, so a console toggle takes
@@ -623,6 +714,8 @@ async function startCaptureWorker(
     // bytes, only the per-bot intake does.
     setBridgeSendPort(sdkBridgePort(host.runtime));
     setBridgeJobDeps(() => makeBridgeDeps(interaction, plugins, null));
+    setMusicSendPort(sdkMusicPort(host.runtime));
+    setMusicJobDeps(() => makeMusicDeps(cfg, interaction, plugins));
 
     // Deployment-wide services, built once. Every setting is read live, so a chain
     // reorder or a new API key takes effect on the next question without a restart.
@@ -1251,6 +1344,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
     // minute-bucket idempotency key collapses into a live chain's own next link
     // rather than starting a second one; see queue/jobs/bridge.ts.
     await seedBridgeTick();
+    await seedMusicTick();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     status.error(`Job queue failed to start: ${message}`);
@@ -1290,6 +1384,8 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
         // reporting a transport it no longer has.
         setBridgeSendPort(null);
         setBridgeJobDeps(null);
+        setMusicSendPort(null);
+        setMusicJobDeps(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
         resolve();

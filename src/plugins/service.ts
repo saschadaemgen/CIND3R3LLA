@@ -72,6 +72,8 @@ import {
   type ChannelBridgeSettings,
 } from './channel-bridge/settings.js';
 import { CHANNEL_BRIDGE_ID } from './channel-bridge/plugin.js';
+import { MUSIC_DEFAULTS, normalizeMusicSettings, type MusicSettings } from './music/settings.js';
+import { MUSIC_ID } from './music/plugin.js';
 // Side-effect import: importing the module is what registers the plugin (see above).
 import './welcome/plugin.js';
 
@@ -108,6 +110,7 @@ export class PluginService {
     private webSearch: WebSearchSettings,
     private knowledge: KnowledgeSettings,
     private channelBridge: ChannelBridgeSettings,
+    private music: MusicSettings,
   ) {}
 
   static async load(db: Queryable): Promise<PluginService> {
@@ -133,6 +136,12 @@ export class PluginService {
     // live on the mapping rows, which is where the briefing put them.
     const channelBridge = normalizeChannelBridgeSettings(
       (await getSetting(db, settingsKey(CHANNEL_BRIDGE_ID))) ?? CHANNEL_BRIDGE_DEFAULTS,
+    );
+
+    // The music library (CCB-S5-044). The budgets and the upload bound; the
+    // playlists and cadences live on assignment rows, the bridge's placement.
+    const music = normalizeMusicSettings(
+      (await getSetting(db, settingsKey(MUSIC_ID))) ?? MUSIC_DEFAULTS,
     );
 
     // Self-repair for instances written by the doubled-encryption path
@@ -171,7 +180,7 @@ export class PluginService {
         );
       }
     }
-    return new PluginService(db, states, crypto, webSearch, knowledge, channelBridge);
+    return new PluginService(db, states, crypto, webSearch, knowledge, channelBridge, music);
   }
 
   /** All-defaults instance, for harnesses and the server's fallback path. */
@@ -183,6 +192,7 @@ export class PluginService {
       normalizeWebSearchSettings({}),
       normalizeKnowledge({}),
       normalizeChannelBridgeSettings({}),
+      normalizeMusicSettings({}),
     );
   }
 
@@ -475,6 +485,24 @@ export class PluginService {
 
   channelBridgeSettings(): ChannelBridgeSettings {
     return this.channelBridge;
+  }
+
+  musicSettings(): MusicSettings {
+    return this.music;
+  }
+
+  async saveMusic(next: unknown, actor: string): Promise<MusicSettings> {
+    const normalized = normalizeMusicSettings({ ...this.music, ...rec(next) });
+    await setSetting(this.db, settingsKey(MUSIC_ID), normalized);
+    await writeAudit(this.db, actor, 'plugin.settings', `plugin:${MUSIC_ID}`, {
+      musicDailyCap: normalized.musicDailyCap,
+      musicGapMinutes: normalized.musicGapMinutes,
+      spotDailyCap: normalized.spotDailyCap,
+      spotGapMinutes: normalized.spotGapMinutes,
+      memberUploadMaxBytes: normalized.memberUploadMaxBytes,
+    });
+    this.music = normalized;
+    return normalized;
   }
 
   async saveChannelBridge(next: unknown, actor: string): Promise<ChannelBridgeSettings> {

@@ -27,7 +27,16 @@
 (function () {
   'use strict';
 
-  var MAX_BYTES = 8 * 1024 * 1024;
+  // CCB-S5-044: the music page moves tracks through the same hook, so the bound
+  // became per-form (`data-max-bytes`) and a form may carry a `fileName` field
+  // the server reads the extension from. Absent both, nothing changes.
+  function maxBytes(form) {
+    var raw = form.getAttribute('data-max-bytes');
+    var n = raw ? parseInt(raw, 10) : NaN;
+    return isFinite(n) && n > 0 ? n : DEFAULT_MAX_BYTES;
+  }
+
+  var DEFAULT_MAX_BYTES = 8 * 1024 * 1024;
 
   function wire(form) {
     var input = form.querySelector('input[type="file"]');
@@ -53,6 +62,7 @@
 
     input.addEventListener('change', function () {
       var file = input.files && input.files[0];
+      var nameField = form.querySelector('input[name="fileName"]');
       payload.value = '';
       if (nameField) nameField.value = '';
       submit.disabled = true;
@@ -60,10 +70,11 @@
         if (status) status.textContent = idle;
         return;
       }
-      if (file.size > MAX_BYTES) {
+      if (file.size > maxBytes(form)) {
         if (status) {
           status.textContent =
-            'That file is ' + Math.round(file.size / 1024) + ' kB, over the 8 MB limit.';
+            'That file is ' + Math.round(file.size / 1024) + ' kB, over the ' +
+            Math.round(maxBytes(form) / (1024 * 1024)) + ' MB limit.';
         }
         return;
       }
@@ -80,6 +91,7 @@
           if (status) status.textContent = 'That file could not be read.';
           return;
         }
+        if (nameField) nameField.value = file.name;
         payload.value = result.slice(comma + 1);
         if (nameField) nameField.value = file.name;
         submit.disabled = false;

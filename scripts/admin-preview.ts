@@ -301,6 +301,9 @@ async function main(): Promise<void> {
     mediaRoot: process.cwd(),
     // Operator assets (CCB-S4-047), so the Recital page can actually take an image.
     assetRoot: resolve('./state/preview-assets'),
+    // The music library (CCB-S5-044), so the Music page's upload and storage
+    // figures act on a real tree rather than crashing on undefined.
+    musicRoot: resolve('./state/preview-music'),
     // Seeded so the Backups page has a real run record to render (CCB-S4-014/015).
     backupStatusPath: process.env['BACKUP_STATUS_PATH'] ?? './state/backup-status.json',
     backupRequestPath: process.env['BACKUP_REQUEST_PATH'] ?? './state/backup-request',

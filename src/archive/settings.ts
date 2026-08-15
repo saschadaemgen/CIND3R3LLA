@@ -50,6 +50,11 @@ export const REPLY_CATEGORIES = [
   // attribution; no member consent is involved on either side, which is exactly why it
   // is its own switch rather than riding on any of the above.
   'bridge',
+  // CCB-S5-044: a track, audiobook, documentary or spot she played into the group -
+  // her own message carrying the operator's own content, captioned with the track's
+  // title. Its own switch because playing music into a room and publishing that the
+  // room heard music are separate decisions.
+  'music',
 ] as const;
 export type ReplyCategory = (typeof REPLY_CATEGORIES)[number];
 
@@ -199,6 +204,7 @@ export const DEFAULT_ARCHIVE: ArchiveSettings = {
     // public archive is his decision to take deliberately - likely the day the website's
     // activity stream wants them, which is the consumer this category exists for.
     bridge: false,
+    music: false,
   },
 };
 
@@ -215,6 +221,10 @@ export const CATEGORY_LABELS: Record<ReplyCategory, { label: string; help: strin
   lookup: {
     label: 'Web search answers',
     help: 'Excluded by default: answers she built from web search results, plus the line she says when she could not look something up. The wording is the model own and the material came from outside the group.',
+  },
+  music: {
+    label: 'Played tracks',
+    help: 'Excluded by default: the caption she sent with a track, audiobook, documentary or spot from the library. The media itself is never published (no stripped derivative exists for the library tree); what would publish is the title line.',
   },
   bridge: {
     label: 'Channel announcements in the stream',

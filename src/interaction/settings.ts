@@ -155,6 +155,21 @@ export const PERSONA_KEYS = [
   // placeholder, so the protected-text guard derives no marker for it and she is free to
   // use the words.
   'bridgeAnonymousChannel',
+  // CCB-S5-044. The music library's lines. The two list-bearing ones are LOCKED
+  // (AI_LOCKED_KEYS): their playlist names and counts are application facts the
+  // model must not be able to rewrite, the STATUS pattern. A successful play
+  // sends NO line at all - the track arriving is the reply - so every key here
+  // is a refusal, a fact list, or an honest inability.
+  'musicPlaylists',
+  'musicNoPlaylists',
+  'musicTracks',
+  'musicUnknownTrack',
+  'musicBusy',
+  'musicUnavailable',
+  'musicUploadNotAudio',
+  'musicUploadTooLarge',
+  'musicUploadNoFile',
+  'musicUploadOff',
   'undo', // briefing §5
   'undoNothing', // nothing within the undo window
   'undoNotRevocation', // CCB-S3-010 A — a revocation is not undoable, and why
@@ -234,6 +249,16 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // announcement by the public view - but the map is total, and 'bridge' is the category
   // the text it lands in belongs to.
   bridgeAnonymousChannel: 'bridge',
+  musicPlaylists: 'music',
+  musicNoPlaylists: 'music',
+  musicTracks: 'music',
+  musicUnknownTrack: 'music',
+  musicBusy: 'music',
+  musicUnavailable: 'music',
+  musicUploadNotAudio: 'music',
+  musicUploadTooLarge: 'music',
+  musicUploadNoFile: 'music',
+  musicUploadOff: 'music',
   help: 'help',
   price: 'price',
   conversion: 'price',
@@ -499,6 +524,19 @@ const PERSONA_EN: PersonaStrings = {
   // lines above, so it has to read as a name would: "From the channel a channel" is what a
   // plain noun phrase produces, which is why this is a bracketed token instead.
   bridgeAnonymousChannel: '(not named)',
+  // CCB-S5-044. No line deliberately echoes member text: the searchResult
+  // lesson - an echoed phrase becomes publishable the day the category is
+  // switched on, so the unknown-track line names no title.
+  musicPlaylists: '🎵 My playlists: {playlists}',
+  musicNoPlaylists: '🎵 I hold no playlists yet.',
+  musicTracks: '🎵 On the playlist {playlist}: {tracks}',
+  musicUnknownTrack: '🎵 I looked, and I hold no track by that name.',
+  musicBusy: '🎵 One is already on its way to this room. Ask me again when it lands.',
+  musicUnavailable: '🎵 I cannot reach my library just now.',
+  musicUploadNotAudio: '🎧 I only re-send audio: mp3, m4a, aac, ogg, opus, flac or wav. That file is not on my list, so I will leave it be.',
+  musicUploadTooLarge: '🎧 That file is bigger than I am allowed to carry.',
+  musicUploadNoFile: '🎧 I see no file of yours here to make playable. Send it first, then ask me.',
+  musicUploadOff: '🎧 Playing back uploads is switched off for me.',
   knowledgeSources: '📄 From what you gave me: {sources}',
   // Said when she could not look it up. She does NOT then answer from training data and
   // present it as current: that is the failure the whole feature exists to avoid.
@@ -682,6 +720,16 @@ const PERSONA_DE: PersonaStrings = {
   // Kanal anonym veroeffentlicht wird. Es steht dort, wo ein NAME stand, also muss es sich
   // wie ein Name lesen: "Aus dem Kanal einem Kanal" waere falsch, daher die Klammern.
   bridgeAnonymousChannel: '(nicht genannt)',
+  musicPlaylists: '🎵 Meine Playlists: {playlists}',
+  musicNoPlaylists: '🎵 Ich habe noch keine Playlists.',
+  musicTracks: '🎵 Auf der Playlist {playlist}: {tracks}',
+  musicUnknownTrack: '🎵 Ich habe nachgesehen, einen Titel mit diesem Namen habe ich nicht.',
+  musicBusy: '🎵 Eines ist schon unterwegs in diesen Raum. Frag mich nochmal, wenn es da ist.',
+  musicUnavailable: '🎵 Ich komme gerade nicht an meine Bibliothek.',
+  musicUploadNotAudio: '🎧 Ich sende nur Audio weiter: mp3, m4a, aac, ogg, opus, flac oder wav. Diese Datei steht nicht auf meiner Liste, also lasse ich sie liegen.',
+  musicUploadTooLarge: '🎧 Diese Datei ist groesser, als ich tragen darf.',
+  musicUploadNoFile: '🎧 Ich sehe hier keine Datei von dir, die ich abspielbar machen koennte. Schick sie erst, dann frag mich.',
+  musicUploadOff: '🎧 Das Abspielen von Uploads ist bei mir abgeschaltet.',
   knowledgeSources: '📄 Aus deinen Unterlagen: {sources}',
   searchUnavailable:
     '🔌 Ich konnte das gerade nicht nachschlagen, und ich rate nicht herum. Versuch es gleich noch mal.',

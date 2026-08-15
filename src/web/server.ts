@@ -355,6 +355,33 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   return app;
 }
 
+/**
+ * One nav entry per admin page (CCB-S5-044): the two music plugins share
+ * /music, and two menu rows opening one page reads as a defect. First
+ * registration wins, which is the library plugin - the page both belong to.
+ */
+function dedupeByAdminPath<T extends { adminPath?: string; intents?: readonly unknown[] }>(
+  plugins: readonly T[],
+): T[] {
+  // When several plugins share one page, the nav entry should wear the name of
+  // the one that IS the page - the intent-bearing capability - not whichever
+  // sorts first: the first render of this labelled /music "Member Uploads
+  // (play back)" because 'Me' < 'Mu' (D-212, found by looking).
+  const byPath = new Map<string, T>();
+  const noPath: T[] = [];
+  for (const p of plugins) {
+    if (!p.adminPath) {
+      noPath.push(p);
+      continue;
+    }
+    const held = byPath.get(p.adminPath);
+    if (held === undefined || ((held.intents?.length ?? 0) === 0 && (p.intents?.length ?? 0) > 0)) {
+      byPath.set(p.adminPath, p);
+    }
+  }
+  return [...noPath, ...byPath.values()];
+}
+
 export function registerNav(): void {
   setNavItems([
     {
@@ -642,7 +669,7 @@ export function registerNav(): void {
         // per-bot mechanism; an operator looks for it under AI Control, and two entries
         // pointing at one page is the console following the implementation instead of the
         // use. It still appears on the Plugins LIST, with its switch, linking here.
-        ...listPlugins()
+        ...dedupeByAdminPath(listPlugins())
           .filter((plugin) => plugin.livesUnderNav === undefined)
           .map((plugin) => ({
             key: `plugin:${plugin.id}`,

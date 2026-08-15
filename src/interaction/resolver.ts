@@ -25,7 +25,7 @@ import {
   type IntentResult,
   type IntentSlots,
 } from './intent.js';
-import { asksToLookItUp, namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
+import { asksForMusic, asksToLookItUp, namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
 
 let active: IntentResolver = ruleResolver;
 /** Fallback used when `active` fails. Always the deterministic engine. */
@@ -139,6 +139,8 @@ export function carryOverSlots(text: string, intent: 'PRICE' | 'SEARCH'): Intent
 const EXPLICIT_ONLY: Partial<Record<Intent, { names: (text: string) => boolean; why: string }>> = {
   SEARCH: { names: namesTheArchive, why: 'names no place to look' },
   LOOKUP: { names: asksToLookItUp, why: 'does not ask her to go and look' },
+  // CCB-S5-044, the third entry the table was built to receive.
+  MUSIC: { names: asksForMusic, why: 'neither asks to play nor asks about the playlists' },
 };
 
 function explicitOnly(result: IntentResult, text: string): IntentResult {

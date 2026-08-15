@@ -127,6 +127,11 @@ export const INTENT_DEFINITIONS: Record<Intent, string> = {
     'google it, check the internet. Put the thing to search for in slots.query. This is the ' +
     'web and never this group own archive. A question that merely happens to be about ' +
     'current events is NOT this either: only an actual request to go and look.',
+  MUSIC:
+    'A request about the music library or to play from it: which playlists the bot has, what ' +
+    'is on a named playlist, "play me something", "play <title>", or asking the bot to make ' +
+    'an audio file the sender uploaded playable. Talking ABOUT music without asking the bot ' +
+    'to list or play anything is conversation, not MUSIC.',
   UNKNOWN:
     'Anything unclear, conversational, negated, quoted, hypothetical, descriptive, or outside ' +
     'the active catalog.',
