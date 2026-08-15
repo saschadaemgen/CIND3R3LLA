@@ -882,6 +882,21 @@ export class MultiProfileRuntime {
     return await this.sendGroupText(owner, groupId, text);
   }
 
+  /**
+   * The recent items of a group, read as its owner (D-224): the files.watch
+   * job checks a sent item's fileStatus here, through the scheduler like
+   * every other command (D-171). Returns the SDK's untyped chat rows; the
+   * caller parses defensively.
+   */
+  async readGroupItemsAsOwner(groupId: number, count: number): Promise<unknown> {
+    const owner = this.ownership.owner(groupId);
+    if (owner === undefined) throw new UnknownGroupOwnerError(groupId);
+    return await this.runForGroup(groupId, 'readGroupItems', async () =>
+      (this.chat as unknown as { apiGetChat(t: unknown, id: number, n: number): Promise<unknown> })
+        .apiGetChat('group', groupId, count),
+    );
+  }
+
   /** The composed-message form of {@link sendGroupTextAsOwner}. */
   async sendGroupComposedAsOwner(
     groupId: number,

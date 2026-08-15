@@ -142,6 +142,16 @@ export const ROUTED_TAGS = [
   'rcvFileComplete',
   'rcvFileError',
   'rcvFileWarning',
+  // ── THE OUTBOUND HALF (CCB-S5-044 follow-up, D-224) ──────────────────────
+  //
+  // The receive side was routed and the SEND side was not, so an outbound
+  // file's error had nowhere to land and was dropped by this very allow-list
+  // - the D-201 lesson pointing the other way. And these three still cannot
+  // see the worst case: a file stuck in `new` fires NO event at all, which
+  // is why every file-bearing send also books a `files.watch` check.
+  'sndFileCompleteXFTP',
+  'sndFileError',
+  'sndFileWarning',
   'chatError',
   'chatErrors',
   'hostConnected',

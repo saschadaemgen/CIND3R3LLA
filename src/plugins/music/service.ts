@@ -24,7 +24,7 @@
  */
 
 import { basename, join } from 'node:path';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import type { Queryable } from '../../db/pool.js';
 import type { MusicSendPort, MusicSentMessage } from '../../bot/music-port.js';
 import { parseSentGroupItem } from '../../bot/parse.js';
@@ -51,6 +51,8 @@ import { noteMusicError, noteMusicSend, noteMusicSkip, noteMusicTick } from './m
 import { MEMBER_UPLOAD_EXTENSIONS, type MusicSettings } from './settings.js';
 import { encodeMusicVideo } from '../../media/encode.js';
 import { ENCODE_VERSION } from '../../media/encode.js';
+import { enqueueFileWatch, FILE_WATCH_DELAY_MS } from '../../queue/jobs/file-watch.js';
+import { noteFileWatch } from '../../bot/file-log.js';
 
 export interface MusicDeps {
   db: Queryable;
@@ -170,6 +172,21 @@ export async function playTrackToGroup(
     });
     noteMusicSend();
     await archiveOwnSend(deps, botProfileId, sent, caption);
+    // D-224: the command returning is not the file arriving. Book the watch
+    // that reads the item's own fileStatus back out of the core, because a
+    // file stuck in `new` fires no event and the absence is the signal.
+    if (sent.itemId !== null) {
+      try {
+        noteFileWatch();
+        await enqueueFileWatch(
+          deps.db,
+          { botProfileId, groupId, itemId: sent.itemId, label: track.title },
+          new Date(nowOf(deps).getTime() + FILE_WATCH_DELAY_MS),
+        );
+      } catch (error) {
+        deps.onFault(`Music: booking the delivery check for "${track.title}" failed: ${String(error)}`);
+      }
+    }
     return { sent: true, shape, busy: false, failed: false };
   } finally {
     inFlight.delete(groupId);
@@ -224,6 +241,23 @@ export interface MusicTickReport {
 export async function runMusicTick(deps: MusicDeps): Promise<MusicTickReport> {
   const report: MusicTickReport = { assignmentsConsidered: 0, played: 0, skipped: {} };
   noteMusicTick(nowOf(deps).getTime());
+
+  // D-224: playback spool hygiene. A sent upload's bytes stay until the
+  // upload can long have finished; a day is generous and bounded.
+  try {
+    const spool = join(deps.musicRoot, '.playback-tmp');
+    const entries = await readdir(spool).catch(() => [] as string[]);
+    for (const entry of entries) {
+      const dir = join(spool, entry);
+      const info = await stat(dir).catch(() => null);
+      if (info !== null && nowOf(deps).getTime() - info.mtimeMs > 24 * 60 * 60_000) {
+        await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+  } catch {
+    // Hygiene must never take the tick with it.
+  }
+
   const assignments = await listAssignments(deps.db);
 
   for (const a of assignments) {
@@ -334,6 +368,12 @@ export async function playMemberUpload(
 
   const tmpDir = join(deps.musicRoot, '.playback-tmp', `${String(groupId)}-${String(Date.now())}`);
   inFlight.add(groupId);
+  // D-224 (the Stage-0 lesson, live): the core uploads AFTER the send command
+  // returns, from the path it was given. Deleting the tmp in a finally handed
+  // the uploader a path with nothing behind it, and the file sat in `new`
+  // forever while the message arrived empty. A playback that SENT keeps its
+  // bytes; the tick sweeps the spool after a day.
+  let sentAny = false;
   try {
     await mkdir(tmpDir, { recursive: true });
     const bytes = await readMediaFile(file.mediaPath);
@@ -363,18 +403,40 @@ export async function playMemberUpload(
       try {
         await encodeMusicVideo({ coverPath, audioPath: plainPath, outPath: mp4Path });
         const caption = tags.title ?? file.name;
-        await port.sendVideo(groupId, mp4Path, caption, coverPath, duration);
+        const sentVideo = await port.sendVideo(groupId, mp4Path, caption, coverPath, duration);
+        sentAny = true;
+        if (sentVideo.itemId !== null) {
+          noteFileWatch();
+          await enqueueFileWatch(
+            deps.db,
+            { botProfileId, groupId, itemId: sentVideo.itemId, label: file.name },
+            new Date(nowOf(deps).getTime() + FILE_WATCH_DELAY_MS),
+          ).catch((error: unknown) => {
+            deps.onFault(`Music: booking the delivery check for a member upload failed: ${String(error)}`);
+          });
+        }
         return { ok: true, refusal: null, shape: 'video' };
       } catch (error) {
         log.warn(`music: member-upload encode failed (${String(error)}); playing as voice.`);
       }
     }
     if (tags.title !== null) await port.sendText(groupId, tags.title);
-    await port.sendVoice(groupId, plainPath, duration);
+    const sentVoice = await port.sendVoice(groupId, plainPath, duration);
+    sentAny = true;
+    if (sentVoice.itemId !== null) {
+      noteFileWatch();
+      await enqueueFileWatch(
+        deps.db,
+        { botProfileId, groupId, itemId: sentVoice.itemId, label: file.name },
+        new Date(nowOf(deps).getTime() + FILE_WATCH_DELAY_MS),
+      ).catch((error: unknown) => {
+        deps.onFault(`Music: booking the delivery check for a member upload failed: ${String(error)}`);
+      });
+    }
     return { ok: true, refusal: null, shape: 'voice' };
   } finally {
     inFlight.delete(groupId);
-    await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
+    if (!sentAny) await rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 

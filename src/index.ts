@@ -35,6 +35,7 @@ import { sendViaRuntime } from './bot/send.js';
 import { sdkRecitalPort, setRecitalSendPort } from './bot/recital-port.js';
 import { bridgeSendPort, sdkBridgePort, setBridgeSendPort } from './bot/bridge-port.js';
 import { musicSendPort, sdkMusicPort, setMusicSendPort } from './bot/music-port.js';
+import { setFileWatchDeps } from './queue/jobs/file-watch.js';
 import { registerBridgeIntake, bridgeMediaStore } from './plugins/channel-bridge/intake.js';
 import type { BridgeDeps } from './plugins/channel-bridge/service.js';
 import { CHANNEL_BRIDGE_ID } from './plugins/channel-bridge/plugin.js';
@@ -850,6 +851,37 @@ async function startCaptureWorker(
     setBridgeJobDeps(() => makeBridgeDeps(interaction, plugins, null));
     setMusicSendPort(sdkMusicPort(host.runtime));
     setMusicJobDeps(() => makeMusicDeps(cfg, interaction, plugins));
+    // D-224: the outbound-file watcher's read, through the scheduler like
+    // every command. The parse is defensive: the SDK types apiGetChat as any.
+    setFileWatchDeps(() => ({
+      db: getPool(),
+      now: () => new Date(),
+      check: async (_botProfileId: number, groupId: number, itemId: number) => {
+        const raw: unknown = await host.runtime.readGroupItemsAsOwner(groupId, 100);
+        const chat = (raw ?? {}) as { chatItems?: unknown[]; chat?: { chatItems?: unknown[] } };
+        const items = chat.chatItems ?? chat.chat?.chatItems ?? [];
+        for (const entry of items) {
+          const ci = (entry ?? {}) as {
+            chatItem?: { meta?: { itemId?: number }; file?: { fileStatus?: { type?: string } } };
+            meta?: { itemId?: number };
+            file?: { fileStatus?: { type?: string } };
+          };
+          const inner = ci.chatItem ?? ci;
+          if (inner.meta?.itemId !== itemId) continue;
+          const tag = inner.file?.fileStatus?.type;
+          switch (tag) {
+            case 'sndStored': return 'stored';
+            case 'sndTransfer': return 'transfer';
+            case 'sndComplete': return 'complete';
+            case 'sndCancelled': return 'cancelled';
+            case 'sndError': return 'error';
+            case 'sndWarning': return 'transfer';
+            default: return 'missing';
+          }
+        }
+        return 'missing';
+      },
+    }));
 
     // Deployment-wide services, built once. Every setting is read live, so a chain
     // reorder or a new API key takes effect on the next question without a restart.
@@ -1520,6 +1552,7 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
         setBridgeJobDeps(null);
         setMusicSendPort(null);
         setMusicJobDeps(null);
+        setFileWatchDeps(null);
         if (botHandle) await botHandle.close().catch(() => undefined);
         await closePool().catch(() => undefined);
         resolve();

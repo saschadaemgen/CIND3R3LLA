@@ -41,6 +41,13 @@ import { readFileSync } from 'node:fs';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
 import { ENCODE_VERSION } from '../src/media/encode.js';
+import {
+  FILE_WATCH_JOB,
+  fileWatchHandler,
+  setFileWatchDeps,
+  type FileWatchStatus,
+} from '../src/queue/jobs/file-watch.js';
+import { fileDeliverySnapshot, resetFileLog } from '../src/bot/file-log.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { capabilityCatalog, type Intent } from '../src/interaction/intent.js';
 import { normalizeInteraction, type InteractionSettings } from '../src/interaction/settings.js';
@@ -702,8 +709,25 @@ async function main(): Promise<void> {
   check('nothing entered the library: the track count did not move', postTracks === preTracks, `${String(preTracks)} -> ${String(postTracks)}`);
   check('nothing was recorded: no play row a future profile could ever read', postPlays === prePlays, `${String(prePlays)} -> ${String(postPlays)}`);
   check('nothing was archived: no message row, so nothing can ever publish', postMessages === preMessages, `${String(preMessages)} -> ${String(postMessages)}`);
+  // D-224 changed the spool contract: a playback that SENT keeps its bytes,
+  // because the core uploads AFTER the send command returns and a deleted
+  // source leaves the file in 'new' forever (the Stage-0 lesson, live in the
+  // fifth test's 205). The tick sweeps the spool after a day; refusals still
+  // leave nothing behind.
   const leftovers = await readdirF(`${root}/.playback-tmp`).catch(() => [] as string[]);
-  check('the playback workspace is swept after every send', leftovers.length === 0, JSON.stringify(leftovers));
+  check('a playback that SENT keeps its bytes for the async upload (D-224)',
+    leftovers.length === 2, JSON.stringify(leftovers));
+  // The dirs carry REAL mtimes while the harness clock is fake, so backdate
+  // them relative to the fake clock the sweep reads (the verifier's fix, not
+  // the code's: production has one clock).
+  const { utimes: utimesF } = await import('node:fs/promises');
+  const past = new Date(clock.getTime() - 25 * 60 * 60_000);
+  for (const entry of leftovers) {
+    await utimesF(`${root}/.playback-tmp/${entry}`, past, past);
+  }
+  await runMusicTick(deps);
+  const sweptSpool = await readdirF(`${root}/.playback-tmp`).catch(() => [] as string[]);
+  check('  and the tick sweeps the spool after a day', sweptSpool.length === 0, JSON.stringify(sweptSpool));
   const uploadFn = readFileSync('src/plugins/music/service.ts', 'utf8')
     .split('export async function playMemberUpload')[1]
     ?.split('\nexport ')[0] ?? '';
@@ -1047,6 +1071,60 @@ async function main(): Promise<void> {
   await dj.handle(makeMsg('CIND3R3LLA play Deep Waters'));
   check('POSITIVE CONTROL: the same ask plays once the transport is healthy',
     playedTitles().some((t) => t.startsWith('Deep Waters')), JSON.stringify(calls));
+
+  /* ══ 10. THE OBSERVATION GAP (D-224): a file that never leaves 'new' ═════
+   *
+   * 205 outbound files sat unoffered in the core with every send command
+   * green, found by hand-querying its SQLite. The watcher reads the sent
+   * item's own fileStatus back a few minutes later; this drives it at every
+   * outcome, plus the guarantee that every play BOOKS one.
+   */
+
+  console.log('\n10. The observation gap: a file that never leaves the core');
+
+  // Every play books a watch.
+  const watches = Number((await db.query<{ n: string }>(
+    `SELECT count(*) AS n FROM jobs WHERE type = $1`, [FILE_WATCH_JOB],
+  )).rows[0]?.n);
+  check('every play booked a delivery check (files.watch rows exist)', watches > 0, String(watches));
+
+  // The handler at every outcome, against a scripted core read.
+  resetFileLog();
+  let scripted: FileWatchStatus = 'stored';
+  setFileWatchDeps(() => ({
+    db,
+    now: () => clock,
+    check: async () => scripted,
+  }));
+  const drive = async (status: FileWatchStatus, attempt = 1): Promise<void> => {
+    scripted = status;
+    await fileWatchHandler(
+      { botProfileId: DJ, groupId: GROUP, itemId: 4242, label: 'wire-check.mp3', attempt },
+      {} as never,
+    );
+  };
+  await drive('stored');
+  check("STUCK IN 'new' IS LOUD: a stored file five minutes on is a counted alarm",
+    fileDeliverySnapshot().counts.stuck === 1, JSON.stringify(fileDeliverySnapshot().counts));
+  await drive('complete');
+  check('complete is counted quietly', fileDeliverySnapshot().counts.complete === 1);
+  await drive('transfer', 1);
+  const followUps = Number((await db.query<{ n: string }>(
+    `SELECT count(*) AS n FROM jobs WHERE type = $1 AND payload->>'attempt' = '2'`, [FILE_WATCH_JOB],
+  )).rows[0]?.n);
+  check('mid-transfer at the first look books exactly one follow-up', followUps === 1, String(followUps));
+  await drive('transfer', 2);
+  check('still mid-transfer at the second look is stuck, and said so',
+    fileDeliverySnapshot().counts.stuck === 2, JSON.stringify(fileDeliverySnapshot().counts));
+  await drive('error');
+  check('an agent-reported error is counted as one',
+    fileDeliverySnapshot().counts.sendError === 1);
+  setFileWatchDeps(null);
+
+  // The router's outbound half (D-201, pointing the other way this time).
+  const tagsSrc = readFileSync('src/bot/runtime/types.ts', 'utf8');
+  check('the router carries the outbound file events, not only the receive side',
+    tagsSrc.includes("'sndFileCompleteXFTP'") && tagsSrc.includes("'sndFileError'") && tagsSrc.includes("'sndFileWarning'"));
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

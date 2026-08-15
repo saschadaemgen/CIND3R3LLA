@@ -1727,6 +1727,14 @@ from the codebase (no route, table, or module implementing it), not merely
 undocumented. The single most important verification result: **the public
 `/embed/:id` route does not exist in code** — only its admin-side configuration does.
 
+## Extend files.watch to every file-bearing send path (D-224)
+
+Music library plays and member-upload playbacks book delivery checks; the bridge's re-hosted
+media sends and the recital's chapter images do not yet. The seam is generic
+(`enqueueFileWatch` + `runtime.readGroupItemsAsOwner`); each send site needs its own booking
+with its bot, group and item. Until then those paths have the event half only, which cannot
+see a file stuck in `new`.
+
 ## Knowledge retrieval on off-topic questions (decision pending, D-220 §4)
 
 The 0.55 knowledge floor admits the SimpleGo README's noise band (0.53-0.58 on questions it

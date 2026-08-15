@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 222 decisions</strong> — newest first. Highest allocated: <strong>D-223</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 223 decisions</strong> — newest first. Highest allocated: <strong>D-224</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-224 | A send command returning is not the file arriving | IMPLEMENTED |
 | D-223 | A play that does not play says so, and nothing it sends reads as success | IMPLEMENTED |
 | D-222 | Loud, advancing, and honest about her own holdings | IMPLEMENTED |
 | D-221 | She answers the question that was asked, and the vocabulary is folded once | IMPLEMENTED |
@@ -251,6 +252,45 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-224 - A send command returning is not the file arriving
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, the fifth live test). The journal showed no
+degrade chain, so D-223's second candidate was the fact: the video message was DELIVERED and
+the file behind it never moved. The core's own database said how much: **205 outbound files
+in `snd_files.new`** - never offered, never uploaded - against 1453 connected, with every
+`apiSendMessages` green. The same lesson as the reply limiter one commit earlier, one layer
+down: the command succeeded and nothing reached the room.
+
+**Why nothing noticed, in three stacked halves.** The router's allow-list carried the
+RECEIVE-side file events and not one send-side event, so even the errors the agent does
+report were dropped - D-201's lesson pointing the other way. A file stuck in `new` fires NO
+event at all, so event routing alone could never see the worst case: the absence is the
+signal, and only a check can see an absence (D-184: a dead detector and a clean repository
+look exactly the same). And the member-upload playback DELETED its temp bytes in a finally
+right after the send command returned - but the core uploads AFTER the command returns, from
+the path it was given, so the uploader found nothing and the file sat in `new` forever: the
+Stage-0 mechanism, live. That third half is very likely a large slice of the 205; the
+analysis query in the completion report attributes the rest by chat, kind and week.
+
+**What closes it.** Three pieces. The router now carries `sndFileCompleteXFTP`,
+`sndFileError` and `sndFileWarning`, landing in `bot/file-log.ts` (the forgery-log
+shape: counted, content-free, last fifty shown). Every file-bearing music send - library
+plays and member-upload playbacks - books a `files.watch` queue job that reads the item's
+OWN fileStatus back out of the core five minutes later, through a new
+`runtime.readGroupItemsAsOwner` that goes through the scheduler like every command (D-171):
+still `sndStored` is a dashboard error and a journal row ("the message arrived with nothing
+in it"); still transferring books exactly one follow-up; complete is counted quietly. And the
+playback spool keeps a SENT upload's bytes until the upload can long have finished - the tick
+sweeps the spool after a day - while a refused upload still leaves nothing. The File delivery
+card on the Music page shows the counts and the last outcomes.
+
+**Deliberately not done here**: the bridge's media sends and the recital's chapter images do
+not book watches yet - the seam is generic and they should; recorded in the backlog. And the
+205 themselves stay stuck until retried or expired: what to do with them is the operator's
+call once the analysis says what they are.
+
 ---
 
 ### D-223 - A play that does not play says so, and nothing it sends reads as success

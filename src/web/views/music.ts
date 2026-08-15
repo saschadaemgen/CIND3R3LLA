@@ -56,6 +56,7 @@ import {
 import { enqueueMusicEncode } from '../../queue/jobs/music.js';
 import { ENCODE_VERSION } from '../../media/encode.js';
 import { musicDiagnostics } from '../../plugins/music/music-log.js';
+import { fileDeliveryCard } from './file-delivery-card.js';
 import { MUSIC_ID, MUSIC_UPLOADS_ID } from '../../plugins/music/plugin.js';
 import {
   describePluginScopes,
@@ -579,6 +580,8 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
               the switch lives under Interaction, Archiving.
             </p>`,
           )}
+
+          ${fileDeliveryCard()}
         `,
       });
     },

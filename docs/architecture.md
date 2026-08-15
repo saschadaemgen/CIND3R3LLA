@@ -4014,7 +4014,11 @@ group; no model anywhere), `music-log.ts` (the skip counters the console shows).
 **The seams it rides.** `media/encode.ts` wraps the pinned ffmpeg-static: audio byte-copied,
 `-tune stillimage`, faststart, odd dimensions CROPPED - `verify:music-encode` measures
 241 -> 240 against the real binary, settling the Stage-0 record's self-contradiction (1c23e55
-argued crop and reported a pad-shaped number). `bot/music-port.ts` is the transport
+argued crop and reported a pad-shaped number). Every file-bearing music send books a
+`files.watch` delivery check (D-224: the command returning is not the file arriving; a file
+stuck in the core's `new` state fires no event, so the item's own fileStatus is read back
+minutes later through `runtime.readGroupItemsAsOwner`, and a file that never started
+uploading is a dashboard error, not a hand query). `bot/music-port.ts` is the transport
 (recital-port pattern; `MsgContent.Video {text, image, duration}` and `MsgContent.Voice
 {text: "", duration}`, with the D-214 two-step degrade). `music.tick` is the bridge's
 self-chaining minute-bucket job. The MUSIC intent enters the catalog per bot through

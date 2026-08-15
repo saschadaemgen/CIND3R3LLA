@@ -62,6 +62,7 @@ import { resolveAssetPath } from '../../media/assets.js';
 import { avatarFault, decideFaces } from './faces.js';
 import { findRenameOnBoot, renameRefusal } from './naming.js';
 import { FileReceiver } from '../files.js';
+import { recordFileDelivery } from '../file-log.js';
 import { makeWelcomeTransport } from '../welcome-transport.js';
 import { setWelcomeTransports, type WelcomeTransport } from '../welcome-port.js';
 import {
@@ -313,6 +314,40 @@ export async function startRuntimeHost(
     // rcvFileWarning is transient (the XFTP agent keeps retrying) — do NOT treat it
     // as terminal, or media that later completes would be dropped.
     events.on('rcvFileWarning', (ev) => fileReceiver.handleWarning(ev));
+
+    // ── OUTBOUND file lifecycle (D-224): what the agent can say, it says here.
+    // A file stuck in `new` says NOTHING - that absence is the files.watch
+    // job's business - but errors and completions must not be dropped by the
+    // router while the watcher waits.
+    events.on('sndFileCompleteXFTP', (ev) => {
+      const itemId = ev.chatItem?.chatItem?.meta?.itemId;
+      recordFileDelivery(
+        {
+          botProfileId: config.botProfileId ?? null,
+          groupId: null,
+          itemId: typeof itemId === 'number' ? itemId : null,
+          label: ev.fileTransferMeta?.fileName ?? '(file)',
+          outcome: 'complete',
+          detail: 'reported by the agent',
+        },
+        new Date(),
+      );
+    });
+    events.on('sndFileError', (ev) => {
+      const name = ev.fileTransferMeta?.fileName ?? '(file)';
+      recordFileDelivery(
+        { botProfileId: config.botProfileId ?? null, groupId: null, itemId: null, label: name, outcome: 'send-error', detail: ev.errorMessage ?? '' },
+        new Date(),
+      );
+      status.error(`An outbound file failed in transfer ("${name}"): ${ev.errorMessage ?? 'no detail'}`);
+    });
+    events.on('sndFileWarning', (ev) => {
+      // Transient by the same reasoning as rcvFileWarning: counted, not alarmed.
+      recordFileDelivery(
+        { botProfileId: config.botProfileId ?? null, groupId: null, itemId: null, label: ev.fileTransferMeta?.fileName ?? '(file)', outcome: 'send-warning', detail: ev.errorMessage ?? '' },
+        new Date(),
+      );
+    });
 
     // ── WHICH EVENT ANNOUNCES A NEW MEMBER? OBSERVED, NOT ASSUMED (CCB-S5-041) ──
     //
