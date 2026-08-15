@@ -253,7 +253,13 @@ async function main(): Promise<void> {
     (await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_tracks`)).rows[0]?.n === tracksBefore);
   const leftovers = await stat(join(ROOT, '.playback-tmp')).catch(() => null);
   const tmpEntries = leftovers === null ? [] : await (await import('node:fs/promises')).readdir(join(ROOT, '.playback-tmp'));
-  check('and the temp bytes are gone', tmpEntries.length === 0, tmpEntries.join(', '));
+  // D-224 changed this contract deliberately: the core uploads AFTER the
+  // send command returns, from the path it was given, so a SENT playback
+  // keeps its bytes (the tick sweeps the spool after a day - proven in
+  // verify:music). Gone-too-early was the very mechanism that stranded 205
+  // outbound files in the core's 'new' state.
+  check('and the SENT bytes outlive the command, for the async upload (D-224)',
+    tmpEntries.length === 2, tmpEntries.join(', '));
 
   console.log('\n6. The upload route answers BEFORE the encode runs (the 504 lesson)');
   //
