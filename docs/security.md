@@ -1703,10 +1703,14 @@ list replies (playlists, tracks) are LOCKED: the model writes a bounded opening 
 application appends the list unchanged.
 
 **Part 4b is an allow-list with its own switch.** A member handing her a file to re-send is a
-small abuse surface, so: audio extensions only (stated in the refusal), the deployment size
-bound, a separate per-bot plugin id (`music-uploads`) off by default, and the bytes are the
-CAPTURED file read back through `media/at-rest.ts` - no new transfer machinery, no second
-copy, played without being stored, temp bytes removed in `finally`. The unknown-track reply
+small abuse surface, so: MP3 ONLY since the activation decision (D-219), and the allow-list
+has TWO sides - the `.mp3` extension at the gate, and the magic bytes (an ID3 opening or an
+MPEG frame sync) on what was read, because a name is a claim and the first bytes are the
+fact. The deployment size bound defaults to 10 MB, and the refusal line reads the LIVE bound
+at answer time, so the operator raising it cannot stale her words. A separate per-bot plugin
+id (`music-uploads`) stays off by default, and the bytes are the CAPTURED file read back
+through `media/at-rest.ts` - no new transfer machinery, no second copy, played without being
+stored, temp bytes removed in `finally`. The unknown-track reply
 deliberately echoes no member text (the searchResult lesson: an echoed phrase becomes
 publishable the day its category is switched on).
 

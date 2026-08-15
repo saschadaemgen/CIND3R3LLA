@@ -546,7 +546,7 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                 ${labelled(
                   'Largest member upload she plays back (bytes)',
                   html`<input type="number" name="memberUploadMaxBytes" value="${String(settings.memberUploadMaxBytes)}" min="65536" max="1073741824" class="${INPUT_CLS}" />`,
-                  `She only re-sends audio (${MEMBER_UPLOAD_EXTENSIONS.join(', ')}), plays it back without keeping it, and the per-bot switch lives on the Plugins page.`,
+                  `She only re-sends ${MEMBER_UPLOAD_EXTENSIONS.join(', ')} files, checked by name AND by first bytes, plays them back without keeping them, and the per-bot switch lives on the Plugins page.`,
                 )}
                 <div class="flex items-end">
                   <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">Save</button>

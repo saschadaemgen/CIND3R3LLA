@@ -388,6 +388,7 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       });
       return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
     },
+    uploadLimitBytes: () => plugins.musicSettings().memberUploadMaxBytes,
     playUpload: async (groupId: number, senderMemberId: string) => {
       if (!deps.uploadsEnabledFor(botProfileId)) return 'off' as const;
       const file = await latestMemberAudio(deps.db, groupId, senderMemberId);

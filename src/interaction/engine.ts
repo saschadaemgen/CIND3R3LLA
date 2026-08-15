@@ -162,6 +162,8 @@ export interface MusicOps {
     groupId: number,
     senderMemberId: string,
   ): Promise<'sent' | 'busy' | 'not-audio' | 'too-large' | 'no-file' | 'off' | 'unavailable'>;
+  /** The live upload bound, so the too-large line states the truth of today. */
+  uploadLimitBytes(): number;
 }
 
 /**
@@ -2489,6 +2491,9 @@ export class InteractionEngine {
     // 4b first: "make it playable" must not read as a title.
     if (/(playable|abspielbar)/.test(text)) {
       const outcome = await music.playUpload(msg.groupId, msg.senderMemberId);
+      // The bound in her refusal is read LIVE, so the operator raising it on
+      // the console can never make the line stale (the D-162 copy-truth class).
+      const limitMb = `${String(Math.round(music.uploadLimitBytes() / (1024 * 1024)))} MB`;
       const key =
         outcome === 'sent'
           ? null
@@ -2503,7 +2508,9 @@ export class InteractionEngine {
                   : outcome === 'off'
                     ? 'musicUploadOff'
                     : 'musicUnavailable';
-      if (key !== null) await this.reply(msg, s, lang, key, {});
+      if (key !== null) {
+        await this.reply(msg, s, lang, key, key === 'musicUploadTooLarge' ? { limit: limitMb } : {});
+      }
       return true;
     }
 

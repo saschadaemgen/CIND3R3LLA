@@ -323,8 +323,17 @@ export async function playMemberUpload(
   inFlight.add(groupId);
   try {
     await mkdir(tmpDir, { recursive: true });
+    const bytes = await readMediaFile(file.mediaPath);
+    // The allow-list's second side: the extension is a CLAIM, the first bytes
+    // are the fact. An MP3 opens with an ID3 tag or an MPEG frame sync, and a
+    // renamed binary opens with neither - it is refused as not-audio rather
+    // than re-sent wearing a player it can never be.
+    const isMp3 =
+      (bytes.length > 3 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) ||
+      (bytes.length > 2 && bytes[0] === 0xff && ((bytes[1] ?? 0) & 0xe0) === 0xe0);
+    if (!isMp3) return { ok: false, refusal: 'not-audio', shape: null };
     const plainPath = join(tmpDir, `upload${ext}`);
-    await writeFile(plainPath, await readMediaFile(file.mediaPath));
+    await writeFile(plainPath, bytes);
 
     const tags = await readTags(plainPath);
     const duration = tags.durationSeconds ?? 0;

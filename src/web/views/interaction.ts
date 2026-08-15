@@ -397,8 +397,8 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   musicUnknownTrack: { label: 'Music: asked to play a title she does not hold (names no title on purpose)', vars: '' },
   musicBusy: { label: 'Music: asked while a send is still on its way to this room', vars: '' },
   musicUnavailable: { label: 'Music: the library or the transport is unreachable', vars: '' },
-  musicUploadNotAudio: { label: 'Member upload: refused, not on the audio allow-list', vars: '' },
-  musicUploadTooLarge: { label: 'Member upload: refused, over the size bound', vars: '' },
+  musicUploadNotAudio: { label: 'Member upload: refused, not an MP3 (the allow-list, both sides)', vars: '' },
+  musicUploadTooLarge: { label: 'Member upload: refused, over the size bound (the live bound, so raising it cannot stale the line)', vars: '{limit}' },
   musicUploadNoFile: { label: 'Member upload: asked to play back with no file of theirs in sight', vars: '' },
   musicUploadOff: { label: 'Member upload: the capability is off for this bot', vars: '' },
   moderationAction: {

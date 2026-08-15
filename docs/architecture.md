@@ -3997,7 +3997,7 @@ plugin) and D-217 (the profile shape); this section is the map.
 
 **The tree.** `plugins/music/`: `settings.ts` (the deployment bounds: two SEPARATE unbidden
 budgets - music and spots, 3/day/room, 60-minute gap, his numbers - and the member-upload
-bound), `plugin.ts` (TWO ids: `music` carries the MUSIC intent; `music-uploads` is Part
+bound: MP3 only, 10 MB default since the D-219 activation), `plugin.ts` (TWO ids: `music` carries the MUSIC intent; `music-uploads` is Part
 4b's own risk surface, off by default), `store.ts` (migration 063's tables and every derived
 aggregate: the DJ sheet, the budgets, shuffle-without-replacement as a query, the
 assignment-scoped title search that IS the playlist boundary), `library.ts` (files under

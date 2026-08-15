@@ -492,7 +492,7 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     scope: 'per-bot',
     label: 'Member uploads played back',
     reason:
-      "Whether THIS bot re-sends a member's own audio as a player (Part 4b). A member-driven fetch-and-resend is its own risk surface, so it is its own switch, off by default.",
+      "Whether THIS bot re-sends a member's own MP3 as a player (Part 4b). A member-driven fetch-and-resend is its own risk surface, so it is its own switch, off by default.",
   },
   {
     pluginId: CAPTURE_ID,

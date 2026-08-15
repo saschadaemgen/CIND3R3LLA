@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 217 decisions</strong> — newest first. Highest allocated: <strong>D-218</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 218 decisions</strong> — newest first. Highest allocated: <strong>D-219</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-219 | Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound | IMPLEMENTED |
 | D-218 | She knows her own player, a list is numbered, and only an explicit play plays | IMPLEMENTED |
 | D-217 | A profile is categories over registered sources, and the music plugin goes first | SHAPE IMPLEMENTED AND ENFORCED; the profile itself is PLANNED |
 | D-216 | The cover decides the shape, a playlist is a boundary, and the cadence is the bridge's | IMPLEMENTED, DEMONSTRATED |
@@ -248,6 +249,32 @@ This has gone wrong twice.
 ---
 ---
 
+### D-219 - Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound
+
+**Status: IMPLEMENTED** (CCB-S5-044, activation). The operator's activation decision narrowed
+member playback from "audio" to **MP3 only, 10 MB default**: play only, nothing stored,
+nothing published, nothing entering the library - which is WHY no consent is needed - and the
+harness now COUNTS that claim (track, play-row and message-row counts unmoved across a
+successful play, the workspace swept) rather than asserting it from memory.
+
+**The allow-list has two sides**, D-201 read one step further: the extension is a CLAIM and
+the first bytes are the fact. `.mp3` is checked at the gate; the magic bytes (an ID3 opening
+or an MPEG frame sync) are checked on what was READ, after the cheap refusals and before
+anything touches the workspace, so a renamed binary wearing `.mp3` is refused as not-audio
+rather than re-sent wearing a player it can never be. Both doors the sniff holds open have
+positive controls in the harness, because a sniff that refused everything would pass every
+refusal check; and the m4a case is pinned by name - accepted before this activation, refused
+now - so the narrowing cannot silently widen back.
+
+**The refusal says what is accepted, and the size line reads the LIVE bound.** The too-large
+persona line carries `{limit}`, filled at answer time from `uploadLimitBytes()` on the
+engine's music ops, so the operator raising the ceiling on the Music page can never make her
+words stale (the D-162 copy-truth class). The console's own help line derives from
+`MEMBER_UPLOAD_EXTENSIONS` for the same reason. The per-bot switch (`music-uploads`)
+remains off by default; activation changed what she accepts, not who accepts it.
+
+---
+
 ### D-218 - She knows her own player, a list is numbered, and only an explicit play plays
 
 **Status: IMPLEMENTED** (CCB-S5-044 follow-up, from the operator's first real conversation with
@@ -412,7 +439,9 @@ on disk under capture's custody, so "she fetches it" is a decrypting read throug
 stored (the default inherited from the briefing). The allow-list refuses with the reason:
 audio extensions only, the deployment size bound, and its own per-bot switch
 (`music-uploads`), off by default, because a member-driven fetch-and-resend is its own risk
-surface. NO model anywhere on the play path, asserted structurally - content that plays into a
+surface. (As built; the activation decision narrowed this to MP3 only with a 10 MB default
+and added the magic-byte side of the allow-list - D-219.) NO model anywhere on the play
+path, asserted structurally - content that plays into a
 group on a timer must not be a place an injection can steer.
 
 **6. TWO PIECES OF HOUSE MACHINERY EARNED THEIR KEEP DURING THE BUILD.** The D-184 byte trap

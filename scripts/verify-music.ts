@@ -20,9 +20,13 @@
  *  5. THE PROFILE FENCE (D-217): every play row has member_id NULL, the plays
  *     table is registered in the member-data registry under 'music'/profile,
  *     and no per-member aggregate is stored anywhere in migration 063.
- *  6. Part 4b's refusals are an allow-list with the reason: wrong type, too
- *     large, no file, capability off - each its own honest line, and nothing
- *     is ever stored.
+ *  6. Part 4b is play-only and MP3-only, and the allow-list has TWO sides:
+ *     the extension refuses an m4a that was accepted before this activation,
+ *     the MAGIC BYTES refuse a renamed binary wearing .mp3, and both real
+ *     openings (ID3 tag, frame sync) play. Too large, no file and capability
+ *     off each get their own honest line - the size line carrying the LIVE
+ *     bound - and a successful play stores NOTHING: no track, no play row,
+ *     no archived message, and the workspace is swept.
  *  7. NO MODEL on the play path, asserted structurally.
  *
  * Every negative has a positive control: "bot B cannot play it" passes against
@@ -210,6 +214,7 @@ async function main(): Promise<void> {
   await setPlaylistTracks(db, rickList, [rickOnly]);
   await assignPlaylist(db, RICK, rickList);
 
+  let uploadOutcome: 'off' | 'too-large' = 'off';
   const musicOpsFor = (botId: number) => ({
     view: () => botMusicView(deps, botId),
     tracksOf: async (name: string) => {
@@ -256,7 +261,8 @@ async function main(): Promise<void> {
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
-    playUpload: async () => 'off' as const,
+    playUpload: async () => uploadOutcome,
+    uploadLimitBytes: () => musicSettings.memberUploadMaxBytes,
   });
 
   const catalog: Intent[] = capabilityCatalog(['MUSIC']);
@@ -424,6 +430,17 @@ async function main(): Promise<void> {
   check('4b through the engine while OFF: the honest off line',
     replies.length === 1 && (replies[0] ?? '').includes('switched off'), replies[0] ?? '(none)');
 
+  // The too-large line reads the LIVE bound, so the operator raising the
+  // ceiling on the console can never make her words stale.
+  replies.length = 0;
+  uploadOutcome = 'too-large';
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA make it playable'));
+  const liveBound = `${String(Math.round(musicSettings.memberUploadMaxBytes / (1024 * 1024)))} MB`;
+  check('4b through the engine when TOO LARGE: the refusal carries the LIVE bound',
+    replies.length === 1 && (replies[0] ?? '').includes(liveBound), replies[0] ?? '(none)');
+  uploadOutcome = 'off';
+
   /* ══ 4. The cadence and the budgets ══════════════════════════════════════ */
 
   console.log('\n4. The cadence, and the operator\'s budgets');
@@ -546,7 +563,11 @@ async function main(): Promise<void> {
 
   /* ══ 6. Part 4b's refusals ═══════════════════════════════════════════════ */
 
-  console.log("\n6. A member's upload: the allow-list refuses with the reason");
+  console.log("\n6. A member's upload: MP3 only, played and never kept");
+  calls.length = 0;
+  const preTracks = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_tracks`)).rows[0]?.n);
+  const prePlays = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_track_plays`)).rows[0]?.n);
+  const preMessages = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM messages`)).rows[0]?.n);
   uploadsOn = false;
   let up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: '/m/a.mp3', mime: 'audio/mpeg', size: 1000, name: 'a.mp3' });
   check('capability off: refused as off', !up.ok && up.refusal === 'capability-off');
@@ -554,11 +575,50 @@ async function main(): Promise<void> {
   up = await playMemberUpload(deps, DJ, GROUP, null);
   check('no file in sight: refused as no-file', !up.ok && up.refusal === 'no-file');
   up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: '/m/a.exe', mime: 'application/x-msdownload', size: 1000, name: 'a.exe' });
-  check('not audio: refused by the allow-list', !up.ok && up.refusal === 'not-audio');
+  check('a binary: refused by the extension side of the allow-list', !up.ok && up.refusal === 'not-audio');
+  up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: '/m/a.m4a', mime: 'audio/mp4', size: 1000, name: 'a.m4a' });
+  check('MP3 ONLY: an m4a, accepted before this activation, is refused now', !up.ok && up.refusal === 'not-audio');
   up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: '/m/a.mp3', mime: 'audio/mpeg', size: musicSettings.memberUploadMaxBytes + 1, name: 'a.mp3' });
   check('too large: refused by the bound', !up.ok && up.refusal === 'too-large');
-  check('POSITIVE CONTROL: every refusal above sent nothing and stored nothing',
-    Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_tracks`)).rows[0]?.n) === 4);
+
+  // The allow-list's SECOND side: the extension is a claim, the bytes decide.
+  // These fixtures are real files because the sniff runs on what was READ,
+  // after the cheap refusals and before anything touches the workspace.
+  const { readdir: readdirF } = await import('node:fs/promises');
+  const fixDir = `${root}/.upload-fixtures`;
+  await mkdirF(fixDir, { recursive: true });
+  await writeF(`${fixDir}/renamed.mp3`, Buffer.concat([Buffer.from([0x4d, 0x5a, 0x90, 0x00]), Buffer.alloc(60, 0x00)]));
+  up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: `${fixDir}/renamed.mp3`, mime: 'audio/mpeg', size: 64, name: 'renamed.mp3' });
+  check('a renamed binary wearing .mp3: refused by the MAGIC BYTES', !up.ok && up.refusal === 'not-audio', JSON.stringify(up));
+  check('every refusal above sent nothing', calls.length === 0, JSON.stringify(calls));
+
+  // POSITIVE CONTROLS, one per door the sniff holds open: an ID3 opening and
+  // a bare frame sync. Without these, a sniff that refused EVERYTHING would
+  // pass every refusal check above.
+  await writeF(`${fixDir}/tagged.mp3`, Buffer.concat([Buffer.from('ID3'), Buffer.from([3, 0, 0, 0, 0, 0, 0]), Buffer.alloc(64, 0x55)]));
+  up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: `${fixDir}/tagged.mp3`, mime: 'audio/mpeg', size: 74, name: 'tagged.mp3' });
+  check('an MP3 opening with an ID3 tag plays', up.ok && up.shape === 'voice', JSON.stringify(up));
+  await writeF(`${fixDir}/plain.mp3`, Buffer.concat([Buffer.from([0xff, 0xfb]), Buffer.alloc(64, 0x55)]));
+  up = await playMemberUpload(deps, DJ, GROUP, { mediaPath: `${fixDir}/plain.mp3`, mime: 'audio/mpeg', size: 66, name: 'plain.mp3' });
+  check('an MP3 opening on a frame sync plays', up.ok && up.shape === 'voice', JSON.stringify(up));
+  check('  both as the bare voice player, nothing else sent',
+    calls.length === 2 && calls.every((c) => c.kind === 'voice'), JSON.stringify(calls));
+
+  // Play only. NOTHING is stored, published or archived - which is WHY no
+  // consent is needed - and the claim is counted, not asserted from memory.
+  const postTracks = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_tracks`)).rows[0]?.n);
+  const postPlays = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_track_plays`)).rows[0]?.n);
+  const postMessages = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM messages`)).rows[0]?.n);
+  check('nothing entered the library: the track count did not move', postTracks === preTracks, `${String(preTracks)} -> ${String(postTracks)}`);
+  check('nothing was recorded: no play row a future profile could ever read', postPlays === prePlays, `${String(prePlays)} -> ${String(postPlays)}`);
+  check('nothing was archived: no message row, so nothing can ever publish', postMessages === preMessages, `${String(preMessages)} -> ${String(postMessages)}`);
+  const leftovers = await readdirF(`${root}/.playback-tmp`).catch(() => [] as string[]);
+  check('the playback workspace is swept after every send', leftovers.length === 0, JSON.stringify(leftovers));
+  const uploadFn = readFileSync('src/plugins/music/service.ts', 'utf8')
+    .split('export async function playMemberUpload')[1]
+    ?.split('\nexport ')[0] ?? '';
+  check('structurally: the upload path calls no store, no archive, no play recorder',
+    uploadFn.length > 0 && !/archiveOwnSend|recordPlay|insertTrack|INSERT INTO/i.test(uploadFn));
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

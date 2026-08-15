@@ -40,33 +40,25 @@ export const MUSIC_DEFAULTS: Readonly<MusicSettings> = Object.freeze({
   musicGapMinutes: 60,
   spotDailyCap: 3,
   spotGapMinutes: 60,
-  // The bridge's re-host bound, for the same reason at the same magnitude: it
-  // covers any real track and caps what a member can make her carry.
-  memberUploadMaxBytes: 25 * 1024 * 1024,
+  // The operator's activation ceiling: 10 MB covers any real MP3 a member
+  // would reasonably ask her to play back, and caps what one member can make
+  // her carry. Raisable on the Music page; the refusal line reads the LIVE
+  // bound, so raising it cannot make her words stale.
+  memberUploadMaxBytes: 10 * 1024 * 1024,
 });
 
 /**
- * What she accepts from a member to play back (Part 4b). AUDIO ONLY, by
- * declared type AND by extension, both sides of the same allow-list: the
- * refusal names the rule so a member knows it is a policy, not a fault.
- * Video is deliberately absent here: a member video is not "make this
- * playable", it is re-hosting arbitrary footage, and that is not this feature.
+ * What she accepts from a member to play back (Part 4b, narrowed by the
+ * operator's activation decision): MP3 ONLY, and the allow-list has two sides -
+ * the extension here, and the MAGIC BYTES in the service, because a name is a
+ * claim and the first bytes are the fact. The refusal names what is accepted,
+ * so a member knows it is a policy, not a fault. Video and every other audio
+ * container are deliberately absent: this feature is "make my MP3 playable",
+ * not a transcoding service.
  */
-export const MEMBER_UPLOAD_MIMES: readonly string[] = Object.freeze([
-  'audio/mpeg',
-  'audio/mp4',
-  'audio/m4a',
-  'audio/x-m4a',
-  'audio/ogg',
-  'audio/flac',
-  'audio/x-flac',
-  'audio/wav',
-  'audio/x-wav',
-]);
+export const MEMBER_UPLOAD_MIMES: readonly string[] = Object.freeze(['audio/mpeg']);
 
-export const MEMBER_UPLOAD_EXTENSIONS: readonly string[] = Object.freeze([
-  '.mp3', '.m4a', '.aac', '.ogg', '.opus', '.flac', '.wav',
-]);
+export const MEMBER_UPLOAD_EXTENSIONS: readonly string[] = Object.freeze(['.mp3']);
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
   const parsed =
