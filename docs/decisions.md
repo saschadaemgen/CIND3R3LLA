@@ -18,11 +18,16 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 209 decisions</strong> — newest first. Highest allocated: <strong>D-215</strong>. Not allocated: D-108, D-210, D-211, D-212, D-213, D-214. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 214 decisions</strong> — newest first. Highest allocated: <strong>D-215</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
 | D-215 | Announcements are public per channel, and the origin belongs on the record | IMPLEMENTED, DEMONSTRATED |
+| D-214 | A bridged image is sent AS an image, and it degrades to the attachment rather than to nothing | IMPLEMENTED |
+| D-213 | The picker states the scope, and every view declares what kind of page it is | PARTIALLY IMPLEMENTED |
+| D-212 | Before a page is reported done: open it, screenshot it, and look at it | IMPLEMENTED |
+| D-211 | A per-bot page edits the bot the sidebar selected, and names it in words | IMPLEMENTED |
+| D-210 | The words are read fresh, and a write that changed nothing says so | IMPLEMENTED |
 | D-209 | What she says she is, and three identifiers that look alike | IMPLEMENTED |
 | D-208 | A bot that cannot greet must not claim the right to greet | IMPLEMENTED |
 | D-207 | A registration that cannot fail proves nothing, and an empty set is not a result | IMPLEMENTED |
@@ -253,7 +258,12 @@ and their entries never landed in this file, so the generated index states the h
 allocated number as D-209 and is wrong. This entry therefore skips five numbers deliberately
 rather than reusing one, which is the allocation failure this file already records happening
 twice. The missing entries are a real gap and were not this briefing's to write; what mattered
-here was not making it worse.
+here was not making it worse. **UPDATE, 2026-08-15:** the five entries were written, reconstructed
+from the code and the delivering commits, in the session following this one. Two of the five
+gaps have a recoverable cause: `06bb6c2` and `ceaba13` each end by deferring their entry to a
+follow-up ("D-210 to follow with the layout", "D-214 to follow with stage 1") and neither
+follow-up ever landed. An entry deferred to travel with a follow-up does not exist when the
+follow-up dies; the entry belongs in the commit that spends the number.
 
 **1. THE ORIGIN MOVED ONTO THE ARCHIVED RECORD, AND IT HAD TO GO FIRST.** The structured origin
 lived only on `cinderella_bridge_forwards`, which is operational state with its own lifecycle:
@@ -351,6 +361,226 @@ replaced by `TRUE`, which makes an unpublished channel's post publicly readable;
 with positive controls in both directions; anonymisation's four exits with the post's words
 intact; and the console's routes pressed with the effect read back out of the database. The whole
 offline set of 82 checks is green.
+
+---
+
+### D-214 - A bridged image is sent AS an image, and it degrades to the attachment rather than to nothing
+
+**Status: IMPLEMENTED** (CCB-S5-042; bridge-media metadata stripping deliberately deferred, see below).
+**RECONSTRUCTED 2026-08-15.** This number was spent by `ceaba13`, `7f6ed82` and `1c23e55` and the entry was
+never written; the cause is in the first delivering commit itself, which ends "Decision D-214 to follow
+with stage 1" - and stage 1 never landed, so the entry died with it. Found at CCB-S5-043
+close-out (D-215's note), written afterwards from the comment blocks and commit messages that
+cite it, which were written at delivery time and are the surviving record.
+
+**1. THE CONTENT TYPE DECIDES THE RENDERING.** Since the bridge shipped (CCB-S5-032), every
+bridged channel picture arrived as an attachment the reader had to fetch and open, because
+`bridge-port.sendFile` sent `MsgContent.File` for everything - while the intake had stored
+`media_mime` all along and nothing read it: the fact existed, unread, one field away. Now `(mime ?? '').startsWith('image/')` selects `MsgContent.Image` with the caption and a
+preview; anything else keeps the attachment. The same rule was already true elsewhere in the tree
+(`send.ts`, `recital-port.ts` both send images as images), and it was proven the D-209 way: sent
+from the bot's own path and WATCHED arriving as a picture, not inferred from the types.
+
+**2. THE PREVIEW, AND WHY ITS FAILURE MUST COST NOTHING.** The client draws the embedded preview
+BEFORE the file is fetched, and fetches only on first press, so an image without one renders as
+nothing worth pressing. The first build blew the message envelope (`largeMsg`) and its single
+fallback dropped the picture entirely - worse than the attachment it replaced. So `7f6ed82`
+bounded it on the avatar's own ladder and set the rule: a new branch's failure must cost no more
+than the branch added. `1c23e55` then gave the preview its own shape: `buildCoverPreview`
+(avatar.ts) descends the avatar's own SIZES x QUALITIES ladder under the
+shared 12,000-character budget but with `fit: 'inside'`, because cropping a 720x1319 sleeve to a
+square ate the top and the bottom; it is deliberately its OWN function rather than a flag on
+`buildAvatarDataUri` ("how do I fill a circle" and "how do I show this whole picture small" are
+different questions, and a mode flag is how the next caller gets the wrong default); and it
+returns null rather than a smallest-anyway attempt, since an oversized preview fails the whole
+send. The send then degrades in two steps - image, then plain file, then caption alone - each
+step logged.
+
+**3. TRAILING BLANK LINES ARE NOT CONTENT.** A channel post ending in newlines rendered as a gap
+between caption and image; `renderAnnouncement` applies `trimEnd()` to what it emits. This does
+not weaken the verbatim guarantee: nothing visible changes, and internal line breaks survive.
+
+**4. WHAT WAS DEFERRED, BY NAME.** The picture reaches the GROUP and not the public archive:
+`insertBotMessage` writes no media columns and bridge media has no stripped derivative, so
+publishing it means extending the metadata stripping that protects every other published image -
+a safety guarantee, not plumbing. CCB-S5-043 states it on the Bridge console ("Text only, for
+now") and in architecture §54. It remains open work.
+
+**Verification.** `verify:bridge`'s content-type section: the image branch, the MIME source, a
+static MUTATION assertion that the unconditional `file` pattern is absent from the source, and a
+positive control that a non-image stays a file - written because the suite was green for the
+defect's whole life, since it asserts what the bridge DECIDES and never what content type it
+SENDS. The rendering itself was proven on the host, on the
+operator's own files and his own eyes, which per D-209 is the only instrument that answers it.
+
+---
+
+### D-213 - The picker states the scope, and every view declares what kind of page it is
+
+**Status: PARTIALLY IMPLEMENTED** (CCB-S5-041): the scope-stating picker and the single shared
+scope panel are built; the view-kind declarations and the data-page "whose data is shown"
+question are recorded design in `docs/feature-backlog.md`, not code.
+**RECONSTRUCTED 2026-08-15.** No commit message names D-213; the number lives only in code
+comments (`web/html.ts` twice, `views/ui.ts`, `views/interaction.ts`, `views/bridge.ts`) and in
+D-215's note, and its implementation landed inside `ceaba13` - a CCB-S5-042 image
+commit - while the design record is `f3998ce`. When and by what reasoning the number was
+allocated is not recoverable from the tree; what it MEANS is, and is below. Found at CCB-S5-043
+close-out (D-215's note).
+
+**1. THE SWITCHER STATES THE SCOPE, STRUCTURALLY.** D-211 fixed the words beside the control;
+this is the successor that stops relying on words. `BotSwitcher` carries
+`scope?: 'per-bot' | 'shared' | 'mixed'` (absent means per-bot, which every existing caller is).
+A page that declares shared or mixed gets an "All bots (shared settings)" entry ABOVE the bots;
+on a shared page it is preselected and the bot entries are disabled - **visible and disabled,
+never hidden, and the dropdown still opens**, because a control that will not open does not say
+why, and that is a silent control again (D-162). Selecting a bot on a shared page would promise
+something the page cannot do, so it cannot be selected; seeing that it exists and is not the
+thing being edited is exactly the information the operator was missing.
+
+**2. ONE SCOPE SURFACE, NOT ONE PER PAGE.** The "What this page changes" panel became a shared
+component under CCB-S5-043: `scopePanel` moved from `views/interaction.ts` to `views/ui.ts`,
+gained the third answer `other` (per-CHANNEL publication is neither per-bot nor deployment-wide),
+and `bridge.ts` renders that same surface rather than inventing a second one. The operator has
+learned to read one shape; two would drift.
+
+**3. THE QUESTION MOST VIEWS CANNOT ANSWER, REFRAMED.** `verify:scope-copy` found twelve of
+twenty-two views UNCLASSIFIABLE as per-bot or shared - because they are not settings pages.
+"Per-bot or shared?" is a settings page's question; a data page owes "whose data is shown", an
+infrastructure page owes neither. The recorded design gives every view a declared kind
+(settings / data / infrastructure / overview / access); that half is *unbuilt*, and this entry
+says so rather than presenting the plan as the product.
+
+**Verification.** The copy half by `verify:scope-copy` (derived from each view's own calls,
+UNCLASSIFIABLE reported rather than guessed); the panel lift by `verify:channel-publication`,
+which asserts the Bridge page renders the shared surface. The shared/mixed picker branch and its
+disabled states have NO dedicated offline check and no recorded operation in the tree - a
+D-162-class limitation, named here rather than implied away.
+
+---
+
+### D-212 - Before a page is reported done: open it, screenshot it, and look at it
+
+**Status: IMPLEMENTED** as a standing rule (CLAUDE.md) plus one mechanical arm
+(`verify:scope-copy`); the three copy defects the sweep found at delivery are STILL OPEN, see
+below.
+**RECONSTRUCTED 2026-08-15.** Spent by `4c6e8c7` with no entry ever written; no cause is
+recoverable. Found at CCB-S5-043 close-out (D-215's note). The rule's own full text is in
+CLAUDE.md, which is the operative copy; this entry is the register's pointer to it and the
+record of why it exists.
+
+**1. THE GAP BETWEEN D-178 AND D-199.** Three presentable-quality defects shipped in one week -
+mislabelled, unaligned, unusable - all green on every check, all found by the operator opening a
+page. D-178 (operate the control) held: controls were being operated. D-199 (demonstrate before
+push) held: behaviour was demonstrated. Neither asks whether the page is PRESENTABLE or whether
+its copy is TRUE, and every check in this repository asserts behaviour, which is not what the
+operator sees first. The sharpest case: `/welcome`'s scope statement was false while the control
+it described worked perfectly, and the operator set one bot's greeting believing it was shared.
+
+**2. THE RULE, AND ITS ONE-QUESTION TEST.** Before a page is reported done: open it, screenshot
+it, LOOK at it, and answer honestly - would you show this page to a customer? Read what the page
+SAYS, not only what it does. And look at the page the operator will get, rebuilt and reloaded,
+never a stale preview: the rule failed exactly there on its first use, when the preview served
+the build from before the fix and "I looked" would have been false in a way that feels true.
+CLAUDE.md also carries HOW to look (headless Chrome, persistent profile, `/preview-login`,
+build first, window taller than the page), because a rule requiring a look is worth nothing if
+the next session cannot work out how.
+
+**3. THE MECHANICAL ARM.** `verify:scope-copy` sweeps every view under `src/web/views` that
+renders a `page()` (22 at delivery; a view without one is not swept) and DERIVES its scope from
+the calls it makes - a per-bot marker list and a shared marker list, both = MIXED, neither =
+UNCLASSIFIABLE, reported rather than guessed - then checks the copy says what the derivation
+found. It is one
+narrow arm, not the rule: appearance cannot be asserted, so the rule is a procedure and the sweep
+guards the one half that can be computed.
+
+**4. WHAT THE SWEEP FOUND AND NOBODY FIXED.** At delivery it reported copy defects in `ai.ts`,
+`book-of-elii.ts` and `capture.ts`, and no later commit touches them. They are open. This entry
+records that rather than absorbing it, because a register that smooths over its own findings is
+the defect this reconstruction exists to correct.
+
+**Working record.** The rule's first full application is D-215 §7: three false statements on the
+Bridge console, every check green, found by looking.
+
+---
+
+### D-211 - A per-bot page edits the bot the sidebar selected, and names it in words
+
+**Status: IMPLEMENTED** (CCB-S5-041).
+**RECONSTRUCTED 2026-08-15.** Spent by `96b2211`, `2f43bff` and `c84fe65` with no entry ever
+written; no cause is recoverable. Found at CCB-S5-043 close-out (D-215's note).
+
+**1. THE DEFECT HAD THREE INDEPENDENT HALVES.** The operator reported both bots greeting with
+the same text though the setting is per bot. It was not shared text: `/welcome` defaulted its
+selection to `profiles[0]` and ignored both the session and the sidebar switcher, so he was
+shown ONE BOT TWICE and every save went to bot 10 whichever bot he thought he was editing
+(host-confirmed: every welcome override belonged to bot 10 except one, Rick's `enabled`). Compounding it, the page passed no
+`botSwitcher`, so the sidebar claimed "Deployment-wide"; and the copy named no bot, so the
+silence read as "shared". `resolveWelcomeSettings` was correct throughout - only the page was
+wrong - and six verify suites were green through all of it.
+
+**2. THREE FIXES, BECAUSE EACH ALONE LEAVES THE LIE STANDING.** Selection goes through the
+shared `resolveSelectedBot` (URL, then session, then first bot), the path every bot-scoped page
+uses (`96b2211`). The page passes the `botSwitcher` so the picker renders (`2f43bff`). And the
+copy NAMES the bot - "belongs to ${botName} alone" - because honouring the switcher without the
+picker still showed "Deployment-wide", both together still carried words implying no bot, and
+the words win: they are what he is reading while he types (`c84fe65`, which swept the other
+per-bot pages and fixed the identical fault on `bridge.ts`, modelled on `knowledge`).
+
+**3. THE PRINCIPLE.** Operating a control proves it works and proves nothing about whether the
+words beside it are true. Every per-bot page owes a scope sentence that NAMES its bot rather
+than gesturing at one. A control that saves successfully to the wrong place is indistinguishable
+from one that works - the fifth instance that week - and it is found by reading the page, which
+became D-212, and prevented structurally by the picker stating the scope, which became D-213.
+
+**Verification.** `verify:bot-switcher` pins the selection precedence and that a settings page
+edits only the selected bot (it predates this; `/welcome` had simply bypassed the resolver it
+tests). The copy half is guarded by `verify:scope-copy`, added one commit later under D-212.
+
+---
+
+### D-210 - The words are read fresh, and a write that changed nothing says so
+
+**Status: IMPLEMENTED** (CCB-S5-041; the profile-panel layout follow-up it was deferred to wait
+for never landed).
+**RECONSTRUCTED 2026-08-15.** The cause of the missing entry is in the delivering commit itself:
+`06bb6c2` ends "Decision: D-210 to follow with the layout", and the layout never came, so the
+entry died with it. Found at CCB-S5-043 close-out (D-215's note). The lesson for the register is
+in the note under D-215: an entry deferred to travel with a follow-up does not exist when the
+follow-up dies. Write the entry in the commit that spends the number.
+
+**1. FIVE DEFECTS BEHIND TWO SILENT BUTTONS.** Twenty-one minutes after the operator's-own-words
+fields shipped (D-209: `full_name`, `short_descr`, 09:42 that morning; the fix is 10:03), he
+entered a description, pressed both buttons, and neither did anything visible. The apply path read `bot.config` - the snapshot `listBotsToHost` built
+at BOOT - so it wrote the OLD empty words, `profileDiffers` found no difference, and the button
+reported success having written nothing. `profileWritten` existed on the result and nothing read
+it, and it was computed as an IMAGE comparison, so a no-op and a real write produced one banner.
+`SELECT_COLUMNS` never listed the two columns, so the page rendered empty fields over values
+that WERE stored (the type carried them, the row mapping read them, the query never asked). A
+second button rested on the claim that a profile only travels with a message - the operator
+disproved it by reopening the contact: the core propagates a profile change on its own. And the
+wizard's "Welcome message" field collected text nothing ever sent.
+
+**2. THE MECHANISM.** The apply path reads the words FRESH from `cinderella_bot_profiles` at
+apply time - D-205's rule ("a read model refreshed only at boot is stale by construction"),
+walked into with the trap named two lines below for the image. `applyProfileUpdate` returns what
+the write ITSELF reported, and the console renders three distinct outcomes: stored-runtime-down,
+written-live, and **no-change** - the one that used to be indistinguishable from working.
+`SELECT_COLUMNS` gained the columns so the read model matches the write model. And two controls
+were DELETED rather than repaired: the second button (its premise was false, per the D-209
+running-app rule - taking a mechanism's existence as evidence of behaviour nobody watched) and
+the dead wizard field, whose column and stored text were deliberately left, because dropping
+data to tidy a form is the destructive half of a cosmetic fix.
+
+**3. WHY THE BANNER'S TRUTH COMES FROM THE WRITE.** An image comparison answers "did the picture
+change", which is a different question from "did anything reach the profile" the moment the
+profile carries words as well. A path that wrote nothing now says so - because the alternative
+took a query against two databases to distinguish from success, for the third time that week.
+
+**Verification.** Operational, on the host, per D-178 - and honestly: no offline check asserts
+the no-change banner or the boolean, because the harness asserts source text and pure functions
+and was green through the defect's whole life. The fresh-read pattern is pinned where it was
+first learned (the avatar flush, `verify:scheduler-reentry`'s section 3 drives it); the words
+path trusts the same mechanism it now shares.
 
 ---
 

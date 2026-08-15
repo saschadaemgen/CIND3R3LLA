@@ -1030,8 +1030,13 @@ completing the work of any briefing, review the **six** living documents —
 grounded in the actual code. If the change touches nothing documented, state
 **"no documentation change"** explicitly in the completion report — never skip
 silently. New decisions get a `D-<n>` entry with a Status (`IMPLEMENTED` /
-`PLANNED` / `Superseded by D-<n>`). Keep the implemented-vs-planned discipline so
-the docs never present planned work as built.
+`PLANNED` / `Superseded by D-<n>`), **written in the same commit that first spends the
+number - never "to follow"**. Two commits deferred their entries to ride with a follow-up
+("D-210 to follow with the layout", "D-214 to follow with stage 1"), neither follow-up
+landed, and five numbers sat cited in shipped code with no entries for anyone to read until
+the CCB-S5-043 close-out tripped over them; all five were then reconstructed after the fact,
+which is strictly worse than writing them when the reasoning was fresh. Keep the
+implemented-vs-planned discipline so the docs never present planned work as built.
 
 **`docs/planning/` is history, not authority** (D-110). Sixteen documents from the parallel
 planning chats, committed as a dated snapshot under CCB-S4-008. On any divergence the order
