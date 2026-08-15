@@ -125,12 +125,15 @@ async function main(): Promise<void> {
   const RICK = Number(bots.rows[1]?.id);
 
   const calls: PortCall[] = [];
+  let portBoom = false;
   const fakePort: MusicSendPort = {
     async sendVideo(groupId, mp4Path, caption, _cover, duration) {
+      if (portBoom) throw new Error('the transport refused the video');
       calls.push({ kind: 'video', groupId, caption, path: mp4Path, duration });
       return { itemId: 900 + calls.length, sharedMsgId: `s-${String(calls.length)}`, raw: null };
     },
     async sendVoice(groupId, audioPath, duration) {
+      if (portBoom) throw new Error('the transport refused the voice player');
       calls.push({ kind: 'voice', groupId, path: audioPath, duration });
       return { itemId: 900 + calls.length, sharedMsgId: `s-${String(calls.length)}`, raw: null };
     },
@@ -243,13 +246,25 @@ async function main(): Promise<void> {
       if (!(await trackReachableByBot(db, botId, trackId))) return 'unknown' as const;
       const track = await findTrackAnyBot(db, trackId);
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playFromPlaylist: async (groupId: number, name: string) => {
       const track = await nextTrackFromPlaylistForBot(db, botId, groupId, name);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     facts: async () => {
       // Per BOT (D-220), mirroring src/index.ts: the DJ sheet is what SHE
@@ -265,20 +280,38 @@ async function main(): Promise<void> {
       const track = await nextTrackByGenreForBot(db, botId, groupId, genre);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playByTitle: async (groupId: number, title: string) => {
       if (musicBoom) throw new Error('the library exploded');
       const track = await findTrackForBot(db, botId, title);
       if (track === null) return 'unknown' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playByArtist: async (groupId: number, artist: string) => {
       const track = await nextTrackByArtistForBot(db, botId, groupId, artist);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playNext: async (groupId: number) => {
       const last = await lastPlayedInGroup(db, botId, groupId);
@@ -291,7 +324,13 @@ async function main(): Promise<void> {
           : await nextTrackForBot(db, botId, groupId);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     tracksOfGenre: async (genre: string) => {
       const tracks = await tracksByGenreForBot(db, botId, genre);
@@ -302,7 +341,13 @@ async function main(): Promise<void> {
       const track = await nextTrackForBot(db, botId, groupId);
       if (track === null) return 'empty' as const;
       const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
-      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
+      return o.busy
+        ? ('busy' as const)
+        : o.sent
+          ? ('sent' as const)
+          : o.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playUpload: async () => uploadOutcome,
     uploadLimitBytes: () => musicSettings.memberUploadMaxBytes,
@@ -976,6 +1021,32 @@ async function main(): Promise<void> {
   await dj.handle(makeMsg('CIND3R3LLA play cyberpunk'));
   check("'play cyberpunk': the genre rung plays through the squashed match",
     playedTitles().some((t) => t.startsWith('Night City')), JSON.stringify(calls));
+
+  // D-223 (the fourth live test): a play whose SEND fails is a FAILED play.
+  // The member is told in a locked line; no play row is written, because the
+  // budget's basis must be what actually reached the room; and the port's
+  // caption-as-text last resort - the line that READ AS SUCCESS over a play
+  // that never played - is structurally gone.
+  const preFailPlays = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_track_plays`)).rows[0]?.n);
+  portBoom = true;
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Deep Waters'));
+  portBoom = false;
+  check('A FAILED SEND: the member gets the locked failure line, never a caption that reads as success',
+    replies.some((r) => r.includes('the send failed on my way out')), JSON.stringify(replies));
+  const postFailPlays = Number((await db.query<{ n: string }>(`SELECT count(*) AS n FROM cinderella_track_plays`)).rows[0]?.n);
+  check('  and no play row was written: the budgets count what reached the room',
+    postFailPlays === preFailPlays, `${String(preFailPlays)} -> ${String(postFailPlays)}`);
+  const portSrc = readFileSync('src/bot/music-port.ts', 'utf8');
+  check('  structurally: the caption-as-text last resort is gone from the port',
+    !portSrc.includes('sending the title without it') && portSrc.includes('the play FAILED and the lane will say so'));
+  // POSITIVE CONTROL: with the transport healthy again, the same ask plays.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Deep Waters'));
+  check('POSITIVE CONTROL: the same ask plays once the transport is healthy',
+    playedTitles().some((t) => t.startsWith('Deep Waters')), JSON.stringify(calls));
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

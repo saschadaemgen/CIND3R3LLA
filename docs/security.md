@@ -1715,6 +1715,11 @@ stored, temp bytes removed in `finally`. The unknown-track reply
 deliberately echoes no member text (the searchResult lesson: an echoed phrase becomes
 publishable the day its category is switched on).
 
+**A failed send is a failed play** (D-223): the port's caption-as-text last resort is gone,
+total delivery failure reaches the member as a locked failure line and the dashboard as a
+counted fault, and no play row is written for a track that never reached the room - the
+budget's basis is what was actually heard.
+
 **The unbidden budgets are the room's protection**: 3 per room per day with a 60-minute gap,
 separate for music and spots, derived from the plays log per read so they cannot drift, and
 every refused slot is a counted skip with its reason - a bounded cadence that went quiet must

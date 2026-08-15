@@ -31,6 +31,7 @@ import type { T } from '@simplex-chat/types';
 import { buildCoverPreview } from './avatar.js';
 import { describeChatError } from './runtime/chat-error.js';
 import { log } from '../log.js';
+import { status } from '../web/status.js';
 import { readFile } from 'node:fs/promises';
 
 export interface MusicSentMessage {
@@ -103,13 +104,24 @@ export function sdkMusicPort(runtime: MusicRuntimePort): MusicSendPort {
     log.error(
       `music: sending group ${String(groupId)} ${what} failed (${describeChatError(error)}); retrying as a plain attachment.`,
     );
+    status.error(
+      `Music: ${what} for group ${String(groupId)} degraded to a plain attachment: ${describeChatError(error)}`,
+    );
     try {
       return await composedSend(groupId, filePath, { type: 'file', text: caption });
     } catch (fileError) {
+      // D-223: the caption-as-text last resort is deliberately GONE. It sent
+      // a line that read as success over a play that never played - the worst
+      // possible outcome, the operator's words - and the fourth live test got
+      // exactly that line, twice. Total failure now throws; the music lane
+      // catches it and says so in a locked line naming the failure.
       log.error(
-        `music: the attachment retry for group ${String(groupId)} failed too (${describeChatError(fileError)}); sending the title without it.`,
+        `music: the attachment retry for group ${String(groupId)} failed too (${describeChatError(fileError)}); the play FAILED and the lane will say so.`,
       );
-      return firstSent(await runtime.sendGroupTextAsOwner(groupId, caption));
+      status.error(
+        `Music: ${what} for group ${String(groupId)} could not be delivered at all: ${describeChatError(fileError)}`,
+      );
+      throw fileError instanceof Error ? fileError : new Error(describeChatError(fileError));
     }
   };
 

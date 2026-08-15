@@ -355,7 +355,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playFromPlaylist: async (groupId: number, name: string) => {
       // Per-room ADVANCE (D-222): two members asking minutes apart get two
@@ -366,7 +372,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     facts: async () => {
       // Per BOT, not per deployment (D-220): the DJ sheet must describe what
@@ -385,7 +397,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playByTitle: async (groupId: number, title: string) => {
       const track = await findTrackForBot(deps.db, botProfileId, title);
@@ -394,7 +412,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playByArtist: async (groupId: number, artist: string) => {
       const track = await nextTrackByArtistForBot(deps.db, botProfileId, groupId, artist);
@@ -403,7 +427,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     playNext: async (groupId: number) => {
       // What "next" follows (D-222): the room's last play - its genre when it
@@ -422,7 +452,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     tracksOfGenre: async (genre: string) => {
       const tracks = await musicTracksByGenreForBot(deps.db, botProfileId, genre);
@@ -440,7 +476,13 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
         requested: true,
         assignmentId: null,
       });
-      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
+      return out.busy
+        ? ('busy' as const)
+        : out.sent
+          ? ('sent' as const)
+          : out.failed === true
+            ? ('send-failed' as const)
+            : ('unavailable' as const);
     },
     uploadLimitBytes: () => plugins.musicSettings().memberUploadMaxBytes,
     playUpload: async (groupId: number, senderMemberId: string) => {

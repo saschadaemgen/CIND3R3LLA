@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 221 decisions</strong> — newest first. Highest allocated: <strong>D-222</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 222 decisions</strong> — newest first. Highest allocated: <strong>D-223</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-223 | A play that does not play says so, and nothing it sends reads as success | IMPLEMENTED |
 | D-222 | Loud, advancing, and honest about her own holdings | IMPLEMENTED |
 | D-221 | She answers the question that was asked, and the vocabulary is folded once | IMPLEMENTED |
 | D-220 | The words a person uses: the lane, the ladder, and the second level | IMPLEMENTED |
@@ -250,6 +251,43 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-223 - A play that does not play says so, and nothing it sends reads as success
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, the fourth live test). "play was wird
+geschehen" was answered with a decorated title line, twice, identically, and nothing played.
+
+**The forensics first, per the standing order.** The exact sentence driven through the real
+resolver and the real engine: the rule engine claims MUSIC at 0.92 (the 'play' phrase matches
+whatever language the rest of the message is in - patterns of both languages compete, there
+is no language filter), the D-183 bar passes, the ladder's contains-rung absorbs the missing
+question mark ('Was wird geschehen?' CONTAINS 'was wird geschehen'), and the track PLAYS -
+twice, in the current tree. The resolver and the ladder are innocent. The reply he saw was
+not model prose either: it was the track's own CAPTION (title dash artist, with whatever
+decoration the tags carry - the pipes and emojis live in the track row, checkable in the
+admin), and there is exactly one path that emits the caption alone: the port's degrade
+chain, whose LAST resort sent the caption as a plain text message after both the video send
+and the file-attachment retry failed. Deterministic, hence identical twice; invisible,
+because it logged two error lines and told the member nothing. A second candidate cannot be
+ruled out from here: a video message that was DELIVERED whose file transfer then never
+completed client-side, which our side cannot observe. The journal decides between them: the
+degrade chain writes "retrying as a plain attachment" - present means the chain fired,
+absent means the transfer died after a successful send.
+
+**The guarantee, whatever the cause was.** The caption-as-text last resort is GONE from the
+port - structurally, with the harness reading the source - because a line that reads as
+success over a play that never played is the worst possible outcome, the operator's words.
+Total failure now throws; `playTrackToGroup` catches it, writes NO play row (the budgets
+must count what actually reached the room), archives nothing, surfaces the fault to the
+dashboard, and returns a distinct outcome; the member gets a LOCKED line naming the failure:
+"I found it, but the send failed on my way out. It is on record for the operator; ask me
+again in a little while." Every degrade step that still delivers (video to plain file) is
+now COUNTED on the dashboard too, per CCB-S3-023: a fallback that can mask a fault is
+counted, not only logged. Proven end to end with a port that refuses mid-send, the no-play-row
+count, the structural absence of the old resort, and the positive control that the same ask
+plays once the transport is healthy.
+
 ---
 
 ### D-222 - Loud, advancing, and honest about her own holdings

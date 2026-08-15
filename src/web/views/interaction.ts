@@ -402,6 +402,7 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   musicNotHeld: { label: 'Music: a have-ask naming nothing she holds (echo-free on purpose)', vars: '' },
   musicGenreTracks: { label: 'Music: the numbered listing of one genre (locked: the list is application fact)', vars: '{genre} {tracks}' },
   musicNothingToFollow: { label: 'Music: asked for the next one in a room where nothing has played yet', vars: '' },
+  musicSendFailed: { label: 'Music: the track was found and the SEND failed (never a caption that reads as success)', vars: '' },
   musicUploadNotAudio: { label: 'Member upload: refused, not an MP3 (the allow-list, both sides)', vars: '' },
   musicUploadTooLarge: { label: 'Member upload: refused, over the size bound (the live bound, so raising it cannot stale the line)', vars: '{limit}' },
   musicUploadNoFile: { label: 'Member upload: asked to play back with no file of theirs in sight', vars: '' },

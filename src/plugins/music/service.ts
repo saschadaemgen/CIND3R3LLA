@@ -96,6 +96,8 @@ export interface PlayOutcome {
   /** 'video' | 'voice' - which proven shape went out. */
   shape: 'video' | 'voice' | null;
   busy: boolean;
+  /** D-223: the track was FOUND and the send failed - the member is told so. */
+  failed?: boolean;
 }
 
 /**
@@ -134,15 +136,26 @@ export async function playTrackToGroup(
         : await ensureEncoded(deps.db, deps.musicRoot, track, deps.onFault);
     const current = (await freshTrack(deps.db, track.id)) ?? track;
 
-    if (encodedPath !== null && current.coverPath !== null) {
-      shape = 'video';
-      sent = await port.sendVideo(groupId, encodedPath, caption, current.coverPath, duration);
-    } else {
-      // Coverless - or the encode faulted, which degrades HERE, to the shape
-      // that always works, rather than losing the track (D-214's rule).
-      shape = 'voice';
-      await port.sendText(groupId, caption);
-      sent = await port.sendVoice(groupId, current.filePath, duration);
+    try {
+      if (encodedPath !== null && current.coverPath !== null) {
+        shape = 'video';
+        sent = await port.sendVideo(groupId, encodedPath, caption, current.coverPath, duration);
+      } else {
+        // Coverless - or the encode faulted, which degrades HERE, to the shape
+        // that always works, rather than losing the track (D-214's rule).
+        shape = 'voice';
+        await port.sendText(groupId, caption);
+        sent = await port.sendVoice(groupId, current.filePath, duration);
+      }
+    } catch (error) {
+      // D-223: a play whose send failed is a FAILED play. No play row (the
+      // budget's basis must be what actually reached the room), no archive
+      // row, and the caller gets a distinct outcome so the member is told in
+      // a locked line rather than shown a caption that reads as success.
+      deps.onFault(
+        `Music: playing "${track.title}" to group ${String(groupId)} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return { sent: false, shape: null, busy: false, failed: true };
     }
 
     await recordPlay(deps.db, {
@@ -157,7 +170,7 @@ export async function playTrackToGroup(
     });
     noteMusicSend();
     await archiveOwnSend(deps, botProfileId, sent, caption);
-    return { sent: true, shape, busy: false };
+    return { sent: true, shape, busy: false, failed: false };
   } finally {
     inFlight.delete(groupId);
   }

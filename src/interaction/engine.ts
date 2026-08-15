@@ -152,18 +152,18 @@ export interface MusicOps {
   tracksOf(
     name: string,
   ): Promise<{ playlist: string; items: { id: number; title: string }[]; total: number } | null>;
-  playByTitle(groupId: number, title: string): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
-  playById(groupId: number, trackId: number): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
-  playFromPlaylist(groupId: number, name: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playByTitle(groupId: number, title: string): Promise<'sent' | 'busy' | 'unknown' | 'send-failed' | 'unavailable'>;
+  playById(groupId: number, trackId: number): Promise<'sent' | 'busy' | 'unknown' | 'send-failed' | 'unavailable'>;
+  playFromPlaylist(groupId: number, name: string): Promise<'sent' | 'busy' | 'empty' | 'send-failed' | 'unavailable'>;
   /** A random track of one genre this bot can reach - the ladder's last rung (D-220). */
-  playByGenre(groupId: number, genre: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playByGenre(groupId: number, genre: string): Promise<'sent' | 'busy' | 'empty' | 'send-failed' | 'unavailable'>;
   /** "play Aurora Night" where that is the ARTIST (D-222): folded equality, per-room advance. */
-  playByArtist(groupId: number, artist: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playByArtist(groupId: number, artist: string): Promise<'sent' | 'busy' | 'empty' | 'send-failed' | 'unavailable'>;
   /** What follows the room's last play (D-222): its genre when it has one, else anything reachable. */
-  playNext(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playNext(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'send-failed' | 'unavailable'>;
   /** The numbered listing of one genre, for "what's on cyberpunk" (D-222). */
   tracksOfGenre(genre: string): Promise<{ genre: string; items: { id: number; title: string }[]; total: number } | null>;
-  playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'send-failed' | 'unavailable'>;
   /** The DJ sheet's numbers, for the overview and the genre cards. All derived. */
   facts(): Promise<{ tracks: number; genres: { name: string; count: number }[]; playlists: number }>;
   playUpload(
@@ -2615,7 +2615,7 @@ export class InteractionEngine {
       this.musicLists.set(msg.groupId, { ...ctx, expiresAt: now + MUSIC_LIST_CONTEXT_MS });
     };
     const playOutcomeReply = async (
-      outcome: 'sent' | 'busy' | 'unknown' | 'empty' | 'unavailable',
+      outcome: 'sent' | 'busy' | 'unknown' | 'empty' | 'send-failed' | 'unavailable',
     ): Promise<void> => {
       const key =
         outcome === 'sent'
@@ -2624,9 +2624,11 @@ export class InteractionEngine {
             ? 'musicBusy'
             : outcome === 'unknown'
               ? 'musicUnknownTrack'
-              : outcome === 'empty'
-                ? 'musicNoPlaylists'
-                : 'musicUnavailable';
+              : outcome === 'send-failed'
+                ? 'musicSendFailed'
+                : outcome === 'empty'
+                  ? 'musicNoPlaylists'
+                  : 'musicUnavailable';
       if (key !== null) await this.reply(msg, s, lang, key, {}, MUSIC_REPLY);
     };
     const overview = async (): Promise<boolean> => {
