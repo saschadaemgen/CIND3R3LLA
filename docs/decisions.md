@@ -308,7 +308,15 @@ cropping one row and reported a padded-looking 720x1320. `verify:music-encode` f
 odd-height cover through the real ffmpeg and asserts 241 -> 240: the recipe CROPS, no black
 pixels, and the measurement is the settlement. Encodes are CACHED beside the track (the
 operator's decision; storage is cheap and the first press already starts a transfer he cannot
-speed up), stamped with a recipe version so a recipe change re-encodes.
+speed up), stamped with a recipe version so a recipe change re-encodes. **CORRECTED IN PLACE,
+same day:** the first build made the encode AT UPLOAD, inside the request, and the first real
+track outran nginx's 60-second proxy_read_timeout - a 504 within minutes of first use. The
+encode is now `music.encode`, a queue job enqueued by the upload and cover routes (idempotent
+per track and recipe version, so a replaced cover re-encodes and duplicates collapse), and the
+route answers as soon as the file is stored. `verify:music-encode` drives the route and asserts
+the encode has NOT happened when the response returns - the assertion that goes red if anyone
+moves the work back into the request. A route that needs a raised proxy timeout is a route
+doing work that belongs in a job.
 
 **2. A PLAYLIST IS A BOUNDARY, NOT A LABEL.** Assignment rows (bot, playlist) are the
 capability's edge: `findTrackForBot` and `randomTrackForBot` join THROUGH the assignment, so a

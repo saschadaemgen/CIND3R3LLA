@@ -233,6 +233,147 @@ async function main(): Promise<void> {
   const tmpEntries = leftovers === null ? [] : await (await import('node:fs/promises')).readdir(join(ROOT, '.playback-tmp'));
   check('and the temp bytes are gone', tmpEntries.length === 0, tmpEntries.join(', '));
 
+  console.log('\n6. The upload route answers BEFORE the encode runs (the 504 lesson)');
+  //
+  // The first real upload died as a 504: the encode ran inside the request and
+  // outran nginx's 60-second proxy_read_timeout. The design fix is measured
+  // here: the route returns with the row stored and the encode QUEUED, and the
+  // queue handler - not the request - produces the file. A regression that
+  // moves the encode back into the request turns the encoded-path-still-NULL
+  // assertion red.
+  {
+    const argon2 = await import('argon2');
+    const { buildServer, registerNav } = await import('../src/web/server.js');
+    const { registerAdminViews } = await import('../src/web/views/index.js');
+    const { SettingsService } = await import('../src/settings/service.js');
+    const { SecurityService } = await import('../src/security/settings.js');
+    const { InteractionService } = await import('../src/interaction/settings.js');
+    const { setMusicJobDeps, musicEncodeHandler, MUSIC_ENCODE_JOB } = await import('../src/queue/jobs/music.js');
+
+    const OPERATOR = 'operator';
+    const PASSWORD = 'a-long-enough-test-password-0123456789';
+    const adminCfg = {
+      adminPort: 8809,
+      adminUsername: OPERATOR,
+      adminPasswordHash: await argon2.hash(PASSWORD, { type: argon2.argon2id }),
+      sessionSecret: 'music-encode-secret-0123456789abcdef000000',
+      publicOrigin: 'https://admin.example.org',
+      rpId: 'admin.example.org',
+      webauthnOrigin: 'https://admin.example.org',
+      rpName: 'Cinderella Admin',
+    } as never;
+    const cfg = {
+      mediaRoot: './state/preview-media',
+      assetRoot: './state/preview-assets',
+      musicRoot: ROOT,
+      backupStatusPath: './state/backup-status.json',
+      backupRequestPath: './state/backup-request',
+      backupProgressPath: './state/backup-progress.json',
+      avatarPath: '',
+      databaseUrl: 'postgres://placeholder@127.0.0.1:5432/x',
+      logLevel: 'error',
+    } as never;
+
+    registerNav();
+    const app = buildServer({
+      db,
+      adminCfg,
+      mediaRoot: './state/preview-media',
+      settings: await SettingsService.load(db, 'error'),
+      security: await SecurityService.load(db),
+      interaction: await InteractionService.load(db),
+      cfg,
+      registerViews: registerAdminViews,
+    } as never);
+    await app.ready();
+
+    const loginPage = await app.inject({ method: 'GET', url: '/login' });
+    const loginCookie = String(loginPage.headers['set-cookie'] ?? '');
+    const loginToken = /name="_csrf" value="([^"]+)"/.exec(loginPage.body)?.[1] ?? '';
+    const login = await app.inject({
+      method: 'POST',
+      url: '/login',
+      headers: { cookie: loginCookie, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: `username=${OPERATOR}&password=${encodeURIComponent(PASSWORD)}&_csrf=${encodeURIComponent(loginToken)}`,
+    });
+    const rawCookie = login.headers['set-cookie'];
+    const cookie = (Array.isArray(rawCookie) ? rawCookie : [String(rawCookie ?? '')])
+      .map((c) => c.split(';')[0])
+      .join('; ');
+    const musicPage = await app.inject({ method: 'GET', url: '/music', headers: { cookie } });
+    const csrf = /name="_csrf" value="([^"]+)"/.exec(musicPage.body)?.[1] ?? '';
+
+    // Give a bot profile so the page resolves, and stamp the queue deps.
+    await db.query(
+      `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled)
+       VALUES ('encoder', 'CIND3R3LLA', TRUE) ON CONFLICT DO NOTHING`,
+    );
+    setMusicJobDeps(() => ({
+      db,
+      port: () => null,
+      isEnabledFor: () => true,
+      uploadsEnabledFor: () => false,
+      langFor: () => 'en',
+      musicRoot: ROOT,
+      settings: () => ({ ...MUSIC_DEFAULTS }),
+      onFault: (m) => faults.push(m),
+    }));
+
+    const audioB64 = (await readFile(taggedPath)).toString('base64');
+    const body = new URLSearchParams();
+    body.set('_csrf', csrf);
+    body.set('ajax', '1');
+    body.set('imageData', audioB64);
+    body.set('fileName', 'route-upload.mp3');
+    // The TYPED values win over the tag (the first-use fix): the tag says
+    // Folk / The Quay; the operator types Shanty and leaves artist blank.
+    body.set('title', '');
+    body.set('artist', '');
+    body.set('genre', 'Shanty');
+    body.set('kind', 'music');
+    body.set('coverData', '');
+    const uploaded = await app.inject({
+      method: 'POST',
+      url: '/music/tracks/upload',
+      headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: body.toString(),
+    });
+    let json: { ok: boolean; trackId: number; title: string; hadCover: boolean };
+    try {
+      json = JSON.parse(uploaded.body) as typeof json;
+    } catch {
+      json = { ok: false, trackId: 0, title: '', hadCover: false };
+    }
+    check('the route answered ok, as JSON for the multi-uploader',
+      uploaded.statusCode === 200 && json.ok,
+      `${String(uploaded.statusCode)} ${uploaded.body.slice(0, 160)}`);
+    check('  the TAG filled what was left blank (title)', json.title === 'Harbour Lights');
+    const row = await db.query<{ genre: string | null; artist: string | null; encoded_path: string | null; cover_path: string | null }>(
+      `SELECT genre, artist, encoded_path, cover_path FROM cinderella_tracks WHERE id = $1`,
+      [json.trackId],
+    );
+    check('  and the TYPED genre won over the tag', row.rows[0]?.genre === 'Shanty', String(row.rows[0]?.genre));
+    check('  the tag cover was stored', row.rows[0]?.cover_path !== null);
+    check('THE 504 FIX: the request returned with the encode NOT yet done',
+      row.rows[0]?.encoded_path === null);
+    const job = await db.query<{ n: string }>(
+      `SELECT count(*) AS n FROM jobs WHERE type = $1 AND state = 'queued'`,
+      [MUSIC_ENCODE_JOB],
+    );
+    check('  and a music.encode job is queued instead', Number(job.rows[0]?.n) >= 1, String(job.rows[0]?.n));
+
+    await musicEncodeHandler({ trackId: json.trackId }, {} as never);
+    const after = await db.query<{ encoded_path: string | null }>(
+      `SELECT encoded_path FROM cinderella_tracks WHERE id = $1`,
+      [json.trackId],
+    );
+    check('POSITIVE CONTROL: the queue handler produced the encode', after.rows[0]?.encoded_path !== null);
+    check('  and the file is real',
+      after.rows[0]?.encoded_path !== null && (await stat(after.rows[0].encoded_path)).size > 0);
+    setMusicJobDeps(null);
+    await app.close();
+  }
+
   await pg.close();
   console.log(
     failures === 0

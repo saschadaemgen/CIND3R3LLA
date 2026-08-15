@@ -47,13 +47,14 @@ import {
   type TrackKind,
 } from '../../plugins/music/store.js';
 import {
-  ensureEncoded,
   libraryDiskUsage,
   readTags,
   removeTrackFiles,
   storeTrackCover,
   storeTrackFile,
 } from '../../plugins/music/library.js';
+import { enqueueMusicEncode } from '../../queue/jobs/music.js';
+import { ENCODE_VERSION } from '../../media/encode.js';
 import { musicDiagnostics } from '../../plugins/music/music-log.js';
 import { MUSIC_ID, MUSIC_UPLOADS_ID } from '../../plugins/music/plugin.js';
 import {
@@ -158,12 +159,6 @@ function musicScopePanel(
 export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
   const { db, plugins, cfg } = ctx;
 
-  const musicDeps = () => ({
-    db,
-    musicRoot: cfg.musicRoot,
-    onFault: (message: string) => status.error(message),
-  });
-
   app.get<{ Querystring: { bot?: string; saved?: string; error?: string; notice?: string } }>(
     '/music',
     async (req, reply) => {
@@ -264,41 +259,36 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
           )}
 
           ${card(
-            'Upload a track',
-            html`<p class="mb-3 text-sm text-slate-500">
-                The file's own tag pre-fills title, artist, genre and often the cover; you
-                correct what is wrong afterwards in the table below. A track without a cover is
-                a normal state: it sends as a title line plus the bare voice player instead of
-                the one-message video.
+            'Upload tracks',
+            html`<div data-music-upload data-action="/music/tracks/upload" data-max-bytes="${String(TRACK_MAX_BYTES)}" class="flex flex-col gap-3">
+              <input type="hidden" name="_csrf" value="${csrf}" />
+              <p class="text-sm text-slate-500">
+                Choose one file or a whole album. Each file gets its own row below, pre-filled
+                from its tag; correct anything the tag got wrong before uploading. A track
+                without a cover is a normal state: it sends as a title line plus the bare
+                voice player instead of the one-message video. Covers are encoded in the
+                background after upload, so this page answers immediately.
               </p>
-              <form
-                method="post"
-                action="/music/tracks/upload"
-                data-image-upload
-                data-max-bytes="${String(TRACK_MAX_BYTES)}"
-              >
-                <input type="hidden" name="_csrf" value="${csrf}" />
-                <input type="hidden" name="imageData" value="" />
-                <input type="hidden" name="fileName" value="" />
-                <div class="mb-3 grid gap-3 md:grid-cols-2">
-                  ${labelled(
-                    'Audio file',
-                    html`<input type="file" accept="audio/*" class="${INPUT_CLS}" />`,
-                    `Read locally into the form; up to ${mb(TRACK_MAX_BYTES)}. The field is named for the shared uploader; audio rides it the same way.`,
-                  )}
-                  ${labelled(
-                    'Kind',
-                    html`<select name="kind" class="${INPUT_CLS}">${kindOptions('music')}</select>`,
-                    'music, audiobook, documentary, or an advertising spot. Decides labels and the budget class, never the mechanics.',
-                  )}
-                </div>
-                <div class="flex items-center gap-2">
-                  <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
-                    Upload and read the tag
-                  </button>
-                  <span data-image-upload-status class="text-xs text-slate-500">Choose a file first.</span>
-                </div>
-              </form>`,
+              ${labelled(
+                'Audio files',
+                html`<input type="file" accept="audio/*" multiple class="${INPUT_CLS}" />`,
+                `Up to ${mb(TRACK_MAX_BYTES)} each; read locally, posted one at a time.`,
+              )}
+              <div data-music-rows class="flex flex-col gap-3"></div>
+              <div class="flex items-center gap-2">
+                <button type="button" data-music-submit class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-40">
+                  Upload all
+                </button>
+                <span data-music-status class="text-xs text-slate-500"></span>
+              </div>
+              <noscript>
+                <p class="text-sm text-red-700">
+                  This uploader needs JavaScript; the console's scripts are served from its own
+                  origin and nothing else.
+                </p>
+              </noscript>
+            </div>
+            <script src="/assets/admin-music-upload.js" defer></script>`,
           )}
 
           ${card(
@@ -339,7 +329,7 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                           <td class="py-2 pr-3">
                             <div class="mb-1 flex flex-wrap gap-1">
                               ${t.coverPath !== null ? badge('cover', 'green') : badge('no cover: sends as voice', 'slate')}
-                              ${t.encodedPath !== null ? badge('encoded', 'green') : t.coverPath !== null ? badge('encodes on first play', 'slate') : ''}
+                              ${t.encodedPath !== null ? badge('encoded', 'green') : t.coverPath !== null ? badge('encode queued', 'slate') : ''}
                             </div>
                             <form method="post" action="/music/tracks/${String(t.id)}/cover" data-image-upload class="flex flex-col gap-1">
                               <input type="hidden" name="_csrf" value="${csrf}" />
@@ -572,6 +562,20 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
       if (bytes.length === 0 || bytes.length > TRACK_MAX_BYTES) {
         return reply.redirect(back('error=' + encodeURIComponent(`The file must be between 1 byte and ${mb(TRACK_MAX_BYTES)}.`)));
       }
+      // The fields the operator EDITED on the form win over the tag; the tag
+      // fills only what was left empty (the pre-fill happened client-side, so a
+      // blank here is a deliberate blank, not an unread one).
+      const typedTitle = bodyString(req.body, 'title').trim();
+      const typedArtist = bodyString(req.body, 'artist').trim();
+      const typedGenre = bodyString(req.body, 'genre').trim();
+      const coverData = bodyString(req.body, 'coverData');
+      const wantsJson = bodyString(req.body, 'ajax') === '1';
+      const fail = (message: string) => {
+        log.error(`music: upload failed: ${message}`);
+        status.error(`Music: upload failed: ${message}`);
+        if (wantsJson) return reply.code(400).send({ ok: false, error: message.slice(0, 200) });
+        return reply.redirect(back('error=' + encodeURIComponent(`Upload failed: ${message.slice(0, 200)}`)));
+      };
       try {
         // Written to a temp file first so the tag reader and the prober work on
         // a real path; moved into the track's directory once the row exists.
@@ -579,12 +583,12 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
         const tempPath = join(cfg.musicRoot, '.upload-tmp', `${String(process.pid)}-${String(Math.floor(Math.random() * 1e9))}`);
         await writeFile(tempPath, bytes);
         const tags = await readTags(tempPath);
-        const title = tags.title ?? fileName.replace(/\.[A-Za-z0-9]{1,5}$/, '');
+        const title = typedTitle || tags.title || fileName.replace(/\.[A-Za-z0-9]{1,5}$/, '');
         const trackId = await insertTrack(db, {
           kind,
           title,
-          artist: tags.artist,
-          genre: tags.genre,
+          artist: typedArtist || tags.artist,
+          genre: typedGenre || tags.genre,
           durationSeconds: tags.durationSeconds,
           filePath: tempPath,
           fileSize: bytes.length,
@@ -593,23 +597,31 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
         });
         const stored = await storeTrackFile(cfg.musicRoot, trackId, tempPath, fileName);
         await db.query(`UPDATE cinderella_tracks SET file_path = $2 WHERE id = $1`, [trackId, stored.filePath]);
-        if (tags.cover !== null) {
-          await storeTrackCover(db, cfg.musicRoot, trackId, tags.cover);
-          // The cached encode is made NOW (your decision: cached): upload is the
-          // moment the operator is already waiting, and every later send is instant.
-          const t = await getTrack(db, trackId);
-          if (t !== null) await ensureEncoded(db, cfg.musicRoot, t, musicDeps().onFault);
+        // A cover chosen on the form wins over the tag's; either way the bytes
+        // are re-encoded through sharp before anything serves them.
+        const coverBytes =
+          coverData !== '' ? Buffer.from(coverData, 'base64') : tags.cover;
+        const hadCover = coverBytes !== null && coverBytes.length > 0;
+        if (hadCover) {
+          await storeTrackCover(db, cfg.musicRoot, trackId, coverBytes);
+          // THE ENCODE LEAVES THE REQUEST (the 504). This used to encode HERE,
+          // inside the upload request, and the first real track outran nginx's
+          // 60-second proxy_read_timeout: the operator got a 504 with no idea
+          // why, minutes into first use. Upload now stores and returns; the
+          // queue encodes, which is what the queue is for, and a default nginx
+          // needs no raised timeout to survive us.
+          await enqueueMusicEncode(db, trackId, ENCODE_VERSION);
         }
         await writeAudit(db, req.session?.username ?? 'unknown', 'music.track.upload', `track:${String(trackId)}`, {
-          title, kind, bytes: bytes.length, hadCover: tags.cover !== null,
+          title, kind, bytes: bytes.length, hadCover,
         });
-        const covered = tags.cover !== null ? 'cover found in the tag and encoded' : 'no cover in the tag: it will send as a voice player until you add one';
+        const covered = hadCover
+          ? 'cover attached; the encode is queued and runs in the background'
+          : 'no cover: it will send as a voice player until you add one';
+        if (wantsJson) return reply.send({ ok: true, trackId, title, hadCover });
         return reply.redirect(back('notice=' + encodeURIComponent(`Uploaded "${title}" (${covered}).`)));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        log.error(`music: upload failed: ${message}`);
-        status.error(`Music: upload failed: ${message}`);
-        return reply.redirect(back('error=' + encodeURIComponent(`Upload failed: ${message.slice(0, 200)}`)));
+        return fail(error instanceof Error ? error.message : String(error));
       }
     },
   );
@@ -645,8 +657,9 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
           return reply.redirect(back('error=' + encodeURIComponent(`A cover must be between 1 byte and ${mb(COVER_MAX_BYTES)}.`)));
         }
         await storeTrackCover(db, cfg.musicRoot, id, bytes);
-        const fresh = await getTrack(db, id);
-        if (fresh !== null) await ensureEncoded(db, cfg.musicRoot, fresh, musicDeps().onFault);
+        // The same 504 lesson as the upload: the re-encode a new cover needs is
+        // the queue's work, not this request's.
+        await enqueueMusicEncode(db, id, ENCODE_VERSION);
         await writeAudit(db, req.session?.username ?? 'unknown', 'music.track.cover', `track:${String(id)}`, {});
         return reply.redirect(back('saved=1'));
       } catch (error) {

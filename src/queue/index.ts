@@ -15,7 +15,7 @@ import {
   bridgePropagateHandler,
   bridgeTickHandler,
 } from './jobs/bridge.js';
-import { MUSIC_TICK_JOB, musicTickHandler } from './jobs/music.js';
+import { MUSIC_ENCODE_JOB, MUSIC_TICK_JOB, musicEncodeHandler, musicTickHandler } from './jobs/music.js';
 import { enqueueJob } from './store.js';
 import { DEFAULT_QUEUE_CONFIG, type EnqueueOptions, type JobLane, type QueueConfig } from './types.js';
 import {
@@ -113,6 +113,9 @@ export function registerBuiltinJobs(): void {
   // "unregistered means the whole cadence stops silently" stake.
   if (!getJobHandler(MUSIC_TICK_JOB)) {
     registerJobHandler(MUSIC_TICK_JOB, musicTickHandler);
+  }
+  if (!getJobHandler(MUSIC_ENCODE_JOB)) {
+    registerJobHandler(MUSIC_ENCODE_JOB, musicEncodeHandler);
   }
   // The media-derivative handler is registered when its migration lands (§5).
 }

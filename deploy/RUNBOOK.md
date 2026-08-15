@@ -231,6 +231,12 @@ the Plugins page), so nothing plays and nothing is accepted from members until e
 deliberately. The unbidden budgets default to 3 per room per day with a 60-minute gap,
 separate for music and spots, raisable on the Music page.
 
+**Existing installs must update the nginx vhost**: the repo's `nginx-admin.conf` now carries
+`client_max_body_size 150m` on the console location (tracks ride as base64 form bodies), and
+the old `1m` refuses every upload with a 413 before the app sees it. `proxy_read_timeout`
+needs NO raise: the encode runs in the queue, which is the design answer to the 504 the first
+upload hit.
+
 ### Migration 062 changes what publishes a channel announcement (CCB-S5-043, D-215)
 
 **No operator step is needed to APPLY it** - it uses only core built-ins, needs no extension and
