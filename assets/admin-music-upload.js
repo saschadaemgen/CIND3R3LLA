@@ -27,6 +27,30 @@
 (function () {
   'use strict';
 
+  // ── Select-all for the bulk checkboxes (independent of the upload form) ──
+  //
+  // "Assign forty tracks in one press" still cost forty presses to get there
+  // without this. One box at the top of the column: tick it, everything ticks;
+  // tick again, everything clears; and half-ticking by hand un-syncs it
+  // honestly rather than fighting the operator.
+  document.querySelectorAll('[data-select-all]').forEach(function (master) {
+    var name = master.getAttribute('data-select-all');
+    var boxes = function () {
+      return Array.prototype.slice.call(
+        document.querySelectorAll('input[type=checkbox][name="' + name + '"]'),
+      );
+    };
+    master.addEventListener('change', function () {
+      boxes().forEach(function (b) { b.checked = master.checked; });
+    });
+    document.addEventListener('change', function (ev) {
+      if (ev.target === master) return;
+      if (!(ev.target instanceof HTMLInputElement) || ev.target.name !== name) return;
+      var all = boxes();
+      master.checked = all.length > 0 && all.every(function (b) { return b.checked; });
+    });
+  });
+
   var root = document.querySelector('[data-music-upload]');
   if (!root) return;
 

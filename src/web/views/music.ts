@@ -324,7 +324,9 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                   <table class="w-full text-left text-sm">
                     <thead>
                       <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                        <th class="py-2 pr-2"><span class="sr-only">Select</span></th>
+                        <th class="py-2 pr-2">
+                          <input type="checkbox" data-select-all="trackIds" class="rounded" aria-label="select every track" title="Tick everything; tick again to clear" />
+                        </th>
                         <th class="py-2 pr-2">Cover</th>
                         <th class="py-2 pr-3">Track</th>
                         <th class="py-2 pr-3">Kind / genre</th>
@@ -340,9 +342,16 @@ export function registerMusic(app: FastifyInstance, ctx: ViewContext): void {
                             <input type="checkbox" name="trackIds" value="${String(t.id)}" form="music-bulk-add" class="rounded" aria-label="select ${t.title}" />
                           </td>
                           <td class="py-2 pr-2">
+                            ${/*
+                              The width/height ATTRIBUTES are the load-bearing half: a class
+                              can be right in the source and absent from a built stylesheet,
+                              and the operator's first list showed the artwork at its own
+                              dimensions - one track filled the screen. Attributes bind with
+                              no CSS at all; the classes then round it and keep the aspect.
+                            */ ''}
                             ${t.coverPath !== null
-                              ? html`<img src="/music/tracks/${String(t.id)}/cover.jpg" alt="" class="h-14 w-14 rounded border border-slate-200 object-cover" />`
-                              : html`<div class="flex h-14 w-14 items-center justify-center rounded border border-dashed border-slate-300 text-xs text-slate-400">no cover</div>`}
+                              ? html`<img src="/music/tracks/${String(t.id)}/cover.jpg" alt="" width="40" height="40" class="h-10 w-10 rounded-full border border-slate-200 object-cover" />`
+                              : html`<div class="flex h-10 w-10 items-center justify-center rounded-full border border-dashed border-slate-300 text-[10px] text-slate-400">none</div>`}
                           </td>
                           <td class="py-2 pr-3">
                             <form method="post" action="/music/tracks/${String(t.id)}/meta" class="flex flex-col gap-1">
