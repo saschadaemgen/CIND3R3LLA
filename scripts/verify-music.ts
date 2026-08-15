@@ -65,6 +65,8 @@ import {
   setAssignmentCadence,
   setPlaylistTracks,
   randomTrackFromPlaylistForBot,
+  randomTrackByGenreForBot,
+  libraryFactsForBot,
   trackReachableByBot,
   unbiddenSpend,
   libraryFacts,
@@ -242,12 +244,20 @@ async function main(): Promise<void> {
       return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
     facts: async () => {
-      const f = await libraryFacts(db, clock);
+      // Per BOT (D-220), mirroring src/index.ts: the DJ sheet is what SHE
+      // can reach, never the deployment's shelf.
+      const f = await libraryFactsForBot(db, botId);
       return {
-        tracks: f.totalTracks,
-        genres: f.byGenre.map((g) => g.genre),
+        tracks: f.tracks,
+        genres: f.genres,
         playlists: (await assignmentsForBot(db, botId)).length,
       };
+    },
+    playByGenre: async (groupId: number, genre: string) => {
+      const track = await randomTrackByGenreForBot(db, botId, genre);
+      if (track === null) return 'empty' as const;
+      const o = await playTrackToGroup(deps, botId, groupId, track, { requested: true, assignmentId: null });
+      return o.busy ? ('busy' as const) : o.sent ? ('sent' as const) : ('unavailable' as const);
     },
     playByTitle: async (groupId: number, title: string) => {
       const track = await findTrackForBot(db, botId, title);
@@ -269,8 +279,8 @@ async function main(): Promise<void> {
   const settings: InteractionSettings = normalizeInteraction({});
   const replies: string[] = [];
   let itemId = 1;
-  const makeMsg = (text: string): CapturedMessage => ({
-    groupId: GROUP,
+  const makeMsg = (text: string, groupId: number = GROUP): CapturedMessage => ({
+    groupId,
     groupName: 'archive',
     itemId: itemId++,
     sharedMsgId: undefined,
@@ -340,7 +350,9 @@ async function main(): Promise<void> {
   check('THE BEHAVIOUR FAULT, held down: asking ABOUT a track plays NOTHING',
     calls.length === 0, JSON.stringify(calls));
   check('  and answers the locked overview with the application numbers',
-    replies.length === 1 && (replies[0] ?? '').includes('3 tracks') && (replies[0] ?? '').includes('1 playlists'),
+    // '2 tracks': per BOT since D-220 - the sheet is what SHE can reach
+    // (DJ's one playlist holds two), never the deployment's shelf of three.
+    replies.length === 1 && (replies[0] ?? '').includes('2 tracks') && (replies[0] ?? '').includes('1 playlists'),
     replies[0] ?? '(none)');
   replies.length = 0; calls.length = 0;
   clock = new Date(clock.getTime() + 61_000);
@@ -619,6 +631,101 @@ async function main(): Promise<void> {
     ?.split('\nexport ')[0] ?? '';
   check('structurally: the upload path calls no store, no archive, no play recorder',
     uploadFn.length > 0 && !/archiveOwnSend|recordPlay|insertTrack|INSERT INTO/i.test(uploadFn));
+
+  /* ══ 8. THE LIVE TEST'S OWN SENTENCES (D-220) ════════════════════════════
+   *
+   * The harness was green while three of these failed in production, because
+   * it drove the phrasings the code was written for rather than the phrasings
+   * a person uses. These are the operator's sentences, verbatim, and this
+   * section exists so the next pattern change is measured against them.
+   */
+
+  console.log("\n8. The live test's own sentences, verbatim");
+  const aurora = await insertTrack(db, {
+    kind: 'music', title: 'Aurora Night', artist: 'Alusion', album: null, genre: 'Chillstep',
+    durationSeconds: 210, filePath: '/x/aurora.mp3', fileSize: 5_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const deepW = await insertTrack(db, {
+    kind: 'music', title: 'Deep Waters', artist: 'Alusion', album: null, genre: 'Chillstep',
+    durationSeconds: 190, filePath: '/x/deepw.mp3', fileSize: 5_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const chillstepList = await createPlaylist(db, 'Chillstep');
+  await setPlaylistTracks(db, chillstepList, [aurora, deepW]);
+  await assignPlaylist(db, DJ, chillstepList);
+
+  // "do you have Chillstep Music" reached NO lane in production: 'music' was
+  // not a keyword, the model answered against no data, and a genre she holds
+  // was denied. It must land in the music lane now, whose tail is the honest
+  // locked overview naming that genre.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA do you have Chillstep Music'));
+  check("'do you have Chillstep Music': the OVERVIEW answers, naming the genre she holds",
+    replies.length === 1 && (replies[0] ?? '').includes('Chillstep'), replies[0] ?? '(none)');
+  check('  and asking is not playing: nothing was sent', calls.length === 0, JSON.stringify(calls));
+
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA what music do you have?'));
+  check("'what music do you have?': the overview again, not silence",
+    replies.length === 1 && (replies[0] ?? '').includes('Chillstep'), replies[0] ?? '(none)');
+
+  // The second level: list the playlists, then ask in his words.
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA which playlists do you have?'));
+  const listedFirst = /1\. ([^,(]+)/.exec(replies[0] ?? '')?.[1]?.trim() ?? '';
+  check('the playlist list numbers what she holds', listedFirst.length > 0, replies[0] ?? '(none)');
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA Show me tracks from playlist 1'));
+  check("'Show me tracks from playlist 1': the TRACKS of playlist 1, not the playlist list again",
+    replies.length === 1 && (replies[0] ?? '').includes('On the playlist') && (replies[0] ?? '').includes(listedFirst),
+    replies[0] ?? '(none)');
+
+  // A number with NO live list resolves against the view's own order, because
+  // the numbers she prints ARE that order (a fresh room, ten minutes later).
+  const FRESH = 9911;
+  replies.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg("CIND3R3LLA what's on 1", FRESH));
+  check("a numbered ask with no live list answers from the view's order, not 'unknown playlist'",
+    replies.length === 1 && (replies[0] ?? '').includes('On the playlist'), replies[0] ?? '(none)');
+
+  // "play Chillstep" named a playlist AND a genre she holds and was answered
+  // "no track by that name". The ladder resolves it inside the boundary.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Chillstep'));
+  check("'play Chillstep': something from the Chillstep playlist actually plays",
+    calls.some((c) => c.kind === 'voice' || c.kind === 'video'), JSON.stringify(calls));
+  check('  and no unknown-track line stands beside the send',
+    !replies.some((r) => r.includes('no track by that name')), JSON.stringify(replies));
+
+  // The exact title in a member's own words: title, dash, artist, courtesy.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Aurora Night - Alusion for us'));
+  check("'play Aurora Night - Alusion for us': Aurora Night goes out",
+    // The coverless title line composes 'Title - Artist'; the send is the claim.
+    calls.some((c) => c.kind === 'text' && (c.caption ?? '').startsWith('Aurora Night')), JSON.stringify(calls));
+
+  // NEGATIVE CONTROL: the ladder widened what resolves, not what she claims.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play Vaporwave Dreams'));
+  check('POSITIVE CONTROL of the honest miss: an unheld name still answers unknown, sends nothing',
+    calls.length === 0 && replies.some((r) => r.includes('no track by that name')), JSON.stringify(replies));
+
+  // BOUNDARY CONTROL: every new rung is assignment-scoped. The bot that was
+  // never given Chillstep cannot reach it by playlist name or by genre.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await rick.handle(makeMsg('CIND3R3LLA play Chillstep'));
+  check('THE BOUNDARY HOLDS on the ladder: the other bot cannot play a playlist it was not given',
+    calls.length === 0, JSON.stringify(calls));
 
   /* ══ 7. No model, structurally ═══════════════════════════════════════════ */
 

@@ -457,7 +457,12 @@ const LEXICON: LexEntry[] = [
       'play my file',
       'play it back',
     ],
-    keywords: ['playlist', 'track', 'song', 'tune', 'audiobook'],
+    // 'music' and 'genre' joined after the live test (D-220): "do you have
+    // Chillstep Music" named her whole capability and never reached this lane,
+    // so the model answered against no data and denied a genre she holds.
+    // Addressed-only messages make the wide net safe: the lane's tail is the
+    // locked overview, which is honest whatever the question was.
+    keywords: ['playlist', 'track', 'song', 'tune', 'audiobook', 'music', 'genre', 'genres'],
   },
   {
     intent: 'MUSIC',
@@ -479,7 +484,7 @@ const LEXICON: LexEntry[] = [
       'mach die datei abspielbar',
       'spiel meine datei',
     ],
-    keywords: ['playlist', 'titel', 'lied', 'song', 'hoerbuch'],
+    keywords: ['playlist', 'titel', 'lied', 'song', 'hoerbuch', 'musik', 'genre', 'genres'],
   },
   {
     intent: 'PRICE',

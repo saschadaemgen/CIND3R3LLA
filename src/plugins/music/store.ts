@@ -549,6 +549,67 @@ export async function randomTrackFromPlaylistForBot(
   return rows[0] === undefined ? null : mapTrack(rows[0]);
 }
 
+/**
+ * A random track of one GENRE this bot can reach - the ladder's last rung
+ * (D-220). Scoped through the assignments like every other read here, so the
+ * rung cannot step over the playlist boundary; the genre is matched against
+ * the same comma-split vocabulary the DJ sheet is derived from.
+ */
+export async function randomTrackByGenreForBot(
+  db: Queryable,
+  botProfileId: number,
+  genre: string,
+): Promise<Track | null> {
+  const { rows } = await db.query<TrackRow>(
+    `SELECT * FROM (
+       SELECT DISTINCT t.* FROM cinderella_tracks t
+         JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+         JOIN cinderella_playlist_assignments a
+           ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1
+        WHERE t.genre IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM unnest(string_to_array(t.genre, ',')) AS g
+             WHERE lower(btrim(g)) = lower(btrim($2))
+          )
+     ) s ORDER BY random() LIMIT 1`,
+    [botProfileId, genre],
+  );
+  return rows[0] === undefined ? null : mapTrack(rows[0]);
+}
+
+/**
+ * The DJ sheet PER BOT (D-220): what this bot can actually reach through its
+ * assignments, because the deployment-wide sheet advertised genres a second
+ * bot could never play - "she cannot claim a genre she does not hold" is
+ * D-216's own sentence and the deployment-wide numbers broke it. The console's
+ * library page keeps the deployment view; this is what SHE is told about
+ * herself.
+ */
+export async function libraryFactsForBot(
+  db: Queryable,
+  botProfileId: number,
+): Promise<{ tracks: number; genres: string[] }> {
+  const total = await db.query<{ n: string | number }>(
+    `SELECT count(DISTINCT t.id) AS n FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1`,
+    [botProfileId],
+  );
+  const genres = await db.query<{ genre: string }>(
+    `SELECT btrim(g) AS genre, count(DISTINCT t.id) AS n
+       FROM cinderella_tracks t
+       JOIN cinderella_playlist_tracks pt ON pt.track_id = t.id
+       JOIN cinderella_playlist_assignments a
+         ON a.playlist_id = pt.playlist_id AND a.bot_profile_id = $1,
+       unnest(string_to_array(t.genre, ',')) AS g
+      WHERE t.genre IS NOT NULL AND btrim(g) <> ''
+      GROUP BY btrim(g) ORDER BY count(DISTINCT t.id) DESC, btrim(g)`,
+    [botProfileId],
+  );
+  return { tracks: Number(total.rows[0]?.n ?? 0), genres: genres.rows.map((r) => r.genre) };
+}
+
 /** A random track from this bot's playlists - "play me something". */
 export async function randomTrackForBot(
   db: Queryable,

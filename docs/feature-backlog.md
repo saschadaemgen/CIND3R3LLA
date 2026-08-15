@@ -1726,3 +1726,15 @@ confirmed against a named file and line; every Season 2 item was confirmed **abs
 from the codebase (no route, table, or module implementing it), not merely
 undocumented. The single most important verification result: **the public
 `/embed/:id` route does not exist in code** — only its admin-side configuration does.
+
+## Knowledge retrieval on off-topic questions (decision pending, D-220 §4)
+
+The 0.55 knowledge floor admits the SimpleGo README's noise band (0.53-0.58 on questions it
+has nothing to say about, measured with the production embedder on local copies), and the
+retrieval trigger defaults to 'always', so any free-conversation question can pick up passages
+and - through the constitutional `knowledge.no-invention` rule at ord 747 - a "what you gave
+me does not cover this" denial with a source line under it. The music-question class is closed
+(D-220 §1: those take the music lane now, where retrieval never runs). The remaining exposure
+needs one of: a raised floor (CALIBRATE FIRST against the ingested corpus, the D-184 rule), a
+default trigger of 'explicit', or scoping no-invention to the question the passages were
+retrieved for. Operator's call; nothing changed yet.

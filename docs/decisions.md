@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 218 decisions</strong> — newest first. Highest allocated: <strong>D-219</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 219 decisions</strong> — newest first. Highest allocated: <strong>D-220</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-220 | The words a person uses: the lane, the ladder, and the second level | IMPLEMENTED |
 | D-219 | Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound | IMPLEMENTED |
 | D-218 | She knows her own player, a list is numbered, and only an explicit play plays | IMPLEMENTED |
 | D-217 | A profile is categories over registered sources, and the music plugin goes first | SHAPE IMPLEMENTED AND ENFORCED; the profile itself is PLANNED |
@@ -247,6 +248,75 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-220 - The words a person uses: the lane, the ladder, and the second level
+
+**Status: IMPLEMENTED** (CCB-S5-044 follow-up, from the operator's live test). Three faults,
+and together they meant the plugin did not work for anything but the overview. Per his order
+the forensics ran FIRST, on the unchanged tree, driving his sentences verbatim through the
+real resolver and the real engine; all three reproduced deterministically, and the harness had
+been green through all of them because it drove the phrasings the code was written for rather
+than the phrasings a person uses. That sentence is the lesson of this entry, and section 8 of
+`verify:music` now holds his sentences verbatim so the next pattern change is measured
+against them.
+
+**1. THE LANE.** "do you have Chillstep Music" matched no MUSIC phrase and no keyword -
+'music' itself was not in the lexicon - so the rule engine returned UNKNOWN, the D-183 bar
+correctly downgraded any resolver claim, and the question fell to free conversation, where
+the model denied a genre she holds (see §4). 'music', 'musik', 'genre' and 'genres' are
+keywords now. The wide net is safe because these patterns only ever see a message ADDRESSED
+to her, and the lane's tail is the locked overview: honest application numbers whatever the
+question was.
+
+**2. THE LADDER.** "play Chillstep" named a playlist and a genre she holds; "play Aurora
+Night - Alusion for us" named an exact title in a member's own words - title, dash, artist,
+courtesy. Both were answered "no track by that name", because one exact-title lookup was the
+whole search. The play path is a ladder now: title (as given, courtesy-stripped, dash-split),
+then playlist name, then genre, most specific first, and the honest unknown only when every
+rung misses. Every rung is scoped through the assignments in the store, so the ladder widens
+what RESOLVES and not what she may reach - the boundary control drives the other bot at the
+same sentence and gets silence. 'busy' and 'unavailable' STOP the ladder: the thing was found
+and could not go out, and a further rung would lie about which.
+
+**3. THE SECOND LEVEL.** "Show me tracks from playlist 1" listed the playlists again, because
+only "what's on ..." was understood and no operator will guess that. Tracks-of, show-me and
+the bare "playlist N" phrasings reach the listing now, in both languages; and a NUMBER with no
+live list resolves against the view's own order, because the numbers she prints ARE that
+order - "playlist 1" means the first she would list, ten minutes later as much as ten seconds.
+
+**4. THE FOURTH SIGHTING, ESTABLISHED AND MEASURED (the false source line).** Mechanism,
+with file and ord: knowledge retrieval never runs on a MUSIC-claimed message (the music lane
+returns before `freeConversation`, which is retrieval's only caller), but it runs on EVERY
+free-conversation turn with three letters in it, because the trigger setting defaults to
+'always'. Once passages attach, `knowledge.no-invention` (constitutional, ord 747) tells her
+to answer from the passages and say plainly when they do not cover the question - which
+overrides her own DJ facts at ord 382 and produces exactly the observed reply: a denial with
+a source line under it. The line is mechanically true (passages were retrieved and shown) and
+semantically false provenance. Measured with the repo's own chunker, embedder and cosine
+against the LOCAL copies of both SimpleGo READMEs (ssh to production was denied this session;
+the embedder is the same nomic-embed-text): his exact sentence "do you have Chillstep Music"
+scores 0.575 top-chunk, ABOVE the 0.55 floor; the unrelated-question noise band for this
+document is 0.53-0.58, straddling the floor, while genuinely covered questions score
+0.65-0.77. So the README passes the floor for questions it has nothing to say about, and it
+is "always the same document" because its noise band sits just above the floor where other
+documents' bands sit below. **The observed class is closed by §1** - music questions now take
+the music lane and retrieval never runs - but the remaining exposure on other off-topic
+questions needs an operator decision and is deliberately NOT taken here: raise the knowledge
+floor toward the measured gap (calibrate first, the D-184 rule), default the trigger to
+'explicit', or scope `knowledge.no-invention` to the question the passages were retrieved
+for. Recorded in the feature backlog.
+
+**5. TWO ADJACENT CORRECTIONS.** The DJ sheet is now derived PER BOT (`libraryFactsForBot`),
+because the deployment-wide sheet advertised the whole shelf's genres beside this bot's own
+playlist count - "she cannot claim a genre she does not hold" is D-216's own sentence and the
+mixed scopes broke it. On the operator's deployment the sheet will say 15 tracks, not 19,
+until the four shelf-only tracks join a playlist: that is the sheet being honest about reach,
+and the console's library page keeps the deployment view. And the two prompt sites that speak
+in her voice without the clock or the DJ sheet - the Book scene's flourish and the recital
+transition - now carry both, closing the gap that D-218 left in two of the six conversational
+call sites.
+
 ---
 
 ### D-219 - Part 4b activated: MP3 only, both sides of the allow-list, a refusal that reads the live bound

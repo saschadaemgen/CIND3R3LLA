@@ -155,6 +155,8 @@ export interface MusicOps {
   playByTitle(groupId: number, title: string): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
   playById(groupId: number, trackId: number): Promise<'sent' | 'busy' | 'unknown' | 'unavailable'>;
   playFromPlaylist(groupId: number, name: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
+  /** A random track of one genre this bot can reach - the ladder's last rung (D-220). */
+  playByGenre(groupId: number, genre: string): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   playSomething(groupId: number): Promise<'sent' | 'busy' | 'empty' | 'unavailable'>;
   /** The DJ sheet's numbers, for the locked overview line. All derived. */
   facts(): Promise<{ tracks: number; genres: string[]; playlists: number }>;
@@ -1531,6 +1533,8 @@ export class InteractionEngine {
         blockedLiterals: [],
         personality: this.deps.personality?.() ?? null,
         identity: this.facts(s),
+        now: { at: new Date(this.now()), timeZone: this.timeZone },
+        music: await this.musicPromptFacts(),
       });
     } catch {
       return null;
@@ -1554,6 +1558,8 @@ export class InteractionEngine {
         blockedLiterals: [],
         personality: this.deps.personality?.() ?? null,
         identity: this.facts(s),
+        now: { at: new Date(this.now()), timeZone: this.timeZone },
+        music: await this.musicPromptFacts(),
       });
     } catch {
       return null;
@@ -2469,7 +2475,13 @@ export class InteractionEngine {
       const index = /^([0-9]{1,3})\.?$/.exec(name);
       if (index !== null) {
         const n = Number(index[1]);
-        const fromContext = live?.kind === 'playlists' ? live.playlists?.[n - 1] : undefined;
+        let fromContext = live?.kind === 'playlists' ? live.playlists?.[n - 1] : undefined;
+        if (fromContext === undefined) {
+          // No live list in this room? The numbers she prints ARE the view's
+          // own order, so the view answers: "playlist 1" means the first she
+          // would list, ten minutes later as much as ten seconds (D-220).
+          fromContext = (await music.view()).playlists[n - 1]?.name;
+        }
         if (fromContext === undefined) {
           await this.reply(msg, s, lang, 'musicUnknownPlaylist', {});
           return true;
@@ -2519,6 +2531,22 @@ export class InteractionEngine {
       const on = /(?:what(?:'?s| is)? (?:on|in)|was (?:ist|liegt) (?:auf|in))\s+(.+)$/.exec(text);
       if (on !== null) {
         const name = (on[1] ?? '').replace(/["'?.!]/g, '').replace(/\bplaylist\b/g, '').trim();
+        return await listTracksOf(name);
+      }
+      // The second level, in the words the live test actually used (D-220):
+      // "Show me tracks from playlist 1" listed the playlists AGAIN, because
+      // only "what's on ..." was understood and no operator will guess that.
+      // Tracks-of, show-me and the bare "playlist N" all reach the listing.
+      const tracksOf =
+        /(?:tracks?|titles?|songs?|titel|lieder|stuecke)\s+(?:from|of|on|in|aus|von|auf)\s+(.+)$/.exec(text) ??
+        /(?:show|list|zeig|zeige|liste)\w*\s+(?:me\s+|mir\s+|uns\s+)?(?:the\s+|die\s+|das\s+)?playlists?\s+(.+)$/.exec(text) ??
+        /^playlists?\s+([0-9]{1,3})\s*\??$/.exec(text);
+      if (tracksOf !== null) {
+        const name = (tracksOf[1] ?? '')
+          .replace(/["'?.!]/g, '')
+          .replace(/\bplaylists?\b/g, '')
+          .replace(/\b(?:the|der|die|das)\b/g, '')
+          .trim();
         return await listTracksOf(name);
       }
       const view = await music.view();
@@ -2577,7 +2605,33 @@ export class InteractionEngine {
         await this.reply(msg, s, lang, 'musicUnknownTrack', {});
         return true;
       }
-      await playOutcomeReply(await music.playByTitle(msg.groupId, arg));
+      // THE LADDER (D-220, from the live test): "play Chillstep" named a
+      // playlist and a genre she holds and was answered "no track by that
+      // name"; "play Aurora Night - Alusion for us" named an exact title in a
+      // member's own words - title, dash, artist, courtesy - and missed too,
+      // because one exact-title lookup was the whole search. Most specific
+      // rung first, every rung inside the playlist boundary (the store scopes
+      // each one through the assignments), and the honest unknown only when
+      // every rung misses. 'busy' and 'unavailable' STOP the ladder: the
+      // thing was found and could not go out, and saying otherwise would lie.
+      const courtesy = /\s+(?:for\s+(?:us|me|the\s+room)|fuer\s+(?:uns|mich)|f\u00fcr\s+(?:uns|mich)|please|bitte)\s*$/i;
+      let bare = arg;
+      for (let pass = 0; pass < 3 && courtesy.test(bare); pass++) bare = bare.replace(courtesy, '').trim();
+      const dashed = bare.includes(' - ') ? (bare.split(' - ')[0] ?? '').trim() : '';
+      const rungs = [...new Set([arg, bare, dashed].filter((c) => c !== ''))];
+      for (const c of rungs) {
+        const outcome = await music.playByTitle(msg.groupId, c);
+        if (outcome !== 'unknown') { await playOutcomeReply(outcome); return true; }
+      }
+      for (const c of rungs) {
+        const outcome = await music.playFromPlaylist(msg.groupId, c);
+        if (outcome !== 'empty') { await playOutcomeReply(outcome); return true; }
+      }
+      for (const c of rungs) {
+        const outcome = await music.playByGenre(msg.groupId, c);
+        if (outcome !== 'empty') { await playOutcomeReply(outcome); return true; }
+      }
+      await playOutcomeReply('unknown');
       return true;
     }
 
@@ -3934,7 +3988,7 @@ export class InteractionEngine {
               // conversation is where somebody asks what year it is, and where she
               // answered from two-year-old training data because nobody had told her.
               now: { at: new Date(this.now()), timeZone: this.timeZone },
-            music: await this.musicPromptFacts(),
+              music: await this.musicPromptFacts(),
             })
           )?.trim() || null;
       } catch (error) {

@@ -3999,8 +3999,10 @@ plugin) and D-217 (the profile shape); this section is the map.
 budgets - music and spots, 3/day/room, 60-minute gap, his numbers - and the member-upload
 bound: MP3 only, 10 MB default since the D-219 activation), `plugin.ts` (TWO ids: `music` carries the MUSIC intent; `music-uploads` is Part
 4b's own risk surface, off by default), `store.ts` (migration 063's tables and every derived
-aggregate: the DJ sheet, the budgets, shuffle-without-replacement as a query, the
-assignment-scoped title search that IS the playlist boundary), `library.ts` (files under
+aggregate: the DJ sheet - PER BOT since D-220, what she can reach and never the whole
+shelf - the budgets, shuffle-without-replacement as a query, and the assignment-scoped
+lookups that ARE the playlist boundary: title, playlist name, and genre, the three rungs of
+D-220's play ladder), `library.ts` (files under
 MUSIC_ROOT by track id; tags read with `music-metadata` and corrected by the operator;
 duration from the ffmpeg probe, never the tag - the VBR lesson; the cached encode),
 `cadence.ts` (pure: the bridge's whichever-first plus the budget verdict with named skips),

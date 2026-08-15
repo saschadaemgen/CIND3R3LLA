@@ -62,7 +62,8 @@ import {
   assignmentsForBot as musicAssignmentsForBot,
   findTrackForBot,
   getTrack as musicGetTrack,
-  libraryFacts as musicLibraryFacts,
+  libraryFactsForBot as musicLibraryFactsForBot,
+  randomTrackByGenreForBot,
   playlistTracks as musicPlaylistTracks,
   randomTrackForBot,
   randomTrackFromPlaylistForBot,
@@ -363,12 +364,23 @@ function musicOpsFor(cfg: Config, interaction: InteractionService, plugins: Plug
       return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
     },
     facts: async () => {
-      const f = await musicLibraryFacts(deps.db, new Date());
+      // Per BOT, not per deployment (D-220): the DJ sheet must describe what
+      // SHE can reach, or a second bot advertises genres it cannot play.
+      const f = await musicLibraryFactsForBot(deps.db, botProfileId);
       return {
-        tracks: f.totalTracks,
-        genres: f.byGenre.map((g) => g.genre),
+        tracks: f.tracks,
+        genres: f.genres,
         playlists: (await musicAssignmentsForBot(deps.db, botProfileId)).length,
       };
+    },
+    playByGenre: async (groupId: number, genre: string) => {
+      const track = await randomTrackByGenreForBot(deps.db, botProfileId, genre);
+      if (track === null) return 'empty' as const;
+      const out = await playTrackToGroup(deps, botProfileId, groupId, track, {
+        requested: true,
+        assignmentId: null,
+      });
+      return out.busy ? ('busy' as const) : out.sent ? ('sent' as const) : ('unavailable' as const);
     },
     playByTitle: async (groupId: number, title: string) => {
       const track = await findTrackForBot(deps.db, botProfileId, title);
