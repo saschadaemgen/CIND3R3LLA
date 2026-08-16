@@ -293,11 +293,19 @@ async function main(): Promise<void> {
   check('primary action is visible', page.body.includes('Create AI Bot'));
   check('compact list is visible', page.body.includes('setup-list-item'));
   check('selected detail is visible', page.body.includes('Selected AI Bot'));
-  const renderedDialogs = (page.body.match(/data-setup-dialog/g) ?? []).length;
+  // Since D-228 the page renders TWO kinds of dialog: the five-step CREATE wizard and the
+  // flat EDIT form, which deliberately has no steps at all - a wizard is the wrong shape
+  // for changing a description. The old assertion assumed every dialog was an assistant.
+  const createWizards = (page.body.match(/value="create-profile"/g) ?? []).length;
+  const editForms = (page.body.match(/value="update-profile"/g) ?? []).length;
   const renderedSteps = (page.body.match(/data-setup-step="/g) ?? []).length;
   check(
-    'each rendered assistant has five steps',
-    renderedDialogs > 0 && renderedSteps === renderedDialogs * 5,
+    'the create assistant has five steps and is the only stepped dialog (D-228)',
+    createWizards === 1 && renderedSteps === createWizards * 5,
+  );
+  check(
+    'the selected bot gets a flat edit form with its sections stacked, not stepped',
+    editForms === 1 && (page.body.match(/setup-edit-section/g) ?? []).length === 4,
   );
   check(
     'automatic contact setting is visible inside assistant',

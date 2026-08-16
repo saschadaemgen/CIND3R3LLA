@@ -633,7 +633,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       title: 'Channel Bridge',
       active: 'plugins',
       csrfToken: csrf,
-      botSwitcher: { ...selection, returnTo: '/bridge' },
+      botSwitcher: { ...selection, returnTo: '/bridge', scope: 'mixed' },
       body: html`
         ${/*
           NAMES THE BOT (D-211). This said "the bot" and named none, the same silence that let

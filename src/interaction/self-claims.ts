@@ -17,6 +17,14 @@
  * a RULE, in the registry, where she can be quoted it. This is how we find out whether the
  * rule is working.
  *
+ * ONE CLASS OF CLAIM HAS SINCE MOVED OUT (D-226): a first-person refusal of a plugin
+ * capability ("I won't look it up for you") is judged and stripped at runtime by
+ * `capability-claims.ts`, because its truth is COMPUTABLE against the bot's own catalog
+ * where the claims below are not, and because every strip there is counted on the
+ * Diagnostics page, which is what separates a meter from the masking this header warns
+ * about. The patterns below remain the corpus-anchored detector for the constitutional
+ * claims - rules, will, ownership - whose truth no catalog can settle.
+ *
  * ── THE CORPUS IS EVIDENCE, AND IT IS WHY THE PATTERNS ARE SHAPED AS THEY ARE ─
  *
  * Every string below was actually produced: three in production before the fence existed,

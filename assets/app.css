@@ -2874,6 +2874,13 @@ input[type='radio'] {
   animation: setup-step-in 180ms ease;
 }
 
+/* The flat edit form (D-228): the wizard's sections stacked, not stepped. */
+.setup-edit-section + .setup-edit-section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+
 @keyframes setup-step-in {
   from {
     opacity: 0;

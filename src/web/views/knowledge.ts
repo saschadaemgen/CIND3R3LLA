@@ -17,8 +17,11 @@
  *
  * Every number on the settings page is unknowable in advance. The relevance floor in
  * particular was shipped at 0.45 as a guess, and a live run answered a question about mercury
- * from the model while printing a document name underneath it. It is 0.55 now because it was
- * MEASURED, and the only reason it could be measured is that the scores are visible.
+ * from the model while printing a document name underneath it. Measured, it became 0.55; then
+ * production showed a README with a noise band straddling THAT (0.53-0.58 against off-topic
+ * questions, the operator's own sentence at 0.575), and a second measurement moved it to 0.60
+ * (D-226). The only reason either could be measured is that the scores are visible; the bands
+ * live in retrieval.ts and `npm run calibrate:knowledge-relevance` reprints them per deployment.
  *
  * So the diagnostics page shows every candidate with its keyword score, its vector score, its
  * fused score, the document weight, whether it cleared the floor, and whether it made the
@@ -657,7 +660,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
         // carried a hook nothing implemented. `verify:knowledge` now refuses any page whose
         // markup uses an upload hook without loading the script that implements it.
         head: html`<script src="/assets/admin-document-upload.js" defer></script>`,
-        botSwitcher: { ...selection, returnTo: '/ai/knowledge' },
+        botSwitcher: { ...selection, returnTo: '/ai/knowledge', scope: 'mixed' },
       });
     },
   );
@@ -845,7 +848,7 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
         active: 'ai:knowledge',
         csrfToken: csrf,
         body,
-        botSwitcher: { ...selection, returnTo: '/ai/knowledge/diagnostics' },
+        botSwitcher: { ...selection, returnTo: '/ai/knowledge/diagnostics', scope: 'mixed' },
       });
     },
   );

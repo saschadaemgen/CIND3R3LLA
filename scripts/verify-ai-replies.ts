@@ -134,15 +134,20 @@ async function main(): Promise<void> {
   }
   check('a reply missing deterministic counts is rejected', missingFactRejected);
 
-  console.log('\n3. Display names are not allowed to leak into generated body text');
+  console.log('\n3. Display names are taken OUT of generated body text (D-227)');
+  // This used to assert a rejection. The strip decision (D-227) keeps the guarantee - the
+  // name does not reach the member - and keeps the answer: the vocative is removed and the
+  // rest ships, counted on the Diagnostics page. verify:name-guard drives the full matrix.
   nextReply = 'Sascha, I keep 216 messages, with 108 public.';
-  let nameRejected = false;
-  try {
-    await generateOllamaReply(config, statusRequest, fakeFetch);
-  } catch {
-    nameRejected = true;
-  }
-  check('a generated sender name is rejected', nameRejected);
+  const strippedReply = await generateOllamaReply(config, statusRequest, fakeFetch);
+  check(
+    'the vocative is removed and the reply ships without the name',
+    !strippedReply.toLowerCase().includes('sascha') && strippedReply.includes('I keep 216'),
+  );
+  check(
+    'the deterministic counts survive the strip',
+    strippedReply.includes('216') && strippedReply.includes('108'),
+  );
 
   console.log('\n4. Locked operational text is appended unchanged');
   const protectedText =

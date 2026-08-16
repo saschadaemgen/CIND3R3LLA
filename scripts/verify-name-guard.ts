@@ -19,13 +19,13 @@
  *   3. the two call sites that answered a SUCCESSFUL lookup with "I could not look that up
  *      just now" now say which half actually failed.
  *
- * ── WHAT THIS CHECK DELIBERATELY DOES NOT CLAIM ──────────────────────────────
+ * ── THE QUESTION SECTION 3 EXISTED TO MAKE MEASURABLE IS NOW DECIDED (D-227) ─
  *
- * It does not claim the production rejection stops happening. The name in that incident is
- * not a substring false positive; a reply containing it contained the name, and the boundary
- * changes nothing about that case. Whether a true match should STRIP rather than reject is
- * a separate decision with its own briefing, and section 3 exists to make it measurable
- * rather than to pre-empt it.
+ * CCB-S5-031 left strip-versus-reject open and built the count to decide it. The count
+ * decided: a true match is STRIPPED - a vocative removed, an inline mention turned second
+ * person - and the rest of the answer ships, recorded with cost `stripped`. Rejection
+ * remains the fallback for a strip that leaves nothing or fails to remove the name, so
+ * the guard's failure direction is unchanged. This harness now pins the strip.
  *
  * ── EVERY NEGATIVE HAS A POSITIVE CONTROL ────────────────────────────────────
  *
@@ -139,11 +139,12 @@ async function main(): Promise<void> {
     reply: string,
     senderName: string,
     draft = '',
+    lang = 'en',
   ): Promise<{ text: string | null; error: string | null }> => {
     nextReply = reply;
     const request = {
       kind: 'conversation',
-      lang: 'en',
+      lang,
       memberMessage: 'hello',
       deterministicDraft: draft,
       mode: 'conversation',
@@ -162,48 +163,71 @@ async function main(): Promise<void> {
   const rejected = async (reply: string, senderName: string, draft = ''): Promise<boolean> =>
     (await speak(reply, senderName, draft)).error?.includes('exposed blocked text') === true;
 
+  /** One reply through the guard with the record inspected beside the result. */
+  const guarded = async (
+    reply: string,
+    senderName: string,
+    draft = '',
+    lang = 'en',
+  ): Promise<{ text: string | null; error: string | null; events: ReturnType<typeof recentBlockedNames> }> => {
+    clearBlockedNames();
+    const out = await speak(reply, senderName, draft, lang);
+    return { ...out, events: recentBlockedNames() };
+  };
+
   /* ── 1. The match is a whole word ────────────────────────────────────────── */
 
   console.log('\n1. A name is matched as a word, not as a run of letters');
 
-  // THE PRODUCTION SHAPE FIRST, so the fix cannot be mistaken for a weakening: a long name
-  // written out in her prose is still rejected, exactly as before.
+  // THE PRODUCTION SHAPE FIRST. A long name written out in her prose is still CAUGHT -
+  // and since D-227 the catch is a recovery: the vocative goes, the answer ships.
   //
   // A PLACEHOLDER of SimpleX's auto-generated adjective-plus-noun shape, not the display name
   // from the incident, because this repository is public and a display name is member data.
   // Only the shape matters here: long enough that a substring hit is unambiguous, and a word
   // it can be embedded in.
+  const vocative = await guarded('Good question, BeamingRiver, the archive keeps that.', 'BeamingRiver');
   check(
-    'a display name she actually wrote is still rejected',
-    await rejected('Good question, BeamingRiver, the archive keeps that.', 'BeamingRiver'),
+    'a display name she wrote is taken out and the answer ships without it (D-227)',
+    vocative.text === 'Good question, the archive keeps that.' &&
+      vocative.events.length === 1 &&
+      vocative.events[0]?.cost === 'stripped',
+    vocative.text ?? vocative.error ?? '',
   );
 
   // ...and the negative that the boundary buys, with the SAME name at the SAME length, so
-  // the pair differs in one property only.
+  // the pair differs in one property only: the guard does not even fire.
+  const embedded = await guarded('They talked about beamingriverside walks.', 'BeamingRiver');
   check(
-    '  but the same letters inside a longer word are not',
-    !(await rejected('They talked about beamingriverside walks.', 'BeamingRiver')),
+    '  but the same letters inside a longer word are left entirely alone',
+    embedded.text === 'They talked about beamingriverside walks.' && embedded.events.length === 0,
   );
 
   // The four-character floor is the boundary's partner and neither works alone. `Ella` is a
   // real name, long enough to guard, and a substring of ordinary words in both languages.
+  const ella = await guarded('Ella, that is published now.', 'Ella');
   check(
-    'a four-character name is rejected when it stands alone',
-    await rejected('Ella, that is published now.', 'Ella'),
+    'a four-character name standing alone is stripped',
+    ella.text === 'That is published now.' && ella.events[0]?.cost === 'stripped',
+    ella.text ?? '',
   );
+  const stellar = await guarded('Take an umbrella, the stellar forecast is poor.', 'Ella');
   check(
-    '  and not when it is inside "umbrella" or "stellar"',
-    !(await rejected('Take an umbrella, the stellar forecast is poor.', 'Ella')),
+    '  and untouched inside "umbrella" or "stellar"',
+    stellar.text === 'Take an umbrella, the stellar forecast is poor.' && stellar.events.length === 0,
   );
 
   // German, because the guard runs in both languages and `ein`/`in` are the worst cases.
+  const inge = await guarded('Das steht in deinen Unterlagen, glaube ich.', 'Inge', '', 'de');
   check(
-    'a German sentence is not destroyed by a name inside its prepositions',
-    !(await rejected('Das steht in deinen Unterlagen, glaube ich.', 'Inge')),
+    'a German sentence is not touched for a name inside its prepositions',
+    inge.text === 'Das steht in deinen Unterlagen, glaube ich.' && inge.events.length === 0,
   );
+  const ingeNamed = await guarded('Inge, das steht in deinen Unterlagen.', 'Inge', '', 'de');
   check(
-    '  while the same member named outright is still caught',
-    await rejected('Inge, das steht in deinen Unterlagen.', 'Inge'),
+    '  while the same member named outright is still caught, and the address removed',
+    ingeNamed.text === 'Das steht in deinen Unterlagen.' && ingeNamed.events[0]?.cost === 'stripped',
+    ingeNamed.text ?? '',
   );
 
   /* ── 2. The floor, and what it deliberately gives up ─────────────────────── */
@@ -232,45 +256,78 @@ async function main(): Promise<void> {
 
   // THE POSITIVE CONTROL THE FLOOR NEEDS. Without this, "short names are not guarded" would
   // pass against a guard that had been deleted outright.
+  const anna = await guarded('Anna, I have that here.', 'Anna');
   check(
     'a name one character over the floor is still guarded',
-    await rejected('Anna, I have that here.', 'Anna'),
+    anna.text === 'I have that here.' && anna.events.length === 1,
+    anna.text ?? '',
   );
 
   // STATED, NOT HIDDEN: this is the cost of the floor and the check says so out loud.
+  const sam = await guarded('Sam, I have that here.', 'Sam');
   check(
     '  and a three-character name is knowingly NOT guarded, which is the trade',
-    !(await rejected('Sam, I have that here.', 'Sam')),
+    sam.text === 'Sam, I have that here.' && sam.events.length === 0,
   );
 
-  /* ── 3. Every rejection is counted, and the expensive one is distinguished ─ */
+  /* ── 3. Every catch is counted, and the strip is the normal case (D-227) ─── */
 
-  console.log('\n3. A rejection reaches the operator instead of a debug line');
+  console.log('\n3. A catch reaches the operator, and the answer survives it');
 
   clearBlockedNames();
   check('the log starts empty', blockedNameCount() === 0);
 
-  // FREE CONVERSATION: no draft, so the member gets nothing at all.
+  // The two shapes the count showed were being destroyed: the vocative and the inline
+  // mention. Both now ship, with the name gone, and both are recorded.
   await speak('Alice, the archive has three of those.', 'Alice', '');
-  // A LANE WITH A DRAFT: the member gets a plainer sentence and never knows.
-  await speak('Alice, the archive has three of those.', 'Alice', 'The archive has three.');
+  await speak('I asked Alice for patience.', 'Alice', 'The archive has three.');
 
   const events = recentBlockedNames();
-  check('both rejections were recorded', blockedNameCount() === 2, `count=${String(blockedNameCount())}`);
+  check('both catches were recorded', blockedNameCount() === 2, `count=${String(blockedNameCount())}`);
   check(
     'the recorded name is the one that matched',
     events.every((e) => e.literal === 'Alice'),
   );
   check(
-    'the cost distinguishes a lost answer from a fallback',
-    events.filter((e) => e.cost === 'silence').length === 1 &&
-      events.filter((e) => e.cost === 'draft').length === 1,
+    'both were recoveries: cost says the name went and the reply shipped',
+    events.every((e) => e.cost === 'stripped'),
     events.map((e) => e.cost).join(','),
   );
   check(
     'what she had written is kept, so the count can be judged',
-    events.every((e) => e.text.includes('the archive has three')),
+    events.every((e) => /alice/i.test(e.text)),
   );
+
+  // The strip's grammar: an inline mention becomes second person, a possessive becomes
+  // "your", and German gets its own words.
+  const inline = await guarded('I asked Alice for patience.', 'Alice');
+  check(
+    'an inline mention becomes second person',
+    inline.text === 'I asked you for patience.',
+    inline.text ?? '',
+  );
+  const possessive = await guarded("That was Alice's idea all along.", 'Alice');
+  check(
+    "a possessive becomes 'your'",
+    possessive.text === 'That was your idea all along.',
+    possessive.text ?? '',
+  );
+
+  // THE REJECT FALLBACK IS STILL THERE, read from the source because it is deliberately
+  // hard to reach: it exists for a strip that leaves nothing or fails to remove the name
+  // (the substring fallback in matchesBlockedName can match what a whole-word replacement
+  // cannot remove), and the day somebody deletes it this goes red.
+  {
+    const src = await (await import('node:fs/promises')).readFile(
+      'src/interaction/ollama-reply.ts',
+      'utf8',
+    );
+    check(
+      'the reject fallback survives for a strip that fails',
+      src.includes('stripped.length < 2 || matchesBlockedName(stripped, literal)') &&
+        src.includes('noteBlockedName(literal, current, request);'),
+    );
+  }
 
   // A REPLY THAT PASSES IS NOT RECORDED, or the card would count clean traffic as faults.
   const before = blockedNameCount();
@@ -404,14 +461,15 @@ async function main(): Promise<void> {
     noFloorWouldReject,
   );
 
-  // 5c. A REJECTION THAT LEAVES NO RECORD. The operator asked for this one by name: the
-  // count is the whole point of the change, so a silent rejection must fail the check.
+  // 5c. A CATCH THAT LEAVES NO RECORD. The operator asked for this one by name when the
+  // guard rejected, and it holds unchanged now that it strips: a strip nobody can see is
+  // the silent rewrite CCB-S3-023 forbids, so a catch with no record must fail the check.
   clearBlockedNames();
   const silently = await speak('Alice, here it is.', 'Alice');
   check(
-    'MUTATION: a rejection with no record would fail here',
-    silently.text === null && blockedNameCount() === 1,
-    `rejected=${String(silently.text === null)} recorded=${String(blockedNameCount())}`,
+    'MUTATION: a strip with no record would fail here',
+    silently.text === 'Here it is.' && blockedNameCount() === 1,
+    `shipped=${JSON.stringify(silently.text)} recorded=${String(blockedNameCount())}`,
   );
 
   console.log(

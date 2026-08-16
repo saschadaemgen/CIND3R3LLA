@@ -109,10 +109,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** The tone, in one place, so it stays consistent and stays out of the rule text. */
-const EPIGRAPH =
-  'Eighty-two sentences decide what she will and will not do. They are written down, they ' +
-  'are hers to be held to, and they are yours to revise. Read before you change one.';
+/**
+ * The tone, in one place, so it stays consistent and stays out of the rule text.
+ *
+ * The count is DERIVED (D-228): it shipped as the literal "Eighty-two" and sat one line
+ * above a counter reading 121, because prose holding a number is prose holding a stale
+ * number - the plugin-count lesson (CLAUDE.md) on an operator-facing page.
+ */
+function epigraph(ruleCount: number): string {
+  return (
+    `${String(ruleCount)} sentences decide what she will and will not do. They are written ` +
+    'down, they are hers to be held to, and they are yours to revise. Read before you change one.'
+  );
+}
 
 /**
  * What a law's scope is, said in the list and said again on its own page (CCB-S5-001).
@@ -706,8 +715,11 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           : bookByLane(rules, shipped, query);
 
       const shown = sections.reduce((n, s) => n + s.entries.length, 0);
-      const { view: scopeView } = await readScopes(rules);
+      const { view: scopeView, bots } = await readScopes(rules);
       const pages = lawPages(rules);
+      const deviatingLaws = [...scopeView.scopes.values()].filter(
+        (s) => s.deviations.length > 0,
+      ).length;
       reply.type('text/html');
 
       return page({
@@ -732,7 +744,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <p class="text-xs font-semibold uppercase tracking-widest text-slate-400">
               What is written here is what she is
             </p>
-            <p class="mt-2">${EPIGRAPH}</p>
+            <p class="mt-2">${epigraph(rules.length)}</p>
             <p class="mt-2 text-slate-400">
               ${String(rules.length)} rules ·
               ${String(rules.filter((r) => r.tier === 'constitutional').length)} constitutional ·
@@ -740,6 +752,20 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               ${String(drifted.length)} changed from what shipped ·
               ${String(rules.filter((r) => r.nameable).length)} she may name ·
               ${String(rules.filter((r) => !r.nameable).length)} withheld from members
+            </p>
+            ${
+              /* The scope statement, on the knowledge model (D-228): state, bot,
+                 consequence, where. The true split here is by TIER, not by page. */ ''
+            }
+            <p class="mt-2 text-slate-400">
+              This Book is the deployment's: every bot reads these laws. A
+              <strong>constitutional</strong> law binds all ${String(bots.length)} bot${bots.length === 1 ? '' : 's'}
+              identically and cannot be given to one bot alone. A <strong>standard</strong> law
+              can be switched or reworded for a single bot on that law's own page${deviatingLaws > 0
+                ? html`, and ${String(deviatingLaws)} ${deviatingLaws === 1 ? 'law currently deviates' : 'laws currently deviate'}
+                    for some bot - each one says so below`
+                : html`; none currently deviates`}.
+              The Assembled Word shows what any one bot is actually told.
             </p>
             <p class="mt-2 text-slate-400">
               ${String(pages.size)} of them have a PAGE NUMBER, which is what she quotes when

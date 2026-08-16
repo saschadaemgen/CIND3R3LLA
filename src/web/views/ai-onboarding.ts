@@ -318,8 +318,8 @@ function formInput(body: Record<string, unknown>): BotCreationInput {
     // The wizard posts the base character only. The dials are absent from this form on
     // purpose, and `normalizePersonality` fills them with the middle value rather than
     // with zero, so a wizard save can never dial a bot to the bottom of every axis by
-    // omission. Editing an existing bot re-posts its stored character (see `wizardDialog`),
-    // so a save from here does not silently clear it.
+    // omission. Only creation reads this: `updateBotOnboardingProfile` writes no
+    // personality column, so an edit cannot clear a character however it posts.
     personality: normalizePersonality({ baseCharacter: text(body['baseCharacter']) }),
   };
 }
@@ -479,12 +479,15 @@ function safeReturnTo(raw: unknown): string {
   return raw;
 }
 
+/**
+ * CREATE ONLY since D-228. A wizard walks decisions in order, which is the right shape
+ * for a bot that does not exist yet and the wrong one for changing a single field of one
+ * that does - the operator had to step past four screens he did not come for to reach
+ * the one he did. Editing got its own flat form, `editDialog`, with the same fields and
+ * the same save.
+ */
 function wizardDialog(
-  profile: BotOnboardingProfile | null,
   csrf: string,
-  // The create form's shape, with the wake word optional so the EDIT dialog can pass a
-  // stored profile: that dialog does not render the field, because it does not save
-  // overrides and a field that looks saved and is not is the recurring defect on this form.
   input: BotOnboardingInput & { wakeWord?: string },
   id: string,
   /**
@@ -498,15 +501,11 @@ function wizardDialog(
    */
   returnTo = '',
 ): SafeHtml {
-  const action = profile ? 'update-profile' : 'create-profile';
-  const submitLabel = profile ? 'Save AI Bot' : 'Create AI Bot';
-
   return html`<dialog id="${id}" class="setup-dialog" data-setup-dialog>
     <form method="post" action="/ai/onboarding" class="setup-wizard-form" data-setup-form>
       <input type="hidden" name="_csrf" value="${csrf}" />
-      <input type="hidden" name="action" value="${action}" />
-      ${profile ? hidden('profileId', profile.id) : null}
-      ${!profile && returnTo !== '' ? hidden('returnTo', returnTo) : null}
+      <input type="hidden" name="action" value="create-profile" />
+      ${returnTo !== '' ? hidden('returnTo', returnTo) : null}
       ${hidden('createAddress', input.createAddress)}
       ${hidden('updateAddress', input.updateAddress)}
       ${hidden('updateProfile', input.updateProfile)}
@@ -522,7 +521,7 @@ function wizardDialog(
       <header class="setup-dialog-header">
         <div>
           <span class="setup-eyebrow">Guided assistant</span>
-          <h2>${profile ? `Edit ${profile.displayName}` : 'Create AI Bot'}</h2>
+          <h2>Create AI Bot</h2>
           <p>One clear setup decision is shown at a time.</p>
         </div>
         <button
@@ -578,18 +577,16 @@ function wizardDialog(
             ${
               // ── THE WAKE WORD, ASKED FOR (CCB-S5-009) ─────────────────────────
               //
-              // Only when creating. It is a per-bot interaction override, not a column on
-              // this record, and the edit dialog does not save overrides: a field here on
-              // edit would look like it saved and would not. The Addressing page is the
-              // edit path, and the note below points at it.
+              // Creation only, which since D-228 is all this form is. It is a per-bot
+              // interaction override, not a column on this record, and the edit form does
+              // not save overrides: a field there would look like it saved and would not.
+              // The Addressing page is the edit path, and the note below points at it.
               //
               // Pre-filled from the bot name by `admin-setup-wizard.js` as the operator
               // types, and only until they touch this field. The derivation stays the
               // default and stops being the decision: SANCH3Z should answer to Sanchez, and
               // nothing in the code can know that.
-              profile
-                ? null
-                : html`<label class="setup-field">
+              html`<label class="setup-field">
                     <span>Wake word</span>
                     <input
                       name="wakeWord"
@@ -633,17 +630,8 @@ function wizardDialog(
           </div>
           ${
             // The base character is collected at creation and edited on the Personality
-            // page (CCB-S4-029). It is NOT rendered on the edit dialog, and that is the
-            // point: this form's save does not write the personality columns, so a field
-            // here would be a control that appears to save and does not.
-            profile
-              ? html`<div class="setup-inline-note">
-                  This bot already has a character, an origin and four voice dials.
-                  <a href="/ai/personality?bot=${String(profile.id)}">Open its Personality page</a>
-                  to change how it sounds and what it says about where it came from. Nothing on
-                  this dialog affects that.
-                </div>`
-              : html`<label class="setup-field">
+            // page (CCB-S4-029); the edit form carries a note pointing there instead.
+            html`<label class="setup-field">
                   <span>Base character</span>
                   <textarea
                     name="baseCharacter"
@@ -896,8 +884,223 @@ ${input.personality.baseCharacter}</textarea
           Continue
         </button>
         <button type="submit" class="setup-button setup-button-primary" data-setup-finish hidden>
-          ${submitLabel}
+          Create AI Bot
         </button>
+      </footer>
+    </form>
+  </dialog>`;
+}
+
+/**
+ * Editing is a FORM, not a wizard (D-228).
+ *
+ * Creating walks five decisions in order because a new bot has none of the answers yet;
+ * editing is changing one answer whose neighbours are already right, and the wizard made
+ * the operator walk past four steps he did not come for to change a description. Same
+ * fields, same `update-profile` save, no steps: everything visible at once.
+ *
+ * The wake word and the base character are deliberately NOT here, exactly as they were
+ * deliberately not on the edit wizard before it: this save writes neither interaction
+ * overrides nor personality columns, and a field that looks saved and is not is the
+ * recurring defect on this form. The notes point at the pages that do save them.
+ */
+function editDialog(profile: BotOnboardingProfile, csrf: string, id: string): SafeHtml {
+  return html`<dialog id="${id}" class="setup-dialog" data-setup-dialog>
+    <form method="post" action="/ai/onboarding">
+      <input type="hidden" name="_csrf" value="${csrf}" />
+      <input type="hidden" name="action" value="update-profile" />
+      ${hidden('profileId', profile.id)}
+      ${hidden('createAddress', profile.createAddress)}
+      ${hidden('updateAddress', profile.updateAddress)}
+      ${hidden('updateProfile', profile.updateProfile)}
+      ${hidden('businessAddress', profile.businessAddress)}
+      ${hidden('commandRegistryMode', profile.commandRegistryMode)}
+      ${hidden('customCommands', JSON.stringify(profile.customCommands))}
+      ${hidden('useBotProfile', profile.useBotProfile)} ${hidden('logContacts', profile.logContacts)}
+      ${hidden('logNetwork', profile.logNetwork)}
+      ${hidden('contactRequestRetentionHours', profile.contactRequestRetentionHours)}
+      ${hidden('groupInvitationRetentionHours', profile.groupInvitationRetentionHours)}
+      ${hidden('maxPendingContactRequests', profile.maxPendingContactRequests)}
+
+      <header class="setup-dialog-header">
+        <div>
+          <span class="setup-eyebrow">Selected AI Bot</span>
+          <h2>Edit ${profile.displayName}</h2>
+          <p>Every stored setting on one page. Saving runs no SimpleX action.</p>
+        </div>
+        <button
+          type="button"
+          class="setup-dialog-close"
+          data-setup-close
+          aria-label="Close edit form"
+        >
+          ×
+        </button>
+      </header>
+
+      <div class="setup-wizard-body">
+        <section class="setup-edit-section">
+          <div class="setup-step-heading">
+            <span>Identity</span>
+            <h3>Name and key</h3>
+            <p>What members see, and the key that links this record to its settings.</p>
+          </div>
+          <div class="setup-field-grid">
+            <label class="setup-field">
+              <span>Bot name</span>
+              <input
+                name="displayName"
+                value="${profile.displayName}"
+                required
+                maxlength="80"
+                autocomplete="off"
+              />
+              <small>This name is shown to members in SimpleX.</small>
+            </label>
+            <label class="setup-field">
+              <span>Internal key</span>
+              <input
+                name="slug"
+                value="${profile.slug}"
+                required
+                minlength="2"
+                maxlength="63"
+                pattern="${SLUG_PATTERN}"
+                autocomplete="off"
+              />
+              <small
+                >Links this bot profile to saved settings and audit records; lower case
+                letters, numbers and hyphens.</small
+              >
+            </label>
+          </div>
+          <div class="setup-inline-note">
+            The wake word is edited on the
+            <a href="/interaction/addressing?bot=${String(profile.id)}">Addressing page</a>, and
+            the character, origin and voice dials on the
+            <a href="/ai/personality?bot=${String(profile.id)}">Personality page</a>. Nothing on
+            this form affects either.
+          </div>
+          <div class="setup-toggle-grid">
+            ${toggle('enabled', 'Enabled', 'Allows this setup to be used later.', profile.enabled)}
+          </div>
+        </section>
+
+        <section class="setup-edit-section">
+          <div class="setup-step-heading">
+            <span>Contact handling</span>
+            <h3>Direct requests</h3>
+            <p>How direct SimpleX contact requests are handled.</p>
+          </div>
+          <div class="setup-toggle-grid">
+            ${toggle(
+              'autoAcceptContacts',
+              'Accept contact requests automatically',
+              'Recommended for the first controlled setup.',
+              profile.autoAcceptContacts,
+            )}
+            ${toggle(
+              'allowFiles',
+              'Allow files',
+              'Allows supported file handling after runtime wiring is active.',
+              profile.allowFiles,
+            )}
+          </div>
+        </section>
+
+        <section class="setup-edit-section">
+          <div class="setup-step-heading">
+            <span>Group and role</span>
+            <h3>Invitations and expected role</h3>
+            <p>Which invitations may be accepted and which SimpleX role is verified.</p>
+          </div>
+          <div class="setup-field-grid">
+            <label class="setup-field">
+              <span>Group invitations</span>
+              <select name="groupInvitationMode">
+                ${option('manual', 'Manual review', profile.groupInvitationMode)}
+                ${option('automatic', 'Automatic', profile.groupInvitationMode)}
+                ${option(
+                  'approved_contacts',
+                  'Automatic for approved contacts',
+                  profile.groupInvitationMode,
+                )}
+                ${option(
+                  'approved_groups',
+                  'Automatic for approved groups',
+                  profile.groupInvitationMode,
+                )}
+              </select>
+              <small>Manual review is the safest setting.</small>
+            </label>
+            <label class="setup-field">
+              <span>Expected SimpleX role</span>
+              <select name="expectedGroupRole">
+                ${SDK_ROLES.map((role) =>
+                  option(
+                    role.value,
+                    role.label,
+                    profile.expectedGroupRole,
+                    role.operational ? undefined : 'advanced',
+                  ),
+                )}
+              </select>
+              <small>Admin remains the controlled test default.</small>
+            </label>
+          </div>
+          <div class="setup-toggle-grid">
+            ${toggle(
+              'roleVerificationRequired',
+              'Require role verification',
+              'Do not prepare access policy until the detected role matches.',
+              profile.roleVerificationRequired,
+            )}
+          </div>
+        </section>
+
+        <section class="setup-edit-section">
+          <div class="setup-step-heading">
+            <span>Permissions and safety</span>
+            <h3>Remote authority</h3>
+            <p>Whether this bot may execute remote commands or save permanent changes.</p>
+          </div>
+          <label class="setup-field">
+            <span>Policy activation</span>
+            <select name="policyActivationMode">
+              ${option('manual', 'Manual confirmation', profile.policyActivationMode)}
+              ${option(
+                'automatic_after_verification',
+                'Automatic after role verification',
+                profile.policyActivationMode,
+              )}
+            </select>
+            <small>Manual confirmation is recommended until the full workflow is tested.</small>
+          </label>
+          <div class="setup-toggle-grid">
+            ${toggle(
+              'remoteCommandsEnabled',
+              'Remote commands',
+              'Stored only. Runtime execution is not active.',
+              profile.remoteCommandsEnabled,
+              true,
+            )}
+            ${toggle(
+              'persistentChangesEnabled',
+              'Persistent remote changes',
+              'Stored only. Permanent changes are not active.',
+              profile.persistentChangesEnabled,
+              true,
+            )}
+          </div>
+        </section>
+      </div>
+
+      <footer class="setup-dialog-footer">
+        <button type="button" class="setup-button setup-button-quiet" data-setup-close>
+          Cancel
+        </button>
+        <span class="setup-dialog-spacer"></span>
+        <button type="submit" class="setup-button setup-button-primary">Save AI Bot</button>
       </footer>
     </form>
   </dialog>`;
@@ -1706,7 +1909,7 @@ function profileDetails(
         </div>
       </details>
 
-      ${wizardDialog(profile, csrf, profile, dialogId)}
+      ${editDialog(profile, csrf, dialogId)}
     </section>
   `;
 }
@@ -1910,7 +2113,7 @@ export function registerAiOnboarding(app: FastifyInstance, ctx: ViewContext): vo
                   </div>`
             }
             ${capabilityReference()}
-            ${wizardDialog(null, csrf, defaults(), createDialogId, safeReturnTo(req.query.returnTo))}
+            ${wizardDialog(csrf, defaults(), createDialogId, safeReturnTo(req.query.returnTo))}
           </section>
         `,
       });

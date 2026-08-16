@@ -588,11 +588,13 @@ function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): S
     </div>`;
   }
 
+  const sharedCurrent = sw.scope === 'shared' || (sw.scope === 'mixed' && sw.selectedId === null);
+  const sharedHref = `${sw.returnTo}${sw.returnTo.includes('?') ? '&' : '?'}bot=shared`;
   return html`<details class="admin-botpicker" data-bot-switcher>
     <summary class="admin-botpicker-summary">
       <span class="admin-botpicker-label">
-        <span class="admin-sidebar-kicker">Editing bot</span>
-        <strong class="admin-botpicker-current">${sw.selectedName ?? 'none'}</strong>
+        <span class="admin-sidebar-kicker">${sharedCurrent ? 'Editing' : 'Editing bot'}</span>
+        <strong class="admin-botpicker-current">${sharedCurrent ? 'All bots' : (sw.selectedName ?? 'none')}</strong>
       </span>
       <span class="admin-botpicker-chevron" aria-hidden="true"></span>
     </summary>
@@ -607,18 +609,21 @@ function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): S
           opening, because a control that will not open does not say why, which is the silent
           control this whole thread is about.
         */ ''}
-        ${sw.scope === 'shared' || sw.scope === 'mixed'
-          ? html`<button
-              type="submit"
-              name="botProfileId"
-              value="shared"
-              class="admin-botpicker-option admin-botpicker-shared"
-              ${sw.scope === 'shared' ? raw('aria-current="true"') : ''}
-            >
+        ${sw.scope === 'shared'
+          ? html`<div class="admin-botpicker-option admin-botpicker-shared" aria-current="true">
               <span>All bots</span>
               <span class="admin-botpicker-hint">shared settings</span>
-            </button>`
-          : ''}
+            </div>`
+          : sw.scope === 'mixed'
+            ? html`<a
+                class="admin-botpicker-option admin-botpicker-shared"
+                href="${sharedHref}"
+                ${sharedCurrent ? raw('aria-current="true"') : ''}
+              >
+                <span>All bots</span>
+                <span class="admin-botpicker-hint">shared settings</span>
+              </a>`
+            : ''}
         ${sw.bots.map(
           (b) => html`<button
             type="submit"
@@ -626,7 +631,7 @@ function renderBotSwitcher(sw: PageOptions['botSwitcher'], csrfToken: string): S
             value="${String(b.id)}"
             class="admin-botpicker-option"
             ${sw.scope === 'shared' ? raw('disabled aria-disabled="true"') : ''}
-            ${b.id === sw.selectedId && sw.scope !== 'shared' ? raw('aria-current="true"') : ''}
+            ${b.id === sw.selectedId && !sharedCurrent ? raw('aria-current="true"') : ''}
           >
             ${b.displayName}
           </button>`,

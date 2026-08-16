@@ -187,7 +187,7 @@ async function main(): Promise<void> {
     SEARCH_RELEVANCE_FLOOR === 0.7 && 0.5813 < SEARCH_RELEVANCE_FLOOR && 0.5538 < SEARCH_RELEVANCE_FLOOR,
   );
   check(
-    "  which the knowledge base's 0.55 would NOT have done, and that is why it was measured",
+    "  which the knowledge base's floor of the time (0.55; 0.60 since D-226) would NOT have done",
     0.5813 > 0.55,
   );
 

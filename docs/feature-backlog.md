@@ -1735,14 +1735,16 @@ media sends and the recital's chapter images do not yet. The seam is generic
 with its bot, group and item. Until then those paths have the event half only, which cannot
 see a file stuck in `new`.
 
-## Knowledge retrieval on off-topic questions (decision pending, D-220 §4)
+## Knowledge retrieval on off-topic questions (RESOLVED under D-226)
 
-The 0.55 knowledge floor admits the SimpleGo README's noise band (0.53-0.58 on questions it
+The 0.55 knowledge floor admitted the SimpleGo README's noise band (0.53-0.58 on questions it
 has nothing to say about, measured with the production embedder on local copies), and the
-retrieval trigger defaults to 'always', so any free-conversation question can pick up passages
-and - through the constitutional `knowledge.no-invention` rule at ord 747 - a "what you gave
-me does not cover this" denial with a source line under it. The music-question class is closed
-(D-220 §1: those take the music lane now, where retrieval never runs). The remaining exposure
-needs one of: a raised floor (CALIBRATE FIRST against the ingested corpus, the D-184 rule), a
-default trigger of 'explicit', or scoping no-invention to the question the passages were
-retrieved for. Operator's call; nothing changed yet.
+constitutional `knowledge.no-invention` rule then produced a "what you gave me does not cover
+this" denial with a source line under it - overriding facts the application itself had put in
+the same prompt. D-226 took two of the three options at once: the floor moved to a re-measured
+0.60 (the middle of the gap between the noise band and the covered band, with
+`npm run calibrate:knowledge-relevance` to re-measure per deployment, D-184), and migration 065
+scoped no-invention so that when the passages do not answer, what the prompt itself told her -
+clock, library, laws - is hers to state, while naming a document for it stays forbidden. The
+third option, a default trigger of 'explicit', was not taken and remains available if the
+noise returns on other material.

@@ -3758,6 +3758,10 @@ export class InteractionEngine {
         // value, which is what makes "every reply is guarded" a property of this function
         // rather than of six call sites remembering.
         protectedMarkers: this.protectedMarkers(),
+        // Same contract, same reason (D-226): the invented-refusal fence judges her
+        // refusals against what THIS bot can do, and a lane passing its own value
+        // would hand the fence another bot's truth.
+        capabilities: this.deps.capabilities(),
       });
   }
 

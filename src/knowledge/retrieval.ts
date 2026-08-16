@@ -88,8 +88,9 @@ export interface RetrievalSettings {
  * 2400 characters is about 600 tokens. Two different numbers for one concept would be a
  * second thing to reason about at the moment somebody is reasoning about a leak.
  *
- * `minScore: 0.55` is MEASURED, and it started life as a guess of 0.45 that was wrong. The
- * measurement, against nomic-embed-text on the operator's own kind of material:
+ * `minScore: 0.60` is MEASURED TWICE, and both of its predecessors were measured failing.
+ * It started life as a guess of 0.45; the first measurement, against nomic-embed-text on the
+ * operator's own kind of material, moved it to 0.55:
  *
  *   relevant question against the chunk that answers it   0.62 - 0.75
  *   unrelated question (mercury, sourdough, world cup)    0.39 - 0.43
@@ -101,12 +102,19 @@ export interface RetrievalSettings {
  * and the failure it produced is precisely the one this feature must never have - an answer
  * that looks checked because a document name is under it.
  *
- * 0.55 sits between the bands with margin on both sides, and above the near-domain case,
- * which is the one worth being strict about: a question about media encryption must not be
- * answered from the scheduler document merely because both are about this project.
+ * Then 0.55 failed the same way in production (the fourth sighting of the false source line,
+ * D-226): the ingested SimpleGo README turned out to carry a NOISE BAND of 0.53 - 0.58
+ * against questions it has nothing to say about, and the operator's own sentence - "do you
+ * have Chillstep Music" - scored 0.575 against it. The chunk cleared the floor, the passages
+ * could not answer, and knowledge.no-invention then instructed her to deny what her own DJ
+ * sheet in the same prompt stated. Genuinely covered questions against the same document
+ * scored 0.65 - 0.77, so the gap between every measured noise value and every measured
+ * relevant value is [0.58, 0.62]; 0.60 sits in its middle with margin both ways.
  *
  * It remains the most consequential number here and the operator will still tune it, which is
- * why the measurement is written down rather than only the value.
+ * why the measurement is written down rather than only the value, and why
+ * `npm run calibrate:knowledge-relevance` exists: it prints these bands for whatever material a
+ * deployment actually ingests, on the deployment, per D-184.
  *
  * `keywordWeight: 1.0` and `vectorWeight: 1.0` start neutral because the corpus has both
  * kinds of question in it and there is no evidence yet for tilting either way.
@@ -120,7 +128,7 @@ export const RETRIEVAL_DEFAULTS: Readonly<RetrievalSettings> = Object.freeze({
   maxChunks: 4,
   keywordWeight: 1.0,
   vectorWeight: 1.0,
-  minScore: 0.55,
+  minScore: 0.6,
   budgetChars: 2400,
 });
 

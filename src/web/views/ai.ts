@@ -500,7 +500,7 @@ function modelsBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQuer
         <h1>AI Models</h1>
         <p>
           Inspect installed Ollama models, catalog health, routing assignments, and management
-          boundaries.
+          boundaries. Deployment-wide: there is one model catalog, and every bot draws from it.
         </p>
       </div>
 
@@ -892,7 +892,8 @@ function runtimeBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQue
         <h1>Runtime Control</h1>
         <p>
           Control the active inference lane, compare the stored request with the effective mode, and
-          verify the private runtime boundary.
+          verify the private runtime boundary. Deployment-wide: switching the lane switches it for
+          every bot at once.
         </p>
       </div>
 
@@ -1224,7 +1225,8 @@ function routingBody(snapshot: AiRuntimeSnapshot, csrf: string, query: AiPageQue
         <h1>AI Routing</h1>
         <p>
           Assign independent local models to intent classification and guarded reply wording while
-          keeping execution inside deterministic application code.
+          keeping execution inside deterministic application code. Deployment-wide: the routing
+          applies to every bot, and no bot has a model of its own.
         </p>
       </div>
 
@@ -2040,7 +2042,8 @@ export function registerAi(app: FastifyInstance, ctx: ViewContext): void {
     reply.type('text/html');
     return renderAiPage(
       'AI Overview',
-      'Executive status, trust signals, active capabilities, and the private data path.',
+      'Executive status, trust signals, active capabilities, and the private data path. ' +
+        'Everything on the AI Control pages is deployment-wide: one runtime serves every bot.',
       'ai:overview',
       req.session?.csrfToken ?? '',
       req.query,

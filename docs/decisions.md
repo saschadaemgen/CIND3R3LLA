@@ -18,10 +18,13 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 224 decisions</strong> — newest first. Highest allocated: <strong>D-225</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 227 decisions</strong> — newest first. Highest allocated: <strong>D-228</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-228 | The console says what it edits: Welcome in the section table, an explicit shared view, scope in the copy, and editing without the wizard | IMPLEMENTED |
+| D-227 | The member-name guard takes the name out instead of throwing the answer away | IMPLEMENTED |
+| D-226 | The invented refusal is judged against the catalog, the LOOKUP bar reaches the model resolver, and the passages stop overriding what the application told her | IMPLEMENTED |
 | D-225 | The music area is a section, built one to one from the operator's design | IMPLEMENTED |
 | D-224 | A send command returning is not the file arriving | IMPLEMENTED |
 | D-223 | A play that does not play says so, and nothing it sends reads as success | IMPLEMENTED |
@@ -253,6 +256,150 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-228 - The console says what it edits: Welcome in the section table, an explicit shared view, scope in the copy, and editing without the wizard
+
+**Status: IMPLEMENTED** (the console queue the operator ordered after the music build; scoped
+across two sessions, delivered here).
+
+Four connected repairs, one theme: a page is a claim about scope, and every claim on it must
+be true.
+
+**Welcome lives in the Interaction section's own table.** The first attempt gave it a nav KEY
+and left the page at `/welcome`; the screenshot showed a sidebar entry pointing at a page
+standing outside the section it claimed to live in. Its row is now in `SECTIONS`
+(`interaction.ts`), its page stays with its plugin at the STATIC route
+`/interaction/welcome` (the router prefers static over the `:section` parameter), and the
+submenu renderer is exported so the table and the page borrowing it cannot drift. `/welcome`
+redirects; the plugin list and sidebar point at the section route.
+
+**The shared view is representable, so the picker's shared entry stopped lying.** Since
+CCB-S5-011 unified selection on `resolveSelectedBot`, whose fallback chain ends at the first
+bot, "no bot named" has meant "your usual bot" - and from that day the scope panel's "Shared"
+pill linked to a page that silently rendered the session's bot. The picker's D-213 "All bots"
+entry had the same defect in wholesale: it posted `shared` to select-bot, which parsed to
+null, cleared the session and selected the FIRST bot. `?bot=shared` now selects the shared
+record explicitly (a one-off view, like any `?bot=` link; the remembered choice is
+untouched), the picker's entry is a link to it and shows "Editing: All bots" when it is
+current, the interaction save carries `botScope=shared` so the redirect lands BACK on the
+shared view (success and refusal both - a save that silently returned the operator to his
+session bot is the same stale-surface shape D-205 records), and the wake word, which is per
+bot since CCB-S5-006, renders on the shared view as a pointer to the bot pages rather than as
+a field whose save must always refuse. With ZERO bot records the field stays, because then
+the shared record is the only place a wake word can be set at all - found by
+`verify:admin-views` going red, which is what a harness is for.
+
+**The genuine settings pages state their scope in their own copy** (the D-211/D-212 sweep,
+worked down): the Book of Elii states the split that is actually true - the Book is the
+deployment's, a constitutional law binds every bot identically, a standard law can deviate
+per bot on its own page, with the live deviation count beside it; the AI Control pages say
+"deployment-wide" on every surface with a control (one runtime, one catalog, one routing
+table); and the Book's epigraph, which shipped saying "Eighty-two sentences" one line above a
+counter reading 121, derives its count now - prose holding a number is prose holding a stale
+number, the plugin-count lesson on an operator-facing page. `verify:scope-copy` was
+repaired per its own earlier finding: classification keys on EDIT signals rather than on a
+bot id appearing in display code (which had misclassified `ai.ts`), and multi-bot
+comparison copy ("Which bot records which room") counts as naming the bot, which cleared the
+`capture.ts` false positive without touching a page that was already right. Every genuine
+settings page now passes; the twelve UNCLASSIFIABLE data/infra/overview pages are the
+declared-page-kind question, deliberately left for its own briefing.
+
+**Creating and editing are two shapes** (`ai-onboarding.ts`). The five-step wizard is the
+right shape for a bot that does not exist - five decisions in order - and the wrong one for
+changing a description: the operator stepped past four screens he did not come for. "Edit
+setup" opens a flat form now: the same fields, the same `update-profile` save, everything
+visible at once, native validation with no hidden-step wall (the CCB-S5-010 defect class).
+The wizard is create-only, and the wake word and base character stay off the edit form for
+the reason they were off the edit wizard: that save writes neither, and a field that looks
+saved and is not is this form's recurring defect. A stale comment claiming the edit "re-posts
+its stored character" was corrected: `updateBotOnboardingProfile` writes no personality
+column, so an edit never could clear one. The sidebar also gained Interaction's missing
+Memory entry, found by the D-212 look: two surfaces listed the same sections and one was
+stale.
+
+---
+
+### D-227 - The member-name guard takes the name out instead of throwing the answer away
+
+**Status: IMPLEMENTED** (the strip-versus-reject question CCB-S5-031 left open, decided by
+the count it built for the purpose).
+
+CCB-S5-031 fixed the substring disaster (whole-word match, four-character floor), counted
+every rejection, and deliberately left open whether a TRUE match should strip rather than
+reject. The count decided: every recorded rejection was a reply the member wanted, destroyed
+for a vocative ("Alice, good question") or an inline mention the model read off the history.
+
+So `stripBlockedName` in `ollama-reply.ts` now removes the name instead: a vocative
+disappears whole (leading, trailing and mid-sentence comma forms), a possessive becomes
+"your"/"dein", an inline mention becomes "you"/"du" in the member's language - she is talking
+TO the member, so second person is what the sentence meant - and the rest of the answer
+ships, recorded with the new cost `stripped` beside the existing `draft` and `silence`.
+Rejection remains the FALLBACK, not a removed case: a strip that leaves under two characters,
+or one the match still fires on afterwards (the substring fallback in `matchesBlockedName`
+can match what a whole-word replacement cannot remove), rejects exactly as before, so the
+guard's failure direction is unchanged; only the cheap case got cheaper. Every catch is still
+counted (CCB-S3-023: a strip nobody can see is a silent rewrite), the Diagnostics card says
+which cost each catch carried, and `verify:name-guard` now pins the strip - the vocative
+shipping without the address, the inline mention turned second person, the possessive, the
+floor and boundary untouched, and the reject fallback read from the source because it is
+deliberately hard to reach.
+
+---
+
+### D-226 - The invented refusal is judged against the catalog, the LOOKUP bar reaches the model resolver, and the passages stop overriding what the application told her
+
+**Status: IMPLEMENTED** (the three behaviour faults members were seeing daily; migration 065,
+`capability-claims.ts`, `invented-refusal-log.ts`, the 0.60 floor).
+
+**The fence gets the `membershipIsActive` treatment instead of a sixth pattern.** In
+production she told a member "I won't look it up for you" while the lookup was enabled for
+her. The fence behind that sentence was `self-claims.ts`'s enumerated lie-shapes - the
+fourth deny-list this season (D-201), five patterns, two of them added after live runs found
+phrasings the first three missed, and the production phrasing on nobody's list either. The
+replacement states the GENERAL shape once and judges it against ground truth we own:
+`refusedAbility` recognises a first-person refusal of an ability the deployment can name
+(one refusal shape per language over a vocabulary keyed on the intent catalog), and
+`refusalMayShip` is the allow-list judgment - a refusal may ship exactly when the bot LACKS
+the capability, because then it is honest. The vocabulary is a `Record` over
+`ClaimableAbility = Exclude<Intent, ...>`, so a briefing that adds an intent fails to
+COMPILE until somebody writes its vocabulary or excludes it with a reason - the setting-scope
+shape, at compile time. The consent intents are excluded deliberately: "I won't publish you
+without consent" is the product speaking, and one predicate cannot serve both readings
+(D-201's two-questions lesson). The runtime guard in `generateOllamaReply` strips the lying
+sentence, ships the honest remainder, rejects only when nothing survives, and counts every
+removal on the Diagnostics page - which is what resolves `self-claims.ts`'s own objection
+to runtime filtering: a counted strip is a meter, a silent one is masking, and THIS claim,
+unlike the constitutional ones that file still checks, has computable truth. The engine hands
+the per-bot catalog over after the caller's spread (the `protectedMarkers` contract), so no
+lane can drop it and no bot is judged against another bot's truth.
+
+**The web-search "offer instead of doing" was a documented bar that half existed.** The
+D-183 seam comment claimed the resolver applied "both bars"; the file held one (the
+archive's). A model claiming LOOKUP for a question that never asked her to go and look was
+downgraded at the seam into free conversation, where she then OFFERED a search - the
+performing puzzlement the operator reported. The model resolver now applies the LOOKUP bar
+too (`asksToLookItUp`, same construction as the archive bar, falling to the rule engine's
+own answer when it had one), and the phrase lists gained the object forms members actually
+type - the windows are CONTIGUOUS, so 'look up' can never absorb an object between its
+tokens: 'look it up' matched NOTHING while 'look that up' did, in both languages.
+
+**The false source line, fourth sighting, measured.** The operator's exact sentence scored
+0.575 against the 0.55 knowledge floor: the SimpleGo README carries a NOISE BAND of
+0.53-0.58 against questions it has nothing to say about, straddling the floor, while
+genuinely covered questions score 0.65-0.77. The floor moves to 0.60 - the middle of the
+measured gap [0.58, 0.62], margin both ways - with the second measurement written into
+`retrieval.ts` beside the first, and `npm run calibrate:knowledge-relevance` prints the bands
+for whatever material a deployment actually ingests, per D-184. And the half that made the
+defect vicious: `knowledge.no-invention` (constitutional, ord 747) told her to say the
+passages do not cover the question, OVERRIDING the facts the application itself had put in
+the same prompt - she denied holding a genre her own DJ sheet listed, three hundred lines
+earlier. Migration 065 amends the rule: the anti-invention core stays word for word, and when
+the passages do not answer, what this prompt itself told her - her clock, her library, her
+own laws - is hers to state; naming a document for it stays forbidden.
+`verify:prompt-identity` re-baselined for the one amended sentence, deliberately; the diff
+is the reviewable record.
+
 ---
 
 ### D-225 - The music area is a section, built one to one from the operator's design

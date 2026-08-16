@@ -47,11 +47,14 @@ export interface BlockedNameEvent {
   /**
    * Whether anything survived for the member.
    *
-   * `draft` means the caller had a deterministic line to fall back to and the member got
-   * that. `silence` means free conversation, where there is no draft and the rejection costs
-   * the member the whole answer. The second is the expensive one and the card says so.
+   * `stripped` (D-227) means the name was taken out - a vocative removed, an inline
+   * mention turned second person - and the rest of the reply shipped, which the count this
+   * log kept made the normal case. `draft` means the strip failed and the caller had a
+   * deterministic line to fall back to. `silence` means the strip failed in free
+   * conversation, where there is no draft and the rejection costs the member the whole
+   * answer. The last is the expensive one and the card says so.
    */
-  cost: 'draft' | 'silence';
+  cost: 'stripped' | 'draft' | 'silence';
   /** What she had written. Bounded; see the header for why it is kept at all. */
   text: string;
 }

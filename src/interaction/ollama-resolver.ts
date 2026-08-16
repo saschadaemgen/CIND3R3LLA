@@ -27,7 +27,7 @@ import {
   type IntentSlots,
   INTENTS,
 } from './intent.js';
-import { namesTheArchive, ruleResolver } from './rules.js';
+import { asksToLookItUp, namesTheArchive, ruleResolver } from './rules.js';
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -543,6 +543,18 @@ export function createOllamaIntentResolver(
           } else {
             result = mergeMatching(model, rules);
           }
+        } else if (model.intent === 'LOOKUP' && !asksToLookItUp(text)) {
+          // ── THE WEB IS EXPLICIT-ONLY FOR THE MODEL TOO (D-183, counted since
+          // D-226) ──
+          //
+          // The seam's own comment claimed this file applied "both bars" and it
+          // held only the archive's, so a model claiming LOOKUP for a question
+          // that never asked her to go and look was downgraded at the seam
+          // uncounted, and the member then watched her OFFER a search instead
+          // of running one or answering plainly. Same construction as the
+          // archive bar below: falls to the rule engine's own answer when it
+          // had one.
+          result = rules.intent !== 'UNKNOWN' && rules.intent !== 'LOOKUP' ? rules : unknownResult(model.lang);
         } else if (model.intent === 'SEARCH' && !namesTheArchive(text)) {
           // ── THE ARCHIVE IS EXPLICIT-ONLY FOR THE MODEL TOO (CCB-S5-027, D-181) ──
           //

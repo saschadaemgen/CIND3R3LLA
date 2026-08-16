@@ -886,8 +886,25 @@ vocabulary, and the asymmetry decides it, because over-rejecting destroys an ans
 never learns existed while under-rejecting means she says a name once. Every rejection is recorded
 in `blocked-name-log.ts` and shown on Interaction -> Diagnostics with the matched name, an excerpt
 and, separately, whether the caller had a deterministic draft to fall back to or the answer was
-lost outright. Whether a TRUE match should be stripped rather than rejected is deliberately still
-open; see the feature backlog.
+lost outright. **The strip-versus-reject question is decided (D-227)**: the count this log kept
+showed every rejection destroying a reply the member wanted, so a true match is now STRIPPED - a
+vocative removed whole, a possessive turned "your"/"dein", an inline mention turned "you"/"du" in
+the member's language - and the rest of the answer ships, recorded with cost `stripped`.
+Rejection remains the fallback for a strip that leaves nothing or fails to remove the name, so
+the guard's failure direction is unchanged.
+
+**The invented-refusal fence sits beside it in the same guard chain (D-226,
+`capability-claims.ts`).** A sentence that refuses, first person, a capability THIS bot holds -
+"I won't look it up for you" from a bot whose lookup is on - is provably false against the bot's
+own catalog, so it is removed, counted in `invented-refusal-log.ts`, and shown on the same
+Diagnostics page. Two predicates with opposite safe directions (the D-201
+`membershipIsActive` shape): `refusedAbility` recognises the general refusal shape over a
+vocabulary keyed on the intent union - a `Record` over `ClaimableAbility`, so a new intent fails
+to COMPILE until placed - and `refusalMayShip` allows the refusal exactly when the bot lacks the
+capability, because then it is honest. The consent intents are excluded from the claimable set
+deliberately: "I won't publish you without consent" is the product speaking. The engine hands
+the per-bot catalog to the transport after the caller's spread, the `protectedMarkers` contract,
+so no lane can drop it.
 
 **The seam validates a second time, independently** (`interaction/resolver.ts`). `resolveIntent`
 re-sanitises whatever the active resolver returned against the active catalog, clamps confidence
@@ -3400,6 +3417,14 @@ verbatim corpus of observed replies, imported by both checks so the proven copy 
 cannot drift. **Nothing on the reply path imports it**: a regular expression over her output
 would be a filter, and a filter that rewrites or suppresses a reply is the masking CCB-S3-023
 forbids. The fence is a rule, in the registry, where she can be quoted it.
+
+**One class of claim has since moved out (D-226).** A first-person refusal of a plugin
+capability has COMPUTABLE truth - the application holds the bot's catalog - so it is judged and
+stripped at runtime by [`capability-claims.ts`](../src/interaction/capability-claims.ts), with
+every strip counted on the Diagnostics page, which is what separates a meter from the masking
+this paragraph warns about. The patterns here remain the corpus-anchored detector for the
+constitutional claims - rules, will, ownership - whose truth no catalog can settle, and
+`verify:self-claims` drives both.
 
 ## 48. Backups (CCB-S4-011 to 018, D-118 / D-120 / D-121 / D-122 / D-123)
 

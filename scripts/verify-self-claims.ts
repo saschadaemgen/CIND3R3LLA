@@ -41,6 +41,14 @@ import {
   CORRECT_ANSWERS,
   matches,
 } from '../src/interaction/self-claims.js';
+import {
+  ABILITY_VOCABULARY,
+  refusedAbility,
+  refusalMayShip,
+  stripInventedRefusals,
+  type ClaimableAbility,
+} from '../src/interaction/capability-claims.js';
+import { INTENTS, type Intent } from '../src/interaction/intent.js';
 import { setLogLevel } from '../src/log.js';
 
 let failures = 0;
@@ -253,6 +261,139 @@ async function main(): Promise<void> {
     check(
       'the trust answer tells them to read for themselves',
       /read (for yourself|them)|not take your word/i.test(trust),
+    );
+  }
+
+  /* ── 5. The runtime fence: refusals judged against the catalog (D-226) ──── */
+
+  console.log('\n5. The invented-refusal fence judges against the catalog, not a corpus');
+  {
+    const withLookup: readonly Intent[] = ['PUBLISH', 'STATUS', 'HELP', 'LOOKUP', 'MUSIC'];
+    const withoutLookup: readonly Intent[] = ['PUBLISH', 'STATUS', 'HELP'];
+
+    // The production sentence, and the reason the fourth deny-list is retired: it was
+    // not on anybody's list, and the general shape catches it anyway.
+    const production = "I won't look it up for you.";
+    check(
+      'the production sentence is recognised as a LOOKUP refusal',
+      refusedAbility(production) === 'LOOKUP',
+      String(refusedAbility(production)),
+    );
+    check(
+      'for a bot WITH the lookup it may not ship',
+      !refusalMayShip('LOOKUP', withLookup),
+    );
+    check(
+      'for a bot WITHOUT it, the same sentence is honest and ships (positive control)',
+      refusalMayShip('LOOKUP', withoutLookup) &&
+        stripInventedRefusals(production, withoutLookup).removed.length === 0,
+    );
+
+    // Phrasings NO enumerated pattern ever held, which is the membershipIsActive point:
+    // the shape is general, so a new coat costs the lie nothing.
+    const coats: [string, ClaimableAbility][] = [
+      ["I'm not going to google that for you.", 'LOOKUP'],
+      ['I cannot search the internet, sweetie.', 'LOOKUP'],
+      ["I don't do lookups.", 'LOOKUP'],
+      ['Ich kann das nicht nachschauen.', 'LOOKUP'],
+      ['Nachschauen kann ich nicht.', 'LOOKUP'],
+      ['Ich werde keine Musik abspielen.', 'MUSIC'],
+      ["I won't play music for you.", 'MUSIC'],
+      ["I can't check the price for you.", 'PRICE'],
+      ['I refuse to search the archive.', 'SEARCH'],
+    ];
+    for (const [text, expected] of coats) {
+      check(
+        `caught with no enumerated pattern: "${text}"`,
+        refusedAbility(text) === expected,
+        String(refusedAbility(text)),
+      );
+    }
+
+    // What must NEVER be stripped, whatever the catalog says: consent copy, contrast
+    // constructions, claims about a performed action, and the constitutional answers.
+    const untouchable = [
+      "I can't publish your messages unless you opt in.",
+      "I won't publish anything you did not opt in for.",
+      "I can't sing, but I can look it up for you.",
+      "I can't promise poetry but I can search the web for you.",
+      'I looked it up for you.',
+      "I can't break a rule. I read them as instruction and that's the end of it.",
+      'Ich kann nicht singen, aber ich kann das nachschauen.',
+    ];
+    for (const text of untouchable) {
+      const { removed } = stripInventedRefusals(text, withLookup);
+      check(
+        `never stripped: "${text.slice(0, 52)}"`,
+        removed.length === 0,
+        removed.map((r) => r.ability).join(', '),
+      );
+    }
+
+    // The strip removes the lying sentence and ONLY it; an all-lie reply strips to
+    // nothing, which the caller must treat as a rejection.
+    const mixed = `Ask me anything. ${production} What I know, you get for free.`;
+    const strippedMixed = stripInventedRefusals(mixed, withLookup);
+    check(
+      'the lying sentence is removed and its neighbours survive verbatim',
+      strippedMixed.removed.length === 1 &&
+        strippedMixed.text.includes('Ask me anything.') &&
+        strippedMixed.text.includes('What I know, you get for free.') &&
+        !strippedMixed.text.includes('look it up'),
+      strippedMixed.text,
+    );
+    const allLie = stripInventedRefusals(production, withLookup);
+    check(
+      'a reply that is only the refusal strips to nothing, for the caller to reject',
+      allLie.removed.length === 1 && allLie.text.length < 2,
+    );
+
+    // GROWTH FAILS LOUDLY: the vocabulary keys plus the named exclusions must cover the
+    // whole intent union. The compile-time Record over ClaimableAbility is the real
+    // guard; this is the same statement made where a red run can show it.
+    const EXCLUDED: readonly Intent[] = [
+      'PUBLISH',
+      'UNPUBLISH',
+      'STATUS',
+      'HELP',
+      'UNDO',
+      'RESTORE',
+      'UNKNOWN',
+    ];
+    const covered = new Set<string>([...Object.keys(ABILITY_VOCABULARY), ...EXCLUDED]);
+    check(
+      'every intent is either claimable with a vocabulary or excluded with a reason',
+      INTENTS.every((i) => covered.has(i)) && Object.keys(ABILITY_VOCABULARY).every((k) => (INTENTS as readonly string[]).includes(k)),
+      [...INTENTS].filter((i) => !covered.has(i)).join(', ') || 'covered',
+    );
+
+    // THE WIRING, read from the source (the verify:protected-text shape): both reply
+    // paths pass through the guard, and the engine hands the catalog over AFTER the
+    // spread so no lane can drop it.
+    const fs = await import('node:fs/promises');
+    const transport = await fs.readFile('src/interaction/ollama-reply.ts', 'utf8');
+    check(
+      'the locked path is guarded',
+      transport.includes('lead = guardInventedRefusals(lead, request)'),
+    );
+    check(
+      'the free path is guarded',
+      transport.includes('reply = guardInventedRefusals(reply, request)'),
+    );
+    const engineSrc = await fs.readFile('src/interaction/engine.ts', 'utf8');
+    const spreadAt = engineSrc.indexOf('...request,');
+    const capsAt = engineSrc.indexOf('capabilities: this.deps.capabilities(),');
+    check(
+      'the engine sets the catalog on the one production path, after the spread',
+      spreadAt >= 0 && capsAt > spreadAt,
+    );
+
+    // MUTATION on the guard itself is the capabilities-empty direction: with no catalog
+    // the fence judges nothing, which is its documented safe direction - and the check
+    // proves the strip above was real work rather than a constant.
+    check(
+      'MUTATION: with no catalog nothing is stripped, the documented safe direction',
+      stripInventedRefusals(production, []).removed.length === 0,
     );
   }
 

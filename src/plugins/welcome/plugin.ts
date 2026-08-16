@@ -74,5 +74,8 @@ export const welcomePlugin = definePlugin({
   // See the note above: it speaks unprompted, in public by default, on somebody else's
   // arrival. The bridge is off by default for the same reason.
   defaultEnabled: false,
-  adminPath: '/welcome',
+  adminPath: '/interaction/welcome',
+  // Listed under Interaction in the nav (the knowledge-base precedent): the
+  // Plugins page still shows the switch, linking here.
+  livesUnderNav: 'interaction:welcome',
 });

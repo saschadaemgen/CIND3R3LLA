@@ -16,6 +16,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page } from '../html.js';
+import { interactionSectionsNav } from './interaction.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { resolveSelectedBot } from '../selected-bot.js';
@@ -62,8 +63,13 @@ const DESTINATIONS: { value: Destination; label: string; note: string }[] = [
 export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): void {
   const { db } = ctx;
 
+  // Inside the Interaction section's own table (D-228): the static route wins over
+  // the /interaction/:section parameter, so this page renders with the section's
+  // submenu while its markup stays with its plugin.
+  app.get('/welcome', async (_req, reply) => reply.redirect('/interaction/welcome'));
+
   app.get<{ Querystring: { bot?: string; saved?: string; error?: string } }>(
-    '/welcome',
+    '/interaction/welcome',
     async (req, reply) => {
       const csrf = req.session?.csrfToken ?? '';
       const profiles = await listBotOnboardingProfiles(db);
@@ -97,7 +103,7 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
       reply.type('text/html');
       return page({
         title: 'Welcome',
-        active: 'welcome',
+        active: 'interaction:welcome',
         csrfToken: csrf,
         // ── A PER-BOT PAGE MUST CARRY THE PICKER (CCB-S5-041, D-211) ────────
         //
@@ -105,7 +111,7 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
         // CLAIM, and on this page a false one. The operator was editing one bot's greeting
         // with no way to see or change which bot, which is how every save went to bot 10.
         // 96b2211 taught the page to honour the switcher; this is the other half.
-        botSwitcher: { ...selection, returnTo: '/welcome' },
+        botSwitcher: { ...selection, returnTo: '/interaction/welcome' },
         body: html`
           ${/*
             ── THE SCOPE STATEMENT WAS MISSING, AND SILENCE READ AS "SHARED" (D-211) ──
@@ -125,11 +131,12 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
             this sentence, and it must name the bot rather than gesture at one.
           */ ''}
           ${pageHeader(
-            `Welcome: ${botName}`,
+            `Interaction — Welcome: ${botName}`,
             `Everything on this page belongs to ${botName} alone. Nothing here is shared with ` +
               `your other bots: each one has its own greeting, its own destination, and its ` +
               `own record below. Switch bots in the sidebar to edit another.`,
           )}
+          ${interactionSectionsNav('welcome')}
           ${req.query.saved
             ? html`<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Saved.</div>`
             : ''}
@@ -245,7 +252,7 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
   app.post<{ Body: Record<string, unknown> }>('/welcome/save', async (req, reply) => {
     const botProfileId = Number.parseInt(bodyStr(req.body, 'botProfileId'), 10);
     if (!Number.isFinite(botProfileId)) {
-      return reply.redirect('/welcome?error=Pick+a+bot+first.');
+      return reply.redirect('/interaction/welcome?error=Pick+a+bot+first.');
     }
     const destination = bodyStr(req.body, 'destination');
     const fallback = bodyStr(req.body, 'fallback');
@@ -276,10 +283,10 @@ export function registerWelcomePage(app: FastifyInstance, ctx: ViewContext): voi
         `bot:${String(botProfileId)}`,
         { destination, fallback },
       );
-      return reply.redirect(`/welcome?bot=${String(botProfileId)}&saved=1`);
+      return reply.redirect(`/interaction/welcome?bot=${String(botProfileId)}&saved=1`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      return reply.redirect(`/welcome?bot=${String(botProfileId)}&error=${encodeURIComponent(message)}`);
+      return reply.redirect(`/interaction/welcome?bot=${String(botProfileId)}&error=${encodeURIComponent(message)}`);
     }
   });
 }

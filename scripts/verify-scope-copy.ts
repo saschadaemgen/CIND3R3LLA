@@ -22,10 +22,20 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const DIR = join('src', 'web', 'views');
-const PER_BOT = [/listPluginOverridesForBot/, /setPluginOverride/, /resolveSelectedBot/, /botProfileId/];
-const SHARED = [/plugins\.getStates/, /setPluginState/, /writeSetting/, /updateSettings/];
-/** Names a bot in its own copy: an interpolated selected name, not a hard-coded string. */
-const NAMES_BOT = [/selectedName/, /\$\{botName\}/, /selection\.selectedName/];
+// EDIT signals only. Bare `botProfileId` was here and classified ai.ts as per-bot
+// because a diagnostics table DISPLAYS which bot a session belonged to - a page that
+// shows data about bots is not a page that edits one. A form field posting the id is
+// an edit; a property read is not.
+const PER_BOT = [/listPluginOverridesForBot/, /listSettingOverridesForBot/, /setPluginOverride/, /resolveSelectedBot/, /name="botProfileId"/];
+const SHARED = [/plugins\.getStates/, /setPluginState/, /writeSetting/, /updateSettings/, /setAiRuntimeEnabled/];
+/**
+ * Names a bot in its own copy: an interpolated selected name, or - the capture.ts
+ * false positive this sweep shipped with - copy that explicitly frames itself as a
+ * COMPARISON across bots ("Which bot records which room"), and per-row interpolated
+ * bot names. A comparison page has no single bot to name, and demanding one produced
+ * a work list with a page on it that was already right.
+ */
+const NAMES_BOT = [/selectedName/, /\$\{botName\}/, /selection\.selectedName/, /botNames?\.get\(/, /which bot/i];
 const SAYS_SHARED = [/deployment-wide/i, /every bot/i, /reaches every/i, /shared/i];
 
 const rows: { file: string; scope: string; says: string; verdict: string }[] = [];

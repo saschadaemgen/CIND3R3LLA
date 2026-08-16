@@ -459,9 +459,26 @@ export function registerNav(): void {
           icon: icon('interaction'),
         },
         {
+          // The greeting is interaction behaviour, and the operator looks for
+          // it beside the other member-facing settings, not in the plugin
+          // list (the console queue, with the knowledge base as precedent).
+          key: 'interaction:welcome',
+          href: '/interaction/welcome',
+          label: 'Welcome',
+          icon: icon('interaction'),
+        },
+        {
           key: 'interaction:language',
           href: '/interaction/language',
           label: 'Language',
+          icon: icon('interaction'),
+        },
+        {
+          // Was missing while the section table had it (found by the D-212 look for
+          // D-228): two surfaces listing the same sections, one of them stale.
+          key: 'interaction:memory',
+          href: '/interaction/memory',
+          label: 'Memory',
           icon: icon('interaction'),
         },
         {

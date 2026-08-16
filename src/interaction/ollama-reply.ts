@@ -30,6 +30,9 @@ import { modelQueue } from './model-queue.js';
 import { stripProtectedLines } from './protected-text.js';
 import { recordForgedLine } from './forgery-log.js';
 import { recordBlockedName } from './blocked-name-log.js';
+import { stripInventedRefusals } from './capability-claims.js';
+import { recordInventedRefusal } from './invented-refusal-log.js';
+import type { Intent } from './intent.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
@@ -295,6 +298,19 @@ export interface AiReplyRequest {
    * worse than no page number.
    */
   lawPage?: boolean;
+  /**
+   * What THIS bot can actually do, for the invented-refusal fence (D-226).
+   *
+   * The per-bot catalog CCB-S5-021 built, so the fence judges "I won't look it up"
+   * against the truth for the bot that is speaking rather than for the deployment.
+   * OPTIONAL IN THE TYPE AND UNIVERSAL IN PRODUCTION, the `protectedMarkers` shape:
+   * the one production path (`personalizeForThisBot`) sets it after the caller's
+   * spread, and `verify:self-claims` asserts that from the source. Absent means the
+   * fence does not judge, which is its safe direction - with no catalog there is no
+   * truth to judge a refusal against, and stripping an honest refusal would forge
+   * the opposite lie.
+   */
+  capabilities?: readonly Intent[];
 }
 
 /**
@@ -711,6 +727,120 @@ function noteBlockedName(literal: string, text: string, request: AiReplyRequest)
 }
 
 /**
+ * Take the member's name OUT of the sentence instead of destroying the sentence (D-227).
+ *
+ * CCB-S5-031 built the whole-word match and the floor and left strip-versus-reject open
+ * on purpose, with the count as the instrument for deciding it. The count decided: every
+ * recorded rejection was a reply the member would have wanted, thrown away for a vocative
+ * ("Alice, good question") or an ordinary second-person reference wearing the name. So a
+ * vocative disappears whole, a possessive becomes "your"/"dein", and an inline mention
+ * becomes "you"/"du" in the member's language - she is talking TO the member, so second
+ * person is what the sentence meant.
+ *
+ * REJECTION REMAINS THE FALLBACK, not a removed case: if the strip leaves nothing worth
+ * sending, or the name still matches afterwards (the substring fallback in
+ * `matchesBlockedName` can match what a whole-word replacement cannot remove), the reply
+ * is rejected exactly as before. The guard's failure direction is unchanged; only the
+ * cheap case got cheaper.
+ */
+function stripBlockedName(text: string, literal: string, lang: string): string {
+  const esc = escapeRegExp(literal);
+  let out = text;
+  // Vocative forms disappear whole: leading "Alice, ...", trailing "..., Alice." and
+  // mid-sentence "..., Alice, ...".
+  out = out.replace(new RegExp(`^\\s*${esc}\\s*[,:!]\\s*`, 'iu'), '');
+  out = out.replace(new RegExp(`\\s*,\\s*${esc}(?=\\s*[.!?\u2026]|\\s*$)`, 'giu'), '');
+  out = out.replace(new RegExp(`\\s*,\\s*${esc}\\s*,`, 'giu'), ',');
+  // The possessive first, then the plain mention, both as whole words (the same Unicode
+  // boundaries the detector uses, so what is detected is what is replaced).
+  out = out.replace(
+    new RegExp(`(?<![\\p{L}\\p{N}_])${esc}['\u2019]s(?![\\p{L}\\p{N}_])`, 'giu'),
+    lang === 'de' ? 'dein' : 'your',
+  );
+  out = out.replace(
+    new RegExp(`(?<![\\p{L}\\p{N}_])${esc}(?![\\p{L}\\p{N}_])`, 'giu'),
+    lang === 'de' ? 'du' : 'you',
+  );
+  out = out.replace(/[ \t]{2,}/gu, ' ').trim();
+  // A removed leading vocative leaves the sentence starting lowercase.
+  return out.length > 0 ? out.charAt(0).toLocaleUpperCase() + out.slice(1) : out;
+}
+
+/**
+ * Every blocked literal, stripped or rejected, always counted. Returns the text that may
+ * ship; throws when rejection is the only honest option, with the cost recorded either
+ * way. The loop bound is a backstop: today the list holds one name, the speaker's.
+ */
+function applyBlockedNameGuard(text: string, request: AiReplyRequest): string {
+  let current = text;
+  for (let i = 0; i < 4; i += 1) {
+    const literal = containsBlockedLiteral(current, request);
+    if (!literal) return current;
+    const stripped = stripBlockedName(current, literal, request.lang);
+    if (stripped.length < 2 || matchesBlockedName(stripped, literal)) {
+      noteBlockedName(literal, current, request);
+      throw new Error(`Ollama reply exposed blocked text: ${literal}.`);
+    }
+    // What she had written is what the card shows; the strip is the recovery.
+    recordBlockedName({
+      at: Date.now(),
+      botProfileId: request.botProfileId ?? null,
+      kind: request.kind,
+      literal,
+      cost: 'stripped',
+      text: current,
+    });
+    current = stripped;
+  }
+  const still = containsBlockedLiteral(current, request);
+  if (still) {
+    noteBlockedName(still, current, request);
+    throw new Error(`Ollama reply exposed blocked text: ${still}.`);
+  }
+  return current;
+}
+
+/**
+ * The invented-refusal fence (D-226): strip the lying sentence, count it, and give up
+ * only when nothing is left.
+ *
+ * STRIP rather than reject, unlike the name guard above, because the judgment here is
+ * exact: the sentence provably refuses a capability the catalog says this bot holds,
+ * so removing that sentence removes the lie and nothing else, while rejecting would
+ * cost the member the honest remainder. When the strip leaves nothing the caller falls
+ * back exactly as it does for a blocked name, and the cost is recorded the same way.
+ * Every removal is counted for the Diagnostics page (CCB-S3-023: a guard that rewrites
+ * silently is masking; a counted one is a meter).
+ */
+function guardInventedRefusals(text: string, request: AiReplyRequest): string {
+  const capabilities = request.capabilities;
+  if (!capabilities || capabilities.length === 0) return text;
+  const { text: kept, removed } = stripInventedRefusals(text, capabilities);
+  if (removed.length === 0) return text;
+  const emptied = kept.length < 2;
+  for (const r of removed) {
+    recordInventedRefusal({
+      at: Date.now(),
+      botProfileId: request.botProfileId ?? null,
+      kind: request.kind,
+      ability: r.ability,
+      cost: emptied
+        ? request.deterministicDraft.trim() === ''
+          ? 'silence'
+          : 'draft'
+        : 'stripped',
+      text: r.sentence,
+    });
+  }
+  if (emptied) {
+    throw new Error(
+      `Ollama reply was only an invented refusal of ${removed.map((r) => r.ability).join(', ')}.`,
+    );
+  }
+  return kept;
+}
+
+/**
  * A placeholder that should have been filled and was not (CCB-S4-036).
  *
  * ── THE GRAMMAR IS BORROWED, NOT INVENTED ────────────────────────────────────
@@ -939,15 +1069,12 @@ export async function generateOllamaReply(
     const raw = guardProtectedText(completion.reply, request);
 
     if (request.mode === 'locked') {
-      const lead = cleanReply(raw, false);
+      let lead = cleanReply(raw, false);
       if (!lead || lead.length > LOCKED_LEAD_MAX_CHARS) {
         throw new Error('Ollama returned an invalid locked reply lead.');
       }
-      const blocked = containsBlockedLiteral(lead, request);
-      if (blocked) {
-        noteBlockedName(blocked, lead, request);
-        throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
-      }
+      lead = guardInventedRefusals(lead, request);
+      lead = applyBlockedNameGuard(lead, request);
       const leaked = unresolvedPlaceholder(lead);
       if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);
       const protectedText = request.deterministicDraft.trim();
@@ -963,19 +1090,16 @@ export async function generateOllamaReply(
       return protectedText ? `${lead}\n${protectedText}` : lead;
     }
 
-    const reply = cleanReply(raw, true);
+    let reply = cleanReply(raw, true);
     if (!reply || reply.length > maxChars) {
       throw new Error('Ollama returned an invalid personalized reply length.');
     }
+    reply = guardInventedRefusals(reply, request);
+    reply = applyBlockedNameGuard(reply, request);
 
     const missing = requiredLiterals(request).filter((literal) => !reply.includes(literal));
     if (missing.length > 0) {
       throw new Error(`Ollama reply lost required literal(s): ${missing.join(', ')}.`);
-    }
-    const blocked = containsBlockedLiteral(reply, request);
-    if (blocked) {
-      noteBlockedName(blocked, reply, request);
-      throw new Error(`Ollama reply exposed blocked text: ${blocked}.`);
     }
     const leaked = unresolvedPlaceholder(reply);
     if (leaked) throw new Error(`Ollama reply leaked an unresolved placeholder: ${leaked}.`);

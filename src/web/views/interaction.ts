@@ -42,6 +42,10 @@ import {
 } from '../../interaction/conversation-log.js';
 import { forgedLineCount, recentForgedLines } from '../../interaction/forgery-log.js';
 import { blockedNameCount, recentBlockedNames } from '../../interaction/blocked-name-log.js';
+import {
+  inventedRefusalCount,
+  recentInventedRefusals,
+} from '../../interaction/invented-refusal-log.js';
 import { MIN_BLOCKED_NAME_CHARS } from '../../interaction/ollama-reply.js';
 import { markersFromTemplates } from '../../interaction/protected-text.js';
 import { missingHelpPlaceholders } from '../../interaction/help.js';
@@ -609,26 +613,32 @@ function interactionScopePanel(
     lines,
     bots,
     selectedBotId,
-    switcherHref: (id) => (id === null ? `/interaction/${slug}` : `/interaction/${slug}?bot=${String(id)}`),
+    switcherHref: (id) => (id === null ? `/interaction/${slug}?bot=shared` : `/interaction/${slug}?bot=${String(id)}`),
   });
 }
 
-export function registerInteraction(app: FastifyInstance, ctx: ViewContext): void {
-  const { interaction } = ctx;
-
-  /**
-   * Interaction is split into sub-sections (CCB-S3-015 Stage 1). Each has its own
-   * URL under /interaction/<slug>, its own submenu entry, and saves independently.
-   * The page had grown into one long scroll with every briefing this season; the
-   * split gives an operator a bookmarkable, linkable place for each concern.
-   *
-   * Every setting lands in exactly ONE section, and the round-trip is proven by
-   * verify:admin-views — nothing was dropped in the move.
-   */
-  const SECTIONS: { slug: string; title: string; desc: string }[] = [
+/**
+ * Interaction is split into sub-sections (CCB-S3-015 Stage 1). Each has its own
+ * URL under /interaction/<slug>, its own submenu entry, and saves independently.
+ * The page had grown into one long scroll with every briefing this season; the
+ * split gives an operator a bookmarkable, linkable place for each concern.
+ *
+ * Every setting lands in exactly ONE section, and the round-trip is proven by
+ * verify:admin-views — nothing was dropped in the move.
+ *
+ * WELCOME IS IN THIS TABLE AND NOT IN THIS FILE (D-228). Its row here puts it in
+ * the section submenu on every interaction page; its PAGE stays with its plugin
+ * (`welcome.ts`), registered at the static route /interaction/welcome, which the
+ * router prefers over the :section parameter below. The first attempt gave it a
+ * nav KEY and left the page at /welcome, and the screenshot showed exactly what
+ * that buys: a sidebar entry pointing at a page that stands outside the section
+ * it claims to live in.
+ */
+const SECTIONS: { slug: string; title: string; desc: string }[] = [
     { slug: 'addressing', title: 'Addressing', desc: 'How she is addressed: her name, greetings, and which channels reach her.' },
     { slug: 'guards', title: 'Guards', desc: 'When matching her name does NOT mean she was spoken to.' },
     { slug: 'followup', title: 'Follow-up', desc: 'The window after she replies, and what a short follow-up may carry.' },
+    { slug: 'welcome', title: 'Welcome', desc: 'What she says to somebody who has just joined a room. Per bot.' },
     { slug: 'language', title: 'Language', desc: 'Which language she answers in.' },
     { slug: 'memory', title: 'Memory', desc: 'How much of the conversation she can see.' },
     { slug: 'replies', title: 'Replies', desc: 'How her answers appear, and how often she may send them.' },
@@ -637,7 +647,28 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
     { slug: 'voice', title: 'Voice', desc: 'Every persona string, per language, plus the help-footer links.' },
     { slug: 'archiving', title: 'Archiving', desc: 'Whether her own messages and members’ questions are published.' },
     { slug: 'diagnostics', title: 'Diagnostics', desc: 'The near-miss log, and the resolver currently in use.' },
-  ];
+];
+
+/**
+ * The section table as a submenu. Exported because the Welcome page lives in the
+ * table while its markup lives with its plugin: one renderer, so the table and
+ * the page borrowing it cannot drift.
+ */
+export function interactionSectionsNav(slug: string): SafeHtml {
+  return html`<nav class="mb-6 flex flex-wrap gap-1 border-b border-slate-200 pb-2">
+    ${SECTIONS.map(
+      (x) =>
+        html`<a
+          href="/interaction/${x.slug}"
+          class="rounded-lg px-3 py-1.5 text-sm ${x.slug === slug ? 'bg-slate-900 font-medium text-white' : 'text-slate-600 hover:bg-slate-100'}"
+          >${x.title}</a
+        >`,
+    )}
+  </nav>`;
+}
+
+export function registerInteraction(app: FastifyInstance, ctx: ViewContext): void {
+  const { interaction } = ctx;
 
   app.get<{ Params: { section?: string }; Querystring: { saved?: string; tested?: string; error?: string; bot?: string } }>(
     '/interaction/:section',
@@ -737,7 +768,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           <input type="hidden" name="_csrf" value="${csrf}" />
           <input type="hidden" name="section" value="${section}" />
           ${selectedBotId === null
-            ? null
+            ? html`<input type="hidden" name="botScope" value="shared" />`
             : html`<input type="hidden" name="botProfileId" value="${String(selectedBotId)}" />`}
           ${inner}
         </form>`;
@@ -762,8 +793,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     convenience feature, and the switch that used to disable them made
                     <code>/unpublish</code> do nothing and say nothing (CCB-S3-031).
                   </p>
-                  ${labelled('Wake word', textField('wakeWord', s.wakeWord), 'Her name. Rename her for your community — small typos in it are still understood.')}
-                  ${wakeWordStateNote(wakeState)}
+                  ${selectedBotId === null && bots.length > 0
+                    ? html`<p class="text-xs text-slate-500">
+                        The wake word is per bot - it is her name, and two bots cannot share
+                        one. Pick a bot above to change it.
+                      </p>`
+                    : html`${labelled('Wake word', textField('wakeWord', s.wakeWord), 'Her name. Rename her for your community — small typos in it are still understood.')}
+                      ${wakeWordStateNote(wakeState)}`}
                   ${labelled('Greeting prefixes', textField('greetings', s.greetings.join(', ')), 'Comma separated. Allowed in front of the wake word and stripped before the instruction.')}
                   ${saveButton()}
                 `,
@@ -1036,6 +1072,9 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           const forgedTotal = forgedLineCount();
           const blocked = recentBlockedNames(25);
           const blockedTotal = blockedNameCount();
+          const refusals = recentInventedRefusals(25);
+          const refusalTotal = inventedRefusalCount();
+          const refusalLost = refusals.filter((r) => r.cost !== 'stripped').length;
           // Counted over what is SHOWN, and the label says so. The buffer is capped and the
           // total is not, so presenting this as a share of the total would understate it the
           // moment the cap is reached.
@@ -1242,18 +1281,20 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   </div>`}`,
           )}
           ${card(
-            'Answers thrown away for naming the member',
+            'The member name taken out of her answers',
             html`<p class="mb-3 text-sm text-slate-500">
-                A reply is rejected outright when it contains the display name of the member
-                who just spoke. Nothing tells her that name directly; she reads it off the
-                conversation history, where every message is rendered with its speaker in
-                front of it. When the rejection happens on a lane with a plain fallback line
-                the member gets that instead, and in free conversation there is no fallback,
-                so the answer is simply lost and nobody is told. That is why this is counted
-                here rather than left in a log.
+                A reply may not carry the display name of the member who just spoke. Nothing
+                tells her that name directly; she reads it off the conversation history,
+                where every message is rendered with its speaker in front of it. The name is
+                now taken OUT instead of the whole reply being thrown away: a vocative like
+                "Alice, good question" loses the address, an inline mention becomes second
+                person, and the rest of the answer ships. Only when the strip cannot get the
+                name out is the reply rejected as before - then a lane with a fallback line
+                sends that, and free conversation loses the answer, which is the expensive
+                case and counted separately.
               </p>
               <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
-                <dt class="text-slate-500">Rejected since restart</dt>
+                <dt class="text-slate-500">Names caught since restart</dt>
                 <dd class="${blockedTotal > 0 ? 'text-amber-700' : ''}">${blockedTotal}</dd>
                 <dt class="text-slate-500">Answers lost outright</dt>
                 <dd class="${blockedSilent > 0 ? 'text-amber-700' : ''}">
@@ -1284,8 +1325,53 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(b.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
                           <td class="py-2 pr-3 text-slate-500">${b.kind}</td>
                           <td class="py-2 pr-3 text-slate-600">${b.literal}</td>
-                          <td class="py-2 pr-3 ${b.cost === 'silence' ? 'text-amber-700' : 'text-slate-500'}">${b.cost === 'silence' ? 'answer lost' : 'fell back to a draft'}</td>
+                          <td class="py-2 pr-3 ${b.cost === 'silence' ? 'text-amber-700' : 'text-slate-500'}">${b.cost === 'stripped' ? 'name removed, reply shipped' : b.cost === 'silence' ? 'answer lost' : 'fell back to a draft'}</td>
                           <td class="py-2 text-slate-600">${b.text}</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
+          )}
+          ${card(
+            'Refusals she invented',
+            html`<p class="mb-3 text-sm text-slate-500">
+                A sentence is removed when it refuses, first person, a capability this
+                bot actually holds - "I won't look it up for you" from a bot whose web
+                lookup is on. The judgment is deterministic, against the bot's own
+                capability catalog, so a refusal that is TRUE for this bot always
+                stands. Usually the rest of the answer ships without the lying
+                sentence; when nothing survives, the member gets the fallback line or
+                nothing, and that is counted separately because it is the expensive
+                case.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Removed since restart</dt>
+                <dd class="${refusalTotal > 0 ? 'text-amber-700' : ''}">${refusalTotal}</dd>
+                <dt class="text-slate-500">Answers lost with them</dt>
+                <dd class="${refusalLost > 0 ? 'text-amber-700' : ''}">
+                  ${refusalLost} of the most recent ${refusals.length} left nothing worth
+                  sending after the strip
+                </dd>
+              </dl>
+              ${refusals.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    Nothing removed since the last restart. Buffer holds the most recent 50
+                    and does not survive a restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Refused</th><th class="py-2 pr-3">Cost</th><th class="py-2">The sentence removed</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${refusals.map((r) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(r.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${r.kind}</td>
+                          <td class="py-2 pr-3 text-slate-600">${r.ability}</td>
+                          <td class="py-2 pr-3 ${r.cost === 'stripped' ? 'text-slate-500' : 'text-amber-700'}">${r.cost === 'stripped' ? 'sentence removed, rest shipped' : r.cost === 'draft' ? 'fell back to a draft' : 'answer lost'}</td>
+                          <td class="py-2 text-slate-600">${r.text}</td>
                         </tr>`)}
                       </tbody>
                     </table>
@@ -1299,16 +1385,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         },
       };
 
-      const submenu = html`<nav class="mb-6 flex flex-wrap gap-1 border-b border-slate-200 pb-2">
-        ${SECTIONS.map(
-          (x) =>
-            html`<a
-              href="/interaction/${x.slug}"
-              class="rounded-lg px-3 py-1.5 text-sm ${x.slug === slug ? 'bg-slate-900 font-medium text-white' : 'text-slate-600 hover:bg-slate-100'}"
-              >${x.title}</a
-            >`,
-        )}
-      </nav>`;
+      const submenu = interactionSectionsNav(slug);
 
       const body = html`
         ${pageHeader(`Interaction — ${meta.title}`, meta.desc)} ${submenu} ${notice}
@@ -1324,7 +1401,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         active: `interaction:${slug}`,
         csrfToken: csrf,
         // Every section of this page edits one bot, so every section carries the switcher.
-        botSwitcher: { ...selection, returnTo: `/interaction/${slug}` },
+        botSwitcher: { ...selection, returnTo: `/interaction/${slug}`, scope: 'mixed' },
         body,
       });
     },
@@ -1351,6 +1428,11 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
      */
     const requested = Number.parseInt(bodyString(body, 'botProfileId'), 10);
     const targetBot = Number.isSafeInteger(requested) && requested > 0 ? requested : null;
+    // The explicit shared view (D-228). A save from `?bot=shared` must land back ON the
+    // shared view: the redirect used to drop the parameter, so after saving (or being
+    // refused) the operator was silently looking at his session bot again - the same
+    // stale-surface shape as the per-bot redirect before it gained `&bot=` at 1652.
+    const sharedRequested = targetBot === null && bodyString(body, 'botScope') === 'shared';
 
     // Which section PAGE a save should return to (CCB-S3-015 Stage 1).
     const pageFor = (sec: string): string => {
@@ -1361,7 +1443,8 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
       if (sec === 'ai-runtime') return 'diagnostics';
       return sec;
     };
-    const back = (extra: string): string => `/interaction/${pageFor(section)}${extra}`;
+    const back = (extra: string): string =>
+      `/interaction/${pageFor(section)}${extra}${sharedRequested ? '&bot=shared' : ''}`;
 
     try {
       // Read INSIDE the try, and read the rows rather than the cache. `interaction.get(id)`
@@ -1385,10 +1468,17 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
         // Cinderella under a "Saved." banner, which is the masking this repo forbids. The
         // reason comes from `wakeWordProblem`, so this page and bot creation print the
         // same sentence rather than inventing two.
-        const problem = wakeWordProblem(bodyString(body, 'wakeWord'));
-        if (problem !== null) throw new Error(problem);
+        //
+        // VALIDATED ONLY WHEN SUBMITTED (D-228): the shared view does not render the
+        // field, because the wake word is per bot (CCB-S5-006) and the shared record may
+        // legitimately hold none - demanding one there made every shared addressing save
+        // refuse for a field the operator could not see the point of.
+        if (typeof body['wakeWord'] === 'string') {
+          const problem = wakeWordProblem(bodyString(body, 'wakeWord'));
+          if (problem !== null) throw new Error(problem);
+          next['wakeWord'] = bodyString(body, 'wakeWord');
+        }
         next['naturalAddressing'] = 'naturalAddressing' in body;
-        next['wakeWord'] = bodyString(body, 'wakeWord');
         next['greetings'] = bodyString(body, 'greetings');
       } else if (section === 'guards') {
         next['addressing'] = {

@@ -472,7 +472,7 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
         active: 'plugins',
         csrfToken: csrf,
         body,
-        botSwitcher: { ...selection, returnTo: '/plugins' },
+        botSwitcher: { ...selection, returnTo: '/plugins', scope: 'mixed' },
       });
     },
   );

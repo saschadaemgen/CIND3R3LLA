@@ -67,6 +67,16 @@ export function resolveSelectedBot(
   sessionBot: number | null,
 ): SelectedBot {
   const bots = profiles.map((p) => ({ id: p.id, displayName: p.displayName }));
+  // ── THE EXPLICIT SHARED VIEW (D-228) ──────────────────────────────────────
+  //
+  // `?bot=shared` selects the SHARED record on a page that offers both. It has to be
+  // representable in the URL, because the fallback chain below ends at the first bot:
+  // since CCB-S5-011 unified every page on this resolver, "no bot named" has meant
+  // "your usual bot", so a link claiming the shared view needs a word for it. A one-off
+  // view like any `?bot=` link: it does not touch the remembered choice.
+  if (urlBot === 'shared') {
+    return { bots, selectedId: null, selectedName: null, fromUrl: true };
+  }
   const byId = (id: number | null): SwitchableBot | undefined =>
     id === null ? undefined : bots.find((b) => b.id === id);
 

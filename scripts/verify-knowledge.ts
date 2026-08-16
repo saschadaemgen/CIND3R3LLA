@@ -489,7 +489,7 @@ async function main(): Promise<void> {
   // ── WHY THIS SECTION LOWERS THE FLOOR ─────────────────────────────────────
   //
   // The fake embedder has real cosine BEHAVIOUR (texts sharing words are closer) but not
-  // nomic's absolute SCALE, so the shipped 0.55 rejects everything here. The floor's real
+  // nomic's absolute SCALE, so the shipped 0.60 rejects everything here. The floor's real
   // calibration is a measurement against the production model and lives in the live check
   // and in `retrieval.ts`. This section is about whether each control is CONSULTED, so it
   // starts from a floor that admits candidates and varies one control at a time.

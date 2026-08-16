@@ -417,13 +417,21 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   counts every strip for the Diagnostics page, because stripping is a fallback that hides a
   fault by design.
   **`blocked-name-log.ts` is the same shape for the guard that goes the other way** (CCB-S5-031,
-  D-186): `blockedLiterals` REJECTS a reply containing the speaking member's display name, which
+  D-186): `blockedLiterals` catches a reply containing the speaking member's display name, which
   used to be a bare substring test, so a member called `In` or `Al` lost every answer she wrote to
   an ordinary preposition and the only trace was a `log.debug`. It is a whole-word Unicode match
-  with a four-character floor now, and every rejection is counted with the matched name, an
-  excerpt, and whether the member got a fallback line or nothing at all. **Whether a TRUE match
-  should be stripped rather than rejected is still open**, deliberately, and the count exists so
-  that decision is taken against numbers), `plugins/` (plugin
+  with a four-character floor, and every catch is counted with the matched name, an excerpt, and
+  what it cost. **Strip-versus-reject was decided by that count under D-227**: a true match is
+  STRIPPED now (vocative removed, inline mention turned second person) and the answer ships with
+  cost `stripped`; rejection remains the fallback for a strip that leaves nothing or fails to
+  remove the name.
+  **`invented-refusal-log.ts` is the third of the family** (D-226): `capability-claims.ts`
+  strips a first-person refusal of a capability THIS bot holds - "I won't look it up for you"
+  with the lookup enabled - judged deterministically against the per-bot catalog, the
+  membershipIsActive treatment of what had become the season's fourth deny-list. The claimable
+  vocabulary is a Record over the intent union, so a new intent fails to COMPILE until it is
+  placed or excluded with a reason; the consent intents are excluded because a refusal there is
+  the product speaking), `plugins/` (plugin
   registry + the Crypto Prices plugin: providers, pinning, cache; the Web Search plugin; and
   `scope.ts`, **the inventory of which plugin setting belongs to one bot and which to the
   deployment** (CCB-S5-021, D-175). The per-bot settings are the `enabled` switches, one per
@@ -865,7 +873,9 @@ with the real embedder: a question answered from a real document with its attrib
 document covers, the same question with the document removed, and a bot without the capability.
 It needs Ollama and is not in the offline set. Read its output rather than its exit code: the
 relevance floor was corrected from 0.45 to a measured 0.55 because a green run printed a
-document name under an answer about the boiling point of mercury),
+document name under an answer about the boiling point of mercury, and again to 0.60 under
+D-226 when production showed a README noise band straddling 0.55;
+`npm run calibrate:knowledge-relevance` prints the bands per deployment),
 `verify:plugin-scope` (different bots, different capabilities, CCB-S5-021: the inventory placing
 every plugin setting, the database CHECK agreeing with it, inheritance leaving the existing
 deployment alone, and above all the ABSENT-CAPABILITY property PER BOT, asserted at all three
