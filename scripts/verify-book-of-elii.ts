@@ -44,6 +44,18 @@ import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
 import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
+import { PluginService } from '../src/plugins/service.js';
+import { MUSIC_ID } from '../src/plugins/music/plugin.js';
+import {
+  assignPlaylist,
+  createPlaylist,
+  insertTrack,
+  setPlaylistTracks,
+} from '../src/plugins/music/store.js';
+import {
+  PromptRuleService,
+  setPromptRuleService,
+} from '../src/interaction/prompt-rule-service.js';
 import type { AdminConfig, Config } from '../src/config.js';
 import { setLogLevel } from '../src/log.js';
 
@@ -390,6 +402,9 @@ async function main(): Promise<void> {
   } as unknown as Config;
 
   registerNav();
+  // Held by the harness as well as the server, so section 8 can flip a per-bot
+  // plugin switch through the SAME instance the console routes read.
+  const plugins = PluginService.withDefaults(db);
   const app = buildServer({
     db,
     adminCfg,
@@ -397,6 +412,7 @@ async function main(): Promise<void> {
     settings: await SettingsService.load(db, 'error'),
     security: await SecurityService.load(db),
     cfg,
+    plugins,
     registerViews: registerAdminViews,
   });
 
@@ -584,6 +600,118 @@ async function main(): Promise<void> {
     'and putting it back makes the book quiet again, so the alarm tracks the state',
     !calm.body.includes('switched off that'),
   );
+
+  /* ── 8. The previews carry the DJ sheet (D-220) ─────────────────────────── */
+  //
+  // D-218 put the library's numbers in the reply prompt and the D-220 audit found that
+  // no preview surface followed: the Assembled Word, the Personality page's voice block
+  // and the Interaction page's context-size card all rendered "what she is told" with
+  // no library in it. Each assertion here is a page READ BACK over HTTP with the plugin
+  // on, off, and on-then-off, because a preview that ignores the switch is the same
+  // stale-surface failure in the other direction.
+
+  console.log('\n8. The previews carry the DJ sheet when the music plugin is on');
+
+  // The context-size card assembles through `currentPromptRules()`, which is the
+  // process-global service the boot path registers; register one here the same way.
+  setPromptRuleService(await PromptRuleService.load(db));
+
+  const bot = await db.query<{ id: string }>(
+    `INSERT INTO cinderella_bot_profiles (slug, display_name, enabled)
+     VALUES ('previewed', 'Preview Bot', TRUE) RETURNING id`,
+  );
+  const PREVIEW_BOT = Number(bot.rows[0]?.id);
+  const DJ_LINE = 'You keep a music library here';
+
+  const assembledOff = await get(`/book/assembled?bot=${PREVIEW_BOT}`);
+  check(
+    'with the plugin off, the assembled word says nothing about a library',
+    assembledOff.statusCode === 200 && !assembledOff.body.includes(DJ_LINE),
+  );
+
+  const memoryOff = await get(`/interaction/memory?bot=${PREVIEW_BOT}`);
+  const bareOf = (body: string): number =>
+    Number(/Her rules and facts alone<\/dt>[\s\S]{0,160}?(\d+) characters/.exec(body)?.[1] ?? Number.NaN);
+  const bareBefore = bareOf(memoryOff.body);
+  check(
+    'POSITIVE CONTROL: the context-size card measures a real prompt before any of this',
+    Number.isFinite(bareBefore) && bareBefore > 0,
+    String(bareBefore),
+  );
+
+  // A library the bot can actually reach: two tracks, one playlist, one assignment.
+  const folk = await insertTrack(db, {
+    kind: 'music', title: 'Harbour Lights', artist: null, album: null, genre: 'folk',
+    durationSeconds: 200, filePath: '/x/preview/1.mp3', fileSize: 1_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const rock = await insertTrack(db, {
+    kind: 'music', title: 'Preview Anthem', artist: null, album: null, genre: 'rock',
+    durationSeconds: 100, filePath: '/x/preview/2.mp3', fileSize: 1_000_000,
+    mime: 'audio/mpeg', coverPath: null,
+  });
+  const playlist = await createPlaylist(db, 'Preview Set');
+  await setPlaylistTracks(db, playlist, [folk, rock]);
+  await assignPlaylist(db, PREVIEW_BOT, playlist);
+  await plugins.setEnabledForBot(PREVIEW_BOT, MUSIC_ID, true, OPERATOR);
+
+  const assembledOn = await get(`/book/assembled?bot=${PREVIEW_BOT}`);
+  check(
+    'with it on, the assembled word carries the DJ sheet with the numbers she is told',
+    assembledOn.body.includes(`${DJ_LINE}: 2 tracks across folk, rock, in 1 playlists`),
+  );
+  check(
+    'and the page says where those numbers come from',
+    assembledOn.body.includes('counted live'),
+  );
+
+  const personalityPage = await get(`/ai/personality?bot=${PREVIEW_BOT}`);
+  check(
+    'the personality page voice block carries it too',
+    personalityPage.body.includes(`${DJ_LINE}: 2 tracks across folk, rock`),
+  );
+
+  // The per-rule preview is a POST of the operator's own form. Press it the way the
+  // operator does, on a has-music law, and read the DJ sheet back out of the preview,
+  // because "nothing moved" over a real change is the failure this page must not have.
+  const musicRule = (await listPromptRules(db)).find((r) => r.id === 'music.capability')!;
+  const rulePreview = await app.inject({
+    method: 'POST',
+    url: '/book/rule/music.capability',
+    headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: new URLSearchParams({
+      text: musicRule.text,
+      enabled: 'on',
+      ord: String(musicRule.ord),
+      action: 'preview',
+      _csrf: csrf,
+    }).toString(),
+  });
+  check(
+    'the per-rule preview renders a has-music law inside the prompt it lands in',
+    rulePreview.statusCode === 200 &&
+      rulePreview.body.includes(`${DJ_LINE}: 2 tracks across folk, rock`),
+    String(rulePreview.statusCode),
+  );
+
+  const memoryOn = await get(`/interaction/memory?bot=${PREVIEW_BOT}`);
+  const bareAfter = bareOf(memoryOn.body);
+  check(
+    'and the context-size card counts it, so the headroom is measured against the prompt she is sent',
+    Number.isFinite(bareAfter) && bareAfter > bareBefore,
+    `${bareBefore} -> ${bareAfter}`,
+  );
+
+  // The switch reaches back (D-205): off again means the previews drop the library,
+  // not merely never having shown it.
+  await plugins.setEnabledForBot(PREVIEW_BOT, MUSIC_ID, null, OPERATOR);
+  const assembledBack = await get(`/book/assembled?bot=${PREVIEW_BOT}`);
+  check(
+    'switched back off, the library leaves the previewed prompt',
+    !assembledBack.body.includes(DJ_LINE),
+  );
+
+  setPromptRuleService(null);
 
   await app.close();
 

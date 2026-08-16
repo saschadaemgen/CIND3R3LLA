@@ -610,6 +610,24 @@ export async function libraryFactsForBot(
   return { tracks: Number(total.rows[0]?.n ?? 0), genres: genres.rows.map((r) => r.genre) };
 }
 
+/**
+ * The three numbers the has-music prompt rules interpolate, in one place (D-220).
+ *
+ * This is the `MusicPromptFacts` shape. The reply path (`src/index.ts`'s music ops)
+ * and the console's prompt previews both call THIS, because the D-220 audit found the
+ * previews rendering "the assembled word" with no library in it: the derivation lived
+ * only in the runtime wiring, so every surface that wanted to show the prompt had to
+ * rebuild it and none did. One function, and a preview that disagrees with the reply
+ * path is no longer something this code can express.
+ */
+export async function promptFactsForBot(
+  db: Queryable,
+  botProfileId: number,
+): Promise<{ tracks: number; genres: string[]; playlists: number }> {
+  const library = await libraryFactsForBot(db, botProfileId);
+  return { ...library, playlists: (await assignmentsForBot(db, botProfileId)).length };
+}
+
 /** A random track from this bot's playlists - "play me something". */
 export async function randomTrackForBot(
   db: Queryable,

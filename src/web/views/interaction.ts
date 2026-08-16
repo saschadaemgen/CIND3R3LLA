@@ -77,6 +77,8 @@ import { systemPrompt } from '../../interaction/ollama-reply.js';
 import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
 import { currentBotPersonality } from '../../profiles/bot-personality.js';
 import { botIdentity } from '../../interaction/settings.js';
+import type { MusicPromptFacts } from '../../interaction/personality.js';
+import { previewMusicFacts } from '../music-facts.js';
 import { MAX_HISTORY_LIMITS } from '../../interaction/history.js';
 import { resolveSelectedBot } from '../selected-bot.js';
 
@@ -159,7 +161,7 @@ ${value}</textarea>`;
  * an approximation because it is one: the real number depends on the language and the
  * tokenizer, and a precise-looking wrong number is worse than an honest range.
  */
-function memorySizeCard(s: InteractionSettings): SafeHtml {
+function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefined): SafeHtml {
   const rules = currentPromptRules();
   const worstCase = Array.from({ length: s.memory.maxMessages }, () => ({
     speaker: 'Member',
@@ -183,6 +185,10 @@ function memorySizeCard(s: InteractionSettings): SafeHtml {
           history,
           historyWindowMinutes: s.memory.windowMinutes,
           now: { at: new Date(), timeZone: 'UTC' },
+          // The DJ sheet, when the music plugin is on for this bot (D-220). Without it
+          // the measurement under-counted by the has-music rules, which is a headroom
+          // figure that reads safer than the prompt she is actually sent.
+          music,
         },
         500,
       ).length;
@@ -706,6 +712,11 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           ? null
           : wakeWordState(interaction.get(), ownOverrides, selectedName);
 
+      // The DJ sheet for the context-size card (D-220), read the same way the reply
+      // path reads it, so the measured headroom counts the has-music rules when this
+      // bot's prompt actually carries them.
+      const music = await previewMusicFacts(ctx, selectedBotId);
+
       const notice = req.query.tested
         ? html`<div
             class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
@@ -884,7 +895,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${saveButton()}
                 `,
               )}
-              ${memorySizeCard(s)}`,
+              ${memorySizeCard(s, music)}`,
           ),
         language: () =>
           card(

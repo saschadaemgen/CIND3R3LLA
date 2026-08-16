@@ -36,8 +36,10 @@ import {
   referenceFor,
   type BotIdentity,
   type BotPersonality,
+  type MusicPromptFacts,
   type PersonalityAxis,
 } from '../../interaction/personality.js';
+import { previewMusicFacts } from '../music-facts.js';
 import { botIdentity } from '../../interaction/settings.js';
 import { aiRuntimeSnapshot, currentReplyModel } from '../../interaction/ai-runtime.js';
 import {
@@ -266,8 +268,9 @@ function promptCard(
   rules: PromptRuleSet,
   personality: BotPersonality,
   identity: BotIdentity,
+  music: MusicPromptFacts | undefined,
 ): SafeHtml {
-  const voice = conversationVoice(rules, personality, identity).join('\n');
+  const voice = conversationVoice(rules, personality, identity, undefined, music).join('\n');
   return card(
     'What the model is told',
     html`
@@ -277,6 +280,11 @@ function promptCard(
         what she is, the links and the names she refuses all come from the
         <a class="underline" href="/interaction/addressing">Interaction settings</a>, not from
         here.
+        ${music === undefined
+          ? null
+          : html` The library lines are in it too, counted live from what this bot's
+              <a class="underline" href="/music">playlist assignments</a> reach, because that is
+              what she is told at reply time.`}
       </p>
       <p class="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
         <strong>The model she runs on is a GIVEN FACT, not prose.</strong> It is read live from
@@ -315,6 +323,7 @@ function body(
   csrf: string,
   identity: BotIdentity,
   rules: PromptRuleSet,
+  music: MusicPromptFacts | undefined,
 ): SafeHtml {
   const active = selectedProfile(profiles, requested);
   if (!active) return emptyBody();
@@ -338,7 +347,7 @@ function body(
     <div class="mt-4">${whichBotCard(profiles, active, csrf)}</div>
     <div class="mt-4">${editorCard(active, csrf)}</div>
     <div class="mt-4 grid gap-4 lg:grid-cols-2">
-      ${ceilingCard(rules)} ${promptCard(rules, active.personality, identity)}
+      ${ceilingCard(rules)} ${promptCard(rules, active.personality, identity, music)}
     </div>
   `;
 }
@@ -355,6 +364,10 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
       req.query.bot,
       req.session?.selectedBotProfileId ?? null,
     );
+    // The DJ sheet, when the music plugin is on for this bot (D-220). The preview must
+    // show the prompt that is actually built, and since D-218 that prompt carries the
+    // library's numbers; a voice block without them was a prompt nobody receives.
+    const music = await previewMusicFacts(ctx, selection.selectedId);
     reply.type('text/html');
 
     return renderAiPage(
@@ -376,6 +389,7 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
         // omitted it would be a second description of the prompt rather than the prompt.
         previewIdentity(ctx.interaction.get()),
         rules,
+        music,
       ),
       html`<script src="/assets/admin-personality.js" defer></script>`,
       // ── THE SIDEBAR SWITCHER, REPLACING THIS PAGE'S OWN (CCB-S5-011) ──
