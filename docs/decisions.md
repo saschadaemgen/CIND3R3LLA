@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 227 decisions</strong> — newest first. Highest allocated: <strong>D-228</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 228 decisions</strong> — newest first. Highest allocated: <strong>D-229</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-229 | The console's prompt previews carry the selected bot's voice, read from the rows | IMPLEMENTED |
 | D-228 | The console says what it edits: Welcome in the section table, an explicit shared view, scope in the copy, and editing without the wizard | IMPLEMENTED |
 | D-227 | The member-name guard takes the name out instead of throwing the answer away | IMPLEMENTED |
 | D-226 | The invented refusal is judged against the catalog, the LOOKUP bar reaches the model resolver, and the passages stop overriding what the application told her | IMPLEMENTED |
@@ -252,6 +253,78 @@ This has gone wrong twice.
 
 </details>
 <!-- END DECISION INDEX -->
+
+---
+---
+---
+---
+
+### D-229 - The console's prompt previews carry the selected bot's voice, read from the rows
+
+**Status: IMPLEMENTED** (CCB-S5-019's removal of the primary fallback, followed up where it
+silently landed).
+
+Two console surfaces asked `currentBotPersonality()` with **no bot id**. That form used to
+answer with the primary's personality; CCB-S5-019 removed the primary fallback (D-173) and it
+has answered `null` on every call since. Nothing failed. The call still compiled, both pages
+still rendered, and the number one of them printed still looked like a measurement.
+
+What it cost:
+
+- **The Book's per-rule preview** (`previewCard`) rendered the prompt with no voice section in
+  it: no dial block, no base character, no origin. The doc comment directly above it said "the
+  personality and the identity are the live ones" and the page said "this is the same function
+  the reply path calls, so what you read here is what she would be told". The function was; the
+  arguments were not. This is the one screen an operator reads before committing a change to a
+  law, and it was showing a prompt nobody receives.
+- **The Interaction page's context-size card** measured that same truncated prompt. On the
+  preview's own fixture the figure moves from 7,652 to 12,115 characters once the voice section
+  is in it - a **58% under-count**, and it errs in the direction that reads as headroom. A card
+  whose entire job is to warn was under-reporting the thing it warns about.
+
+Both now take the personality as a **parameter** rather than reaching for it, so a caller that
+forgets it does not compile, and the resolution happens once per request against
+`resolveSelectedBot` - the same standing selection every other settings page uses (CCB-S5-011).
+
+**The rows, not the cache** (`src/web/preview-personality.ts`). `currentBotPersonality(id)` is
+the reply path's cache and answers a miss with `null` while kicking a background refresh. That
+is right for the reply path, where the window is one query. It is wrong for a page: the FIRST
+request for any bot after a boot renders without the character and the second renders with it,
+and nothing on the page distinguishes them - the first-request staleness the Interaction page
+already documents at length for its own settings. `/book/assembled` was named as correct in the
+brief and had the milder form of the same bug (it named the right bot and still asked the
+cache); it reads the rows too, because a page with two answers to one question is how the two
+halves of a page come to disagree. A failed read is **not** caught: it throws and the route
+fails visibly, like every other read on these routes, because answering `null` would be
+indistinguishable from "this bot has no personality configured" - the masking CCB-S3-023
+forbids, and it would put the page back in exactly the state this fixes.
+
+The card's label changed with it, because "Her rules and facts alone" was true of what it used
+to measure: it now reads "Her rules, **voice** and facts alone". `memorySizeCard` also stopped
+hardcoding `500` as the length budget and reads `replyCharBudget(personality?.verbosity ?? 5)`,
+which is the number the prompt actually carries; `replyCharBudget(5)` is 500, so a bot at the
+middle of the dial measures exactly as before (migration 034).
+
+**Both previews now say whose prompt they are**, which the Assembled Word already did and for
+the reason it gives: the voice section differs per bot, so an unlabelled prompt is worse than
+no prompt. The first draft of that sentence said "the bot selected in the sidebar" and the
+D-212 screenshot showed the sidebar reading **"Deployment-wide"** two inches away, because the
+Book's own pages carry no switcher - the laws ARE the deployment's. Copy that points at a
+control which is not on the page is the D-212 defect in miniature, so the sentence is
+self-contained now and says why a bot is named on a page that edits everybody's laws.
+
+`verify:book` section 8 drives all of it over HTTP: both preview POSTs pressed the way an
+operator presses them, the Assembled Word, and the context-size card at three selections. Every
+marker is proven to DISCRIMINATE first (absent from a prompt built with no personality, which
+is what the defect rendered), and the load-bearing pair is switching bots and showing the first
+bot's dials, character and origin GONE - because everything else passes against a page that
+renders one hardcoded personality, which is the same defect one step along. Mutation-proven by
+restoring the shipped defect in both files: **nine** checks go red. Two of the card's assertions
+were written as `>` first and one PASSED under that mutation on a seven-character difference
+between the two bots' display names; both are floored at the text they assert the presence of.
+
+`verify:prompt-identity` is untouched and green: it pins the seeded registry, and no rule text
+moved.
 
 ---
 ---

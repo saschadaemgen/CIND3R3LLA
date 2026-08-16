@@ -2779,6 +2779,25 @@ hidden: it exists so a reviewer can trace a rule to the line it came from.
 The Assembled Word renders through **`systemPrompt`**, the reply path's own function. A second
 assembly that agreed today is a second assembly that disagrees later.
 
+**Every preview carries the selected bot's voice, read from the rows** (D-229). The per-rule
+preview, the new-law preview and the Assembled Word all resolve the bot through
+`resolveSelectedBot` (the standing selection, CCB-S5-011) and read its personality with
+[`previewPersonality`](../src/web/preview-personality.ts), which queries
+`cinderella_bot_profiles` rather than asking `BotPersonalityService`. The cache answers a miss
+with `null` and refreshes in the background, which is right for the reply path and wrong for a
+page: the first request after a boot would render without the character and the second with it.
+The per-rule preview had the worse form of this - it asked with **no bot id at all**, which has
+returned `null` since CCB-S5-019 removed the primary fallback (D-173), so it rendered every
+prompt with no dial block, no base character and no origin while claiming to be what she would
+be told. The personality is a **parameter** of the preview card now, so a call site that forgets
+it does not compile. Each preview also states whose prompt it is, without pointing at the bot
+switcher: the Book's pages carry none, because the laws are the deployment's and only the voice
+around them is one bot's.
+
+The same read backs the Interaction page's context-size card (§38.2's sibling surface), which
+had the identical defect and therefore under-reported the assembled prompt by the whole voice
+section - 58% on the preview fixture, in the direction that reads as headroom.
+
 ### 38.3 Editing by tier
 
 - **Standard**: edit, enable, disable, reorder. No ceremony.
