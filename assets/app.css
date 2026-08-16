@@ -1806,7 +1806,7 @@ input[type='radio'] {
   gap: 4px;
 }
 
-.admin-brand-three{color:var(--brand)}
+.admin-brand-three{color:var(--accent-strong)}
 .admin-brand-wordmark {
   display: flex;
   width: 100%;
@@ -1818,20 +1818,22 @@ input[type='radio'] {
 
 .admin-brand-name {
   color: var(--text);
+  opacity: 0.94;
   font-size: 21px;
-  font-weight: 700;
+  font-weight: 500;
   letter-spacing: 0;
-  text-shadow: 0 0 18px rgba(69, 189, 209, 0.16);
+  text-shadow: 0 0 14px rgba(69, 189, 209, 0.12);
 }
 
 .admin-brand-subtitle {
   color: var(--brand-strong);
+  opacity: 0.78;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 10.5px;
+  font-weight: 400;
   letter-spacing: 0;
-  text-transform: none;
-  text-shadow: 0 0 16px rgba(69, 189, 209, 0.18);
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(69, 189, 209, 0.12);
 }
 
 .admin-footer-product {
