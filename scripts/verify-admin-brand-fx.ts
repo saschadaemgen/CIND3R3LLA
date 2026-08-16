@@ -45,13 +45,20 @@ async function main(): Promise<void> {
   // The PRODUCT IDENTITY is what this section is really about, and it is still asserted:
   // the browser title and the footer both carry the name, which is checked above and
   // below. What is asserted here is that the space went to the control.
+  // REVERSED by the operator (2026-08-16, with the D-225 section work): the
+  // wordmark returned to the header - CIND3R3LLA with the site's magenta 3s,
+  // "administration" beneath it at exactly the wordmark's width - and the bot
+  // picker moved to the TOP of the contextual sidebar, where the section
+  // links live. Both halves are asserted, so neither can silently vanish.
   check(
-    'the header slot holds the bot picker, not a wordmark',
-    rendered.includes('admin-header-botslot') && rendered.includes('data-bot-switcher'),
+    'the header carries the wordmark with administration beneath it',
+    rendered.includes('aria-label="CIND3R3LLA administration"') &&
+      rendered.includes('admin-brand-subtitle') &&
+      rendered.includes('admin-brand-three'),
   );
   check(
-    '  and the wordmark is gone from the header entirely',
-    !rendered.includes('aria-label="CIND3R3LLA administration"'),
+    '  and the bot picker sits in the sidebar, not the header slot',
+    !rendered.includes('admin-header-botslot') && rendered.includes('data-bot-switcher'),
   );
   check(
     'footer exposes the product name',

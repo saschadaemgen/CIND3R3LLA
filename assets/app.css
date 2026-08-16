@@ -1806,6 +1806,7 @@ input[type='radio'] {
   gap: 4px;
 }
 
+.admin-brand-three{color:var(--brand)}
 .admin-brand-wordmark {
   display: flex;
   width: 100%;

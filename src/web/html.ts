@@ -53,6 +53,21 @@ export function html(strings: TemplateStringsArray, ...values: Interpolatable[])
 }
 
 
+/**
+ * The brand lockup's letter spread (restored by the operator): every letter
+ * its own span, the row justified, so "administration" underneath is exactly
+ * as wide as the wordmark above it. The two 3s carry the site's magenta.
+ */
+function distributedWord(value: string, className: string): SafeHtml {
+  return html`<span class="${className} admin-brand-wordmark" aria-hidden="true">
+    ${Array.from(value).map((character) =>
+      character === '3'
+        ? html`<span class="admin-brand-three">${character}</span>`
+        : html`<span>${character}</span>`,
+    )}
+  </span>`;
+}
+
 export interface PageOptions {
   title: string;
   active?: string;
@@ -664,7 +679,12 @@ export function page(options: PageOptions): string {
             It occupies the sidebar's column width, so the picker and the sidebar under it
             read as one column rather than two unrelated things.
           -->
-          <div class="admin-header-botslot">${switcher}</div>
+          <a href="/dashboard" class="admin-brand" data-admin-brand>
+            <span class="admin-brand-copy" aria-label="CIND3R3LLA administration">
+              ${distributedWord('CIND3R3LLA', 'admin-brand-name')}
+              ${distributedWord('administration', 'admin-brand-subtitle')}
+            </span>
+          </a>
 
           <nav data-main-navigation class="admin-main-navigation">
             ${navItems.map((item) => topNavigationLink(item, options.active))}
@@ -716,6 +736,7 @@ export function page(options: PageOptions): string {
         data-section="${sectionNode?.key ?? 'dashboard'}"
         class="admin-sidebar"
       >
+        ${switcher}
         ${sectionNode
           ? html`<div class="admin-sidebar-brandline">
               <span class="admin-sidebar-brand-icon">${sectionNode.icon}</span>
