@@ -78,7 +78,7 @@ import { resolveSelectedBot } from '../selected-bot.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { currentReplyModel } from '../../interaction/ai-runtime.js';
 import { botIdentity } from '../../interaction/settings.js';
-import { currentBotPersonality } from '../../profiles/bot-personality.js';
+import { previewPersonality } from '../preview-personality.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
@@ -556,21 +556,62 @@ function modeFor(rule: PromptRule): AiReplyMode {
 }
 
 /**
+ * Whose prompt a preview is of (D-229).
+ *
+ * Resolved once per request and handed in, rather than reached for inside the card, because
+ * the previous version reached for it and got nothing: `currentBotPersonality()` with no bot
+ * id answered with the PRIMARY's personality until CCB-S5-019 took that fallback away, and
+ * has answered `null` ever since. A parameter cannot rot that way - a caller that forgets it
+ * does not compile - and it keeps the card a pure function of what it is given.
+ *
+ * ── WHY EVERY PER-BOT INPUT LIVES IN ONE VALUE ───────────────────────────────
+ *
+ * D-220 and D-229 were written on two branches at once and fixed the same defect for two
+ * different inputs: the previewed prompt was missing the DJ sheet, and it was missing the
+ * dials, the base character and the origin. Each branch added its own parameter to this card
+ * and its own `listBotOnboardingProfiles` + `resolveSelectedBot` block to the same two
+ * routes. Merged as written, that is how a THIRD per-bot input gets added to one preview and
+ * forgotten at the other - which is the defect both branches existed to fix, one level up.
+ *
+ * So everything the selected bot contributes to a previewed prompt is ONE value, resolved in
+ * ONE place. Adding a fourth means adding a field here and filling it in `previewBot`, and
+ * there is no call site left that could be handed three of the four.
+ */
+interface PreviewBot {
+  /** The bot's display name, or null when the deployment has no bots at all. */
+  name: string | null;
+  /** Its personality, read from the rows, or null when it has none configured (D-229). */
+  personality: BotPersonality | null;
+  /** Its DJ sheet, or undefined when the music plugin is off for it (D-220). */
+  music: MusicPromptFacts | undefined;
+}
+
+/**
  * The prompt as it WOULD be, beside what it is now.
  *
  * Rendered through `systemPrompt`, the reply path's own function, so this is not a second
- * assembly that happens to agree today. The personality and the identity are the live ones,
- * because the question here is what she would actually be told rather than what a
- * representative bot would be.
+ * assembly that happens to agree today. The identity is the live one and the personality is
+ * the SELECTED BOT'S, read from its rows, because the question here is what she would
+ * actually be told rather than what a representative bot would be.
+ *
+ * ── THE CLAIM THIS COMMENT USED TO MAKE, AND WHY IT WAS FALSE ────────────────
+ *
+ * It said "the personality and the identity are the live ones" for seven months while the
+ * personality was `null` on every render: the dial block, the base character and the origin
+ * were absent from every previewed prompt, and the page went on saying "this is the same
+ * function the reply path calls, so what you read here is what she would be told". The
+ * function was; the arguments were not. Corrected in place per D-191 rather than deleted,
+ * because a comment that was confidently wrong is worth leaving legible.
  */
 function previewCard(
   current: PromptRuleSet,
   proposed: PromptRuleSet,
   rule: PromptRule,
   identity: BotIdentity,
-  music: MusicPromptFacts | undefined,
+  bot: PreviewBot,
 ): SafeHtml {
-  const personality: BotPersonality | null = currentBotPersonality();
+  const personality = bot.personality;
+  const music = bot.music;
   const mode = modeFor(rule);
 
   const render = (rules: PromptRuleSet): string => {
@@ -613,6 +654,23 @@ function previewCard(
         and nothing saved. The mode is the one this rule's lane reaches; the same edit shows up
         in every other mode that draws the same lane. This is the same function the reply path
         calls, so what you read here is what she would be told.
+        ${
+          /* WHOSE PROMPT, SAID OUT LOUD (D-229). The same requirement the Assembled Word
+             carries and for the same reason: the voice section differs per bot, so an
+             unlabelled prompt is worse than no prompt.
+
+             SELF-CONTAINED, AND THAT IS THE POINT. The first draft said "the bot selected in
+             the sidebar", and the screenshot showed the sidebar reading "Deployment-wide" two
+             inches away, because the Book's own pages carry no switcher: the LAWS are the
+             deployment's. So the sentence says why a bot is named on a page that edits
+             everybody's laws, instead of pointing at a control that is not there. */ ''
+        }
+        ${bot.name === null
+          ? html`<br />No bot is configured, so this carries no character and no dials: the
+              original voice under the ceiling, which is what she would be told with none.`
+          : html`<br />The laws are the deployment's; the voice around them is one bot's, so a
+              preview has to pick one. This is <strong>${bot.name}</strong>, with that bot's
+              own dials, base character and origin.`}
         ${before === after
           ? html`<strong class="text-amber-800">
               Nothing moved: this edit changes no sentence in this prompt.</strong
@@ -703,6 +761,29 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
         botNames: new Map(bots.map((b) => [b.id, b.displayName])),
       },
       bots,
+    };
+  };
+
+  /**
+   * The bot a preview is of, and everything it contributes to the prompt (D-220, D-229).
+   *
+   * The sidebar's STANDING selection, never `?bot=`: a preview arrives as a form POST with
+   * no query string of its own, so the session is the only thing that can say which bot the
+   * operator is working on. Same resolver as every other settings page (CCB-S5-011), so the
+   * preview shows the bot whose name the sidebar is displaying while it is being read.
+   *
+   * Both reads go to THE ROWS rather than to a cache, and for one reason: this page is
+   * loaded by hand and both caches answer a miss by returning nothing and refreshing in the
+   * background, so a first request after a boot would preview a prompt missing whichever
+   * half had not landed yet.
+   */
+  const previewBot = async (sessionBot: number | null): Promise<PreviewBot> => {
+    const profiles = await listBotOnboardingProfiles(ctx.db);
+    const selection = resolveSelectedBot(profiles, undefined, sessionBot);
+    return {
+      name: selection.selectedName,
+      personality: await previewPersonality(ctx.db, selection.selectedId),
+      music: await previewMusicFacts(ctx, selection.selectedId),
     };
   };
 
@@ -1056,16 +1137,10 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     // THE PREVIEW, before anything is written. The same question the edit path answers: what
     // would she actually be told?
     if (bodyString(req.body, 'action') === 'preview') {
-      // The DJ sheet for the sidebar's standing selection (CCB-S5-011), because since
-      // D-218 the prompt carries the library's numbers and a preview without them shows
-      // a prompt nobody receives (D-220).
-      const profiles = await listBotOnboardingProfiles(ctx.db);
-      const selection = resolveSelectedBot(
-        profiles,
-        undefined,
-        req.session?.selectedBotProfileId ?? null,
-      );
-      const music = await previewMusicFacts(ctx, selection.selectedId);
+      // Everything this preview needs from the selected bot, resolved once (D-220 + D-229):
+      // its dials, character and origin, and its DJ sheet. The sidebar's STANDING selection,
+      // never `?bot=`, because a preview arrives as a form POST with no query of its own.
+      const bot = await previewBot(req.session?.selectedBotProfileId ?? null);
       reply.type('text/html');
       return page({
         title: `Preview ${id} | The Book of Elii`,
@@ -1078,7 +1153,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <strong>${chapterForNewRule(chapters, id)?.titleEn ?? 'none'}</strong>, at position
             ${String(ord)} of ${String(rules.length + 1)}.
           </p>
-          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()), music)}
+          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()), bot)}
           <div class="mt-4">
             <a class="text-sm underline" href="${back('')}">Back to the form</a>
           </div>
@@ -1193,15 +1268,10 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       const proposed = withEdit(rules, ruleId, edit);
 
       if (bodyString(req.body, 'action') === 'preview') {
-        // Same DJ-sheet read as the new-law preview (D-220): the sidebar's standing
-        // selection decides whose library the previewed prompt carries.
-        const profiles = await listBotOnboardingProfiles(ctx.db);
-        const selection = resolveSelectedBot(
-          profiles,
-          undefined,
-          req.session?.selectedBotProfileId ?? null,
-        );
-        const music = await previewMusicFacts(ctx, selection.selectedId);
+        // Everything this preview needs from the selected bot, resolved once (D-220 + D-229):
+        // its dials, character and origin, and its DJ sheet. The sidebar's STANDING selection,
+        // never `?bot=`, because a preview arrives as a form POST with no query of its own.
+        const bot = await previewBot(req.session?.selectedBotProfileId ?? null);
         reply.type('text/html');
         return page({
           title: `Preview ${ruleId} | The Book of Elii`,
@@ -1212,7 +1282,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <p class="mb-4 text-sm">
               <a class="underline" href="/book/rule/${ruleId}">Back to the rule</a>
             </p>
-            ${previewCard(rules, proposed, rule, previewIdentity(ctx), music)}
+            ${previewCard(rules, proposed, rule, previewIdentity(ctx), bot)}
             <div class="mt-4">
               ${card(
                 'Write it',
@@ -1377,7 +1447,12 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     const selected = profiles.find((p) => p.id === selection.selectedId);
     const overrides = selected ? await listOverridesForBot(ctx.db, selected.id) : [];
     const rules = applyOverrides(shared, overrides);
-    const personality = currentBotPersonality(selected?.id);
+    // THE ROWS, NOT THE CACHE (D-229). This named the right bot and still asked the reply
+    // path's cache, which answers a miss with `null` and kicks a refresh, so the FIRST load
+    // after a boot assembled a word with no character in it and the second one had it. The
+    // two preview branches above read the rows; a third answer to the same question on the
+    // same page is how the two halves of a page come to disagree.
+    const personality = await previewPersonality(ctx.db, selected?.id);
     const identity = previewIdentity(ctx);
     // The DJ sheet, when the music plugin is on for this bot (D-220): the reply path
     // has carried it since D-218, so an assembled word without it was a prompt nobody

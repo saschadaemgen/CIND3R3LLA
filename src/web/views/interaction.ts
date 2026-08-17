@@ -79,7 +79,8 @@ import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 import { writeAudit } from '../../db/audit.js';
 import { systemPrompt } from '../../interaction/ollama-reply.js';
 import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
-import { currentBotPersonality } from '../../profiles/bot-personality.js';
+import { replyCharBudget, type BotPersonality } from '../../interaction/personality.js';
+import { previewPersonality } from '../preview-personality.js';
 import { botIdentity } from '../../interaction/settings.js';
 import type { MusicPromptFacts } from '../../interaction/personality.js';
 import { previewMusicFacts } from '../music-facts.js';
@@ -164,8 +165,25 @@ ${value}</textarea>`;
  * The token figure is a conversion at roughly 3.2 characters per token, and it is labelled as
  * an approximation because it is one: the real number depends on the language and the
  * tokenizer, and a precise-looking wrong number is worse than an honest range.
+ *
+ * ── WHY THE PERSONALITY IS HANDED IN (D-229) ─────────────────────────────────
+ *
+ * It used to call `currentBotPersonality()` with no bot id, which answered with the primary's
+ * until CCB-S5-019 removed that fallback and `null` ever since. So the measurement omitted the
+ * whole voice section - the dial block, the base character and the origin, which alone is
+ * roughly 1.7 KB - and reported a headroom figure that read SAFER than the prompt she is
+ * actually sent. A measurement that errs towards "you have room" is the wrong direction for a
+ * card whose whole job is to warn, and nothing said it was happening.
+ *
+ * A parameter rather than a reach, so a caller that forgets it does not compile, and so the
+ * card stays a pure function of what it is given.
  */
-function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefined): SafeHtml {
+function memorySizeCard(
+  s: InteractionSettings,
+  personality: BotPersonality | null,
+  botName: string | null,
+  music: MusicPromptFacts | undefined,
+): SafeHtml {
   const rules = currentPromptRules();
   const worstCase = Array.from({ length: s.memory.maxMessages }, () => ({
     speaker: 'Member',
@@ -184,7 +202,7 @@ function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefi
           deterministicDraft: '',
           mode: 'conversation',
           rules,
-          personality: currentBotPersonality(),
+          personality,
           identity: botIdentity(s),
           history,
           historyWindowMinutes: s.memory.windowMinutes,
@@ -194,7 +212,11 @@ function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefi
           // figure that reads safer than the prompt she is actually sent.
           music,
         },
-        500,
+        // The verbosity dial's own budget, not the 500 this used to hardcode. The number is
+        // rendered INTO the prompt as the length instruction, so measuring with a different
+        // one measures a prompt she is not sent. `replyCharBudget(5)` is 500, so a bot at the
+        // middle of the dial measures exactly as it did (migration 034).
+        replyCharBudget(personality?.verbosity ?? 5),
       ).length;
     bare = build([]);
     full = build(worstCase) + Math.min(s.memory.maxChars, worstCase.length * 208);
@@ -214,7 +236,7 @@ function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefi
     'What it costs',
     html`<dl class="grid gap-3 text-sm sm:grid-cols-3">
         <div>
-          <dt class="font-medium text-slate-700">Her rules and facts alone</dt>
+          <dt class="font-medium text-slate-700">Her rules, voice and facts alone</dt>
           <dd class="text-slate-600">${String(bare)} characters</dd>
         </div>
         <div>
@@ -226,10 +248,20 @@ function memorySizeCard(s: InteractionSettings, music: MusicPromptFacts | undefi
           <dd class="text-slate-600">~${String(tokens)} of 8192</dd>
         </div>
       </dl>
+      ${
+        /* WHOSE PROMPT WAS MEASURED (D-229). The voice section differs per bot, so a figure
+           that names no bot is a figure an operator cannot act on: he lowers the history
+           budget for the bot with the long origin and reads the number for another one. */ ''
+      }
       <p class="mt-3 text-sm text-slate-500">
+        ${botName === null
+          ? "Measured with no bot's character or dials, because none is selected. Pick a bot above to see what one is actually sent."
+          : `Measured for ${botName}, carrying that bot's own dials, base character and origin, exactly as its replies carry them.`}
+      </p>
+      <p class="mt-2 text-sm text-slate-500">
         ${tight
           ? 'That is a large share of the context window. Her reply needs room too, and a rule set that gets crowded out is a safety problem rather than a slow one. Consider lowering the character budget.'
-          : 'Measured by assembling a real prompt at these settings, not estimated. Her reply needs a few hundred tokens on top.'}
+          : 'Assembled as a real prompt at these settings rather than estimated. Her reply needs a few hundred tokens on top.'}
       </p>`,
   );
 }
@@ -749,9 +781,15 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           ? null
           : wakeWordState(interaction.get(), ownOverrides, selectedName);
 
-      // The DJ sheet for the context-size card (D-220), read the same way the reply
-      // path reads it, so the measured headroom counts the has-music rules when this
-      // bot's prompt actually carries them.
+      // ── THE SELECTED BOT'S VOICE, FOR THE CONTEXT-SIZE CARD (D-229) ───────
+      //
+      // The rows, for the same reason everything above reads the rows: the reply path's
+      // cache answers a miss with null and refreshes in the background, so the first load
+      // for any bot would measure a prompt with no character in it and the second would
+      // measure the real one, with nothing on the page distinguishing them.
+      const personality = await previewPersonality(ctx.db, selectedBotId);
+      // The DJ sheet for the same card and the same reason (D-220): the measured headroom
+      // must count the has-music rules when this bot's prompt actually carries them.
       const music = await previewMusicFacts(ctx, selectedBotId);
 
       const notice = req.query.tested
@@ -937,7 +975,7 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${saveButton()}
                 `,
               )}
-              ${memorySizeCard(s, music)}`,
+              ${memorySizeCard(s, personality, selectedName, music)}`,
           ),
         language: () =>
           card(

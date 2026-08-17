@@ -40,6 +40,12 @@ import {
 } from '../src/interaction/prompt-book.js';
 import { assemblePrompt, lanesForMode } from '../src/interaction/prompt-rules.js';
 import { conversationVoice } from '../src/interaction/personality.js';
+import { botPersonalityById } from '../src/profiles/bot-onboarding.js';
+import {
+  PromptRuleService,
+  setPromptRuleService,
+} from '../src/interaction/prompt-rule-service.js';
+import { escapeHtml } from '../src/web/html.js';
 import { buildServer, registerNav } from '../src/web/server.js';
 import { registerAdminViews } from '../src/web/views/index.js';
 import { SettingsService } from '../src/settings/service.js';
@@ -52,10 +58,6 @@ import {
   insertTrack,
   setPlaylistTracks,
 } from '../src/plugins/music/store.js';
-import {
-  PromptRuleService,
-  setPromptRuleService,
-} from '../src/interaction/prompt-rule-service.js';
 import type { AdminConfig, Config } from '../src/config.js';
 import { setLogLevel } from '../src/log.js';
 
@@ -630,8 +632,17 @@ async function main(): Promise<void> {
   );
 
   const memoryOff = await get(`/interaction/memory?bot=${PREVIEW_BOT}`);
+  // The label gained "voice" under D-229, when the card started measuring the dial block,
+  // the base character and the origin it had been silently omitting. This regex is anchored
+  // to it and went to NaN on the merge - which is worth noting rather than just fixing: an
+  // extractor anchored to COPY fails silently into a number, and `Number(undefined)` is NaN,
+  // so the two checks it feeds reported a broken parse in the same shape as a real result.
+  // They survive it only because both assert `Number.isFinite` before comparing.
   const bareOf = (body: string): number =>
-    Number(/Her rules and facts alone<\/dt>[\s\S]{0,160}?(\d+) characters/.exec(body)?.[1] ?? Number.NaN);
+    Number(
+      /Her rules, voice and facts alone<\/dt>[\s\S]{0,160}?(\d+) characters/.exec(body)?.[1] ??
+        Number.NaN,
+    );
   const bareBefore = bareOf(memoryOff.body);
   check(
     'POSITIVE CONTROL: the context-size card measures a real prompt before any of this',
@@ -717,6 +728,227 @@ async function main(): Promise<void> {
   check(
     'switched back off, the library leaves the previewed prompt',
     !assembledBack.body.includes(DJ_LINE),
+  );
+
+  /* ── 9. The previews carry the SELECTED BOT'S voice (D-229) ─────────────── */
+
+  console.log("\n9. The previews carry the selected bot's dials, character and origin");
+
+  // ── WHY THIS SECTION EXISTS ────────────────────────────────────────────────
+  //
+  // Two surfaces asked `currentBotPersonality()` with NO bot id. That form answered with
+  // the primary's personality until CCB-S5-019 removed the fallback, and `null` ever
+  // since, so the Book's per-rule preview rendered a prompt with no voice section in it
+  // and the Interaction page's context-size card measured one. Nothing failed: the call
+  // compiled, the page rendered, the number looked like a measurement. Every check in this
+  // file stayed green, because no check had ever put a personality behind these routes.
+  //
+  // So the assertions below are about VALUES REACHING A SURFACE, and each one is paired
+  // with the same surface showing a DIFFERENT bot, because "the preview contains a dial
+  // block" passes against a page that renders the same bot's block whatever is selected -
+  // which is the defect one step along, and the one CCB-S5-001 was written about.
+
+  const CHARACTER = 'A neon courier, BASECHARACTERSENTINEL, who owes nobody an explanation.';
+  const ORIGIN = 'She walked out of the wastes carrying ORIGINSENTINEL under her coat.';
+
+  const seeded = await db.query<{ id: string; slug: string }>(
+    `INSERT INTO cinderella_bot_profiles
+       (slug, display_name, enabled, base_character, origin,
+        axis_sharpness, axis_warmth, axis_humor, axis_verbosity, axis_permissiveness)
+     VALUES
+       ('dialled-bot', 'DialledBot', TRUE, $1, $2, 10, 1, 9, 9, 3),
+       -- The control, and it is NOT "no personality": a bot row always has dials, so this
+       -- one carries the block at 5 with no character and no origin. Its origin is set to
+       -- NULL explicitly because migration 031 gives the column a DEFAULT (the operator's
+       -- own history), and an insert that omits it would seed two bots with a history.
+       ('plain-bot', 'PlainBot', TRUE, NULL, NULL, 5, 5, 5, 5, 5)
+     RETURNING id, slug`,
+    [CHARACTER, ORIGIN],
+  );
+  const botIds = new Map(seeded.rows.map((r) => [r.slug, Number(r.id)]));
+  const dialledId = botIds.get('dialled-bot')!;
+  const plainId = botIds.get('plain-bot')!;
+
+  const dialledPersonality = await botPersonalityById(db, dialledId);
+  check(
+    'the seeded bot has a character and an origin to lose',
+    dialledPersonality?.baseCharacter === CHARACTER && dialledPersonality.origin === ORIGIN,
+  );
+
+  // The markers, and the proof that they DISCRIMINATE. A prompt built with no personality
+  // is exactly what the shipped defect produced, so anything present in both would assert
+  // nothing at all.
+  const liveRules = await listPromptRules(db);
+  const identity = { name: 'CIND3R3LLA' };
+  const withVoice = conversationVoice(liveRules, dialledPersonality, identity).join('\n');
+  const withoutVoice = conversationVoice(liveRules, null, identity).join('\n');
+  const DIAL_FRAME = 'Your voice is set on five dials from 1 to 10.';
+  const MARKERS = [DIAL_FRAME, 'SHARPNESS 10 of 10', 'BASECHARACTERSENTINEL', 'ORIGINSENTINEL'];
+  check(
+    'each marker is in a prompt built WITH the personality',
+    MARKERS.every((m) => withVoice.includes(m)),
+    MARKERS.filter((m) => !withVoice.includes(m)).join(', ') || `${MARKERS.length} markers`,
+  );
+  check(
+    'and NONE of them is in one built without it, which is what the defect rendered',
+    MARKERS.every((m) => !withoutVoice.includes(m)),
+    MARKERS.filter((m) => withoutVoice.includes(m)).join(', '),
+  );
+
+  const postPage = (
+    url: string,
+    payload: Record<string, string>,
+  ): Promise<{ statusCode: number; body: string; headers: Record<string, unknown> }> =>
+    app.inject({
+      method: 'POST',
+      url,
+      headers: { cookie: session, 'content-type': 'application/x-www-form-urlencoded' },
+      payload: new URLSearchParams({ ...payload, _csrf: csrf }).toString(),
+    }) as never;
+
+  /** The sidebar's standing selection, set the way the switcher sets it. */
+  const selectBot = async (id: number | null): Promise<void> => {
+    await postPage('/console/select-bot', {
+      botProfileId: id === null ? '' : String(id),
+      returnTo: '/book',
+    });
+  };
+
+  /** The per-rule preview, pressed the way an operator presses it. */
+  const previewOf = async (ruleId: string): Promise<string> => {
+    const rule = (await listPromptRules(db)).find((r) => r.id === ruleId)!;
+    const result = await postPage(`/book/rule/${ruleId}`, {
+      text: rule.text,
+      enabled: 'on',
+      ord: String(rule.ord),
+      action: 'preview',
+    });
+    check(`the preview of ${ruleId} renders`, result.statusCode === 200, String(result.statusCode));
+    return result.body;
+  };
+
+  await selectBot(dialledId);
+  const dialledPreview = await previewOf('prompt.no-meta');
+
+  check(
+    'the per-rule preview says WHOSE prompt it is, so an unlabelled prompt cannot mislead',
+    dialledPreview.includes('DialledBot'),
+  );
+  check(
+    'it carries the dial block, which the defect dropped from every preview',
+    dialledPreview.includes(escapeHtml(DIAL_FRAME)),
+  );
+  check(
+    "and the SELECTED bot's dial values, not the middle of every axis",
+    dialledPreview.includes('SHARPNESS 10 of 10'),
+  );
+  check('it carries that bot’s base character', dialledPreview.includes('BASECHARACTERSENTINEL'));
+  check('and its origin, which is the largest single piece', dialledPreview.includes('ORIGINSENTINEL'));
+
+  // The new-law preview is the OTHER caller of the same card. It had the same defect and
+  // would keep it if only one call site were fixed, which is exactly how these two drift.
+  const newLawPreview = await postPage('/book/new', {
+    id: 'ceiling.no-such-law',
+    text: 'A NEW LAW, not enacted.',
+    tier: 'standard',
+    lane: 'dialled',
+    appliesWhen: 'always',
+    ord: '999',
+    action: 'preview',
+  });
+  check('the new-law preview renders', newLawPreview.statusCode === 200, String(newLawPreview.statusCode));
+  check(
+    'and it carries the same voice section, so the two previews cannot disagree',
+    newLawPreview.body.includes(escapeHtml(DIAL_FRAME)) &&
+      newLawPreview.body.includes('ORIGINSENTINEL') &&
+      newLawPreview.body.includes('SHARPNESS 10 of 10'),
+  );
+
+  // ── THE PAIR THAT MAKES THE ABOVE MEAN SOMETHING ──────────────────────────
+  //
+  // Everything so far passes against a page that renders one hardcoded personality. This
+  // is the check that says the preview TRACKS THE SELECTION.
+  await selectBot(plainId);
+  const plainPreview = await previewOf('prompt.no-meta');
+  check('the preview follows the switcher to the other bot', plainPreview.includes('PlainBot'));
+  check(
+    'that bot has dials of its own, so the block is still there',
+    plainPreview.includes(escapeHtml(DIAL_FRAME)) && plainPreview.includes('SHARPNESS 5 of 10'),
+  );
+  check(
+    'MUTATION: the first bot’s dials, character and origin are GONE from it',
+    !plainPreview.includes('SHARPNESS 10 of 10') &&
+      !plainPreview.includes('BASECHARACTERSENTINEL') &&
+      !plainPreview.includes('ORIGINSENTINEL'),
+  );
+
+  const assembledForBot = await get(`/book/assembled?bot=${String(dialledId)}`);
+  check(
+    'the Assembled Word reads the rows too, so the whole page family answers alike',
+    assembledForBot.body.includes('ORIGINSENTINEL') &&
+      assembledForBot.body.includes('SHARPNESS 10 of 10'),
+  );
+
+  /* ── 9b. The context-size card measures the prompt she is SENT ───────────── */
+
+  console.log('\n9b. The Interaction page measures a prompt with the voice section in it');
+
+  // The card assembles through `systemPrompt` too, and it needs the registry in this
+  // process or it renders "not loaded" instead of a number. Loaded here rather than at the
+  // top so sections 1 to 7 keep driving the database directly, as they always have.
+  setPromptRuleService(await PromptRuleService.load(db));
+
+  const measured = async (bot: string): Promise<number | null> => {
+    const body = (await get(`/interaction/memory?bot=${bot}`)).body;
+    const found = /([0-9]+) characters/.exec(body);
+    return found?.[1] === undefined ? null : Number(found[1]);
+  };
+
+  // `?bot=shared` resolves to no bot, which hands the card a null personality: it is the
+  // shipped defect, still reachable on purpose, and it is what makes the ordering below a
+  // measurement of the under-count rather than an assertion that two numbers differ.
+  const bareShared = await measured('shared');
+  const barePlain = await measured(String(plainId));
+  const bareDialled = await measured(String(dialledId));
+
+  check(
+    'the card reports a number for every view, so the registry is loaded and it measured',
+    bareShared !== null && barePlain !== null && bareDialled !== null,
+    `${String(bareShared)} / ${String(barePlain)} / ${String(bareDialled)}`,
+  );
+  // ── BY AT LEAST WHAT WAS DROPPED, NOT MERELY "LARGER" ────────────────────
+  //
+  // Both of these were written as `>` first, and the second one PASSED under the mutation
+  // below: 7653 against 7646, seven characters, which is the difference between the two
+  // bots' display names rendering into the prompt. A comparison that a name length can
+  // satisfy is not a measurement of a voice section. So each one is floored at the text it
+  // is asserting the presence of.
+  check(
+    'a bot with dials measures larger than no bot at all, by at least the dial block',
+    (barePlain ?? 0) - (bareShared ?? 0) >= DIAL_FRAME.length,
+    `${String(barePlain)} vs ${String(bareShared)}`,
+  );
+  check(
+    'and a bot with a character and an origin larger again, by at least both of them',
+    (bareDialled ?? 0) - (barePlain ?? 0) >= CHARACTER.length + ORIGIN.length,
+    `${String(bareDialled)} vs ${String(barePlain)}`,
+  );
+  check(
+    'MUTATION: the under-count the defect caused is at least the origin it dropped',
+    (bareDialled ?? 0) - (bareShared ?? 0) >= ORIGIN.length,
+    `${String((bareDialled ?? 0) - (bareShared ?? 0))} characters, origin is ${String(ORIGIN.length)}`,
+  );
+  check(
+    'the card names the bot it measured, so a figure cannot be read against the wrong one',
+    (await get(`/interaction/memory?bot=${String(dialledId)}`)).body.includes(
+      'Measured for DialledBot',
+    ),
+  );
+  check(
+    'and says so plainly when it measured no bot, rather than presenting it as a bot figure',
+    (await get('/interaction/memory?bot=shared')).body.includes(
+      escapeHtml("Measured with no bot's character or dials"),
+    ),
   );
 
   setPromptRuleService(null);
