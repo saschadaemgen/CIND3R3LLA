@@ -54,7 +54,9 @@ import {
   replyCharBudget,
   type BotIdentity,
   type BotPersonality,
+  type MusicPromptFacts,
 } from '../../interaction/personality.js';
+import { previewMusicFacts } from '../music-facts.js';
 import { invalidatePromptRules } from '../../interaction/prompt-rule-service.js';
 import { lawPages } from '../../interaction/law-numbers.js';
 import {
@@ -566,6 +568,7 @@ function previewCard(
   proposed: PromptRuleSet,
   rule: PromptRule,
   identity: BotIdentity,
+  music: MusicPromptFacts | undefined,
 ): SafeHtml {
   const personality: BotPersonality | null = currentBotPersonality();
   const mode = modeFor(rule);
@@ -586,6 +589,11 @@ function previewCard(
             at: new Date(),
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           },
+          // The DJ sheet rides like the clock (D-218), read for the bot the operator
+          // has selected, so a has-music law previews against the prompt that law
+          // actually lands in rather than showing "nothing moved" for a real change
+          // (D-220). Undefined when the plugin is off, which is also the truth.
+          music,
         },
         replyCharBudget(personality?.verbosity ?? 5),
       );
@@ -1048,6 +1056,16 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     // THE PREVIEW, before anything is written. The same question the edit path answers: what
     // would she actually be told?
     if (bodyString(req.body, 'action') === 'preview') {
+      // The DJ sheet for the sidebar's standing selection (CCB-S5-011), because since
+      // D-218 the prompt carries the library's numbers and a preview without them shows
+      // a prompt nobody receives (D-220).
+      const profiles = await listBotOnboardingProfiles(ctx.db);
+      const selection = resolveSelectedBot(
+        profiles,
+        undefined,
+        req.session?.selectedBotProfileId ?? null,
+      );
+      const music = await previewMusicFacts(ctx, selection.selectedId);
       reply.type('text/html');
       return page({
         title: `Preview ${id} | The Book of Elii`,
@@ -1060,7 +1078,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <strong>${chapterForNewRule(chapters, id)?.titleEn ?? 'none'}</strong>, at position
             ${String(ord)} of ${String(rules.length + 1)}.
           </p>
-          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()))}
+          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()), music)}
           <div class="mt-4">
             <a class="text-sm underline" href="${back('')}">Back to the form</a>
           </div>
@@ -1175,6 +1193,15 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       const proposed = withEdit(rules, ruleId, edit);
 
       if (bodyString(req.body, 'action') === 'preview') {
+        // Same DJ-sheet read as the new-law preview (D-220): the sidebar's standing
+        // selection decides whose library the previewed prompt carries.
+        const profiles = await listBotOnboardingProfiles(ctx.db);
+        const selection = resolveSelectedBot(
+          profiles,
+          undefined,
+          req.session?.selectedBotProfileId ?? null,
+        );
+        const music = await previewMusicFacts(ctx, selection.selectedId);
         reply.type('text/html');
         return page({
           title: `Preview ${ruleId} | The Book of Elii`,
@@ -1185,7 +1212,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <p class="mb-4 text-sm">
               <a class="underline" href="/book/rule/${ruleId}">Back to the rule</a>
             </p>
-            ${previewCard(rules, proposed, rule, previewIdentity(ctx))}
+            ${previewCard(rules, proposed, rule, previewIdentity(ctx), music)}
             <div class="mt-4">
               ${card(
                 'Write it',
@@ -1352,6 +1379,10 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     const rules = applyOverrides(shared, overrides);
     const personality = currentBotPersonality(selected?.id);
     const identity = previewIdentity(ctx);
+    // The DJ sheet, when the music plugin is on for this bot (D-220): the reply path
+    // has carried it since D-218, so an assembled word without it was a prompt nobody
+    // receives - the exact lie this page exists to prevent.
+    const music = await previewMusicFacts(ctx, selected?.id);
     const deviations = overrides.length;
     reply.type('text/html');
 
@@ -1376,6 +1407,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
               at: new Date(),
               timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
             },
+            music,
           },
           replyCharBudget(personality?.verbosity ?? 5),
         );
@@ -1419,7 +1451,10 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           decide whether it appears at all, so the only way to see what a mode actually receives
           is to assemble it. Values she is given, her name, her origin, the clock and the dial
           block, are rendered into these sentences at reply time and appear here as their
-          placeholders when no runtime is up.
+          placeholders when no runtime is up. The library lines appear only when the music
+          plugin is on for this bot, with the numbers counted live from what its
+          <a class="underline" href="/music">playlist assignments</a> reach, exactly as the
+          reply path counts them.
         </p>
         ${BOOK_MODES.map((mode) =>
           html`<div class="mt-4">

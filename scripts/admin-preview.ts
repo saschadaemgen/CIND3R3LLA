@@ -33,6 +33,13 @@ import { setOverrideRecorded } from '../src/db/prompt-rule-overrides.js';
 import { WEB_SEARCH_DEFAULTS } from '../src/plugins/web-search/settings.js';
 import { PluginService } from '../src/plugins/service.js';
 import { WEB_SEARCH_ID } from '../src/plugins/web-search/plugin.js';
+import { MUSIC_ID } from '../src/plugins/music/plugin.js';
+import {
+  assignPlaylist,
+  createPlaylist,
+  insertTrack,
+  setPlaylistTracks,
+} from '../src/plugins/music/store.js';
 import { KNOWLEDGE_BASE_ID } from '../src/plugins/knowledge-base/plugin.js';
 import { CHANNEL_BRIDGE_ID } from '../src/plugins/channel-bridge/plugin.js';
 import {
@@ -370,6 +377,33 @@ async function main(): Promise<void> {
   const plugins = await PluginService.load(db);
   await plugins.setEnabled(WEB_SEARCH_ID, true, 'admin-preview');
   await plugins.setEnabledForBot(supportBotId, WEB_SEARCH_ID, false, 'admin-preview');
+
+  // ── A MUSIC LIBRARY THE PREVIEWED BOT CAN REACH (CCB-S5-044, D-220) ──────
+  //
+  // On for the primary only, with three tracks in one assigned playlist, so the
+  // Assembled Word, the Personality page's voice block and the Memory page's
+  // context-size card can be LOOKED AT carrying the DJ sheet - the surfaces the
+  // D-220 audit found rendering "what she is told" with no library in it. The
+  // file paths are placeholders: the preview counts rows and plays nothing.
+  await plugins.setEnabledForBot(previewBotId, MUSIC_ID, true, 'admin-preview');
+  const previewTracks = [
+    { title: 'Glass Meridian', artist: 'Nightdrive Echo', genre: 'chillstep', durationSeconds: 251 },
+    { title: 'Harbour Lights', artist: 'The Quay', genre: 'folk', durationSeconds: 200 },
+    { title: 'Neon Causeway', artist: 'Volt Arcade', genre: 'synthwave', durationSeconds: 214 },
+  ];
+  const previewTrackIds: number[] = [];
+  for (const t of previewTracks) {
+    previewTrackIds.push(
+      await insertTrack(db, {
+        kind: 'music', title: t.title, artist: t.artist, album: null, genre: t.genre,
+        durationSeconds: t.durationSeconds, filePath: `/placeholder/${t.title}.mp3`,
+        fileSize: 6_000_000, mime: 'audio/mpeg', coverPath: null,
+      }),
+    );
+  }
+  const previewPlaylist = await createPlaylist(db, 'Evening Set');
+  await setPlaylistTracks(db, previewPlaylist, previewTrackIds);
+  await assignPlaylist(db, previewBotId, previewPlaylist);
 
   // ── A KNOWLEDGE BASE WITH SOMETHING IN IT (CCB-S5-022/023) ──────────────
   //

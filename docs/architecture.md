@@ -2777,7 +2777,13 @@ Search covers id, text, lane, tier, condition and `source`. `source` is surfaced
 hidden: it exists so a reviewer can trace a rule to the line it came from.
 
 The Assembled Word renders through **`systemPrompt`**, the reply path's own function. A second
-assembly that agreed today is a second assembly that disagrees later.
+assembly that agreed today is a second assembly that disagrees later. It carries the
+per-bot DJ sheet the reply path has carried since D-218 (`src/web/music-facts.ts`, the
+same gate and derivation the runtime wires), as do the per-rule preview, the Personality
+page's voice block and the Interaction page's context-size card: the D-220 audit found all
+four rendering "what she is told" with no library in it, which is the D-205 stale-surface
+failure applied to a preview. `verify:book` §8 drives every one of them over HTTP with the
+music plugin on, off, and on-then-off.
 
 ### 38.3 Editing by tier
 

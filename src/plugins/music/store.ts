@@ -769,6 +769,46 @@ export async function tracksByGenreForBot(
   return rows.map(mapTrack);
 }
 
+/**
+ * The three numbers the has-music prompt rules interpolate, in one place (D-220).
+ *
+ * This is the `MusicPromptFacts` shape, and it is what the console's prompt previews
+ * call: the D-220 audit found them rendering "the assembled word" with no library in
+ * it, because the derivation lived only in the runtime wiring and every surface that
+ * wanted to show the prompt had to rebuild it, so none did.
+ *
+ * ── WHY IT NARROWS THE GENRES, AND WHY THAT IS NOT A SECOND DERIVATION ───────
+ *
+ * `libraryFactsForBot` returns `{name, count}` per genre since D-221, because the DJ
+ * sheet CARDS need the counts and the ops contract in `engine.ts` carries them. The
+ * PROMPT does not: `MusicPromptFacts.genres` is `string[]` and the has-music rules
+ * interpolate it with `join(', ')`. So the names are taken here, exactly as the reply
+ * path takes them in `Engine.musicPromptFacts`. One query answers both surfaces; the
+ * narrowing is where the counts and the names part.
+ *
+ * ── WHAT THE MERGE OF TWO BRANCHES DID TO IT (D-229) ────────────────────────
+ *
+ * This shipped as `{ ...library, playlists }` against the PRE-D-221 shape, where
+ * `libraryFactsForBot` already returned bare names. D-221 changed that return type on
+ * `main` while this function was being written on a branch, so the merge put the counted
+ * shape underneath a signature still promising `string[]`. Worth being plain about what
+ * the spread would have produced had the compiler not refused it: `genres.join(', ')`
+ * over objects, so every previewed prompt would have advertised her library as
+ * "[object Object], [object Object]". Neither branch was wrong and neither branch's
+ * checks could see it, because the disagreement only existed once both were applied.
+ */
+export async function promptFactsForBot(
+  db: Queryable,
+  botProfileId: number,
+): Promise<{ tracks: number; genres: string[]; playlists: number }> {
+  const library = await libraryFactsForBot(db, botProfileId);
+  return {
+    tracks: library.tracks,
+    genres: library.genres.map((g) => g.name),
+    playlists: (await assignmentsForBot(db, botProfileId)).length,
+  };
+}
+
 /** A random track from this bot's playlists - "play me something". */
 export async function randomTrackForBot(
   db: Queryable,

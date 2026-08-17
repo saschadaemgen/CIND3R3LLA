@@ -897,13 +897,21 @@ export function dialledPromptInputs(
  *
  * With no personality configured the caller passes null and still gets the ceiling, because
  * the ceiling is a property of her talking rather than of a configured personality.
+ *
+ * The music facts ride through like the clock (D-218's contract, plumbed here under
+ * D-220): present means the has-music rules render with the numbers, absent means the
+ * voice says nothing about a library. This function only previews - the reply path
+ * assembles through `systemPrompt` - so forgetting the argument cannot change what she
+ * is told, only what a console page CLAIMS she is told, which is how the gap went
+ * unnoticed for a briefing.
  */
 export function conversationVoice(
   rules: PromptRuleSet,
   personality: BotPersonality | null,
   identity?: BotIdentity,
   time?: CurrentTime,
+  music?: MusicPromptFacts,
 ): string[] {
-  const { context, values } = dialledPromptInputs(rules, personality, identity, time);
+  const { context, values } = dialledPromptInputs(rules, personality, identity, time, music);
   return assemblePrompt(rules, ['dialled'], context, values);
 }
