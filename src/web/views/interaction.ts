@@ -251,12 +251,20 @@ function memorySizeCard(
       ${
         /* WHOSE PROMPT WAS MEASURED (D-229). The voice section differs per bot, so a figure
            that names no bot is a figure an operator cannot act on: he lowers the history
-           budget for the bot with the long origin and reads the number for another one. */ ''
+           budget for the bot with the long origin and reads the number for another one.
+
+           IT LISTS WHAT IT ACTUALLY COUNTED. D-220 and D-229 both added a per-bot input to
+           this measurement, and the sentence named only one of them for as long as the two
+           branches were apart: a card that under-counted for months should not then describe
+           itself incompletely. The library clause appears exactly when the library is in the
+           figure. */ ''
       }
       <p class="mt-3 text-sm text-slate-500">
         ${botName === null
           ? "Measured with no bot's character or dials, because none is selected. Pick a bot above to see what one is actually sent."
-          : `Measured for ${botName}, carrying that bot's own dials, base character and origin, exactly as its replies carry them.`}
+          : `Measured for ${botName}, carrying that bot's own dials, base character and origin${
+              music ? ', and the music library it can reach' : ''
+            }, exactly as its replies carry them.`}
       </p>
       <p class="mt-2 text-sm text-slate-500">
         ${tight

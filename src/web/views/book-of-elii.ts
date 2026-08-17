@@ -670,7 +670,9 @@ function previewCard(
               original voice under the ceiling, which is what she would be told with none.`
           : html`<br />The laws are the deployment's; the voice around them is one bot's, so a
               preview has to pick one. This is <strong>${bot.name}</strong>, with that bot's
-              own dials, base character and origin.`}
+              own dials, base character and origin${music
+                ? ', and the music library it can reach'
+                : ''}.`}
         ${before === after
           ? html`<strong class="text-amber-800">
               Nothing moved: this edit changes no sentence in this prompt.</strong
