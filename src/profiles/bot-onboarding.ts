@@ -591,13 +591,20 @@ export async function listBotOnboardingProfiles(db: Queryable): Promise<BotOnboa
 /**
  * Create a bot profile.
  *
- * THE `origin` COLUMN IS OMITTED FROM THE INSERT ON PURPOSE (CCB-S4-034, D-138).
- * Migration 031 gives that column a default which is her written origin, precisely so a
- * new bot starts with a history rather than with nothing, and a column is only defaulted
- * when the INSERT leaves it out. Listing it here with `input.personality.origin` would
- * ship every new bot with an empty history and nothing would announce it, so
- * `verify:personality` creates a bot against the real schema and fails if the origin does
- * not come back. The Personality page is the edit path, and the only one.
+ * THE `origin` COLUMN IS OMITTED FROM THE INSERT, AND WHAT THAT MEANS HAS CHANGED
+ * (CCB-S4-034 and D-138, corrected by CCB-S5-045 and D-230).
+ *
+ * It used to mean "a new bot starts with her written history", because migration 031 gave
+ * the column a default holding that prose and a column is only defaulted when the INSERT
+ * leaves it out. Migration 066 DROPS that default, so the same omission now means a new bot
+ * arrives with NO origin, which is the intended answer: inheriting another bot's history and
+ * then being told by a constitutional rule that the history is its own is how a second bot
+ * comes to tell a member, in its own words, that it is Cinderella.
+ *
+ * The line stays omitted rather than becoming `input.personality.origin`, because NULL is the
+ * answer here and not a gap (the D-161 shape). `verify:personality` creates a bot against the
+ * real schema and fails if an origin DOES come back. The Personality page is the edit path,
+ * and the only one.
  *
  * ── AND THE PRIMARY FLAG IS DECIDED HERE RATHER THAN ASKED FOR (CCB-S5-008) ──
  *

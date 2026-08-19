@@ -645,8 +645,8 @@ ${input.personality.baseCharacter}</textarea
                     >Sent at the top of every conversation prompt, where it outranks any generic
                     idea of a chat assistant. The four voice dials start at their middle and are
                     turned on the Personality page, which is also where the origin lives: a new
-                    bot ships with her written history already in it, and you can rewrite or
-                    clear it there. Optional, and editable later.</small
+                    bot starts with no history at all, so it does not arrive believing it is
+                    another bot, and you write its own there. Optional, and editable later.</small
                   >
                 </label>`
           }

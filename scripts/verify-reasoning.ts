@@ -19,6 +19,7 @@ import {
   REASONING_EFFORT_SENT,
   REASONING_MEASUREMENTS,
   REASONING_SOURCE,
+  SERVED_CONTEXT_TOKENS,
 } from '../src/interaction/reasoning.js';
 import { setLogLevel } from '../src/log.js';
 
@@ -90,18 +91,43 @@ function main(): void {
 
   /* ── 3. The context figures, reported and not applied ───────────────────── */
 
-  console.log('\n3. The context measurement, which changed nothing');
+  console.log('\n3. The context measurement, per model, which now decides the served window');
 
-  const production = CONTEXT_MEASUREMENTS.find((c) => c.numCtx === 8192);
-  check('production is recorded as fully on GPU', production?.cpuGb === 0);
-  const big = CONTEXT_MEASUREMENTS.find((c) => c.numCtx === 32768);
-  check('and the largest measured context spills', (big?.cpuGb ?? 0) > 1, `${String(big?.cpuGb)} GB`);
+  // EVERY ROW IS NOW ADDRESSED BY MODEL AS WELL AS BY WINDOW (CCB-S5-045, D-231). These
+  // assertions used to `find` on numCtx alone, which was unambiguous only while every row was
+  // qwen3:32b. With qwen3:14b measured at the same windows, `find(c => c.numCtx === 32768)`
+  // would return whichever row came first and the spill assertion would silently start
+  // testing a different model - the exact confusion that let a fact about one model's KV
+  // cache be read as a fact about the window for a whole season.
+  const spilled = CONTEXT_MEASUREMENTS.find((c) => c.model === 'qwen3:32b' && c.numCtx === 32768);
+  check('the 32B still records its spill at 32768', (spilled?.cpuGb ?? 0) > 1, `${String(spilled?.cpuGb)} GB`);
   check(
     'the one that could not be loaded is reported as unmeasured, not estimated',
     CONTEXT_MEASUREMENTS.some((c) => c.totalGb === null && c.note.includes('not measured')),
   );
+
+  // THE POSITIVE CONTROL THIS TABLE EXISTS FOR. "The 32B spills" passes against a table that
+  // records nothing else, and the decision that matters is that the SERVED model does not.
+  const servedRows = CONTEXT_MEASUREMENTS.filter((c) => c.model === 'qwen3:14b');
+  check('the served model is measured at more than one window', servedRows.length >= 4);
   check(
-    'and nothing in the codebase sets num_ctx, so the report changed no setting',
+    'and it spills at NO measured window, including the one the host serves',
+    servedRows.length > 0 && servedRows.every((c) => c.cpuGb === 0),
+  );
+  const served = servedRows.find((c) => c.numCtx === SERVED_CONTEXT_TOKENS);
+  check(
+    'the window the host serves is one of the measured rows, not an untested number',
+    served !== undefined,
+    served ? `${String(served.totalGb)} GB fully in VRAM` : 'no row for the served window',
+  );
+
+  // STILL ASSERTED, FOR A DIFFERENT REASON THAN WHEN IT WAS WRITTEN. It used to mean "the
+  // report changed no setting". It now means: setting num_ctx here would do NOTHING while
+  // looking exactly as though it had, because /v1/chat/completions ignores it - verified by
+  // sending num_ctx 24576 and watching the model load at 8192. Removing this check would
+  // erase the record of that, and the next person would add a num_ctx and believe it worked.
+  check(
+    'nothing in the codebase sets num_ctx, because the transport would silently ignore it',
     !readFileSync(join(ROOT, 'src', 'interaction', 'ollama-reply.ts'), 'utf8').includes('num_ctx') &&
       !readFileSync(join(ROOT, 'src', 'config.ts'), 'utf8').includes('num_ctx'),
   );
@@ -116,7 +142,18 @@ function main(): void {
   check('it says reasoning is off', view.includes('reasoning <strong>off</strong>'));
   check('it says the value is not the runtime default', view.includes("not the runtime's default"));
   check('it explains why there is no dial', view.includes('Why there is no dial'));
-  check('and it reports the context cost without applying it', view.includes('deliberately not applied'));
+  // CHANGED DELIBERATELY (CCB-S5-045, D-231). It asserted the page said "deliberately not
+  // applied", which was true while the context was a number nobody had moved. The window IS
+  // applied now, so keeping that assertion would have forced the page to keep a false
+  // sentence in order to stay green - a check holding copy in place after the copy stopped
+  // being true. What the page must now say is where the setting actually lives, since it is
+  // not this application.
+  check('and it names the served window', view.includes('SERVED_CONTEXT_TOKENS'));
+  check(
+    'and says where that setting lives, because it is not this application',
+    view.includes('OLLAMA_CONTEXT_LENGTH'),
+  );
+  check('and it tells the two models apart in the table', view.includes('<th>Model</th>'));
 
   console.log(
     failures === 0 ? '\nAll reasoning checks passed.' : `\n${failures} check(s) FAILED.`,

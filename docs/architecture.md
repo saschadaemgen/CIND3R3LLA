@@ -2251,10 +2251,16 @@ flag and names the history when there is one, so the prompt does not contradict 
 `retort`, and splitting it would be a second implementation of her character. Command
 rewrites carry none of it, the same scope rule as the character and the dials.
 
-**Prompt budget, measured against qwen3.5:9b's tokenizer:** 1408 tokens without an origin,
-**1977** with the shipped one, 2623 with both text fields full of real prose. Served
-context on the host is 32768, so 6 percent; on a host serving the older 4096 default it
-would be roughly half, which is the number to watch.
+**Prompt budget.** The CCB-S4-034 figures here were 1408 tokens without an origin, **1977**
+with the shipped one and 2623 with both text fields full, "against a served context of
+32768". **Both halves are corrected as of CCB-S5-045** (D-231), and neither was ever caught
+by a check because nothing pins either number. The registry has roughly doubled since:
+`npx tsx scripts/measure-prompt.ts` measures the assembled conversation prompt at **14422
+characters, about 4507 tokens**, and 4904 once a remembered thread is in scope. And the
+served context was **8192**, not 32768, from the day the 32B spill was measured; it is
+**24576** as of CCB-S5-045, on `qwen3:14b`. At 8192 the worst-case combination of prompt,
+history, knowledge passages and a web budget exceeded the window, which is the finding that
+moved it.
 
 **The text exists twice** (`DEFAULT_ORIGIN` in `personality.ts` and the column default in
 `031_bot_origin.sql`, because a migration runner cannot import a constant) and

@@ -635,10 +635,14 @@ async function main(): Promise<void> {
     ORIGIN_MAX_CHARS > BASE_CHARACTER_MAX_CHARS && DEFAULT_ORIGIN.length > BASE_CHARACTER_MAX_CHARS,
   );
 
-  // The prompt budget, reported rather than gated. Measured against qwen3.5:9b's own
-  // tokenizer during CCB-S4-034: 1408 tokens without the origin, 1977 with the shipped
-  // one, against a served context of 32768 on the host it runs on. A character count is
-  // the part a check can hold on to without a model running.
+  // The prompt budget, reported rather than gated. The CCB-S4-034 figures this used to cite
+  // (1408 tokens without the origin, 1977 with it, "against a served context of 32768 on the
+  // host it runs on") are BOTH stale and are corrected here rather than deleted, per
+  // D-191/D-193. The registry has roughly doubled since: `npx tsx scripts/measure-prompt.ts`
+  // measures the assembled conversation prompt at 14422 characters, about 4507 tokens, and
+  // 4904 with a remembered thread. And the served context was 8192, not 32768, from the day
+  // the 32B spill was measured until CCB-S5-045 moved it to 24576 (D-231). A character count
+  // is the part a check can hold on to without a model running.
   const shipped = systemPrompt(
     conversationRequest({ ...DIALLED, origin: DEFAULT_ORIGIN }, full),
     500,
@@ -1086,31 +1090,46 @@ async function main(): Promise<void> {
   check('a new bot starts at the middle of every dial', stored?.personality.sharpness === 5);
   check('a new bot starts with no base character', stored?.personality.baseCharacter === '');
 
-  // CCB-S4-034. Two things at once, and both of them matter.
+  // CCB-S5-045, D-230. THIS ASSERTION IS DELIBERATELY INVERTED, and the inversion is the
+  // point rather than a consequence of one. It used to read "a new bot ships with her
+  // written origin, from the migration default", and it was TRUE and PASSING for its whole
+  // life; what was wrong was the DECISION it encoded. Migration 066 drops that default,
+  // because a new bot inheriting another bot's history is then told by `origin.preamble`
+  // (constitutional, critical) that the history is its own, and tells a member so in its
+  // own words.
   //
-  // ONE: a new bot ships WITH her written origin. That works only because
-  // `createBotOnboardingProfile` omits the column and lets migration 031's default apply,
-  // so this fails the moment someone "completes" that INSERT.
-  //
-  // TWO: it is the SAME text as DEFAULT_ORIGIN, character for character. The prose exists
-  // twice, in a .sql file and in a .ts file, because a migration runner cannot import a
-  // constant. This is what stops those two copies drifting apart in silence.
+  // So a red run here after 066 is this check working. The obvious repair - restoring the
+  // default - is the D-111 trap in its most tempting form: this encodes a decision and not
+  // a mechanism, and the decision changed.
   check(
-    'a new bot ships with her written origin, from the migration default',
-    stored?.personality.origin === DEFAULT_ORIGIN,
-    stored?.personality.origin === DEFAULT_ORIGIN
+    'a new bot arrives with NO origin, rather than inheriting another bot history',
+    (stored?.personality.origin ?? '') === '',
+    (stored?.personality.origin ?? '') === ''
       ? ''
-      : `stored ${stored?.personality.origin.length ?? 0} chars, constant ${DEFAULT_ORIGIN.length}`,
+      : `stored ${stored?.personality.origin.length ?? 0} chars where none was expected`,
   );
+
+  // THE ANTI-DRIFT GUARANTEE SURVIVES, RE-POINTED RATHER THAN RETIRED. The prose exists
+  // twice - in the migrations and in DEFAULT_ORIGIN - because a migration runner cannot
+  // import a TypeScript constant, and it is still the text the operator's primary bot
+  // holds. What changed is that creating a bot no longer reproduces it, so the old check
+  // (create a bot, compare what came back) could no longer see it at all.
+  //
+  // ASKED OF THE WHOLE MIGRATION SET RATHER THAN OF 031, which is not a convenience: 031's
+  // literal is NO LONGER the shipped text. Migration 036 rewrote it to drop the model claim
+  // that goes stale, so 031 carries the superseded 1626-character copy and 036 the current
+  // 1640-character one. Pinning 031 would assert against a string this product deliberately
+  // stopped using - the first draft of this check did exactly that and went red for the
+  // right reason. Whether SOME migration carries the constant verbatim is the property that
+  // actually matters, and it survives the next amendment too.
+  const migrations = await loadMigrationFiles();
+  const carriedBy = migrations.filter((m) => m.sql.includes(DEFAULT_ORIGIN)).map((m) => m.name);
   check(
-    'the umlaut in the operator name survives the migration and the read back',
-    (stored?.personality.origin ?? '').includes('Sascha Dämgen'),
-  );
-  check(
-    'and survives all the way into the rendered prompt',
-    systemPrompt(conversationRequest(stored?.personality ?? null, full), 500).includes(
-      'Sascha Dämgen',
-    ),
+    'the shipped origin prose exists verbatim in a migration, so the two copies cannot drift',
+    carriedBy.length > 0,
+    carriedBy.length > 0
+      ? `carried by ${carriedBy.join(', ')}`
+      : `no migration carries the ${DEFAULT_ORIGIN.length}-character constant`,
   );
 
   const withCharacter = await createBotOnboardingProfile(
@@ -1158,6 +1177,39 @@ async function main(): Promise<void> {
       ) &&
       !JSON.stringify(audit.rows[0]?.details ?? {}).includes(ORIGIN_FIXTURE),
   );
+
+  // The UTF-8 pipeline measurement (CCB-S4-034), KEPT and re-pointed under CCB-S5-045 at an
+  // origin that was SET rather than defaulted, so dropping the default in migration 066 does
+  // not cost the one check proving an umlaut survives Postgres, the read back and the prompt
+  // builder.
+  //
+  // IT SITS HERE, AFTER THE AUDIT ASSERTIONS, ON PURPOSE. Its first draft ran before them and
+  // turned three unrelated checks red, because `a personality save is audited` counts rows for
+  // the whole action and any extra save breaks the count. The dials are carried through
+  // unchanged and restored immediately afterwards, so nothing downstream sees a different bot
+  // than it did before this block existed.
+  await updateBotPersonality(
+    db,
+    botId,
+    { ...DIALLED_WITH_ORIGIN, origin: DEFAULT_ORIGIN },
+    'verify-personality',
+  );
+  const originSetByHand = (await listBotOnboardingProfiles(db)).find((p) => p.id === botId);
+  check(
+    'an origin set on the Personality page round-trips character for character',
+    originSetByHand?.personality.origin === DEFAULT_ORIGIN,
+  );
+  check(
+    'the umlaut in the operator name survives the write and the read back',
+    (originSetByHand?.personality.origin ?? '').includes('Sascha Dämgen'),
+  );
+  check(
+    'and survives all the way into the rendered prompt',
+    systemPrompt(conversationRequest(originSetByHand?.personality ?? null, full), 500).includes(
+      'Sascha Dämgen',
+    ),
+  );
+  await updateBotPersonality(db, botId, DIALLED_WITH_ORIGIN, 'verify-personality');
 
   // The whole-profile save must not touch the personality. Without this, saving the
   // wizard's edit dialog would reset four dials the form never showed.

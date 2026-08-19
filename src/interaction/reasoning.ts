@@ -66,19 +66,72 @@ export const REASONING_MEASUREMENTS: readonly ReasoningMeasurement[] = Object.fr
 ]);
 
 /**
- * The context measurement, reported and deliberately not applied.
+ * The context measurement, PER MODEL, and no longer "deliberately not applied" (D-231).
  *
- * The operator has been burned once by a context change pushing the model onto the CPU, so
- * this is a number for him to decide with rather than a setting anybody moved.
+ * ── WHY THE MODEL IS NOW A COLUMN ────────────────────────────────────────────
+ *
+ * Because the old table had no model column and every row was `qwen3:32b`, the 32768 spill
+ * read as a fact about the CONTEXT WINDOW when it was a fact about that model's KV cache:
+ * 64 layers x 8 KV heads x 128 dim x 2 x 2 bytes is 0.25 MiB per token, so 32768 costs
+ * 8192 MiB of KV on a card that had about 2 GB spare. The whole deployment was then held at
+ * 8192 on the strength of a number that does not transfer, and CCB-S5-045 measured that it
+ * does not: on `qwen3:14b` there is NO spill at any window up to the model's 40960 maximum.
+ *
+ * A table that cannot say which model a row belongs to will make that mistake again.
+ *
+ * ── THE 32B ROWS STAY ────────────────────────────────────────────────────────
+ *
+ * They are the record of a real failure and they are still true of that model (D-191/D-193).
+ * What changed is that they no longer describe what this deployment runs.
  */
-export const CONTEXT_MEASUREMENTS = Object.freeze([
-  { numCtx: 8192, totalGb: 22.11, vramGb: 22.11, cpuGb: 0, note: 'production, fully on GPU' },
+export interface ContextMeasurement {
+  model: string;
+  numCtx: number;
+  totalGb: number | null;
+  vramGb: number | null;
+  cpuGb: number | null;
+  note: string;
+}
+
+export const CONTEXT_MEASUREMENTS: readonly ContextMeasurement[] = Object.freeze([
+  // CCB-S4-052, on the 24 GB card. The model this deployment ran until CCB-S5-045.
+  { model: 'qwen3:32b', numCtx: 8192, totalGb: 22.11, vramGb: 22.11, cpuGb: 0, note: 'fully on GPU, but leaves under 1 GB free' },
   {
+    model: 'qwen3:32b',
     numCtx: 16384,
     totalGb: null,
     vramGb: null,
     cpuGb: null,
     note: 'failed to load in two attempts; not measured rather than guessed',
   },
-  { numCtx: 32768, totalGb: 29.15, vramGb: 22.95, cpuGb: 6.21, note: 'SPILLED 6.21 GB to CPU' },
+  { model: 'qwen3:32b', numCtx: 32768, totalGb: 29.15, vramGb: 22.95, cpuGb: 6.21, note: 'SPILLED 6.21 GB to CPU' },
+
+  // CCB-S5-045, same card, measured with the embedder NOT resident. Every window the model
+  // supports fits entirely in VRAM, which is what the 32B rows above cannot tell you.
+  { model: 'qwen3:14b', numCtx: 8192, totalGb: 10.47, vramGb: 10.47, cpuGb: 0, note: 'fully on GPU, 11.1 GB free' },
+  { model: 'qwen3:14b', numCtx: 16384, totalGb: 11.83, vramGb: 11.83, cpuGb: 0, note: 'fully on GPU, 9.0 GB free' },
+  { model: 'qwen3:14b', numCtx: 24576, totalGb: 13.19, vramGb: 13.19, cpuGb: 0, note: 'SERVED: fully on GPU, 7.7 GB free with the embedder resident' },
+  { model: 'qwen3:14b', numCtx: 32768, totalGb: 14.55, vramGb: 14.55, cpuGb: 0, note: 'fully on GPU, 6.5 GB free' },
+  { model: 'qwen3:14b', numCtx: 40960, totalGb: 15.90, vramGb: 15.90, cpuGb: 0, note: "fully on GPU at the model's maximum, 5.2 GB free" },
 ]);
+
+/**
+ * The window the Ollama host actually serves (D-231).
+ *
+ * ── IT IS NOT A SETTING THIS APPLICATION CAN MAKE, AND THAT WAS MEASURED ─────
+ *
+ * The transport is `/v1/chat/completions`, Ollama's OpenAI-compatible endpoint, and it
+ * IGNORES an Ollama `options.num_ctx`: a request carrying `num_ctx: 24576` was verified to
+ * load the model at 8192 and 10.47 GB rather than 24576 and 13.19 GB. So the only lever is
+ * `OLLAMA_CONTEXT_LENGTH` on the host, and it needs an Ollama restart to take effect.
+ *
+ * That is why `verify:reasoning` still asserts no `num_ctx` anywhere in the codebase: it is
+ * not restraint any more, it is the fact that setting one there would do nothing while
+ * looking exactly like it had. Moving the transport to `/api/chat`, which does honour
+ * options, is the change that would give this application its own window; it is not made
+ * here because it touches the whole reply path.
+ *
+ * Held as data so the console and the "What it costs" card state the same number, and so a
+ * check can catch this drifting from the host the way the old 32768 claims did.
+ */
+export const SERVED_CONTEXT_TOKENS = 24576;

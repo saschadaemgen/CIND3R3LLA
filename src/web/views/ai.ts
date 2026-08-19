@@ -394,6 +394,7 @@ import {
   REASONING_EFFORT_SENT,
   REASONING_MEASUREMENTS,
   REASONING_SOURCE,
+  SERVED_CONTEXT_TOKENS,
 } from '../../interaction/reasoning.js';
 
 function reasoningCard(): SafeHtml {
@@ -446,14 +447,18 @@ function reasoningCard(): SafeHtml {
       costs that nobody has measured. If it is ever wanted, this is the page it belongs on.
     </p>
 
-    <h3>What a bigger context would cost</h3>
+    <h3>What the context costs, per model</h3>
     <p class="setup-card-note">
-      Measured on the 24 GB card and <strong>deliberately not applied</strong>: this is a
-      number to decide with, not a setting anybody moved.
+      Measured on the 24 GB card. The host serves
+      <strong>${String(SERVED_CONTEXT_TOKENS)}</strong> tokens, set by
+      <code>OLLAMA_CONTEXT_LENGTH</code> on the machine that runs Ollama and not by this
+      application: the OpenAI-compatible endpoint it talks to ignores a per-request
+      <code>num_ctx</code>, which was tested rather than assumed.
     </p>
     <table class="setup-table">
       <thead>
         <tr>
+          <th>Model</th>
           <th>Context</th>
           <th>Total</th>
           <th>In VRAM</th>
@@ -463,6 +468,7 @@ function reasoningCard(): SafeHtml {
       <tbody>
         ${CONTEXT_MEASUREMENTS.map(
           (c) => html`<tr>
+            <td>${c.model}</td>
             <td>${String(c.numCtx)}</td>
             <td>${c.totalGb === null ? 'not measured' : `${c.totalGb.toFixed(2)} GB`}</td>
             <td>${c.vramGb === null ? '' : `${c.vramGb.toFixed(2)} GB`}</td>
@@ -472,9 +478,12 @@ function reasoningCard(): SafeHtml {
       </tbody>
     </table>
     <p class="setup-card-note">
-      At 32768 the model spills 6.21 GB onto the CPU, which is the failure that has bitten this
-      deployment before. 16384 failed to load in two attempts and is reported as unmeasured
-      rather than estimated.
+      The 6.21 GB spill that held this deployment at 8192 for a season is a fact about
+      <strong>qwen3:32b</strong>, not about the window: that model costs 0.25 MiB of KV cache
+      per token, so 32768 needs 8 GB of it on a card with about 2 GB spare. On
+      <strong>qwen3:14b</strong> there is no spill at any window the model supports, right up
+      to its 40960 maximum. The 16384 row that failed to load twice is left as it was
+      recorded, unmeasured rather than estimated.
     </p>
   </section>`;
 }

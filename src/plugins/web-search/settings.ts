@@ -9,10 +9,22 @@
  *
  * `maxResults`, `perResultChars` and `totalChars` decide how much untrusted text reaches a
  * prompt. That is not a tuning knob about answer quality, it is the size of the injection
- * surface and the amount of context that can be spent crowding out her instructions. The
- * conversation prompt is roughly 2000 tokens against a served context of 32768
- * (CCB-S4-034), so the shipped total of 2400 characters is around 600 tokens: enough for
- * five real snippets, and nowhere near enough to push anything out.
+ * surface and the amount of context that can be spent crowding out her instructions.
+ *
+ * THE TWO NUMBERS THIS PARAGRAPH USED TO CITE WERE BOTH WRONG, in opposite directions, and
+ * both went stale silently (CCB-S5-045, D-231). It claimed a conversation prompt of "roughly
+ * 2000 tokens" against "a served context of 32768". Measured with
+ * `npx tsx scripts/measure-prompt.ts`, the assembled conversation prompt is 14422 characters,
+ * about 4507 tokens, and 4904 once a remembered thread is in scope: more than twice the
+ * figure. The served context was never 32768 on the host that answers; it was
+ * OLLAMA_CONTEXT_LENGTH=8192 from the day the 32B spill was measured, and is 24576 as of
+ * CCB-S5-045.
+ *
+ * So against 24576, the shipped total of 2400 characters is around 750 tokens: enough for
+ * five real snippets, and nowhere near enough to push anything out. Under the OLD pairing it
+ * was closer than anybody writing this believed - prompt, history, knowledge and this budget
+ * together could exceed 8192, and what a front truncation takes first is the constitutional
+ * ceiling.
  *
  * The ceilings are enforced in the normaliser rather than trusted from the form, because a
  * stored document written by a different version must not be able to hand the prompt

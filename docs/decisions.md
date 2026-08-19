@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 228 decisions</strong> — newest first. Highest allocated: <strong>D-229</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 230 decisions</strong> — newest first. Highest allocated: <strong>D-231</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-231 | The model is qwen3:14b and the window is 24576, both measured on the card that runs them | IMPLEMENTED |
+| D-230 | A new bot does not inherit another bot's history | IMPLEMENTED |
 | D-229 | The console's prompt previews carry the selected bot's voice, read from the rows | IMPLEMENTED |
 | D-228 | The console says what it edits: Welcome in the section table, an explicit shared view, scope in the copy, and editing without the wizard | IMPLEMENTED |
 | D-227 | The member-name guard takes the name out instead of throwing the answer away | IMPLEMENTED |
@@ -257,6 +259,125 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-231 - The model is qwen3:14b and the window is 24576, both measured on the card that runs them
+
+**Status: IMPLEMENTED** (CCB-S5-045), except the Ollama restart, which is an operator action
+and is **NOT DONE** - see "What is not delivered" below.
+
+**The 32B could not answer on this card any more.** Measured with it resident: 22.11 GB of
+24.5, leaving **928 MiB free**. Driving `verify:self-claims-live` against it, **7 of 10 calls
+timed out at 180 s** and returned nothing. The check reported 10 of 10 PASS, because a reply
+that never arrives has nothing to fail on - a vacuous green of exactly the kind this repository
+keeps warning about. Production times out at 15 s, so on this hardware those questions were
+already reaching members as the deterministic fallback rather than as her.
+
+**The 32768 spill was a fact about the model, not about the window.** That number held the
+whole deployment at 8192 for a season. `qwen3:32b` costs 0.25 MiB of KV per token, so 32768
+needs 8 GB of it on a card with 2 GB spare. Re-measured on `qwen3:14b`, there is **no spill at
+any window the model supports**, to its 40960 maximum:
+
+| num_ctx | model | with embedder | spill | GPU free |
+|---|---|---|---|---|
+| 8192 | 10.47 GB | 10.79 GB | 0 | 11.1 GB |
+| 16384 | 11.83 GB | 12.15 GB | 0 | 9.0 GB |
+| **24576** | **13.19 GB** | **13.51 GB** | **0** | **7.7 GB** |
+| 32768 | 14.55 GB | 14.87 GB | 0 | 6.5 GB |
+| 40960 | 15.90 GB | 16.23 GB | 0 | 5.2 GB |
+
+**24576 rather than the maximum**, deliberately. The operator's own argument against buying
+model breadth she has no job for applies to context: her material is application-supplied. The
+2.4 GB between 24576 and 40960 is headroom on the machine he also uses, which is the reason for
+the switch.
+
+**8192 was already too small, which nobody had written down.** At default settings a
+conversation using the knowledge base and a web lookup is 6393 + 750 + 750 + 320 = **8213
+tokens**. The "What it costs" card never showed it because it measures neither path. What a
+front truncation takes first is the constitutional ceiling, which is the failure
+`history.ts`'s own ceiling exists to prevent.
+
+**THE APPLICATION CANNOT SET THE WINDOW, AND THIS WAS TESTED RATHER THAN ASSUMED** (D-209).
+The transport is `/v1/chat/completions`, and it **ignores** an Ollama `options.num_ctx`: a
+request carrying 24576 loaded the model at 8192 and 10.47 GB instead of 24576 and 13.19 GB. So
+`OLLAMA_CONTEXT_LENGTH` on the host is the only lever. `verify:reasoning` still asserts no
+`num_ctx` anywhere in the codebase, and its reason has changed: not restraint, but that adding
+one would do nothing while looking exactly as though it had. Moving to `/api/chat`, which does
+honour options, is what would give this application its own window; it touches the whole reply
+path and is not done here.
+
+**THE COST, MEASURED AND NOT ACCEPTED.** Over **10 runs of `verify:self-claims-live`, 100
+probes, the 14B broke the constitutional spine 15 times (15%)**. The dominant failure is one
+named clause of one named rule: `grounding.what-you-are` says "Never say you cannot see your
+own rules or that you do not read them", and the 14B answers *"I don't read the rules. I follow
+them."* Second is `grounding.recourse-is-voice`, which says "you file no reports, escalate to
+nobody", against which it answers *"I'd file a report."* The 32B, on the three probes it did
+answer, was exactly on spine. Those rules were tuned against a model that no longer answers on
+this card, and **tightening them for the model that actually runs is its own piece of work**,
+booked rather than done. D-183 applies squarely: "you file no reports" is a bar that lives only
+in a prompt.
+
+**What is not delivered.** `OLLAMA_CONTEXT_LENGTH=24576` is persisted at User scope on the
+host, but Ollama runs elevated and could not be restarted from here, so **the served window is
+still 8192 until the operator restarts it**. And the reply model is persisted in `settings` by
+the AI page: `LOCAL_AI_MODEL`'s default moved to `qwen3:14b` here, but that is the fallback
+only, so **the running bot does not switch until he sets it on the console**.
+
+**Stale copy corrected in the same pass, per D-205.** Three live sources claimed a served
+context of **32768** when the host served 8192 - `plugins/web-search/settings.ts`,
+`verify-personality.ts`, and passages in `architecture.md` and this file - and the same
+paragraphs claimed a prompt of "roughly 2000 tokens" when it measures **4507**. Both halves
+were wrong, in opposite directions, so the conclusion they supported ("6 percent of the window,
+no crowding risk") had inverted without anybody noticing. `CONTEXT_MEASUREMENTS` now carries a
+**model** column, because a table that cannot say which model a row belongs to is what let a
+fact about one model's KV cache be read as a fact about the window. The "What it costs" card
+reads `SERVED_CONTEXT_TOKENS` instead of a hardcoded 8192.
+
+---
+
+### D-230 - A new bot does not inherit another bot's history
+
+**Status: IMPLEMENTED** (CCB-S5-045, migration 066).
+
+Migration 031 used one `ADD COLUMN ... DEFAULT` to do two jobs and said so: backfill the single
+existing row, and pre-fill every row created afterwards. **The backfill half was correct and is
+spent. The INSERT half was never examined separately.**
+
+Every bot created since arrives carrying prose that names Cinderella and Sascha Dämgen, and is
+then told by `origin.preamble` (constitutional, critical) that it "is true, it is yours, and it
+was given to you by the people who made you", and by `origin.do-not-extend` that it is "the
+whole of what you have been told about your own past". It does not recite it - `origin.answer-fresh`
+demands paraphrase - so **a second bot asked who it is will tell a member, in its own voice and
+with complete confidence, that it is Cinderella**, and no guard in this tree can see it, because
+every rule involved is doing exactly what it was written to do.
+
+**This is the third time this shape has been decided in this table, and the first two went the
+other way.** D-161 gave each bot its own avatar and settled that NULL is an answer rather than a
+gap. CCB-S5-009 gave each bot its own retorts, and `verify:new-bot-identity` asserts that not
+one of a new bot's retorts is hers. `origin` is the same field with the same argument; it was
+never asked, because the default arrived attached to a backfill that needed doing.
+
+`ALTER COLUMN origin DROP DEFAULT`, and nothing else. `has-no-origin` is a fully seeded branch
+already pinned by `verify:prompt-identity` as `conversation.no-origin`, so no code changes.
+
+**Three assertions in `verify:personality` were INVERTED rather than repaired**, which is the
+D-111 trap in its most tempting form: they were true and passing for their whole lives, and what
+was wrong was the decision they encoded. A fourth was **re-pointed rather than retired** - the
+anti-drift guarantee between the SQL prose and `DEFAULT_ORIGIN` used to work by creating a bot
+and comparing what came back, which stops seeing anything once nothing is defaulted. It now asks
+whether **some** migration carries the constant verbatim. The first draft pinned migration 031
+specifically and went red for the right reason: 031's copy is the superseded 1626-character one,
+because migration 036 rewrote the text to drop the model claim, and 036 carries the current 1640.
+
+**What this deliberately does not do.** It reaches **no existing row** - a default applies to an
+insert and never to an update - so both of the operator's bots keep the origins they hold, and
+blanking one is his call on the Personality page. An UPDATE keyed on the shipped text was
+considered and rejected: it would blank the **primary**, the one bot the prose is true of, which
+is a silent identity loss in the opposite direction. And it does **not** close the inheritance
+question: `nicknames.words` still hands a new bot `['cindy','cindi','cin','ella']`, so a bot with
+no origin still answers to her pet forms. Same shape, one of two, and reporting inheritance as
+dealt with would be false.
+
 ---
 
 ### D-229 - The console's prompt previews carry the selected bot's voice, read from the rows
@@ -6131,6 +6252,15 @@ case with both text fields full of real prose. The served context on the host is
 so this is 6 percent of the window and there is no crowding risk. Stated honestly for a
 host that serves the older 4096 default instead: 1977 tokens would be roughly half that
 window, which is workable but no longer comfortable, and 4096 is the number to watch.
+
+> **Corrected by D-231 (CCB-S5-045), left in place per D-191/D-193.** Both numbers in that
+> paragraph are wrong today and one of them was wrong when written. The served context on the
+> host was **8192**, not 32768, from the day the 32B spill was measured; it is **24576** now.
+> And the prompt is no longer 1977 tokens: the registry has roughly doubled, and
+> `scripts/measure-prompt.ts` measures **4507 tokens** (4904 with a remembered thread). The
+> "6 percent of the window and no crowding risk" conclusion therefore inverted without anybody
+> noticing - at 8192 the worst case genuinely exceeded the window. Nothing caught it because
+> no check pins either figure, which is the general lesson rather than the arithmetic.
 
 **The shipped text exists twice and the duplication is policed.** A `.sql` file applied by
 a plain runner cannot import a TypeScript constant, so the prose is both `DEFAULT_ORIGIN`

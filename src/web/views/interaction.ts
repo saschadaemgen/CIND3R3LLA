@@ -35,6 +35,7 @@ import {
   type ArchiveSettings,
 } from '../../archive/settings.js';
 import { NEAR_MISS_REASONS, recentNearMisses } from '../../interaction/near-misses.js';
+import { SERVED_CONTEXT_TOKENS } from '../../interaction/reasoning.js';
 import {
   CONVERSATION_OUTCOMES,
   conversationSummary,
@@ -231,7 +232,15 @@ function memorySizeCard(
   }
 
   const tokens = Math.round(full / 3.2);
-  const tight = tokens > 6000;
+  // AGAINST THE WINDOW THE HOST ACTUALLY SERVES, not a literal 8192 (CCB-S5-045, D-231).
+  // The denominator was hardcoded here and in three other places, and it was WRONG in all of
+  // them for a season: the copy elsewhere claimed 32768 while the host served 8192. A card
+  // whose whole job is to warn about headroom cannot carry a hand-typed denominator.
+  //
+  // The warning line moves with it rather than staying at a fixed 6000, because "is this a
+  // large share" is a question about the fraction and not about the number.
+  const window = SERVED_CONTEXT_TOKENS;
+  const tight = tokens > window * 0.73;
   return card(
     'What it costs',
     html`<dl class="grid gap-3 text-sm sm:grid-cols-3">
@@ -245,7 +254,7 @@ function memorySizeCard(
         </div>
         <div>
           <dt class="font-medium text-slate-700">Roughly, in tokens</dt>
-          <dd class="text-slate-600">~${String(tokens)} of 8192</dd>
+          <dd class="text-slate-600">~${String(tokens)} of ${String(window)}</dd>
         </div>
       </dl>
       ${

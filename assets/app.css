@@ -2742,6 +2742,53 @@ input[type='radio'] {
   color: var(--accent-strong);
 }
 
+/*
+ * The AI Control cards' tables and notes (CCB-S5-045, D-231).
+ *
+ * These two classes were USED and never DEFINED. `.setup-table` and `.setup-card-note` are
+ * written on the Models page's reasoning and context cards, and neither had a rule anywhere
+ * in this stylesheet, so the tables rendered as bare HTML with no cell padding: "Total" and
+ * "In VRAM" ran together as `22.11 GB22.11 GB`, and the header read `In VRAMOn CPU`. Every
+ * check was green the whole time, because nothing here asserts appearance - which is the
+ * D-212 case exactly, and it was found by opening the page and looking at it rather than by
+ * anything we run.
+ *
+ * Deliberately matched to `.setup-reference-table` above rather than invented: the two are
+ * the same thing on neighbouring cards and should not look like two different products.
+ */
+.setup-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 14px;
+  font-size: 12px;
+}
+
+.setup-table th,
+.setup-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 8px 14px 8px 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.setup-table th {
+  color: var(--text-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.setup-table td {
+  color: var(--text-muted);
+}
+
+.setup-card-note {
+  margin: 10px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .setup-empty {
   padding: 54px 24px;
   text-align: center;

@@ -405,7 +405,18 @@ export function loadLocalAiConfig(): LocalAiConfig {
   cachedLocalAi = {
     enabled,
     baseUrl,
-    model: optional('LOCAL_AI_MODEL', 'qwen3.5:9b'),
+    // The shipped answer, moved from `qwen3.5:9b` under CCB-S5-045 (D-231). It is only the
+    // FALLBACK: a deployment that has ever set a reply model on the AI page has that choice
+    // persisted in `settings` and this never applies, which is why changing it here does not
+    // switch a running bot.
+    //
+    // `qwen3:14b` is measured at 10.47 GB resident at 8192 and 13.19 GB at 24576, fully on
+    // the GPU with no CPU spill at any window up to the model's 40960 maximum, on the 24 GB
+    // card this deployment runs against. `qwen3:32b` is 22.11 GB and leaves under 1 GB free,
+    // which is why replies collapsed whenever the operator used the machine himself.
+    // Its cost is stated where it belongs, in D-231: the 14B breaks the `grounding` spine
+    // more often than the 32B did, and those rules were tuned against the 32B.
+    model: optional('LOCAL_AI_MODEL', 'qwen3:14b'),
     timeoutMs: optionalInteger('LOCAL_AI_TIMEOUT_MS', 15000, 250, 60000),
   };
 
