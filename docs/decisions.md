@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 235 decisions</strong> — newest first. Highest allocated: <strong>D-236</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 236 decisions</strong> — newest first. Highest allocated: <strong>D-237</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-237 | A picture that arrives late is noticed | IMPLEMENTED |
 | D-236 | The stream stops reading everything to count anything | IMPLEMENTED |
 | D-235 | A control belongs on the page where the decision is made | IMPLEMENTED |
 | D-234 | She looks rather than offering to look | IMPLEMENTED |
@@ -264,6 +265,58 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-237 - A picture that arrives late is noticed
+
+**Status: IMPLEMENTED** (CCB-S5-051 stage 4, no migration).
+
+The operator posts an image. The message row is written synchronously; the FILE uploads
+afterwards over XFTP. The card therefore renders with no picture at all - not a broken one,
+because the markup is gated on `hasMedia` - and it appeared only when he reloaded by hand.
+
+**THE REPORT WAS RIGHT ABOUT THE SYMPTOM AND WRONG ABOUT THE CAUSE, and the difference is
+the whole fix.** The change signal already noticed. The per-row marker is
+`md5(text_body || ':' || media_path)`, `media_path` is written when the file lands, and the
+version hash genuinely moved. Nothing was missing upstream.
+
+What was missing was downstream. `/state` collapsed the per-row markers into ONE hash and
+returned `{hash, ids, hasNewer}` - the markers were computed in SQL and then discarded in the
+`.map()` that built the response. So the client could express two things, "this id vanished"
+and "there is something newer than the top", and had no way to express the third: *this card I
+already hold is now different*. The poll fired, saw the hash change, found the id still live,
+removed nothing, prepended nothing, and returned. Both re-fetch paths then explicitly skip a
+known id with `if(idset[id])return;`.
+
+**So: no new column, no new signal.** `markers` rides alongside `ids` in both `/state`
+branches, populated from rows already selected. `reconcile` compares them and refreshes only
+the cards whose marker moved.
+
+**THE SSR BASELINE IS LOAD-BEARING and is the part easiest to get wrong.** The card carries
+`data-marker`, so the client has a value to compare against for a card it did not fetch itself.
+Without it the first poll would SEED the marker rather than compare it, and a file completing
+between render and first poll - which is exactly the reported case, since the poll runs every
+18 seconds - would never be noticed at all.
+
+**One card, not the band.** `GET /embed/:id/card/:msgId` serves a single card through
+`getPublishedItem`, so it is consent-gated exactly like the permalink beside it: an
+unpublished, recalled, deleted or unknown id is a 404 with no existence oracle, and a member
+who revoked between render and poll has their card REMOVED by the id pass rather than
+refreshed by this one. Re-fetching the loaded span to repair one picture would re-render every
+card the visitor is reading, which is the thing the live update exists not to do.
+
+**Proven by driving it the way it happens** (`verify:public`): publish a row with no media,
+read the state, attach the media as `updateMedia` does, read it again. The marker moves, and
+the card endpoint then serves a card with the picture in it and the new marker on it. Both
+consent controls are asserted beside it, because "the endpoint serves a card" passes just as
+well against an endpoint that serves anything.
+
+Two harness notes worth keeping: the state assertions read the DATA layer rather than the HTTP
+poll, because the poll's per-IP bucket is already spent by the time that section runs and a 429
+would have tested the limiter instead of the marker; and the card requests carry their own
+client address for the same reason. Both were found by the checks going red with
+`{"error":"rate_limited"}`, which is the limiter working rather than a defect.
+
 ---
 
 ### D-236 - The stream stops reading everything to count anything

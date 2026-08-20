@@ -24,7 +24,12 @@ import {
   DEFAULT_EMBED_SETTINGS,
 } from '../src/db/embeds.js';
 import { embedSnippet } from '../src/web/views/embeds.js';
-import { listPublishedSpanState, decodeCursor, ARCHIVE_TYPES } from '../src/db/public-archive.js';
+import {
+  listPublishedIds,
+  listPublishedSpanState,
+  decodeCursor,
+  ARCHIVE_TYPES,
+} from '../src/db/public-archive.js';
 import { isPublicFront } from '../src/web/front/embed.js';
 import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
@@ -936,6 +941,65 @@ async function main(): Promise<void> {
   const plainPage = await app.inject({ method: 'GET', url: `/embed/${noEmbedInst.id}` });
   check('with embedding off, the video link is a plain link, not a card',
     !plainPage.body.includes('<div class="video-card"') && plainPage.body.includes('youtube.com/watch?v=dQw4w9WgXcQ'));
+
+  // ── A PICTURE THAT ARRIVES LATE IS NOTICED (CCB-S5-051 stage 4, D-237) ─────────────
+  //
+  // The operator posts an image; the FILE uploads after the message row exists, so the card
+  // renders with no picture. The live poll then noticed nothing, because it could only ever
+  // say "this id is gone" or "there is something newer", and the id was neither. The picture
+  // appeared only on a hand reload.
+  //
+  // Driven the way it actually happens: publish a row with NO media, read the state, attach
+  // the media the way `updateMedia` does, read the state again. The marker must move, and
+  // the single-card endpoint must then serve a card that has the picture in it.
+  {
+    const lateId = await seed(700, A, 'image', 'late arriving picture', '2026-07-12T09:00:00Z');
+    // Read the state through the DATA layer, not the HTTP poll: the poll has a per-IP
+    // bucket this harness has already spent, and a 429 here would test the limiter rather
+    // than the marker. The card endpoint below IS driven over HTTP - it has its own bucket,
+    // and it is the half a browser actually calls.
+    const stateFilters = { page: 1, pageSize: 200 } as never;
+    const beforeJson = await listPublishedIds(db, [...ARCHIVE_TYPES], stateFilters);
+    const beforeIdx = beforeJson.ids.indexOf(lateId);
+    check('the message is published before its file arrives', beforeIdx >= 0);
+    check('and the state carries a marker for it', typeof beforeJson.markers?.[beforeIdx] === 'string');
+
+    const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    writeMedia('2026/07/700-late.png', PNG);
+    writeMedia('derived/2026/07/700-late.png', PNG);
+    await db.query(
+      `UPDATE messages SET media_path = $2, media_mime = 'image/png', media_size = $3,
+              media_derived_path = $2 WHERE id = $1`,
+      [lateId, '2026/07/700-late.png', PNG.length],
+    );
+
+    const afterJson = await listPublishedIds(db, [...ARCHIVE_TYPES], stateFilters);
+    const afterIdx = afterJson.ids.indexOf(lateId);
+    check(
+      'THE FILE COMPLETING MOVES THAT CARD\'S MARKER',
+      afterIdx >= 0 && afterJson.markers[afterIdx] !== beforeJson.markers[beforeIdx],
+      `${String(beforeJson.markers?.[beforeIdx])} -> ${String(afterJson.markers?.[afterIdx])}`,
+    );
+
+    const FRESH = '203.0.113.7';
+    const card = await app.inject({ method: 'GET', url: `${base}/card/${String(lateId)}`, remoteAddress: FRESH });
+    const cardJson = card.statusCode === 200 ? (JSON.parse(card.body) as { html: string }) : { html: '' };
+    check('the single-card endpoint serves that card', card.statusCode === 200);
+    check(
+      '  and the card it serves now HAS the picture',
+      cardJson.html.includes(`/media/${String(lateId)}`) || cardJson.html.includes('<img'),
+      cardJson.html.slice(0, 90),
+    );
+    check('  and it carries the new marker for the client to compare against',
+      cardJson.html.includes('data-marker='));
+
+    // THE CONSENT GATE, which this endpoint must not become a hole in. B never opted in.
+    const unpubId = await seed(701, B, 'text', 'never published', '2026-07-12T09:05:00Z');
+    const denied = await app.inject({ method: 'GET', url: `${base}/card/${String(unpubId)}`, remoteAddress: FRESH });
+    check('POSITIVE CONTROL: an UNPUBLISHED id is 404 from the card endpoint', denied.statusCode === 404);
+    const missing = await app.inject({ method: 'GET', url: `${base}/card/99999999`, remoteAddress: FRESH });
+    check('  and an unknown id is 404 too, with no existence oracle', missing.statusCode === 404);
+  }
 
   await app.close();
   console.log(failures === 0 ? '\nverify:public OK' : `\nverify:public FAILED (${failures})`);

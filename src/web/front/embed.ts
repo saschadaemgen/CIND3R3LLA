@@ -395,6 +395,55 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
   // its own OG/canonical. Consent-gated through getPublishedItem: an unpublished /
   // recalled / deleted / no-consent / unknown id 404s exactly like the media route,
   // and this instance's media-type visibility is honoured too.
+  /**
+   * ONE card's markup, for a card the client already holds whose content changed
+   * (CCB-S5-051 stage 4, D-237).
+   *
+   * The reported case: the operator posts an image, the file uploads AFTER the message row
+   * exists, and the card renders with no picture. The live poll then notices nothing,
+   * because it could only ever say "this id is gone" or "there is something newer", and the
+   * id was neither.
+   *
+   * Consent-gated exactly like the permalink beside it: `getPublishedItem` reads through
+   * `published_messages`, so an unpublished, recalled, deleted or unknown id is a 404 with
+   * no existence oracle. A member who revoked between render and poll therefore gets their
+   * card removed by the id pass rather than refreshed by this one.
+   *
+   * Deliberately NOT a band re-fetch. Re-fetching the loaded span to repair one picture
+   * would re-render every card the visitor is reading, and the whole point of the live
+   * update is that it does not do that.
+   */
+  app.get<{ Params: { id: string; msgId: string } }>('/embed/:id/card/:msgId', async (req, reply) => {
+    if (!pageAllowed(reply, req.ip)) return { error: 'rate_limited' };
+    const instance = await getEmbedInstance(ctx.db, req.params.id);
+    if (!instance) return reply.code(404).type('application/json').send({ error: 'not_found' });
+
+    const messageId = Number(req.params.msgId);
+    const item = Number.isSafeInteger(messageId) ? await getPublishedItem(ctx.db, messageId) : null;
+    if (!item) return reply.code(404).type('application/json').send({ error: 'not_found' });
+
+    const { enabledTypes } = resolveView(instance.settings, req.query as EmbedQuery);
+    // A type the operator switched off must not come back through this door.
+    if (!enabledTypes.includes(item.type)) {
+      return reply.code(404).type('application/json').send({ error: 'not_found' });
+    }
+
+    const cardOpts: CardOpts = {
+      showDownload: instance.settings.player.showDownload,
+      video: {
+        embed: instance.settings.video.embed,
+        providers: instance.settings.video.providers,
+        showNotice: instance.settings.video.showNotice,
+      },
+      share: instance.settings.share,
+      attribution: instance.settings.attribution,
+    };
+    reply.header('cache-control', 'no-store');
+    reply.header('x-content-type-options', 'nosniff');
+    reply.type('application/json; charset=utf-8');
+    return { html: renderCards([item], `${origin}/embed/${instance.id}`, cardOpts).toString() };
+  });
+
   app.get<{ Params: { id: string; msgId: string } }>('/embed/:id/m/:msgId', async (req, reply) => {
     const instance = await getEmbedInstance(ctx.db, req.params.id);
     if (!instance) return reply.code(404).type('text/plain').send('Not found');
@@ -477,10 +526,10 @@ export function registerPublicEmbed(app: FastifyInstance, ctx: ViewContext): voi
           top,
           SPAN_CAP,
         );
-        return { hash: span.hash, ids: span.ids, hasNewer: span.hasNewer };
+        return { hash: span.hash, ids: span.ids, markers: span.markers, hasNewer: span.hasNewer };
       }
       const state = await listPublishedIds(ctx.db, enabledTypes, filters);
-      return { hash: state.hash, ids: state.ids, hasNewer: false };
+      return { hash: state.hash, ids: state.ids, markers: state.markers, hasNewer: false };
     },
   );
 

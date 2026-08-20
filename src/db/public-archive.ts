@@ -78,6 +78,15 @@ export interface FormattedRun {
 
 export interface PublicItem {
   id: number;
+  /**
+   * The content marker this row was rendered from (CCB-S5-051 stage 4, D-237).
+   *
+   * SSR emits it as `data-marker` so the live poll has a baseline for a card it did not
+   * fetch itself. Without it the first poll would SEED the marker rather than compare
+   * against it, and a file that completed between render and first poll - which is exactly
+   * the reported case - would never be noticed.
+   */
+  marker: string;
   senderDisplayName: string;
   /** ISO 8601 UTC. */
   sentAt: string;
@@ -130,6 +139,8 @@ export interface PublicPage {
 
 interface ItemRow {
   id: string;
+  /** md5 over the published text + media path, carried to the card (CCB-S5-051 stage 4). */
+  marker: string;
   sender_display_name: string;
   sent_at: string;
   /** `sent_at::text` — full microsecond precision for the cursor (never the ms ISO). */
@@ -193,6 +204,7 @@ export function decodeCursor(s: string): Cursor | null {
 
 /** Shared SELECT list for a public item row (includes the full-precision sort key). */
 const ITEM_COLUMNS = `m.id, m.sender_display_name, m.sent_at, m.sent_at::text AS sort_ts,
+            md5(coalesce(m.text_body, '') || ':' || coalesce(m.media_path, '')) AS marker,
             m.type::text AS type, m.text_body, m.formatted_text,
             (m.media_path IS NOT NULL) AS has_media, m.media_mime, m.is_bot, m.reply_to_id,
             m.video_provider, m.video_id, m.video_start, m.video_title,
@@ -207,6 +219,7 @@ const ITEM_COLUMNS = `m.id, m.sender_display_name, m.sent_at, m.sent_at::text AS
 function mapItem(r: ItemRow): PublicItem {
   return {
     id: Number(r.id),
+    marker: r.marker,
     senderDisplayName: r.sender_display_name,
     // TIMESTAMPTZ comes back as a Date (pg/PGlite) — normalize to an ISO string
     // so it renders and serializes (JSON-LD) deterministically.
@@ -447,6 +460,15 @@ export async function listPublishedItemsByCursor(
 export interface PublishedState {
   /** Published item ids for the view, newest first (same window as the page). */
   ids: number[];
+  /**
+   * The per-row content marker, parallel to {@link ids} (CCB-S5-051 stage 4, D-237).
+   *
+   * These were computed in SQL and then thrown away in the `.map()` below, which is why a
+   * picture that finished uploading after its message was captured never appeared: the
+   * marker moved, the hash moved, and the client could express "this id is gone" and "there
+   * is something newer" but had no way to say "this card I already hold is now different".
+   */
+  markers: string[];
   /** Short version hash over the id list + per-item content marker + total. */
   hash: string;
   total: number;
@@ -489,7 +511,7 @@ export async function listPublishedIds(
   f: PublicFilters,
   scope: PublicScope = 'stream',
 ): Promise<PublishedState> {
-  if (enabledTypes.length === 0) return { ids: [], hash: streamHash([]), total: 0 };
+  if (enabledTypes.length === 0) return { ids: [], markers: [], hash: streamHash([]), total: 0 };
 
   const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const countRes = await db.query<{ n: string }>(
@@ -518,13 +540,20 @@ export async function listPublishedIds(
   );
 
   const total = Number(countRes.rows[0]?.n ?? 0);
-  return { ids: res.rows.map((r) => Number(r.id)), hash: streamHash(res.rows), total };
+  return {
+    ids: res.rows.map((r) => Number(r.id)),
+    markers: res.rows.map((r) => r.marker),
+    hash: streamHash(res.rows),
+    total,
+  };
 }
 
 /** Consent-gated fingerprint of the loaded SPAN (CCB-S2-007 live reconcile). */
 export interface SpanState {
   /** Published ids within the loaded band, newest-first. */
   ids: number[];
+  /** The per-row content marker, parallel to {@link ids} (CCB-S5-051 stage 4, D-237). */
+  markers: string[];
   /** Version hash over those ids + content markers. */
   hash: string;
   /** True when a published item exists NEWER than `top` (a new publish to prepend). */
@@ -550,7 +579,7 @@ export async function listPublishedSpanState(
   cap: number,
   scope: PublicScope = 'stream',
 ): Promise<SpanState> {
-  if (enabledTypes.length === 0) return { ids: [], hash: streamHash([]), hasNewer: false };
+  if (enabledTypes.length === 0) return { ids: [], markers: [], hash: streamHash([]), hasNewer: false };
 
   const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const bTs = `$${params.length + 1}`;
@@ -599,6 +628,7 @@ export async function listPublishedSpanState(
 
   return {
     ids: res.rows.map((r) => Number(r.id)),
+    markers: res.rows.map((r) => r.marker),
     hash: streamHash(res.rows),
     hasNewer,
   };

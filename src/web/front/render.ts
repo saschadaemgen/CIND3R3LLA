@@ -590,7 +590,7 @@ const ARCHIVE_TYPE_ENTRIES: [string, string][] = Object.entries(TYPE_LABELS);
 export function renderCards(items: PublicItem[], basePath: string, opts: CardOpts): SafeHtml {
   return html`${items.map(
     (it) =>
-      html`<li class="item${it.isBot ? ' from-bot' : ''}" id="msg-${it.id}" data-cursor="${it.cursor}">
+      html`<li class="item${it.isBot ? ' from-bot' : ''}" id="msg-${it.id}" data-cursor="${it.cursor}" data-marker="${it.marker}">
         <div class="meta">
           ${whoBlock(it, opts.attribution)}
           ${it.isBot ? html`<span class="badge-bot" title="Written by CIND3R3LLA">✦</span>` : html``}
@@ -1206,7 +1206,7 @@ const STREAM_SCRIPT = `(function(){
   var lastHash=root.getAttribute('data-hash')||'';
   var loaded=[],idset={};
   Array.prototype.forEach.call(ul.querySelectorAll('li.item[data-cursor]'),function(li){
-    var id=li.id.replace('msg-','');loaded.push({id:id,cursor:li.getAttribute('data-cursor'),el:li});idset[id]=1;
+    var id=li.id.replace('msg-','');loaded.push({id:id,cursor:li.getAttribute('data-cursor'),marker:li.getAttribute('data-marker'),el:li});idset[id]=1;
   });
   var hasWindowedNewer=false,busy=false,lastLoad=0,autoBurst=0,manual=false,timer=null,backoff=800,skeletons=[];
   // At the true stream head only when the SSR entry was page 1 AND nothing is
@@ -1232,7 +1232,7 @@ const STREAM_SCRIPT = `(function(){
     busy=true;lastLoad=Date.now();if(!manual)showSkeleton();
     get(fwd('/page','dir=older&cursor='+encodeURIComponent(nextCursor))).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
       busy=false;backoff=800;removeSkeleton();setStatus('');
-      Array.prototype.forEach.call(parseCards(d.html),function(li){var id=li.id.replace('msg-','');if(idset[id])return;li.className+=' card-in';ul.appendChild(li);loaded.push({id:id,cursor:li.getAttribute('data-cursor'),el:li});idset[id]=1;});
+      Array.prototype.forEach.call(parseCards(d.html),function(li){var id=li.id.replace('msg-','');if(idset[id])return;li.className+=' card-in';ul.appendChild(li);loaded.push({id:id,cursor:li.getAttribute('data-cursor'),marker:li.getAttribute('data-marker'),el:li});idset[id]=1;});
       nextCursor=d.nextCursor||'';hasMoreOlder=!!d.hasMore;
       if(!hasMoreOlder)io.unobserve(botSent);
       trimTop();postHeight();
@@ -1255,7 +1255,7 @@ const STREAM_SCRIPT = `(function(){
     get(fwd('/page','dir=newer&cursor='+encodeURIComponent(fromCursor))).then(function(r){if(!r.ok)throw 0;return r.json();}).then(function(d){
       busy=false;backoff=800;setStatus('');
       var frag=document.createDocumentFragment(),fresh=[],k;
-      Array.prototype.forEach.call(parseCards(d.html),function(li){var id=li.id.replace('msg-','');if(idset[id])return;li.className+=' card-in';frag.appendChild(li);fresh.push({id:id,cursor:li.getAttribute('data-cursor'),el:li});idset[id]=1;});
+      Array.prototype.forEach.call(parseCards(d.html),function(li){var id=li.id.replace('msg-','');if(idset[id])return;li.className+=' card-in';frag.appendChild(li);fresh.push({id:id,cursor:li.getAttribute('data-cursor'),marker:li.getAttribute('data-marker'),el:li});idset[id]=1;});
       if(fresh.length){ul.insertBefore(frag,ul.firstChild);loaded=fresh.concat(loaded);
         if(restore){var h=0;for(k=0;k<fresh.length;k++)h+=fresh[k].el.offsetHeight;spacer.style.height=Math.max(0,(parseInt(spacer.style.height,10)||0)-h)+'px';for(k=0;k<fresh.length;k++)watchMedia(fresh[k].el);}
       }
@@ -1284,11 +1284,23 @@ const STREAM_SCRIPT = `(function(){
     postHeight();
   }
   function reconcile(s){
-    var live={};for(var i=0;i<s.ids.length;i++)live[String(s.ids[i])]=1;
+    var live={},mark={};for(var i=0;i<s.ids.length;i++){var sid=String(s.ids[i]);live[sid]=1;if(s.markers&&s.markers[i]!=null)mark[sid]=s.markers[i];}
     var changed=false;
     for(var j=loaded.length-1;j>=0;j--){var it=loaded[j];if(!live[it.id]){if(it.el.parentNode)it.el.parentNode.removeChild(it.el);loaded.splice(j,1);delete idset[it.id];changed=true;}}
     if(changed)postHeight();
+    for(var k=0;k<loaded.length;k++){var c=loaded[k];var m=mark[c.id];if(m!=null&&c.marker!=null&&m!==c.marker)refreshCard(c,m);}
     if(atTop()&&s.hasNewer&&loaded.length)doPrepend(loaded[0].cursor,false);
+  }
+  function refreshCard(it,marker){
+    var was=it.marker;it.marker=marker;
+    get(base+'/card/'+encodeURIComponent(it.id)).then(function(r){return r.ok?r.json():null;}).then(function(d){
+      if(!d||!d.html){it.marker=was;return;}
+      var li=parseCards(d.html)[0];
+      if(!li||!it.el.parentNode){it.marker=was;return;}
+      li.setAttribute('data-marker',marker);
+      it.el.parentNode.replaceChild(li,it.el);it.el=li;it.cursor=li.getAttribute('data-cursor')||it.cursor;
+      watchMedia(li);postHeight();
+    }).catch(function(){it.marker=was;});
   }
   function tick(){
     if(busy||document.hidden||!loaded.length)return;
