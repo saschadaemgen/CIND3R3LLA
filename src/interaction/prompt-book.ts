@@ -70,6 +70,7 @@ export interface BookSection {
  * she is actually told.
  */
 const EVERYTHING_IN_SCOPE: PromptRuleContext = {
+  hasWebSearch: true,
   hasPersonality: true,
   hasCharacter: true,
   hasOrigin: true,

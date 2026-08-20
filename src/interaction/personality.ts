@@ -850,6 +850,9 @@ export function dialledPromptInputs(
     // the plugin is off for carries no condition and no values, so the rules
     // that would describe the capability are simply not in its prompt.
     hasMusic: music !== undefined,
+    // Both are set by `systemPrompt`, which is the only caller that knows them. Named here
+    // so the context is complete and a new condition cannot be forgotten silently.
+    hasWebSearch: false,
     hasWebResults: false,
     hasKnowledge: false,
     hasHistory: false,

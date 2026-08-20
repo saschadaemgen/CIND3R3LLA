@@ -1403,7 +1403,18 @@ export class InteractionEngine {
           return false;
         }
         // The model could not speak and the signal was strong enough to answer anyway.
-        await this.reply(msg, s, lang, 'conversationUnavailable', {});
+        //
+        // BYPASSES THE LIMITER (CCB-S5-046, D-232), and the omission it replaces was silent.
+        // This line carried `{}`, so an exhausted reply budget dropped the very sentence that
+        // exists to explain a failure. The two states then produced identical silence AND an
+        // `unavailable` row on the Diagnostics page, which reads as "the model could not
+        // speak, so the limiter is cleared" while the limiter is exactly what ate the
+        // explanation. A guard's own error message must not be droppable by the guard.
+        //
+        // Counted rather than `uncounted`: this IS a real reply carrying a real outcome, the
+        // same reasoning the consent confirmations take. Only the lookup holding line, which
+        // carries no outcome at all, is exempt from the count.
+        await this.reply(msg, s, lang, 'conversationUnavailable', {}, { bypassLimit: true });
         return true;
     }
   }
@@ -4301,6 +4312,29 @@ export class InteractionEngine {
         outcome: 'unavailable',
         latencyMs: this.now() - startedAt,
       });
+
+      // ── THE WINDOW OPENS ON A FAILED TURN TOO (CCB-S5-046, D-232) ────────
+      //
+      // The follow-up window is opened by `sendReply`, so a turn that sends NOTHING never
+      // opened one. That made a single silent failure into a LATCH rather than a lost turn:
+      // the member, having had no answer, writes what a person writes - "hello?", "?",
+      // "you there?" - with no wake word, and that message is refused 470 lines earlier, at
+      // the address gate, before dispatch, before the model, with no conversation row and no
+      // near-miss. Every subsequent bare line dies the same way. The member cannot get back
+      // in without retyping her name, and nothing anywhere records that they tried.
+      //
+      // She was ADDRESSED and she ATTEMPTED, which is the whole justification: this is not
+      // widening what counts as talking to her, it is refusing to punish the member for a
+      // failure that was hers. The window is the same length as any other.
+      //
+      // Deliberately NOT in the weak-signal branch above the caller: a message she was never
+      // sure was for her should not open a window just because it could not be answered.
+      this.state.openFollowUp(
+        msg.groupId,
+        msg.senderMemberId,
+        this.now(),
+        s.followUpSeconds * 1000,
+      );
       // ── CLOSING THE LOOP (CCB-S5-025) ────────────────────────────────────
       //
       // Silence is the right answer here for an ordinary turn, and the wrong one when she

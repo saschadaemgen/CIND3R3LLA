@@ -122,6 +122,8 @@
     "calibrate:knowledge-floor": "tsx scripts/calibrate-knowledge-floor.ts",
     "calibrate:knowledge-relevance": "tsx scripts/calibrate-knowledge-relevance.ts",
     "measure:prompt": "tsx scripts/measure-prompt.ts",
+    "measure:reply-latency": "tsx scripts/measure-reply-latency.ts",
+    "verify:offer-live": "tsx scripts/verify-offer-live.ts",
     "measure:rule-text": "tsx scripts/dump-rule-text.ts",
     "measure:dial-block": "tsx scripts/dump-dial-block.ts",
     "measure:rule-references": "tsx scripts/rule-references.ts",

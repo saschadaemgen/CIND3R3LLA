@@ -143,6 +143,8 @@ interface Case {
   lookupKind?: LookupKind;
   /** The music library's facts (CCB-S5-044, D-218). */
   music?: MusicPromptFacts;
+  /** The per-bot capability catalog (CCB-S5-046, D-232). */
+  capabilities?: readonly string[];
 }
 
 /**
@@ -231,6 +233,11 @@ const CASES: Case[] = [
   { id: 'conversation.no-clock', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: undefined },
   // CCB-S5-044, D-218. The library in the prompt: without this case the two critical
   // has-music rules would reach no configuration and the presence check goes red.
+  // CCB-S5-046, D-232. Without this case the offer rule reaches no configuration at all,
+  // and a rule nothing selects is a rule nobody is told. The negative is already covered:
+  // every other conversation case carries NO catalog, so has-web-search is false in all of
+  // them and the offer must not appear.
+  { id: 'conversation.can-search', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, capabilities: ['LOOKUP'] },
   { id: 'conversation.with-music', mode: 'conversation', personality: personality(), identity: IDENTITY_FULL, now: NOW, music: { tracks: 12, genres: ['folk', 'techno'], playlists: 3 } },
   { id: 'conversation.dials-low', mode: 'conversation', personality: personality({ sharpness: 1, warmth: 1, humor: 1, verbosity: 1, permissiveness: 1 }), identity: IDENTITY_FULL, now: NOW },
   { id: 'conversation.dials-high', mode: 'conversation', personality: personality({ sharpness: 10, warmth: 10, humor: 10, verbosity: 10, permissiveness: 10 }), identity: IDENTITY_FULL, now: NOW },
@@ -298,6 +305,7 @@ function render(testCase: Case, rules: PromptRuleSet): string {
     ...(testCase.lawPage ? { lawPage: true } : {}),
     ...(testCase.lookupKind ? { lookupBrief: lookupBrief(testCase.lookupKind) } : {}),
     ...(testCase.music ? { music: testCase.music } : {}),
+    ...(testCase.capabilities ? { capabilities: testCase.capabilities as never } : {}),
     ...(testCase.historyWindowMinutes !== undefined
       ? { historyWindowMinutes: testCase.historyWindowMinutes }
       : {}),
@@ -330,6 +338,7 @@ function selectionFor(
 
   const context: PromptRuleContext = {
     ...base.context,
+    hasWebSearch: (testCase.capabilities ?? []).includes('LOOKUP'),
     hasWebResults: (testCase.webResults?.length ?? 0) > 0,
     hasKnowledge: (testCase.knowledgePassages?.length ?? 0) > 0,
     hasHistory: (testCase.history?.length ?? 0) > 0,

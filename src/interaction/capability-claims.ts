@@ -130,9 +130,47 @@ const COMPILED: ReadonlyMap<ClaimableAbility, RegExp[]> = new Map(
  * Predicate one: does this sentence refuse, first person, an ability we can name?
  * Returns which one, or null. Null means "not judged", never "judged fine".
  */
+/**
+ * A refusal that names a LIMIT rather than a refusal of the capability (CCB-S5-046, D-232).
+ *
+ * ── THE THIRD CASE THE FENCE DID NOT HAVE ────────────────────────────────────
+ *
+ * D-226 models a capability as binary: this bot holds it, or it does not, and a refusal of
+ * one it holds is a lie. Reality has a third state - it holds the capability and the request
+ * is outside what the capability reaches - and in that state the refusal is TRUE.
+ *
+ * The archive SEARCH is the case that found this. It is a keyword count over PUBLISHED
+ * messages with no date filter, so "I can't search the archive that far back" is exactly
+ * accurate, and the fence stripped it whole because SEARCH is in every bot's catalog. If that
+ * sentence stood alone the strip left nothing, `stripInventedRefusals` threw, and free
+ * conversation went silent: the honest answer to a question about yesterday was the one
+ * answer the guard reliably destroyed.
+ *
+ * ── WHY A TRAILING QUALIFIER IS THE RIGHT SEAM ───────────────────────────────
+ *
+ * The shapes already reason in clause windows and already stop at a contrast word, so
+ * "I can't sing, but I can look it up" is not a refusal of lookup. This is the same idea
+ * pointed the other way: a scope word FOLLOWING the ability inside the same clause turns
+ * "I refuse to do X" into "X does not reach that far", which is a statement about the tool
+ * rather than about her will.
+ *
+ * ── IT FAILS TOWARDS STRIPPING, WHICH IS THE SAFE DIRECTION HERE ─────────────
+ *
+ * This is an exemption list over a vocabulary nobody owns, so D-201 applies and is answered
+ * by which way it fails: a qualifier NOT on this list leaves the sentence stripped, so the
+ * D-226 lie stays caught and only some true limitations are still lost. The residual is real
+ * and is stated rather than implied - a bounded refusal phrased in words not listed here is
+ * still removed, and can still cost the reply.
+ */
+const SCOPE_QUALIFIER =
+  /\b(?:that\s+far(?:\s+back)?|back\s+that\s+far|any\s+further\s+back|further\s+back|beyond\s+that|older\s+than|that\s+long\s+ago|from\s+yesterday|before\s+(?:today|yesterday|that)|so\s+weit(?:\s+zur(?:ü|u)ck)?|weiter\s+zur(?:ü|u)ck|dar(?:ü|u)ber\s+hinaus|(?:ä|a)lter\s+als|von\s+gestern|so\s+lange\s+her)\b/iu;
+
 export function refusedAbility(sentence: string): ClaimableAbility | null {
   for (const [intent, shapes] of COMPILED) {
-    if (shapes.some((re) => re.test(sentence))) return intent;
+    if (shapes.some((re) => re.test(sentence))) {
+      // Judged only when the refusal is UNQUALIFIED. A scope word makes it a bound.
+      return SCOPE_QUALIFIER.test(sentence) ? null : intent;
+    }
   }
   return null;
 }

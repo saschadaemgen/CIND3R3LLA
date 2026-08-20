@@ -84,6 +84,8 @@ export const PROMPT_RULE_CONDITIONS = [
   'has-clock',
   // CCB-S5-044: the music library's facts are in this prompt for this bot.
   'has-music',
+  // CCB-S5-046: this bot HOLDS web search, as opposed to having results already.
+  'has-web-search',
   'has-web-results',
   'has-no-web-results',
   'has-knowledge',
@@ -168,6 +170,15 @@ export interface PromptRuleContext {
   hasNicknames: boolean;
   hasClock: boolean;
   hasMusic: boolean;
+  /**
+   * Whether this bot holds the web-search capability at all (CCB-S5-046, D-232).
+   *
+   * DISTINCT FROM {@link hasWebResults}, which means results are already in hand: that is the
+   * situation AFTER a search, and this is the situation before one was ever asked for. The
+   * prompt had no way to say the second, so the conversation lane could not tell her she was
+   * able to look something up, and she met every unknown name by apologising for it.
+   */
+  hasWebSearch: boolean;
   hasWebResults: boolean;
   /** Passages from the operator's documents are attached (CCB-S5-022). */
   hasKnowledge: boolean;
@@ -200,6 +211,7 @@ export const NOTHING_IN_SCOPE: Readonly<PromptRuleContext> = Object.freeze({
   hasNicknames: false,
   hasClock: false,
   hasMusic: false,
+  hasWebSearch: false,
   hasWebResults: false,
   hasKnowledge: false,
   hasHistory: false,
@@ -254,6 +266,8 @@ export function conditionHolds(
       return context.hasClock;
     case 'has-music':
       return context.hasMusic;
+    case 'has-web-search':
+      return context.hasWebSearch;
     case 'has-web-results':
       return context.hasWebResults;
     // The other half of the pair (CCB-S5-028). It exists because one sentence, "you have

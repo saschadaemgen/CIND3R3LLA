@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 230 decisions</strong> — newest first. Highest allocated: <strong>D-231</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 231 decisions</strong> — newest first. Highest allocated: <strong>D-232</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-232 | She offers to look it up, and a failed turn stops being silent | IMPLEMENTED |
 | D-231 | The model is qwen3:14b and the window is 24576, both measured on the card that runs them | IMPLEMENTED |
 | D-230 | A new bot does not inherit another bot's history | IMPLEMENTED |
 | D-229 | The console's prompt previews carry the selected bot's voice, read from the rows | IMPLEMENTED |
@@ -259,6 +260,87 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-232 - She offers to look it up, and a failed turn stops being silent
+
+**Status: IMPLEMENTED** (CCB-S5-046, migration 067). Five changes from two production reports.
+
+**THE OFFER HAD NEVER BEEN BUILT, and the routing was never wrong.** Asked "what is a SINA
+Box?" she said it sounded like a myth and told the member to try again. The rule engine returns
+UNKNOWN at zero confidence, `asksToLookItUp` is false, and a model claiming LOOKUP is downgraded
+at two independent points - correctly, because the member did not ask her to go and look, and a
+false positive there costs an outbound request, a bill, and untrusted text entering the prompt.
+The reply was her following `grounding.say-you-do-not-know` exactly.
+
+The structural cause is sharper than a missing sentence: **the conversation prompt was never
+told what the bot can do.** `capabilities` has been on the reply request for some time and was
+read by exactly one thing, the post-hoc invented-refusal strip. The application knew which
+capabilities a bot held, used that knowledge to DELETE sentences she wrote about them, and never
+told her she had them. `has-web-search` is the new condition, wired from the per-bot catalog and
+**failing closed** - an absent catalog reads as no capability, never as yes. Rule
+`task.conversation.offer-lookup`, `conversation` lane, `nameable` FALSE by the migration-039
+default, taken deliberately: `law-numbers` pages the NAMEABLE set, so marking it quotable would
+renumber every law sorting after it.
+
+**Measured against the running model**: 3 of 3 offered, in the wanted shape - *"I don't know
+what a SINA Box is. Want me to look it up for you?"*
+
+**AND THE HALF THAT DOES NOT HOLD, which is D-183 in the flesh.** A bot with NO web search
+offered a lookup anyway on one run in two. The rule is provably absent from that prompt, so the
+model is offering from its own priors. The deterministic mirror of D-226 - nothing strips a
+first-person OFFER of a capability the bot LACKS, while a first-person REFUSAL of one it HOLDS
+is stripped - is **booked, not built**. `verify:offer-live` REPORTS that number rather than
+gating on it, the verify:traits precedent.
+
+**THE SILENCE HAD FOUR CAUSES AND I NAMED THE WRONG ONE FIRST.** A member asked for a summary of
+yesterday's chat and got nothing: no answer, no refusal, no line. The first diagnosis said an
+`unavailable` row on Diagnostics would clear the reply limiter. **It does not.**
+`conversationUnavailable` carried `{}` and no `bypassLimit`, so an exhausted budget dropped the
+very sentence that exists to explain a failure - producing identical silence AND a row that
+points away from the cause. Fixed. Two further corrections to that diagnosis, both from the
+adversarial pass: `strongSignalWindow` makes `strong` true for any message inside the follow-up
+window, so "did he greet her" only discriminates on a cold open; and a healthy model plus an
+exhausted limiter is total silence, because `freeConversation` returns `true` on a drop and
+dispatch never reaches the fallback at all.
+
+**THE LATCH, which is why nothing arrived rather than something late.** The follow-up window is
+opened by `sendReply`, so a turn that sends nothing never opened one. The member then writes
+what a person writes - "hello?", "?" - with no wake word, and that dies at the address gate,
+before dispatch, before the model, with no conversation row and no near-miss. Every subsequent
+bare line dies identically. The window now opens on a failed turn too, in the
+`spoken === null` branch only: she was addressed and she attempted, so this is not widening what
+counts as talking to her, it is refusing to punish the member for a failure that was hers.
+
+**THE TOKEN CAP WAS ARITHMETIC.** `max_tokens` was a fixed 320 while `replyCharBudget` runs to
+1400 - 438 tokens of budget against a 320-token cap, so at verbosity 9 and 10 a reply that uses
+the length it was told to use cannot finish. Because the reply is a strict `json_schema`
+envelope, the failure is total rather than short: generation stops mid-string and
+`parseCompletion` throws. Measured: `finish_reason: length`, 1340 characters, `JSON.parse`
+failing with "Unterminated string in JSON at position 1340". `replyTokenCap` derives it from
+the same number, dividing by **2 rather than 3.2** because a cap must hold for the worst case
+and German compounds and emoji cost more per character. The 320 floor leaves verbosity 8 and
+below byte-identical.
+
+**THE D-226 FENCE HAD NO THIRD CASE.** It models a capability as binary - held or not - and a
+refusal of one held is a lie. Reality has a third state: held, but this request is outside what
+it reaches. The archive SEARCH is a keyword count over published messages with no date filter,
+so *"I can't search the archive that far back"* is exactly accurate, and the fence stripped it
+whole because SEARCH is in every catalog. If it stood alone the strip left nothing and free
+conversation went silent, so the honest answer to a question about yesterday was the one answer
+the guard reliably destroyed. A scope qualifier following the ability inside the same clause now
+exempts it. **It fails towards stripping**, so the D-226 lie stays caught and the residual is
+stated: a bounded refusal phrased in words not on the list is still removed.
+
+Positive controls held throughout: *"I won't search the archive for you"* and *"I can't look
+that up for you"* are still stripped.
+
+**Not fixed, reported.** `searchNoWords` is droppable by the same limiter and its comment says
+so deliberately, so it was left rather than silently overridden. The price and nickname lanes go
+silent at `log.debug` with no model involved. Nothing on any of these paths calls `status.error`.
+A bot without web search invented a definition for a name it could not know on 3 of 3 control
+runs, which belongs to `grounding.say-you-do-not-know` rather than to this briefing.
+
 ---
 
 ### D-231 - The model is qwen3:14b and the window is 24576, both measured on the card that runs them

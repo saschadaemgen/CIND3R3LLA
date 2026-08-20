@@ -442,6 +442,42 @@ function cleanReply(value: string, preserveLines: boolean): string {
  * skip it. An empty array is the honest answer for a refusal and is what the caller reads
  * as "attribute nothing".
  */
+/**
+ * The token cap, derived from the character budget instead of fixed (CCB-S5-046, D-232).
+ *
+ * ── THE DEFECT THIS REPLACES, WHICH WAS ARITHMETIC ───────────────────────────
+ *
+ * `max_tokens` was a hardcoded 320 while `replyCharBudget` runs to 1400. At roughly 3.2
+ * characters per token that is 438 tokens of budget against a 320-token cap, so at verbosity
+ * 9 and 10 a reply that USES the length it was told to use cannot finish. This is D-142's own
+ * reasoning - the instruction and the limit must come from one number - applied one constant
+ * further along, where it had been missed.
+ *
+ * ── AND WHY THE FAILURE IS TOTAL RATHER THAN A SHORT ANSWER ──────────────────
+ *
+ * The reply is a STRICT `json_schema` envelope. When the cap binds, generation stops
+ * mid-string, the envelope never closes, and `parseCompletion` throws on the JSON rather than
+ * returning a truncated reply. In free conversation a throw is silence. Measured against the
+ * running model: `finish_reason: length`, 1340 characters of content, and `JSON.parse` failing
+ * with "Unterminated string in JSON at position 1340".
+ *
+ * ── THE DIVISOR IS 2, NOT 3.2, AND THAT IS DELIBERATE ────────────────────────
+ *
+ * 3.2 is the English average this repository already uses for reporting. It is the wrong
+ * number for a CAP, because the cap must hold for the worst case rather than the mean: German
+ * compounds, umlauts and emoji all cost more tokens per character, and an emoji can be four.
+ * Sizing on the average would reintroduce the same defect for exactly the messages this
+ * product's members write. The envelope's own tokens are added on top.
+ *
+ * The 320 floor keeps every budget at verbosity 8 and below sending precisely what it sent
+ * before, so this cannot change a reply anybody has already tuned.
+ */
+export function replyTokenCap(maxChars: number): number {
+  // `{"reply":"..."}` plus a safety margin for the schema's own structure.
+  const envelope = 48;
+  return Math.max(320, Math.ceil(maxChars / 2) + envelope);
+}
+
 function responseSchema(maxChars: number, withSources: boolean): Record<string, unknown> {
   return {
     type: 'object',
@@ -512,6 +548,16 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
 
   const context: PromptRuleContext = {
     ...base.context,
+    // WHAT THIS BOT CAN DO REACHES THE PROMPT (CCB-S5-046, D-232). The catalog was on the
+    // request already and was read by exactly one thing: the post-hoc invented-refusal strip.
+    // So the application knew which capabilities a bot held, used that knowledge to delete
+    // sentences she wrote about them, and never once told her she had them.
+    //
+    // FAILS CLOSED, deliberately. An absent catalog is read as "no web search", never as
+    // "assume yes", so a caller that forgets to supply one produces a bot that offers nothing
+    // rather than a bot offering a capability the operator switched off. That is the
+    // plugin-scope rule (a cache miss fails closed) applied to the prompt.
+    hasWebSearch: (request.capabilities ?? []).includes('LOOKUP'),
     hasWebResults: (request.webResults?.length ?? 0) > 0,
     hasKnowledge: (request.knowledgePassages?.length ?? 0) > 0,
     hasHistory: (request.history?.length ?? 0) > 0,
@@ -1044,7 +1090,7 @@ export async function generateOllamaReply(
         ],
         stream: false,
         temperature: 0.7,
-        max_tokens: 320,
+        max_tokens: replyTokenCap(maxChars),
         reasoning_effort: 'none',
         response_format: {
           type: 'json_schema',
