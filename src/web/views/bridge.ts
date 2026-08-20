@@ -385,9 +385,31 @@ function publicationCard(opts: {
           public announcement also appears beside your members' messages in the stream, which
           is a second audience with a different promise. The standalone block below ignores it
           on purpose: that block <em>is</em> the announcements, and emptying it from a stream
-          setting would be a control acting on something it does not name. Set it under
-          <a class="underline" href="/interaction/archiving">Interaction, Archiving</a>.
+          setting would be a control acting on something it does not name.
         </p>
+        ${
+          /* THE SWITCH IS HERE, NOT ONLY NAMED HERE (CCB-S5-050, D-235).
+             This card stated the setting and then sent the operator to another page to
+             change it. He read the badge as the feature being unavailable and hunted for
+             it before asking. The two DECISIONS stay separate, which is his own design and
+             is right; what was wrong is that a control was described where it could not be
+             operated. It writes the same `categories.bridge` the Archiving page writes, so
+             there is one setting with two doors rather than two settings. */ ''
+        }
+        <form method="post" action="/bridge/in-stream" class="mt-2 flex items-center gap-2">
+          <input type="hidden" name="_csrf" value="${opts.csrf}" />
+          <input type="hidden" name="value" value="${opts.inStream ? 'off' : 'on'}" />
+          <button
+            type="submit"
+            class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+          >
+            ${opts.inStream ? 'Take announcements out of the stream' : 'Show announcements in the stream'}
+          </button>
+          <span class="text-xs text-slate-500">
+            Also on <a class="underline" href="/interaction/archiving">Interaction, Archiving</a>,
+            where it sits with the other categories.
+          </span>
+        </form>
       </div>
       ${instance === undefined
         ? html`<p class="text-sm text-slate-500">
@@ -1113,6 +1135,25 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       const message = reportActionFailure('joining a channel', botProfileId, err);
       return reply.redirect(back(req, `error=${encodeURIComponent(message)}`));
     }
+  });
+
+  /**
+   * The stream switch, operated from the page that describes it (CCB-S5-050, D-235).
+   *
+   * Writes the SAME `categories.bridge` the Archiving page writes, read back through the
+   * same service, so the two pages cannot disagree: it is one setting with two doors, not a
+   * second setting that would have to be kept in step. Everything else on the archive
+   * settings object is carried through untouched, because a partial save here would silently
+   * reset the categories this page does not show.
+   */
+  app.post<{ Body: Record<string, unknown> }>('/bridge/in-stream', async (req, reply) => {
+    const current = ctx.archive.get();
+    const on = bodyString(req.body, 'value') === 'on';
+    await ctx.archive.save(
+      { ...current, categories: { ...current.categories, bridge: on } },
+      req.session?.username ?? 'unknown',
+    );
+    return reply.redirect(back(req, 'saved=1'));
   });
 
   app.post<{ Body: Record<string, unknown> }>('/bridge/channels/refresh', async (req, reply) => {

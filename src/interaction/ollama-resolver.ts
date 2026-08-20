@@ -27,7 +27,7 @@ import {
   type IntentSlots,
   INTENTS,
 } from './intent.js';
-import { asksToLookItUp, namesTheArchive, ruleResolver } from './rules.js';
+import { asksToLookItUp, asksWhatSomethingIs, namesTheArchive, ruleResolver } from './rules.js';
 
 export type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
@@ -543,7 +543,7 @@ export function createOllamaIntentResolver(
           } else {
             result = mergeMatching(model, rules);
           }
-        } else if (model.intent === 'LOOKUP' && !asksToLookItUp(text)) {
+        } else if (model.intent === 'LOOKUP' && !asksToLookItUp(text) && !asksWhatSomethingIs(text)) {
           // ── THE WEB IS EXPLICIT-ONLY FOR THE MODEL TOO (D-183, counted since
           // D-226) ──
           //

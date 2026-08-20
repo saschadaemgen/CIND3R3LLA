@@ -1698,6 +1698,63 @@ export function asksToLookItUp(text: string): boolean {
 }
 
 /**
+ * Subjects a definition question can name that she should answer HERSELF (CCB-S5-049).
+ *
+ * Every one of these is either about her, about this product, or a generic noun that names
+ * nothing lookupable. Asked "what is the archive", she has rules and facts for that and must
+ * not spend an outbound request on it.
+ */
+const SELF_SUBJECTS = new Set([
+  'you', 'your', 'yours', 'yourself', 'this', 'that', 'it', 'they', 'we', 'i', 'me',
+  'here', 'there', 'name', 'archive', 'consent', 'bot', 'group', 'chat', 'room', 'rule',
+  'rules', 'book', 'elii', 'publish', 'unpublish', 'cinderella', 'cind3r3lla', 'playlist',
+  'music', 'track', 'song', 'genre', 'time', 'date', 'day', 'today', 'up', 'point',
+  'du', 'dich', 'dir', 'das', 'dies', 'hier', 'name', 'regel', 'regeln', 'buch', 'lied',
+  'musik', 'titel', 'zeit', 'datum', 'heute', 'gruppe', 'archiv',
+]);
+
+/** "what is X", "who is X", "was ist X", "wer ist X" - and nothing else. */
+const DEFINITION_QUESTION =
+  /^(?:hey\s+|hi\s+|ok(?:ay)?\s+|so\s+)?(?:can\s+you\s+tell\s+me\s+|tell\s+me\s+|do\s+you\s+know\s+)?(?:what(?:'?s| is| are)|who(?:'?s| is| are)|was\s+(?:ist|sind)|wer\s+(?:ist|sind))\s+(?:a|an|the|der|die|das|ein|eine)?\s*(.+?)\s*\??$/i;
+
+/**
+ * Does this ask what a NAMED THING is (CCB-S5-049, D-234)?
+ *
+ * ── THIS IS THE WIDENING rules.ts REFUSED, AND WHY IT IS NOW ALLOWED ─────────
+ *
+ * The LOOKUP header above says in terms that there is deliberately no "this looks like it
+ * wants current information" heuristic, because a false positive costs an outbound request
+ * and a bill, and it ends: *"widening it is a decision for somebody who is watching the
+ * bill."* The operator is that person and he has made that decision, so this is his
+ * widening rather than a rule quietly relaxed - and it is deliberately far NARROWER than
+ * the heuristic that was refused.
+ *
+ * It is not "wants current information". It is the one shape that produced every invention
+ * this product has recorded: a member asks what a named thing IS, she has no material for
+ * it, and the model fills the gap with something plausible. Measured in production:
+ * *"Matter over Thread is a concept that suggests physical matter should take precedence
+ * over digital or virtual threads"*, asserted as fact, about a home-automation standard.
+ *
+ * ── WHAT IT REFUSES ──────────────────────────────────────────────────────────
+ *
+ * A subject that is about HER, about this product, or a bare generic noun. "what is your
+ * name", "what is the archive", "what is a playlist" all have answers she already holds,
+ * and spending a search on one would be the false positive the header warns about. A
+ * multi-word subject needs only one non-generic token, because "what is a SINA Box" is the
+ * case and "box" alone is not.
+ */
+export function asksWhatSomethingIs(text: string): boolean {
+  const m = DEFINITION_QUESTION.exec(text.trim());
+  if (m === null) return false;
+  const subject = (m[1] ?? '').trim();
+  if (subject === '') return false;
+  const tokens = normTokens(subject);
+  if (tokens.length === 0 || tokens.length > 8) return false;
+  // At least one token that is not about her and not a bare generic noun.
+  return tokens.some((t) => !SELF_SUBJECTS.has(t) && t.length > 2);
+}
+
+/**
  * The MUSIC bar (CCB-S5-044, the D-183 rule): a resolver may only claim MUSIC
  * for a message that deterministically asks to play or asks about the
  * playlists. Talking ABOUT music stays conversation.

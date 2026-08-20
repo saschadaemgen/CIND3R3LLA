@@ -46,7 +46,7 @@ import { getConsent } from '../db/consent.js';
 import { loadConfig } from '../config.js';
 import type { CapturedMessage } from '../capture/message.js';
 import { detectAddress } from './addressing.js';
-import { carryOverSlots, resolveIntent } from './resolver.js';
+import { asksWhatSomethingIs, carryOverSlots, resolveIntent } from './resolver.js';
 import { ConversationState, type PendingChoice, type PendingConfirmation } from './state.js';
 import {
   NEAR_MISS_EXCERPT,
@@ -1424,6 +1424,32 @@ export class InteractionEngine {
         // talked into claiming a message by anything a model says.
         if (await this.unclaimedMusicAsk(msg, instruction)) {
           return await this.answerMusicSafely(msg, s, lang, instruction);
+        }
+
+        // ── SHE LOOKS RATHER THAN GUESSING (CCB-S5-049, D-234) ──────────────
+        //
+        // A member asked what a named thing was; she had no material for it, invented
+        // *"Matter over Thread is a concept that suggests physical matter should take
+        // precedence over digital or virtual threads"*, and only THEN offered to check.
+        // Two messages later, having searched, she was right.
+        //
+        // So the offer is deleted rather than repaired. It was worthless while an
+        // invention preceded it, it depended on a bare "yes" that the `!explicit` gate
+        // below refuses, and teaching that gate to answer a third lane would be the same
+        // repair failing a third time. Searching FIRST removes all three at once: there
+        // is no gap in front of the answer for a guess to fill.
+        //
+        // DETERMINISTIC, and not a model judgement (D-183): `asksWhatSomethingIs` is a
+        // predicate over the text, and this route does not depend on any resolver having
+        // claimed LOOKUP. Bounded by the capability, so a bot the operator has not given
+        // web search to never reaches it, and by the plugin's own per-bot budget, which
+        // is the bill guard `rules.ts` asks for.
+        if (
+          this.deps.capabilities().includes('LOOKUP') &&
+          asksWhatSomethingIs(instruction) &&
+          (this.deps.webSearch?.()?.available() ?? false)
+        ) {
+          return await this.answerLookup(msg, s, lang, { query: instruction }, instruction);
         }
 
         // Inside the follow-up window an unrecognised message is far more likely

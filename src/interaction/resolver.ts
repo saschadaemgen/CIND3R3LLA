@@ -25,7 +25,14 @@ import {
   type IntentResult,
   type IntentSlots,
 } from './intent.js';
-import { asksForMusic, asksToLookItUp, namesTheArchive, priceSlotsFor, ruleResolver } from './rules.js';
+import {
+  asksForMusic,
+  asksToLookItUp,
+  asksWhatSomethingIs,
+  namesTheArchive,
+  priceSlotsFor,
+  ruleResolver,
+} from './rules.js';
 
 let active: IntentResolver = ruleResolver;
 /** Fallback used when `active` fails. Always the deterministic engine. */
@@ -138,10 +145,27 @@ export function carryOverSlots(text: string, intent: 'PRICE' | 'SEARCH'): Intent
  */
 const EXPLICIT_ONLY: Partial<Record<Intent, { names: (text: string) => boolean; why: string }>> = {
   SEARCH: { names: namesTheArchive, why: 'names no place to look' },
-  LOOKUP: { names: asksToLookItUp, why: 'does not ask her to go and look' },
+  // CCB-S5-049: a definition question about a named thing is now ALSO a place to look.
+  // It is not a relaxation of the bar - it is a second explicit shape, and the widest thing
+  // it admits is "what is <named thing>", which is the shape every recorded invention took.
+  LOOKUP: {
+    names: (text: string) => asksToLookItUp(text) || asksWhatSomethingIs(text),
+    why: 'neither asks her to go and look nor asks what a named thing is',
+  },
   // CCB-S5-044, the third entry the table was built to receive.
   MUSIC: { names: asksForMusic, why: 'neither asks to play nor asks about the playlists' },
 };
+
+/**
+ * Re-exported THROUGH THE SEAM, deliberately (CCB-S5-049, D-234).
+ *
+ * The engine needs this predicate to route a definition question to the lookup lane without
+ * waiting for a resolver to claim LOOKUP. It must not reach into `rules.ts` to get it: this
+ * file's own header says nothing outside it imports the rule engine, and the engine imports
+ * nothing from there today. Handing it out here keeps that true and keeps the bar and the
+ * route reading the SAME predicate, which is what stops them drifting apart.
+ */
+export { asksWhatSomethingIs } from './rules.js';
 
 function explicitOnly(result: IntentResult, text: string): IntentResult {
   const bar = EXPLICIT_ONLY[result.intent];

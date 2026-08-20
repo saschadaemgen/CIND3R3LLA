@@ -108,6 +108,21 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   days. Two questions are open there right now: how visible the member support thread is to a
   member, and where the client renders `peerType` and why the operator sees it only in a direct
   chat.
+  **AND THE SECOND QUESTION, WHICH THE FIRST ONE DOES NOT ASK (D-235).** "Would you show this
+  page to a customer?" is about whether it is PRESENTABLE. It says nothing about whether the
+  customer could USE it, and a page can pass the first test cleanly while failing the second.
+  The Bridge page stated "In the community activity stream: not shown" and then sent the
+  operator to Interaction, Archiving to change it. The sentence was true, the badge was
+  accurate, the control it pointed at worked, and he read the whole thing as the feature being
+  unavailable and hunted for it before asking. Nothing was broken and the page was still wrong.
+  So ask BOTH: would you show this to a customer, and **could a customer do the thing this page
+  is for without already knowing where everything else lives?** Two rules follow from it, and
+  both are concrete enough to check. **A page that names a setting it does not hold must link
+  to the page that does** - and a link is the floor, not the answer; if the decision belongs
+  here, the control belongs here. **A page that describes a state must say how to change it, in
+  a way you can click.** A badge with no verb beside it reads as a report on something you do
+  not control, which is the same shape as a surface telling somebody what they cannot do.
+
   **AND THE OTHER HALF, WHICH COST THREE ROUNDS IN ONE WEEK: the source is the authority on what
   a capability IS, and only the RUNNING APP is the authority on what it DOES.** The client
   imports `AnimatedImageDrawable`, has a `SimpleAndAnimatedImageView` with per-platform

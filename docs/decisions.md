@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 232 decisions</strong> — newest first. Highest allocated: <strong>D-233</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 234 decisions</strong> — newest first. Highest allocated: <strong>D-235</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-235 | A control belongs on the page where the decision is made | IMPLEMENTED |
+| D-234 | She looks rather than offering to look | IMPLEMENTED |
 | D-233 | The music lane hears what a member types, and declines rather than inventing | IMPLEMENTED |
 | D-232 | She offers to look it up, and a failed turn stops being silent | IMPLEMENTED |
 | D-231 | The model is qwen3:14b and the window is 24576, both measured on the card that runs them | IMPLEMENTED |
@@ -261,6 +263,83 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-235 - A control belongs on the page where the decision is made
+
+**Status: IMPLEMENTED** (CCB-S5-050, no migration).
+
+The Bridge page stated *"In the community activity stream: not shown"* and then sent the
+operator to Interaction, Archiving to change it. **He read it as the feature being unavailable
+and hunted for it before asking.** Nothing was broken: the sentence was true, the badge was
+accurate, and the control it pointed at worked.
+
+**The separation of the two decisions is right and stays.** Publishing decides whether an
+announcement is public at all; the stream setting decides whether a public one also sits beside
+members' messages. Two audiences, two promises. What was wrong is that a page DESCRIBED a
+decision it would not let you take.
+
+The switch is now on the Bridge page beside the publish switches, writing the **same**
+`categories.bridge` through the same service, so it is one setting with two doors rather than
+two settings to keep in step. The whole archive settings object is carried through on save,
+because a partial write there would silently reset the categories this page does not show.
+Operated and read back: the button flips, and the Archiving page's own checkbox agrees.
+
+**THE STANDING RULE GAINS ITS SECOND QUESTION** (`CLAUDE.md`, D-212's gap). D-212 asks whether
+you would show the page to a customer, which is about whether it is PRESENTABLE. It does not
+ask whether a customer could USE it, and this page passed the first test while failing the
+second. So both are now asked, with two checkable consequences: **a page that names a setting
+it does not hold must link to the page that does** (and a link is the floor, not the answer -
+if the decision belongs there, the control belongs there); and **a page that describes a state
+must say how to change it, in a way you can click.** A badge with no verb beside it reads as a
+report on something you do not control.
+
+---
+
+### D-234 - She looks rather than offering to look
+
+**Status: IMPLEMENTED** (CCB-S5-049, migration 068). D-232's offer, deleted one briefing after
+it shipped.
+
+**THE LIVE TEST SHOWED THE SHAPE WAS WRONG IN THREE WAYS AT ONCE.** Asked what "Matter over
+Thread" was, she wrote *"Matter over Thread is a concept that suggests physical matter should
+take precedence over digital or virtual threads, like a conversation, in terms of importance or
+reality"* - asserted as fact, about a home-automation standard - and only THEN said *"Not
+something I've been asked about before. Want me to look it up?"* Two messages later, having
+searched, she was correct, with three real sources.
+
+So: she had no knowledge, invented one, offered to check, and was right when she checked.
+**The offer is worthless while the invention precedes it.** Second, the offer was
+UNANSWERABLE: a bare "yes" resolves UNKNOWN at confidence zero, so `if (!explicit) return
+false` refuses it before any lane sees it - the identical gate CCB-S5-048 had just widened for
+music. Third, widening it again for a lane with no card to key on would have been a third
+per-lane exception to a gate that keeps failing the same way.
+
+**Searching FIRST removes all three**: no offer, no bare affirmative to answer, and no gap in
+front of the answer for a guess to fill.
+
+**THE TRIGGER IS DETERMINISTIC AND IT IS THE OPERATOR'S WIDENING.** `asksWhatSomethingIs` is a
+predicate over the text (D-183), and the engine's route does not wait for any resolver to claim
+LOOKUP. The LOOKUP header in `rules.ts` refuses a "wants current information" heuristic because
+a false positive costs a bill, and ends: *"widening it is a decision for somebody who is
+watching the bill."* This is that decision, by that person, and it is far narrower than what was
+refused: the one shape every recorded invention took, `what is <a named thing>`. Measured -
+`what is a SINA Box?`, `what is Matter over Thread?` and `was ist ...?` search; `what is your
+name`, `what is the archive`, `what is a playlist`, `what is it`, `how are you?` do not.
+
+The predicate is re-exported **through the resolver seam**, not imported from `rules.ts`: the
+engine imports nothing from the rule engine today and that stays true, and the bar and the route
+read the same predicate so they cannot drift.
+
+**WHAT THIS DOES NOT FIX, STATED PLAINLY.** A bot with NO web-search capability still invents.
+Measured with `verify:offer-live` against `qwen3:14b`: **3 of 3** control runs answered a
+question about a name they could not know without ever saying they did not know - *"A SINA Box
+is a device used in network infrastructure..."*, *"Zeliqua is a protocol that allows for secure
+and private communication..."*. Both complete, plausible and false. **This change does not touch
+that and cannot**: it gives a capable bot something true to say instead of guessing, and a bot
+with nothing to look with has no such alternative. It is filed as the top item in
+`docs/feature-backlog.md` with that rate and remains the most serious open defect here.
+
 ---
 
 ### D-233 - The music lane hears what a member types, and declines rather than inventing
