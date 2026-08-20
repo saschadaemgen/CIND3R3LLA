@@ -1748,3 +1748,63 @@ scoped no-invention so that when the passages do not answer, what the prompt its
 clock, library, laws - is hers to state, while naming a document for it stays forbidden. The
 third option, a default trigger of 'explicit', was not taken and remains available if the
 noise returns on other material.
+
+---
+
+## She invents a definition rather than saying she does not know (CCB-S5-046, MEASURED)
+
+**Priority: this is the one to fix first of everything on this page.** It is the failure the
+product is sold on not having, and it is worse than any silence: a silence tells a member
+nothing, and this tells them something false with complete confidence.
+
+**Measured, not anecdotal.** Driving `verify:offer-live` against `qwen3:14b`, a bot with **no**
+web-search capability answered:
+
+> "A SINA Box is a device used in network infrastructure, often associated with security or
+> data management functions. Specific details depend on the context in which it's being used."
+
+Complete, plausible, and invented. On a second run:
+
+> "Zeliqua is a protocol that allows for secure and private communication between parties.
+> It's designed to ensure that messages are encrypted and can only be read by the intended
+> recipient."
+
+**The rate: 3 of 3 control runs answered without ever saying they did not know.**
+`verify:offer-live` prints that count on every run (`MEASURED: n of 3 answered without saying
+they did not know`), so the number can be watched rather than re-argued.
+
+**What it violates.** `grounding.say-you-do-not-know` in terms: *"When you do not know
+something, say so plainly in your own voice. An honest answer that you do not know beats a
+plausible one you made up, and filling the gap is the one thing you must not do."* The rule is
+constitutional, critical, and in every conversation prompt. It is being ignored.
+
+**Why the offer work does not close it.** A bot that HOLDS web search now offers to look, and
+that path is honest. This is the bot that holds NOTHING, where there is no capability to fall
+back on and the model fills the gap instead. The two are different halves and only one is done.
+
+**What is NOT yet known**, and should be established before designing: whether the 32B behaved
+the same way (the rules were tuned against it), whether it is worse for names that look
+technical than for names that look like people, and whether the deterministic half is even
+possible - a claim of fact is not a pattern the way an invented refusal is, so this may need a
+different instrument than `capability-claims.ts`. D-183 says the thing that holds must be
+deterministic; here it is not obvious what that could be, and saying so is part of the work.
+
+---
+
+## Rename "community stream" before customers embed it (CCB-S5-046, from a member)
+
+A member asked what "community stream" meant and **thought it was live video**. Nothing about
+it is live and nothing about it is video: it is a page of archived messages that a visitor
+scrolls.
+
+The name is on the surface a customer embeds, so the cost of leaving it is paid by their
+visitors rather than ours, and renaming after they have embedded it is worse than renaming now.
+
+Where it appears: the embed page copy and headings, `PublicScope = 'stream'` in
+`src/db/public-archive.ts`, the `in_stream` column from migration 062, the Capture and Embeds
+console pages, and `docs/architecture.md`. **The internal identifiers do not have to move with
+the visible name** - `in_stream` is a column and renaming it is a migration with no member
+benefit, so the visible copy and the schema can be decided separately.
+
+Worth deciding together with it: what the standalone channel block is called, since "channels"
+has the same problem in the other direction (it suggests video channels).

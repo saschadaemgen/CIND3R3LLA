@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 231 decisions</strong> — newest first. Highest allocated: <strong>D-232</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 232 decisions</strong> — newest first. Highest allocated: <strong>D-233</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-233 | The music lane hears what a member types, and declines rather than inventing | IMPLEMENTED |
 | D-232 | She offers to look it up, and a failed turn stops being silent | IMPLEMENTED |
 | D-231 | The model is qwen3:14b and the window is 24576, both measured on the card that runs them | IMPLEMENTED |
 | D-230 | A new bot does not inherit another bot's history | IMPLEMENTED |
@@ -260,6 +261,66 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-233 - The music lane hears what a member types, and declines rather than inventing
+
+**Status: IMPLEMENTED** (CCB-S5-048, no migration). Four production faults in one afternoon,
+one root cause.
+
+**MEASURED FIRST, through the real resolver.** `scripts/measure-music-parse.ts` drives
+`ruleResolver` and `asksForMusic` over the exact sentences:
+
+| typed | intent | confidence |
+|---|---|---|
+| `1` | UNKNOWN | 0 |
+| `show me pls 1` | UNKNOWN | 0 |
+| `show me playlist 1` | MUSIC | 0.75 |
+| `play track 1 from playlist 1` | **MUSIC** | **0.92** |
+| `yes` | UNKNOWN | 0 |
+
+**That table splits the four faults into two different bugs**, which the "one root cause"
+reading would have missed. Three resolve UNKNOWN at confidence ZERO and were never claimed.
+The fourth is claimed at the HIGHEST confidence of the set and still answered "I hold no track
+by that name" - a parse defect INSIDE the lane, which no amount of fixing the fall-through
+would have touched.
+
+**THE FALL-THROUGH.** An unclaimed message reached free conversation, where the model holds
+the DJ sheet and nothing downstream requires its answer to be true. It invented
+*"Track one: 'Neon Dreams' by Synthwave Revival"* - no such track, no such artist - and
+announced *"Playin' some rock then. Hold on... here we go."* over a play that never happened.
+**There are 18 music persona keys and none of them produces that line**, which is how the model
+was identified as its author: had the lane handled it, the member would have got a track or one
+of its locked failure lines.
+
+**TWO GATES, not one, and the second was invisible until the first was moved.** The music claim
+sat one line BELOW `if (!explicit) return false`, so a bare answer to her own card never reached
+it. Moving it above fixed `yes` only while the 60-second follow-up window was open - and a
+numbered list stays live for TEN MINUTES. That nine-minute band was refused even earlier, at the
+address gate, before dispatch, with no near-miss and no conversation row. A live card now holds
+that door open, bounded by the card's own expiry rather than by a new setting.
+
+**WHAT THE LANE NOW HEARS**: a bare list position under a listing she printed (playlists list,
+tracks play); `pls 1` / `pl 2`, anchored on the NUMBER because `pls` is "playlist" in that one
+shape and "please" everywhere else; and `track N from playlist M`, resolved against the named
+playlist's own listing rather than against the title index.
+
+**AND IT DECLINES.** The lane's last resort was `return await overview()` - the "genre dump" a
+member got for answering "1". The overview reads as an answer, so a member cannot tell their
+number was never resolved. A music message carrying a NUMBER that reached the end now gets
+`musicNotUnderstood`; everything else still gets the overview, because a music question naming
+no position genuinely is the general question.
+
+**THE HARNESS WAS THE REASON THIS SURVIVED.** `verify:music` drove `CIND3R3LLA yes` and was
+green throughout - a sentence nobody types, because nobody repeats her name to answer a question
+she just asked. Every new case is written bare. Two of the new assertions went red against
+CORRECT behaviour on their first run (they named the wrong playlist: position one is Chillstep,
+not Evening Set) and the VERIFIER was fixed, not the code, which is D-111 in its own file.
+
+**The control that makes the widening safe**: with a card live, `thanks!` is claimed by nothing
+and she says nothing. Without it, "the lane hears more" and "she interjects into conversation"
+would be indistinguishable.
+
 ---
 
 ### D-232 - She offers to look it up, and a failed turn stops being silent

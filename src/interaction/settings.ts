@@ -178,6 +178,9 @@ export const PERSONA_KEYS = [
   'musicGenreTracks',
   'musicNothingToFollow',
   'musicSendFailed',
+  // CCB-S5-048, D-233: the lane claimed it and could not parse it. The decline that
+  // replaces the model, which invented a track rather than admitting the miss.
+  'musicNotUnderstood',
   'musicUploadNotAudio',
   'musicUploadTooLarge',
   'musicUploadNoFile',
@@ -274,6 +277,7 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   musicNotHeld: 'music',
   musicGenreTracks: 'music',
   musicNothingToFollow: 'music',
+  musicNotUnderstood: 'music',
   musicSendFailed: 'music',
   musicUploadNotAudio: 'music',
   musicUploadTooLarge: 'music',
@@ -560,6 +564,8 @@ const PERSONA_EN: PersonaStrings = {
   musicGenresSome: '🎵 Yes, I hold: {list}. Want a playlist, or shall I put one on?',
   musicNotHeld: '🎵 I looked, and I hold nothing by that name. Ask me what I do have and I will lay it out.',
   musicGenreTracks: '🎵 In the genre {genre}: {tracks}',
+  musicNotUnderstood:
+    '🎵 I did not follow that one. Give me a title, a playlist name, or a number from a list I just showed you.',
   musicNothingToFollow: '🎵 Nothing has played in this room yet. Tell me to play something and I will start.',
   musicSendFailed: '🎵 I found it, but the send failed on my way out. It is on record for the operator; ask me again in a little while.',
   musicUploadNotAudio: '🎧 I only re-send MP3 files. That one is not an MP3, so I will leave it be.',
@@ -760,6 +766,8 @@ const PERSONA_DE: PersonaStrings = {
   musicUnavailable: '🎵 Ich komme gerade nicht an meine Bibliothek.',
   musicGenreYes: '🎵 Das habe ich: {genre}, {tracks}. Willst du die Playlist, oder soll ich einen auflegen?',
   musicGenresSome: '🎵 Das habe ich: {list}. Willst du eine Playlist, oder soll ich einen auflegen?',
+  musicNotUnderstood:
+    '🎵 Das habe ich nicht verstanden. Nenn mir einen Titel, eine Playlist, oder eine Nummer aus einer Liste, die ich gerade gezeigt habe.',
   musicNotHeld: '🎵 Ich habe nachgesehen, davon habe ich nichts. Frag mich, was ich habe, und ich zeige es dir.',
   musicGenreTracks: '🎵 Im Genre {genre}: {tracks}',
   musicNothingToFollow: '🎵 Hier lief noch nichts. Sag mir, dass ich etwas spielen soll, dann fange ich an.',

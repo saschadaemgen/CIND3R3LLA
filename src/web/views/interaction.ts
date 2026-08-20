@@ -454,6 +454,10 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
   musicUnknownPlaylist: { label: 'Music: asked what is on a playlist she does not hold', vars: '' },
   musicTracks: { label: 'Music: what is on a named playlist (locked: the list is application fact)', vars: '{playlist} {tracks}' },
   musicUnknownTrack: { label: 'Music: asked to play a title she does not hold (names no title on purpose)', vars: '' },
+  musicNotUnderstood: {
+    label: 'Music: she could not parse a music message that named a number, and says so instead of guessing',
+    vars: '',
+  },
   musicBusy: { label: 'Music: asked while a send is still on its way to this room', vars: '' },
   musicUnavailable: { label: 'Music: the library or the transport is unreachable', vars: '' },
   musicGenreYes: { label: 'Music: a genre she holds, confirmed with its own count and an offer', vars: '{genre} {tracks}' },

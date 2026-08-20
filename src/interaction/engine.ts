@@ -218,6 +218,36 @@ const MUSIC_GENERIC_WORDS = new Set([
  */
 const MUSIC_AFFIRMATIVE = /^(?:yes(?:\s+please)?|ja(?:\s+bitte)?|go\s+on|put\s+one\s+on|mach\s+an|leg\s+los)\s*[.!?]*$/;
 
+/**
+ * A bare list position: "1", "2.", "nr 3" (CCB-S5-048, D-233).
+ *
+ * Only ever consulted while one of her own numbered lists is live, so it cannot claim a
+ * member counting something of their own in a quiet room.
+ */
+const MUSIC_BARE_INDEX = /^(?:nr\.?\s*|no\.?\s*|number\s+|nummer\s+)?([0-9]{1,3})\.?\s*[!?]*$/;
+
+/**
+ * "pls 1", "pl 2", "playlist 3" - the abbreviated listing request (CCB-S5-048, D-233).
+ *
+ * ANCHORED ON THE NUMBER, deliberately. `pls` is "playlist" in this shape and "please"
+ * in every other, so the number is what makes the reading unambiguous; without one this
+ * pattern would swallow "play something pls" and answer a courtesy as a list request.
+ */
+const MUSIC_SHORT_PLAYLIST_REF =
+  /^(?:show\s+me\s+|zeig\s+mir\s+|show\s+|zeig\s+)?(?:pls|pl|playlist|liste)\s*([0-9]{1,3})\.?\s*[!?]*$/;
+
+/**
+ * "track 2 from playlist 1", "song 3 of Evening Set" (CCB-S5-048, D-233).
+ *
+ * The most natural way anyone names one track of a list she has just printed, and the one
+ * the lane answered "I hold no track by that name" to: it CLAIMED the message at 0.92 and
+ * then matched the whole sentence against titles, because the index pattern required the
+ * argument to be nothing but a number. Both positions are captured so the track can be
+ * resolved inside the named playlist rather than against the title index.
+ */
+const MUSIC_TRACK_OF_LIST =
+  /^(?:track|titel|song|lied|nr\.?|number|nummer)\s*([0-9]{1,3})\s+(?:from|of|aus|von)\s+(?:the\s+|der\s+|die\s+|das\s+)?(?:playlist|liste|pls|pl)?\s*(.+?)\s*$/;
+
 function musicEscapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`);
 }
@@ -914,8 +944,20 @@ export class InteractionEngine {
       instruction = msg.text;
       explicit = true;
       strong = s.addressing.strongSignalReply;
-    } else if (inWindow) {
+    } else if (inWindow || this.musicCardLive(msg.groupId, now)) {
       // Mid-conversation (§2).
+      //
+      // ── A LIVE MUSIC CARD HOLDS THE DOOR OPEN TOO (CCB-S5-048, D-233) ────
+      //
+      // The follow-up window is 60 seconds and one of her numbered lists stays live for
+      // TEN MINUTES, so there is a nine-minute band in which she is still offering
+      // something and the member's answer to it is refused here, before dispatch, before
+      // the music lane, with no near-miss and no conversation row. A member who reads a
+      // list of three playlists and then types "1" is inside that band far more often
+      // than not.
+      //
+      // Bounded by the card's OWN expiry rather than by a new setting, so the door is
+      // open exactly as long as the offer it belongs to, and closes with it.
       instruction = msg.text;
       explicit = false;
       strong = s.addressing.strongSignalWindow;
@@ -1364,6 +1406,26 @@ export class InteractionEngine {
 
       case 'UNKNOWN':
       default:
+        // ── HER OWN FOLLOW-UP IS HERS, NAMED OR NOT (CCB-S5-048, D-233) ─────
+        //
+        // This check used to sit BELOW the `!explicit` return, and that one line of
+        // ordering produced three of the four faults in one conversation. A member who
+        // is answering a card she just printed does not type her name again: they type
+        // "1", or "yes". Both resolve UNKNOWN at confidence ZERO, both were therefore
+        // not explicit, and both stopped here without the music lane ever being asked.
+        //
+        // The harness did not catch it because it drove `CIND3R3LLA yes` - a sentence
+        // with her name in it, which nobody types when they are mid-exchange.
+        //
+        // Moving it above the gate is safe for the same reason it was written this way:
+        // `unclaimedMusicAsk` is a DETERMINISTIC predicate over the text and her own
+        // data (D-183). It matches a standing offer being taken, a number against a list
+        // she has just shown, or a subject drawn from her own DJ sheet. It cannot be
+        // talked into claiming a message by anything a model says.
+        if (await this.unclaimedMusicAsk(msg, instruction)) {
+          return await this.answerMusicSafely(msg, s, lang, instruction);
+        }
+
         // Inside the follow-up window an unrecognised message is far more likely
         // to be ordinary conversation than a failed instruction, so she says
         // nothing and lets it be archived like any other message.
@@ -1387,14 +1449,10 @@ export class InteractionEngine {
         // model can speak, and stays silent on a weak signal when it cannot, rather
         // than saying a canned sentence to something that may not have been aimed at
         // her. Strict mode is untouched, because a bare name never gets this far.
-        // D-221: two asks that carry no lexicon token and are still hers.
-        // A short affirmative while a genre card is live is the offer being
-        // taken; "do you have <thing she holds>" names its subject out of HER
-        // OWN vocabulary, the DJ sheet - a deterministic, data-driven
-        // predicate over the text, never a model's claim (D-183).
-        if (await this.unclaimedMusicAsk(msg, instruction)) {
-          return await this.answerMusicSafely(msg, s, lang, instruction);
-        }
+        //
+        // The music claim that used to sit here has moved ABOVE the `!explicit` gate
+        // (CCB-S5-048): it has to run for a message that does not carry her name, which
+        // is exactly the message a member sends when answering one of her cards.
 
         if (await this.freeConversation(msg, s, lang)) return true;
 
@@ -2538,17 +2596,45 @@ export class InteractionEngine {
    * deterministic predicates over the text and her own data; a failure to
    * answer is a false and stays in conversation.
    */
+  /**
+   * Is one of her own numbered lists still standing in this room (CCB-S5-048, D-233)?
+   *
+   * Pure and synchronous, because the address gate runs before anything is awaited and
+   * must not gain a database round trip per message. It reads only what the lane itself
+   * wrote, so a room she has shown nothing in is unaffected.
+   */
+  private musicCardLive(groupId: number, now: number): boolean {
+    const live = this.musicLists.get(groupId);
+    return live !== undefined && live.expiresAt > now;
+  }
+
   private async unclaimedMusicAsk(msg: CapturedMessage, instruction: string): Promise<boolean> {
     const music = this.deps.music?.() ?? null;
     if (music === null) return false;
     const text = instruction.toLowerCase().trim();
     const live = this.musicLists.get(msg.groupId);
-    if (
-      live !== undefined && live.expiresAt > this.now() &&
-      live.kind === 'genre' && MUSIC_AFFIRMATIVE.test(text)
-    ) {
+    const cardLive = live !== undefined && live.expiresAt > this.now();
+    if (cardLive && live.kind === 'genre' && MUSIC_AFFIRMATIVE.test(text)) {
       return true;
     }
+    // ── A NUMBER ANSWERS THE LIST IT WAS PRINTED UNDER (CCB-S5-048, D-233) ──
+    //
+    // She numbers every list she shows: "1. Evening Set (3), 2. ...". A member answering
+    // one types the number and nothing else, which is the most natural reply there is and
+    // was the one thing the lane could not hear. It reached the model, which had the DJ
+    // sheet in its prompt and answered with a track that does not exist.
+    //
+    // Bounded by the live card BOTH ways: no list, no claim. A bare "1" in a room where
+    // she has shown nothing is a member counting something of their own, and it stays
+    // conversation exactly as it does today.
+    if (cardLive && (live.kind === 'playlists' || live.kind === 'tracks') && MUSIC_BARE_INDEX.test(text)) {
+      return true;
+    }
+    // The abbreviated listing request, disambiguated by the NUMBER rather than by hope:
+    // "pls" is "playlist" here and "please" everywhere else in the language, so it is
+    // claimed only in the one shape where it cannot be the courtesy - immediately in
+    // front of a list position.
+    if (MUSIC_SHORT_PLAYLIST_REF.test(text)) return true;
     if (MUSIC_NEXT_HOOK.test(text)) return true;
     try {
       const nextNamed = MUSIC_NEXT_BARE.exec(text);
@@ -2808,6 +2894,82 @@ export class InteractionEngine {
       if (handled !== null) return handled;
     }
 
+    // ── A BARE NUMBER ANSWERS THE LIST IT WAS PRINTED UNDER (CCB-S5-048) ────
+    //
+    // Sits ABOVE the play branch because it is not a play: answering "1" under a list of
+    // PLAYLISTS asks what is on playlist one, and the member who did that got the general
+    // overview - every genre she holds - because the lane's last resort is `overview()`.
+    // Under a list of TRACKS the same number does play, which is what a member who has
+    // just been shown three titles means by it.
+    const bareIndex = MUSIC_BARE_INDEX.exec(text);
+    if (bareIndex !== null && live !== undefined) {
+      const n = Number(bareIndex[1]);
+      if (live.kind === 'playlists') {
+        const name = live.playlists?.[n - 1];
+        if (name === undefined) {
+          await this.reply(msg, s, lang, 'musicUnknownPlaylist', {}, MUSIC_REPLY);
+          return true;
+        }
+        return await listTracksOf(name);
+      }
+      if (live.kind === 'tracks') {
+        const item = live.tracks?.[n - 1];
+        if (item === undefined) {
+          await this.reply(msg, s, lang, 'musicUnknownTrack', {}, MUSIC_REPLY);
+          return true;
+        }
+        await playOutcomeReply(await music.playById(msg.groupId, item.id));
+        return true;
+      }
+    }
+
+    // "pls 1" / "pl 2" / "playlist 3": the abbreviated listing request, resolved against
+    // the live listing when there is one and against her own view when there is not, so
+    // the answer is the same whichever way the member arrived at the number.
+    const shortRef = MUSIC_SHORT_PLAYLIST_REF.exec(text);
+    if (shortRef !== null) {
+      const n = Number(shortRef[1]);
+      const name =
+        (live?.kind === 'playlists' ? live.playlists?.[n - 1] : undefined) ??
+        (await music.view()).playlists[n - 1]?.name;
+      if (name === undefined) {
+        await this.reply(msg, s, lang, 'musicUnknownPlaylist', {}, MUSIC_REPLY);
+        return true;
+      }
+      return await listTracksOf(name);
+    }
+
+    // ── "track 1 from playlist 1" (CCB-S5-048) ──────────────────────────────
+    //
+    // Claimed at 0.92 and answered "I hold no track by that name", because the index
+    // pattern inside the play branch requires the whole argument to BE a number and this
+    // one carries its source with it. Resolved against the named playlist's own listing,
+    // which is what the member is reading from.
+    const trackOfList = MUSIC_TRACK_OF_LIST.exec(text.replace(/^(?:play|spiele?)\s+/, ''));
+    if (trackOfList !== null) {
+      const n = Number(trackOfList[1]);
+      const ref = (trackOfList[2] ?? '').replace(/["'?.!]/g, '').trim();
+      const view = await music.view();
+      const refIndex = /^([0-9]{1,3})\.?$/.exec(ref);
+      const listName =
+        refIndex !== null
+          ? ((live?.kind === 'playlists' ? live.playlists?.[Number(refIndex[1]) - 1] : undefined) ??
+            view.playlists[Number(refIndex[1]) - 1]?.name)
+          : view.playlists.find((pl) => musicNamesWord(ref, pl.name))?.name;
+      if (listName === undefined) {
+        await this.reply(msg, s, lang, 'musicUnknownPlaylist', {}, MUSIC_REPLY);
+        return true;
+      }
+      const listing = await music.tracksOf(listName);
+      const item = listing?.items[n - 1];
+      if (item === undefined) {
+        await this.reply(msg, s, lang, 'musicUnknownTrack', {}, MUSIC_REPLY);
+        return true;
+      }
+      await playOutcomeReply(await music.playById(msg.groupId, item.id));
+      return true;
+    }
+
     // "play ..." - ONLY here does anything play.
     const play = /^(?:play|spiele?)\s+(?:me\s+|mir\s+|us\s+|uns\s+)?(.+)$/.exec(text);
     if (play !== null) {
@@ -2932,6 +3094,25 @@ export class InteractionEngine {
         .filter((t) => t.length > 0);
       if (leftovers.every((t) => MUSIC_GENERIC_WORDS.has(t))) return await overview();
       await this.reply(msg, s, lang, 'musicNotHeld', {}, MUSIC_REPLY);
+      return true;
+    }
+
+    // ── THE LANE DECLINES RATHER THAN GUESSING (CCB-S5-048, D-233) ──────────
+    //
+    // This used to be a bare `return await overview()`, and that is the "genre dump" a
+    // member got for answering "1". The overview is the right answer to a GENERAL music
+    // question and the wrong answer to a specific one she failed to parse: it reads as an
+    // answer, so the member cannot tell that the number they gave her was never resolved.
+    //
+    // A message carrying a NUMBER got here because every branch that could resolve that
+    // number missed. Saying so is the whole of the fix the briefing asks for: once the
+    // lane claims a message, it answers it or it declines, and it never hands the member
+    // something that merely looks like an answer.
+    //
+    // Everything else still gets the overview, because a music question that names no
+    // position is genuinely the general question.
+    if (/[0-9]/.test(text)) {
+      await this.reply(msg, s, lang, 'musicNotUnderstood', {}, MUSIC_REPLY);
       return true;
     }
     return await overview();

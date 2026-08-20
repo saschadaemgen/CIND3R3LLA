@@ -845,19 +845,85 @@ async function main(): Promise<void> {
     replies[0] ?? '(none)');
   check('  the card is an answer, not a play: nothing was sent', calls.length === 0, JSON.stringify(calls));
 
-  // THE OFFER TAKEN: the card stands, a short affirmative plays from it.
+  // ── THE OFFER TAKEN, IN THE WORDS A MEMBER ACTUALLY USES (CCB-S5-048) ────
+  //
+  // This drove `CIND3R3LLA yes` for its whole life and was green for all of it, while
+  // production was broken: NOBODY types her name to answer a question she just asked. A
+  // bare "yes" resolves UNKNOWN at confidence zero and is therefore not explicit, so it
+  // hit `if (!explicit) return false` and never reached the music lane at all.
+  //
+  // The wake-word form is kept BELOW as a second case rather than replaced, because both
+  // must work; what changed is that the bare form is now the one that has to pass first.
   replies.length = 0; calls.length = 0;
   clock = new Date(clock.getTime() + 61_000);
-  await dj.handle(makeMsg('CIND3R3LLA yes'));
-  check("the offer works: 'yes' after the card plays a track of THAT genre",
+  await dj.handle(makeMsg('yes'));
+  check("THE OFFER TAKEN BARE: 'yes' with no wake word plays a track of THAT genre",
     calls.some((c) => c.kind === 'voice' || c.kind === 'video'), JSON.stringify(calls));
+  check('  and she said nothing that merely LOOKS like a play',
+    !replies.some((r) => /playin|here we go|hold on/i.test(r)), JSON.stringify(replies));
 
   // NEGATIVE CONTROL: an affirmative with no standing offer plays nothing.
   replies.length = 0; calls.length = 0;
   clock = new Date(clock.getTime() + 61_000);
-  await dj.handle(makeMsg('CIND3R3LLA yes', 9922));
+  await dj.handle(makeMsg('yes', 9922));
   check('POSITIVE CONTROL of the offer: a bare yes with NO card live plays nothing',
     calls.length === 0, JSON.stringify(calls));
+
+  // ── THE FOUR PRODUCTION FAULTS, EACH IN THE MEMBER'S OWN WORDS ───────────
+  //
+  // Every one of these was typed by a member on one afternoon and every one was answered
+  // by the model rather than by the lane, because the lane never claimed it. They are
+  // written here bare, without her name, because that is how they were typed.
+
+  // FAULT 1: a bare number under a list of PLAYLISTS asks what is on that playlist.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA which playlists do you have?'));
+  replies.length = 0; calls.length = 0;
+  await dj.handle(makeMsg('1'));
+  // Position ONE is Chillstep, not Evening Set. The first draft of this assertion named
+  // the wrong playlist and went red against CORRECT behaviour, which is the D-111 shape:
+  // the verifier was wrong and the implementation was right.
+  check("FAULT 1: a bare '1' under a playlist listing lists THAT playlist",
+    replies.length === 1 && (replies[0] ?? '').includes('On the playlist Chillstep'),
+    replies[0] ?? '(none)');
+  check('  and it is a listing, not a play', calls.length === 0, JSON.stringify(calls));
+
+  // FAULT 2: the abbreviated form. It invented "Neon Dreams by Synthwave Revival".
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('show me pls 1'));
+  check("FAULT 2: 'show me pls 1' is the lane's, not the model's",
+    replies.length === 1 && (replies[0] ?? '').includes('On the playlist Chillstep'),
+    replies[0] ?? '(none)');
+
+  // FAULT 3: the most natural full phrasing, claimed at 0.92 and answered wrongly.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('play track 1 from playlist 1'));
+  check("FAULT 3: 'play track 1 from playlist 1' plays, rather than 'no track by that name'",
+    calls.some((c) => c.kind === 'voice' || c.kind === 'video'),
+    `${JSON.stringify(calls)} ${JSON.stringify(replies)}`);
+
+  // THE CONTROL ON THE WIDENED DOOR. A live card lets a bare message REACH the lane; it
+  // must not make her answer ordinary conversation. "thanks!" with a card standing is
+  // claimed by nothing, so she says nothing, exactly as before the door was widened.
+  // Without this, "the lane hears more" would be indistinguishable from "she interjects".
+  replies.length = 0; calls.length = 0;
+  await dj.handle(makeMsg('thanks!'));
+  check('CONTROL: a live card does NOT make her answer ordinary chat',
+    replies.length === 0 && calls.length === 0,
+    `${JSON.stringify(replies)} ${JSON.stringify(calls)}`);
+
+  // THE DECLINE. A music message carrying a number that resolves to nothing says so,
+  // and must NEVER be the overview, which reads as an answer to a question never parsed.
+  replies.length = 0; calls.length = 0;
+  clock = new Date(clock.getTime() + 61_000);
+  await dj.handle(makeMsg('CIND3R3LLA play the 47th thing off list 93'));
+  check('THE DECLINE: an unparseable numbered music message declines rather than dumping the overview',
+    replies.length === 1 && !/genre|tracks in total|playlists:/i.test(replies[0] ?? ''),
+    replies[0] ?? '(none)');
+  check('  and it played nothing', calls.length === 0, JSON.stringify(calls));
 
   // A general have-ask names nothing and stays general.
   replies.length = 0;
