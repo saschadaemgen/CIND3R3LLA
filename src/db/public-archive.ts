@@ -334,7 +334,14 @@ export async function listPublishedItems(
 
   const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const countRes = await db.query<{ n: string }>(
-    `SELECT count(*) AS n FROM published_messages m ${whereSql}`,
+    /*
+       * READS THE INDEX, NOT THE CONTENT VIEW (CCB-S5-051, D-236). This wants a number, and
+       * `published_messages` computes a `formatted` column from `raw_json`, which on the
+       * operator's archive is 207 MB of TOAST it would detoast and discard. Measured on his
+       * data: 2,323 ms through the content view, 194 ms through the index.
+       * `verify:cheap-queries` fails if this is pointed back.
+       */
+      `SELECT count(*) AS n FROM published_message_index m ${whereSql}`,
     params,
   );
 
@@ -486,7 +493,14 @@ export async function listPublishedIds(
 
   const { whereSql, params } = buildPublishedWhere(enabledTypes, f, scope);
   const countRes = await db.query<{ n: string }>(
-    `SELECT count(*) AS n FROM published_messages m ${whereSql}`,
+    /*
+       * READS THE INDEX, NOT THE CONTENT VIEW (CCB-S5-051, D-236). This wants a number, and
+       * `published_messages` computes a `formatted` column from `raw_json`, which on the
+       * operator's archive is 207 MB of TOAST it would detoast and discard. Measured on his
+       * data: 2,323 ms through the content view, 194 ms through the index.
+       * `verify:cheap-queries` fails if this is pointed back.
+       */
+      `SELECT count(*) AS n FROM published_message_index m ${whereSql}`,
     params,
   );
 
@@ -574,7 +588,7 @@ export async function listPublishedSpanState(
     p2.push(top.sentAt, top.id);
     const ex = await db.query<{ e: boolean }>(
       `SELECT EXISTS(
-         SELECT 1 FROM published_messages m ${w2}
+         SELECT 1 FROM published_message_index m ${w2}
          AND (m.sent_at > ${nTs}::timestamptz
               OR (m.sent_at = ${nTs}::timestamptz AND m.id > ${nId}::bigint))
        ) AS e`,
@@ -598,7 +612,7 @@ export async function listPublishedSpanState(
  */
 export async function isPublished(db: Queryable, messageId: number): Promise<boolean> {
   const { rows } = await db.query<{ one: number }>(
-    'SELECT 1 AS one FROM published_messages WHERE id = $1',
+    'SELECT 1 AS one FROM published_message_index WHERE id = $1',
     [messageId],
   );
   return rows.length > 0;
@@ -677,7 +691,7 @@ export async function publishedLastmod(
   if (enabledTypes.length === 0) return null;
   const list = enabledTypes.map((t) => `'${t}'`).join(', ');
   const { rows } = await db.query<{ ts: string | null }>(
-    `SELECT max(sent_at) AS ts FROM published_messages
+    `SELECT max(sent_at) AS ts FROM published_message_index
       WHERE in_stream AND type IN (${list})`,
   );
   const ts = rows[0]?.ts;
@@ -740,7 +754,7 @@ export async function countPublishedMatching(
   const term = q.trim();
   if (!term) return 0;
   const { rows } = await db.query<{ n: string }>(
-    `SELECT count(*) AS n FROM published_messages
+    `SELECT count(*) AS n FROM published_message_index
      WHERE search @@ websearch_to_tsquery('simple', $1)
        AND group_id = $2
        AND group_msg_id <> $3
@@ -765,7 +779,7 @@ export async function listPublishedItemRefs(
   if (enabledTypes.length === 0) return [];
   const list = enabledTypes.map((t) => `'${t}'`).join(', ');
   const { rows } = await db.query<{ id: string; ts: string }>(
-    `SELECT id, sent_at::text AS ts FROM published_messages
+    `SELECT id, sent_at::text AS ts FROM published_message_index
       WHERE in_stream AND type IN (${list})
       ORDER BY sent_at DESC, id DESC
       LIMIT $1`,
@@ -808,7 +822,7 @@ export async function listPublishedChannels(
     `SELECT bridge_channel_public_id AS pid,
             max(bridge_channel_name) AS name,
             count(*) AS n
-       FROM published_messages
+       FROM published_message_index
       WHERE bridge_channel_public_id IS NOT NULL
         AND type IN (${list})
         ${scope === 'stream' ? 'AND in_stream' : ''}
@@ -828,7 +842,7 @@ export async function latestPublishedImageId(
 ): Promise<number | null> {
   if (!enabledTypes.includes('image')) return null;
   const { rows } = await db.query<{ id: string }>(
-    `SELECT id FROM published_messages
+    `SELECT id FROM published_message_index
      WHERE in_stream AND type = 'image'::message_type AND media_path IS NOT NULL
      ORDER BY sent_at DESC, id DESC
      LIMIT 1`,

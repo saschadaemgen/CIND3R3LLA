@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 234 decisions</strong> — newest first. Highest allocated: <strong>D-235</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 235 decisions</strong> — newest first. Highest allocated: <strong>D-236</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-236 | The stream stops reading everything to count anything | IMPLEMENTED |
 | D-235 | A control belongs on the page where the decision is made | IMPLEMENTED |
 | D-234 | She looks rather than offering to look | IMPLEMENTED |
 | D-233 | The music lane hears what a member types, and declines rather than inventing | IMPLEMENTED |
@@ -263,6 +264,82 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-236 - The stream stops reading everything to count anything
+
+**Status: IMPLEMENTED** (CCB-S5-051, migration 069). Stages 0 to 3 of the briefing; stage 4
+(the file-completion signal) is not in this entry.
+
+**MEASURED ON HIS DATA, NOT ON A FIXTURE.** 5,186 messages, 1,856 published, and a page that
+took ten seconds. The archive is 3,312 kB of heap and **207 MB of TOAST**, all of it
+`raw_json` at 39 KB a row.
+
+| query | before | after |
+|---|---|---|
+| `count(*)` | 2,323 ms | **202 ms** |
+| channel list | 2,440 ms | **195 ms** |
+| id hash | 2,039 ms | **172 ms** |
+| page of 20 | 520 ms | **204 ms** |
+| **total** | **7,322 ms** | **773 ms** |
+
+Proven inside a transaction that was rolled back, so production was never altered.
+Preservation, which is the rule that mattered: **1,857 published before and after, zero lost,
+zero gained**, and the stream subset identical, by `EXCEPT` in both directions.
+
+**TWO FAULTS, AND THE ONE I NAMED WAS THE SMALLER.** This is the finding the operator asked
+to be recorded as its own, because it changed what the fix had to be.
+
+The briefing named `raw_json` - the visible expensive column, and a real fault: `count(*)` over
+`messages` is 4.6 ms while `sum(length(raw_json::text))` is 2,275 ms, and `published_messages`
+reads it for its `formatted` column, so a query wanting one number detoasted 207 MB it
+discarded. But measured against the same predicate, the content view cost **~577 ms** of the
+count's 2,323, and **~1.7 s came from underneath it**, in `message_publish_state`, which
+references no content column at all.
+
+That second cost was the reply chain. A reply publishes only when its parent does, expressed
+as `EXISTS (SELECT 1 FROM base q WHERE q.id = base.reply_to_id AND q.self_published)` - a CTE
+**referencing itself**. Referenced twice, Postgres materialises it and compiles the EXISTS into
+a hashed SubPlan that must be built in full before the outer scan emits a row. That is why the
+plan showed a `Seq Scan` with **1,362 ms of startup and 8 ms of scanning**, every buffer a
+cache hit and no I/O: the time was never the scan, and no child node accounted for it.
+
+Isolated by elimination rather than assumed: the whole FROM clause including both cross-joined
+settings views is 5.4 ms, the nine `settings` InitPlans total under 0.5 ms, and every
+individual subquery is 2 to 15 ms. Computing `self_published` for all 5,188 rows is **104 ms**;
+adding the chain check makes it **1,750 ms**. It is paid to decide 493 rows - only 1,304
+messages have a `reply_to_id` at all.
+
+**A fix aimed only at the column I named would have left a five-second page.** Splitting
+content out removes ~600 ms from each of three queries; the chain floor would have remained
+under all of them. Both were needed, and only one was visible.
+
+**THE FIXES.** The chain now evaluates as an explicit `LEFT JOIN base p ON p.id = b.reply_to_id`
+with `COALESCE(p.self_published, false)`, which reproduces the EXISTS exactly: a missing parent
+and an unpublished parent both yield false. `published_message_index` carries publication plus
+the columns a filter or an ORDER BY needs, and no content column.
+
+**THE FIXTURE LESSON, which is why this was missed twice.** The first investigation reported
+`listPublishedChannels` as "3 ms flat and does not move with volume" and the channel work as a
+6% regression. Both were wrong by two orders of magnitude - it is 2,440 ms on his data - because
+the fixture seeded `'{}'::jsonb` for `raw_json` and therefore had no TOAST at all. **A fixture
+that omits the expensive column measures a system nobody runs.** Seed representative sizes or
+measure on the host; both were available and neither was used.
+
+**NOT A RECENT REGRESSION, and he should know it.** `formatted` arrived with migration 019 and
+the reply chain is older. Nothing in the channel work caused this. The archive grew until the
+fault hurt, and the channel work added a third O(total) query on top of the two already there.
+The same shape returns as the archive grows, which is why `verify:cheap-queries` exists rather
+than a convention: it refuses a count, hash, DISTINCT or EXISTS that reads a content-bearing
+view, stated as a shape rather than a column list because a deny-list of expensive columns
+fails open (D-201) and the column nobody listed is exactly how this happened. Mutation-proven
+both ways, including that "no violations" cannot be reached by deleting the feature.
+
+**One honesty note on method**: the index view's column list was assembled across four rounds
+of red checks rather than by reading the call sites first. Every column added is small and
+inline and the measured cost did not move, but finding them by breaking things was the slower
+way round.
+
 ---
 
 ### D-235 - A control belongs on the page where the decision is made

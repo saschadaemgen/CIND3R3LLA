@@ -540,14 +540,33 @@ async function main(): Promise<void> {
         'TRUE',
       );
     check('the mutation found the predicate to remove', mutated !== sql.slice(start));
+    // ── THE INDEX VIEW STANDS ON THESE (CCB-S5-051, D-236) ──────────────────
+    //
+    // This block re-runs 062's `DROP VIEW ... CREATE VIEW ...` against a database that has
+    // since moved on, and `published_message_index` now depends on `message_publish_state`,
+    // so the DROP fails with "other objects depend on it". Dropped and rebuilt around the
+    // replay rather than CASCADEd: a CASCADE here would quietly remove whatever a later
+    // migration adds and the check would go on passing while testing less than it says.
+    const indexSql = files.find((m) => m.name.startsWith('069_'))?.sql ?? '';
+    check('the index view migration was found, so the rebuild below is real', indexSql !== '');
+    // ONLY the index view comes back here, never the whole of 069. The first draft replayed
+    // all of it and silently UNDID the mutation, because 069 also replaces
+    // `message_publish_state` and would put the real switch predicate straight back. The
+    // check then reported the leak as absent, which is a mutation proving nothing.
+    const indexOnly = indexSql.slice(indexSql.indexOf('CREATE VIEW published_message_index'));
+    check('the index view can be rebuilt on its own', indexOnly.startsWith('CREATE VIEW'));
+    await pg.exec('DROP VIEW IF EXISTS published_message_index;');
     await pg.exec(mutated);
+    await pg.exec(indexOnly);
     const leaked = (await publishedIds(db)).includes(MSG);
     check(
       'MUTATION: with the switch predicate gone, an UNPUBLISHED channel\'s post is publicly readable',
       !before && leaked,
     );
     // Restore, and prove the restoration actually restored.
+    await pg.exec('DROP VIEW IF EXISTS published_message_index;');
     await pg.exec(sql.slice(start));
+    await pg.exec(indexSql);
     check(
       '  and the real view refuses it again, so the mutation was the only difference',
       !(await publishedIds(db)).includes(MSG),
