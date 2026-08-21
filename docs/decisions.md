@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 243 decisions</strong> — newest first. Highest allocated: <strong>D-244</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 245 decisions</strong> — newest first. Highest allocated: <strong>D-248</strong>. Not allocated: D-108, D-245, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-248 | Nothing disagreed; the log line could not be attributed | IMPLEMENTED |
+| D-247 | Her own law stopped contradicting her own capability | IMPLEMENTED |
 | D-244 | A snippet is not a page, so it is not cited as one | IMPLEMENTED |
 | D-243 | The attribution names what the answer used, and retrieval stops running on everything | IMPLEMENTED |
 | D-242 | The source line is off, because a false attribution is worse than none | IMPLEMENTED |
@@ -272,6 +274,91 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-248 - Nothing disagreed; the log line could not be attributed
+
+**Status: IMPLEMENTED** (CCB-S5-057, no migration). The report was of a console/runtime
+disagreement. There is none, and the evidence is worth keeping because this is the second time
+the same misreading has been reported.
+
+**WHAT THE DATABASE SAYS**, which is the only side that is neither surface:
+
+```
+10 | capture        | enabled | true   | 2026-08-13
+10 | channel-bridge | enabled | true   | 2026-08-12
+10 | music          | enabled | true   | 2026-08-15
+14 | capture        | enabled | false  | 2026-08-15
+14 | channel-bridge | enabled | false  | 2026-08-12
+```
+
+**WHAT THE RUNTIME SAID AT THAT BOOT**, untruncated from the journal:
+
+```
+bot: 'Cinderella'    plugins: 'capture:on(own) channel-bridge:on(own) ... music:on(own) ...'
+bot: 'Rick Sanchez'  plugins: 'capture:off(own) channel-bridge:off(own) ... music:off ...'
+```
+
+The reported line is Rick Sanchez's, character for character, including the `music:off` with no
+`(own)` that his row set explains exactly: bot 14 has no music override, so it inherits the
+shared state. **Bot 10 is on in the database, on in the console, and on in the runtime.** Nothing
+read the wrong bot or the wrong scope.
+
+**AND A DEPLOY WRITES NOTHING.** The newest override row in the deployment is 2026-08-15, and
+zero rows were written on 2026-08-21 despite several restarts that day. The earlier report of
+"the same three switching off after a deploy" was this same misattribution, not a boot-line
+snapshot and not a write.
+
+**SO WHY DID IT READ THAT WAY, TWICE.** The failure is legibility, and it is structural rather
+than careless. The two bots boot thirteen milliseconds apart; the pretty-printed log object puts
+`bot:` six lines above `plugins:`; and the shared-wake-word WARN naming the FIRST bot sits
+between the two blocks. So the nearest bot name above the SECOND bot's capability line is the
+first bot's name. Anybody scrolling that journal reads Rick's capabilities as Cinderella's.
+
+The capability summary is now its own single line that names its own bot.
+
+**THE LESSON, WHICH IS D-205 POINTING AT A LOG RATHER THAN A PAGE.** A surface is a claim about
+state, and a claim nobody can attribute is not one they can check. The rule has been applied to
+console pages three times this season; a log line is a surface too, it is the one an operator
+reads when something is wrong, and it has to be readable ALONE - not in the order it happened to
+be written, and not next to whatever else was logged in the same millisecond.
+
+**And the report was still worth making.** An operator who sees a capability off that he set on
+should say so every time, and the cost of checking was one query. The thing to fix was the
+instrument, not his reading of it.
+
+---
+
+### D-247 - Her own law stopped contradicting her own capability
+
+**Status: IMPLEMENTED** (CCB-S5-057, migration 073).
+
+The operator read it on the Book page: *"You cannot see anything that was said before the
+message in front of you."* She HAS conversation memory. It was built in CCB-S4-044 and it
+works.
+
+**IT WAS NOT SIMPLY LEFT BEHIND, WHICH IS THE INTERESTING PART.** Migration 038 replaced the
+two absolute no-memory rules with a PAIR selected by condition: `grounding.memory-window` when
+there is history, `grounding.no-memory-beyond` when there is none. Read against its own
+condition the sentence is true, in the narrow sense that on a turn with no history there is
+nothing to see. So every check passed and nothing was stale.
+
+**But a law is not read against its condition.** The model reads it as a standing statement
+about itself, and the Book of Elii prints every law regardless of what selects it - which is
+exactly how he found it. "You cannot see anything that was said before" is absolute in its own
+words and the reader has no way to know it is conditional. D-140's own lesson applies to the
+rule that replaced D-140's rules: the two ways of being wrong are claiming perfect recall and
+denying she has any, and this one did the second.
+
+The reword says what is true ON THIS TURN without denying the capability: nothing from earlier
+was given to her this time. Same guarantee - she still may not pretend to remember and still
+may not imply she chose not to keep track - with the false half gone.
+
+**AND THE LESSON THAT GENERALISES.** A conditional rule is still read as an unconditional
+sentence, by the model and by anybody who opens the Book. When a rule's truth depends on the
+condition that selected it, the wording has to carry that dependency, because the reader never
+sees the condition.
+
 ---
 
 ### D-244 - A snippet is not a page, so it is not cited as one

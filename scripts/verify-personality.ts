@@ -736,8 +736,9 @@ async function main(): Promise<void> {
   // is the sentence that replaced it, for a prompt carrying NO history, which is the case
   // this fixture is.
   check(
-    'with nothing to see, she is told she cannot see anything earlier',
-    clocked.includes('You cannot see anything that was said before the message in front of you'),
+    // Reworded under CCB-S5-057 (D-247); see verify-memory for why the old sentence went.
+    'with nothing to see, she is told nothing earlier was given to her',
+    clocked.includes('Nothing from earlier in this chat has been given to you this time'),
   );
   check(
     'and told to say so rather than deflect, which is the observed defect',

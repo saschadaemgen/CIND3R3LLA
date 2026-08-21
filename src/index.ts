@@ -963,15 +963,33 @@ async function startCaptureWorker(
         wakeWord: effective.wakeWord,
         nicknames: effective.nicknames.words.length,
         addressingMode: effective.addressing.mode,
-        // What this bot can be asked for (CCB-S5-021), on the same terms as the wake word
-        // above and for the same reason: capability travels through a settings key, a
-        // per-bot override, a cache and a refresh, and a failure at any of them reads from
-        // the group as her not understanding the question.
-        plugins: plugins
-          .list(id)
-          .map((p) => `${p.id}:${p.enabled ? 'on' : 'off'}${p.inherited ? '' : '(own)'}`)
-          .join(' '),
       });
+
+      // ── AND THE CAPABILITIES ON A LINE THAT NAMES ITS OWN BOT ─────────────
+      //
+      // What this bot can be asked for (CCB-S5-021): capability travels through a settings
+      // key, a per-bot override, a cache and a refresh, and a failure at any of them reads
+      // from the group as her not understanding the question.
+      //
+      // IT USED TO BE A FIELD IN THE OBJECT ABOVE, AND THAT IS WHY IT IS NOT NOW (D-248).
+      // Two bots boot thirteen milliseconds apart, the pretty-printed object puts `bot:`
+      // six lines above `plugins:`, and the shared-wake-word WARN naming the FIRST bot
+      // sits between the two blocks. So the nearest bot name above the second bot's
+      // capability line is the first bot's name, and the operator read Rick Sanchez's
+      // "capture:off channel-bridge:off music:off" as Cinderella's - twice, weeks apart,
+      // reporting both times that the console and the runtime disagreed. They never did:
+      // the database, the page and the runtime all say every plugin is on for Cinderella.
+      //
+      // Nothing was wrong except that a surface could not be read on its own, which is the
+      // D-205 family: a surface is a claim about state, and a claim nobody can attribute is
+      // not one they can check. One line, self-identifying, greppable.
+      log.info(
+        `Bot "${bot.config.displayName}" can be asked for: ` +
+          plugins
+            .list(id)
+            .map((p) => `${p.id}:${p.enabled ? 'on' : 'off'}${p.inherited ? '' : '(own)'}`)
+            .join(' '),
+      );
       if (effective.wakeWord === interaction.get().wakeWord && host.bots.length > 1) {
         // Not necessarily wrong: a bot may legitimately be on the shared value. It is
         // worth saying out loud with more than one bot, because two bots on one wake word

@@ -330,8 +330,15 @@ async function main(): Promise<void> {
     (withHistory.match(/at most \d+ of them/) ?? [])[0] ?? '',
   );
   check(
-    'without history she is told she cannot see anything earlier',
-    systemPrompt(request({ history: [] }), 500).includes('You cannot see anything that was said before'),
+    // REWORDED under CCB-S5-057 (D-247). The old sentence denied a capability she HAS -
+    // the Book prints every law regardless of its condition, so an operator read
+    // "You cannot see anything that was said before" as a standing statement about her and
+    // it contradicted the memory feature. What must still hold is that on a turn with no
+    // history she says so plainly rather than pretending to remember.
+    'without history she is told nothing earlier was given to her this time',
+    systemPrompt(request({ history: [] }), 500).includes(
+      'Nothing from earlier in this chat has been given to you this time',
+    ),
   );
   check(
     'and she is never told she has no memory at all any more',
