@@ -399,6 +399,43 @@ function dedupeByAdminPath<T extends { adminPath?: string; intents?: readonly un
   return [...noPath, ...byPath.values()];
 }
 
+/**
+ * Which plugins are SECTIONS rather than single pages (D-225, the operator's sidebar rule).
+ *
+ * ── WHY THIS IS DATA AND NOT A CONDITIONAL ───────────────────────────────────
+ *
+ * The music section was a `plugin.id === 'music'` ternary in the middle of the nav builder.
+ * That worked, and the moment a SECOND plugin needed the same shape it would have become a
+ * second branch, and the third a third. The sidebar rule is console-wide, so the thing that
+ * decides which plugins have sub-pages is a table anybody can add a row to.
+ *
+ * ── AND WHY DECLARING THEM IS THE WHOLE FIX ──────────────────────────────────
+ *
+ * `deepestSectionFor` in html.ts already implements the rule correctly and generically: it
+ * returns the deepest OPENED node that has children, and the sidebar renders that node's
+ * children. A page whose nav entry has no children therefore cannot be that node, so the
+ * sidebar falls back to its parent and shows the sibling menu - which is exactly what the
+ * operator saw twice and found himself both times. The rule was never wrong; the DATA was
+ * missing. So a section is created by adding a row here and serving one route per row.
+ */
+const PLUGIN_SUB_PAGES: Record<string, { key: string; href: string; label: string }[] | undefined> = {
+  music: [
+    { key: 'library', href: '/music', label: 'Library' },
+    { key: 'playlists', href: '/music/playlists', label: 'Playlists' },
+    { key: 'assignments', href: '/music/assignments', label: 'Assignments' },
+    { key: 'storage', href: '/music/storage', label: 'Storage' },
+  ],
+  // CCB-S5-058: one page you scrolled for a kilometre, split along the seams that were
+  // already there as cards.
+  'channel-bridge': [
+    { key: 'channels', href: '/bridge', label: 'Channels' },
+    { key: 'mappings', href: '/bridge/mappings', label: 'Mappings' },
+    { key: 'publishing', href: '/bridge/publishing', label: 'Publishing' },
+    { key: 'log', href: '/bridge/log', label: 'Forward log' },
+    { key: 'diagnostics', href: '/bridge/diagnostics', label: 'Diagnostics' },
+  ],
+};
+
 export function registerNav(): void {
   setNavItems([
     {
@@ -711,29 +748,25 @@ export function registerNav(): void {
         // use. It still appears on the Plugins LIST, with its switch, linking here.
         ...dedupeByAdminPath(listPlugins())
           .filter((plugin) => plugin.livesUnderNav === undefined)
-          .map((plugin) =>
-            plugin.id === 'music'
-              ? {
-                  // The music section (D-225): four sub-pages under the plugin, which
-                  // the contextual sidebar shows as the section's own nav.
-                  key: `plugin:${plugin.id}`,
-                  href: plugin.adminPath,
-                  label: plugin.name,
-                  icon: icon('plugin'),
-                  children: [
-                    { key: 'music:library', href: '/music', label: 'Library', icon: icon('plugin') },
-                    { key: 'music:playlists', href: '/music/playlists', label: 'Playlists', icon: icon('plugin') },
-                    { key: 'music:assignments', href: '/music/assignments', label: 'Assignments', icon: icon('plugin') },
-                    { key: 'music:storage', href: '/music/storage', label: 'Storage', icon: icon('plugin') },
-                  ],
-                }
-              : {
-                  key: `plugin:${plugin.id}`,
-                  href: plugin.adminPath,
-                  label: plugin.name,
-                  icon: icon('plugin'),
-                },
-          ),
+          .map((plugin) => {
+            const sub = PLUGIN_SUB_PAGES[plugin.id];
+            return {
+              key: `plugin:${plugin.id}`,
+              href: plugin.adminPath,
+              label: plugin.name,
+              icon: icon('plugin'),
+              ...(sub
+                ? {
+                    children: sub.map((page) => ({
+                      key: `${plugin.id}:${page.key}`,
+                      href: page.href,
+                      label: page.label,
+                      icon: icon('plugin'),
+                    })),
+                  }
+                : {}),
+            };
+          }),
       ],
     },
     {

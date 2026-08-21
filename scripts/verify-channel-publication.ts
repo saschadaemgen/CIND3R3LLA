@@ -863,11 +863,27 @@ async function operateConsole(db: Queryable, channelKey: string, botId: number):
   const cookie = (Array.isArray(rawCookie) ? rawCookie : [String(rawCookie ?? '')])
     .map((c) => c.split(';')[0])
     .join('; ');
-  const page = await app.inject({ method: 'GET', url: '/bridge', headers: { cookie } });
+  // THE BRIDGE IS A SECTION SINCE CCB-S5-058 (D-246): five sub-pages where there was one
+  // kilometre of scroll. The publishing controls moved to /bridge/publishing and the scope
+  // panel to /bridge/diagnostics, so this fetches the pages that hold what it asserts. The
+  // assertions themselves are unchanged: they were right about the CONTENT and pointed at a
+  // page that no longer carries it, which is the D-111 shape - repoint the verifier, leave
+  // the copy alone.
+  const page = await app.inject({ method: 'GET', url: '/bridge/publishing', headers: { cookie } });
+  const channelsPage = await app.inject({ method: 'GET', url: '/bridge', headers: { cookie } });
+  const diagPage = await app.inject({
+    method: 'GET',
+    url: '/bridge/diagnostics',
+    headers: { cookie },
+  });
   const says = (body: string, phrase: string): boolean =>
     body.replace(/\s+/g, ' ').includes(phrase.replace(/\s+/g, ' '));
   const csrf = /name="_csrf" value="([^"]+)"/.exec(page.body)?.[1] ?? '';
-  check('the Bridge page renders', page.statusCode === 200, String(page.statusCode));
+  check('the Bridge publishing page renders', page.statusCode === 200, String(page.statusCode));
+  check(
+    '  and so does every other section of it',
+    channelsPage.statusCode === 200 && diagPage.statusCode === 200,
+  );
   check(
     'it says what publishing means, and that switching it off removes what was published',
     says(page.body, 'Switching it off removes them.'),
@@ -882,13 +898,29 @@ async function operateConsole(db: Queryable, channelKey: string, botId: number):
   // "CIND3R3LLA's alone" tests the ESCAPING and not the sentence, which is the D-111 shape.
   check(
     'the page names the bot whose bridge this is',
-    says(page.body, 'announcements CIND3R3LLA brings into'),
+    // On the CHANNELS page now, and asserted without an apostrophe for the reason the
+    // comment above already gives.
+    says(channelsPage.body, 'The channels CIND3R3LLA knows'),
   );
   check(
     'and the scope panel says publication is per channel rather than per bot',
-    says(page.body, 'Publish / publish unnamed'),
+    says(diagPage.body, 'Publish / publish unnamed'),
   );
-  check('the standalone block snippet is offered', says(page.body, '/channels'));
+  // THIS ASSERTION WAS VACUOUS AND THE SPLIT EXPOSED IT (CCB-S5-058). It matched the bare
+  // string `/channels`, which the whole-page render satisfied through the REFRESH FORM's
+  // action `/bridge/channels/refresh` on a completely different card - so it passed without
+  // the embed snippet existing at all. Now that each section renders alone it fails
+  // honestly, which is the only reason anybody found out.
+  //
+  // The card has two branches and BOTH are correct outcomes: with an embed instance it
+  // prints the snippet, without one it points at the Embeds page to make one. Asserting
+  // only the first would fail on a deployment that has no instance yet, which is every new
+  // one.
+  check(
+    'the standalone block is offered, or the way to get one is',
+    says(page.body, '/embed/') || says(page.body, 'Create an embed instance'),
+    says(page.body, '/embed/') ? 'snippet' : 'pointer to the Embeds page',
+  );
 
   const press = async (url: string, payload: string): Promise<{ status: number; location: string }> => {
     const res = await app.inject({

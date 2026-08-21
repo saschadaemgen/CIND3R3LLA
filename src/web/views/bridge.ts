@@ -15,7 +15,7 @@
  * one legible message, not a rhythm, so it is not a dial).
  */
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page, type SafeHtml } from '../html.js';
 import { badge, card, factList, fmtDate, pageHeader, scopePanel, type ScopeLine } from './ui.js';
@@ -480,23 +480,100 @@ function inStreamBadge(on: boolean): SafeHtml {
         </span>`;
 }
 
+/**
+ * The bridge's five sub-pages (CCB-S5-058, D-246).
+ *
+ * ── WHY THIS IS A SECTION AND NOT A LONG PAGE ────────────────────────────────
+ *
+ * It was one page you scrolled for a kilometre, and its sidebar showed the Plugins list
+ * rather than its own pages, because the page declared `active: 'plugins'` - it named the
+ * menu above it, so `deepestSectionFor` found the menu above it. The Music Library had
+ * already solved this shape, which is why this copies it rather than designing it again:
+ * same section registration, same sidebar behaviour, same scope panel placement.
+ *
+ * ── THE SPLIT IS THE SEAMS THAT WERE ALREADY THERE ───────────────────────────
+ *
+ * Each entry is one card, or one group of cards, that the page already rendered. Nothing
+ * was regrouped and nothing new was invented: Mappings keeps the pending-post digest that
+ * belongs to it, the Forward log keeps the suppressed list that explains its gaps, and
+ * Diagnostics keeps the scope panel and the deployment bound.
+ *
+ * The ORDER is the order an operator meets them: you join a channel, you map it, you decide
+ * whether it publishes, then you look at what happened and why.
+ */
+const BRIDGE_SECTIONS: readonly {
+  key: string;
+  path: string;
+  label: string;
+  /** What THIS page is for. `{bot}` is filled with the selected bot's name. */
+  blurb: string;
+}[] = [
+  {
+    key: 'channels',
+    path: '/bridge',
+    label: 'Channels',
+    blurb:
+      'The channels {bot} knows, and how to join another. A mapping can only read from a ' +
+      'channel that appears here.',
+  },
+  {
+    key: 'mappings',
+    path: '/bridge/mappings',
+    label: 'Mappings',
+    blurb:
+      'Which channel feeds which group, and on what rhythm. These mappings are {bot}’s ' +
+      'alone.',
+  },
+  {
+    key: 'publishing',
+    path: '/bridge/publishing',
+    label: 'Publishing',
+    blurb:
+      'Whether an announcement also appears on the public website, per channel, and where a ' +
+      'site can embed the block.',
+  },
+  {
+    key: 'log',
+    path: '/bridge/log',
+    label: 'Forward log',
+    blurb: 'What was forwarded, when, and what stopped without ever being announced.',
+  },
+  {
+    key: 'diagnostics',
+    path: '/bridge/diagnostics',
+    label: 'Diagnostics',
+    blurb:
+      'The last tick, the last error, and the storage limits. The limits are deployment-wide ' +
+      'rather than {bot}’s.',
+  },
+];
+
 export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
   const { db, plugins } = ctx;
 
-  app.get<{
-    Querystring: {
-      bot?: string;
-      saved?: string;
-      error?: string;
-      /** "Nothing was joined, and here is why" - neither success nor fault (D-202). */
-      notice?: string;
-      groupLink?: string;
-      channel?: string;
-      dest?: string;
-      since?: string;
-      until?: string;
-    };
-  }>('/bridge', async (req, reply) => {
+  interface BridgeQuery {
+    bot?: string;
+    saved?: string;
+    error?: string;
+    /** "Nothing was joined, and here is why" - neither success nor fault (D-202). */
+    notice?: string;
+    groupLink?: string;
+    channel?: string;
+    dest?: string;
+    since?: string;
+    until?: string;
+  }
+
+  const renderBridge = async (
+    req: FastifyRequest<{ Querystring: BridgeQuery }>,
+    reply: FastifyReply,
+  ): Promise<string> => {
+    // WHICH SUB-PAGE (CCB-S5-058, D-246). One handler behind five paths, because the five
+    // sections share every fact they render and splitting the LOADER would mean five copies
+    // of the bot resolution, the plugin state and the room index. What differs is which
+    // cards render and which nav key is active, and that is what a section is.
+    const section =
+      BRIDGE_SECTIONS.find((s) => s.path === req.routeOptions.url)?.key ?? 'channels';
     const csrf = req.session?.csrfToken ?? '';
     const botProfiles = await listBotOnboardingProfiles(db);
     const selection = resolveSelectedBot(
@@ -651,11 +728,15 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       </div>`;
 
     reply.type('text/html');
+    const here = BRIDGE_SECTIONS.find((s) => s.key === section) ?? BRIDGE_SECTIONS[0];
     return page({
-      title: 'Channel Bridge',
-      active: 'plugins',
+      title: `Channel Bridge - ${here?.label ?? ''}`,
+      // The nav key, so `deepestSectionFor` finds THIS section and the sidebar shows the
+      // bridge's own pages. It said 'plugins', which is precisely why the sidebar showed the
+      // Plugins list: the page declared itself to be the menu above it.
+      active: `channel-bridge:${section}`,
       csrfToken: csrf,
-      botSwitcher: { ...selection, returnTo: '/bridge', scope: 'mixed' },
+      botSwitcher: { ...selection, returnTo: here?.path ?? '/bridge', scope: 'mixed' },
       body: html`
         ${/*
           NAMES THE BOT (D-211). This said "the bot" and named none, the same silence that let
@@ -664,12 +745,8 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
           deployment's, and saying which is which is what `knowledge` already does well.
         */ ''}
         ${pageHeader(
-          'Channel Bridge',
-          selection.selectedName
-            ? `Channel posts become standing announcements ${selection.selectedName} brings into ` +
-              `a group on your cadence. The mappings and the capability below are ` +
-              `${selection.selectedName}'s alone; the storage limits are deployment-wide.`
-            : 'Channel posts become standing announcements a bot brings into a group on your cadence.',
+          `Channel Bridge · ${here?.label ?? ''}`,
+          (here?.blurb ?? '').replace(/{bot}/g, selection.selectedName ?? 'this bot'),
         )}
         ${req.query.saved
           ? html`<div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Saved.</div>`
@@ -732,7 +809,7 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
             </div>`
           : ''}
 
-        ${card(
+        ${section === 'channels' ? card(
           'Channels this bot knows',
           html`<p class="mb-3 text-sm text-slate-500">
               A channel becomes known when a post arrives from it, or when you refresh the
@@ -780,9 +857,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                 </button>
               </form>
             </div>`,
-        )}
+        ) : ''}
 
-        ${card(
+        ${section === 'mappings' ? card(
           'Mappings',
           html`<p class="mb-3 text-sm text-slate-500">
               Many to many: a channel can feed several groups and a group can hear from
@@ -884,9 +961,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
               excerpts, and anything beyond counted in a stated remainder line. That shape is
               not settable: it is what keeps one announcement legible, not a rhythm.
             </p>`,
-        )}
+        ) : ''}
 
-        ${card(
+        ${section === 'mappings' ? card(
           'Pending posts',
           html`${channels.length === 0
             ? html`<p class="text-sm text-slate-500">Nothing pending.</p>`
@@ -925,9 +1002,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                   </table>
                 </div>`;
               })}`,
-        )}
+        ) : ''}
 
-        ${publicationCard({
+        ${section === 'publishing' ? publicationCard({
           csrf,
           publications,
           knownToThisBot,
@@ -937,15 +1014,15 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
           publicOrigin: ctx.adminCfg.publicOrigin.replace(/\/+$/, ''),
           instances: embedInstances.map((i) => ({ id: i.id, name: i.name })),
           botId: selectedBotId,
-        })}
+        }) : ''}
 
-        ${bridgeScopePanel(pluginScopes, botProfiles, selectedBotId, {
+        ${section === 'diagnostics' ? bridgeScopePanel(pluginScopes, botProfiles, selectedBotId, {
           mappings: mappings.length,
           channelsPublished: publications.filter((p) => p.publish).length,
           channelsKnown: publications.length,
-        })}
+        }) : ''}
 
-        ${card(
+        ${section === 'log' ? card(
           'Forward log',
           html`<form method="get" action="/bridge" class="mb-3 flex flex-wrap items-end gap-2">
               <input type="hidden" name="bot" value="${String(selectedBotId ?? '')}" />
@@ -993,9 +1070,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                     </tbody>
                   </table>
                 </div>`}`,
-        )}
+        ) : ''}
 
-        ${card(
+        ${section === 'log' ? card(
           'Suppressed, and why',
           html`<p class="mb-3 text-sm text-slate-500">
               A post that stopped without ever being announced. A post that vanished with no
@@ -1015,9 +1092,9 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                     )}
                   </tbody>
                 </table>`}`,
-        )}
+        ) : ''}
 
-        ${card(
+        ${section === 'diagnostics' ? card(
           'Diagnostics and the deployment bound',
           html`${factList([
               [
@@ -1044,10 +1121,14 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
                 Save
               </button>
             </form>`,
-        )}
+        ) : ''}
       `,
     });
-  });
+  };
+  // ONE HANDLER, REGISTERED FIVE TIMES (CCB-S5-058, D-246). Fastify takes an array of
+  // paths at runtime and its typed overloads do not, so this is a loop rather than a cast:
+  // five real routes, one body, and the types still checked.
+  for (const s of BRIDGE_SECTIONS) app.get<{ Querystring: BridgeQuery }>(s.path, renderBridge);
 
   /* ── actions ────────────────────────────────────────────────────────────── */
 
