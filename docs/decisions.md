@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 238 decisions</strong> — newest first. Highest allocated: <strong>D-239</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 239 decisions</strong> — newest first. Highest allocated: <strong>D-240</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-240 | Keeping what nobody agreed to: the tombstone, and both copies | IMPLEMENTED |
 | D-239 | The false source line: the floor is not the fault, and the guard now says when it fires | PARTIALLY RESOLVED, and said so |
 | D-238 | She does not search the web to learn about herself | IMPLEMENTED |
 | D-237 | A picture that arrives late is noticed | IMPLEMENTED |
@@ -267,6 +268,80 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-240 - Keeping what nobody agreed to: the tombstone, and both copies
+
+**Status: IMPLEMENTED** (CCB-S5-054, migration 070). Ships SWITCHED OFF; the operator turns it
+on after reading the count.
+
+**THE GAP, AND IT IS NOT A DEFECT ANYBODY INTRODUCED.** "Nothing a member posts appears on the
+public archive unless that member opted in" is true and always has been. "Nothing is kept
+without consent" is a DIFFERENT SENTENCE and was not true: everything was kept and only
+publication was gated. Capture was built before publication was, and the promise was written
+for the half that was gated. Measured at stage 0 on his archive: 5,194 rows, 1,857 published,
+**3,337 unpublished (64%)**, **119 MB** of the 207 MB of TOAST belonging to people who never
+sent `/publish`. He found it by asking a simple question about his own data.
+
+**THE OPERATOR'S OWN SHAPE WAS OVERTURNED AND HE ACCEPTED THE REASONING.** He proposed storing
+nothing and reading the recent thread from the core instead. Stage 0 killed it on measurement
+rather than on taste: the core has no retention configured, keeps DELETED members' text, holds
+its oldest item four days LATER than ours, and sits at 246 MB on the same disk under the same
+operator. **Reading from it moves the copy rather than removing it**, and it moves it to the
+database that honours neither destruction nor consent gaps. So the promise would have become
+LESS true, which inverts the premise the shape rested on.
+
+**THE TOMBSTONE, IN THE WORDS HE ASKED FOR: the content is gone, the fact that a message
+existed is not.** The row stays and what it said does not - text, link text, raw envelope,
+display name, every media and video column, the link rows, the mention rows and the bytes on
+disk. What stays is the skeleton plus `content_swept_at`.
+
+**A DELETE WAS THE OBVIOUS READING OF SHAPE A AND IT IS WRONG, FOR FOUR STRUCTURAL REASONS.**
+Seven foreign keys point at `messages` and a `BEFORE DELETE` trigger raises for a held row, so
+ONE held row aborts the whole statement. The cascade reaches `reply_to_id`, so deleting a
+member's question silently takes her answer - including published answers. The
+`(group_id, group_msg_id)` unique index is what makes capture idempotent, so a deleted row is
+re-inserted by the next re-capture and the sweep competes with capture for ever. And
+`media_path` is the ONLY handle on the encrypted original, so a delete orphans those bytes
+permanently and silently. The tombstone has none of those problems.
+
+**THE PREDICATE IS AN ALLOW-LIST, WHICH IS D-201 APPLIED WHERE IT MATTERS MOST.** A sweep that
+erases is exactly the shape where a deny-list fails in the direction you cannot undo: the case
+nobody listed gets ERASED, and there is nothing left to notice with. The central clause is the
+strongest positive statement available - **the sender appears nowhere in the consent system**,
+not in `consent`, not in `consent_actions`, not in `consent_gaps`. Broader than "has no consent
+row" on purpose, because `undoLastConsentAction` restores a row with its ORIGINAL
+`opted_in_at`, and an undo republishing content the sweep had erased is the one outcome with no
+recovery.
+
+**AND WHY NOTHING PUBLISHABLE CAN BE LOST IS STRUCTURAL RATHER THAN CAREFUL.** `recordOptIn`
+stamps `opted_in_at` with the command's own timestamp and publication is forward-only from it,
+so a member opting in tomorrow can never publish what they said yesterday. Every swept row is
+older than a bound that is itself in the past, so every swept row is on the unreachable side of
+every opt-in that has not happened yet. It is not that the current publish state was checked;
+it is that the FUTURE publish state of those rows is fixed at false. Her paired reply inherits
+the same guarantee (a reply publishes only when its parent does) and is swept with it, rather
+than left quoting a member whose words were just erased.
+**A second, stronger statement holds too**: `message_publish_state` reads NONE of the columns
+the sweep clears, so the derivation cannot move whatever the WHERE clause does. Proven by
+comparing the published id list character for character across the sweep.
+
+**BOTH COPIES, IN ONE PIECE OF WORK, AT HIS INSTRUCTION.** The core keeps everything on the
+same disk and prunes nothing: all six groups had `chat_item_ttl` NULL, and **2,709 of 2,714
+items a member had DELETED still held their text**, because `fullDelete` is off by default and
+a delete later than 78 hours is refused outright. That is the finding of the session and it is
+the one thing here that would surprise a member. `setChatItemTTL` sends `/_ttl <userId>
+<seconds>` through the scheduler; the grammar was READ off `Commands.hs` rather than guessed
+(D-209), because the SDK wraps no TTL command and the bot docs predate the feature. It takes
+effect IMMEDIATELY - the handler runs `expireChatItems` whenever the new TTL is shorter than
+the old - and the page says so above the control, because a button that silently erases a year
+of history on first press is not one anybody can consent to.
+
+**THE BOUND IS READ OFF THE SCHEMA RATHER THAN CHOSEN.** Its floor is 168 hours, which is
+migration 029's ceiling on a moderation window, so the bound can never be shorter than the
+longest window an operator could be counting violations over. That is D-184's habit applied to
+a policy constant: a number that describes the system is read from the system.
+
 ---
 
 ### D-239 - The false source line: the floor is not the fault, and the guard now says when it fires

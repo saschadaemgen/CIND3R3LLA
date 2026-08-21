@@ -4111,3 +4111,67 @@ registered and classed; `verify:member-data` sweeps the real schema both directi
 `cinderella_track_plays` is the one profile-class source and its member column is written
 NULL until the memory work delivers the opt-in - the deferral (member-linked requests, "play
 me something I like", audiobook resume) is stated in D-217, on the operator's own decision.
+
+## 56. Retention: keeping only what somebody agreed to (CCB-S5-054, D-240)
+
+**The gap.** "Nothing a member posts appears on the public archive unless that member opted
+in" was always true. What was also true, and is a different sentence, is that everything a
+member posts is KEPT whether they opted in or not. Publication was consent-gated from the
+first briefing; storage never was. Measured on the production archive at stage 0: 5,194 rows,
+1,857 published, **3,337 unpublished (64%)**, and **119 MB** of the 207 MB of TOAST is
+`raw_json` belonging to people who never sent `/publish`.
+
+Not a defect anybody introduced. Capture was built before publication was, and the promise was
+written for the half that was consent-gated.
+
+**The tombstone, in the words to repeat: the content is gone, the fact that a message existed
+is not.** The row stays; what it said does not. Cleared: `text_body`, `links_text`,
+`search_body`, `raw_json`, `sender_display_name`, every `media_*` and `video_*` column, the
+`links` rows, the `message_mentions` rows, and the media bytes on disk. Kept: `group_id`,
+`group_msg_id`, `sender_member_id`, `sent_at`, `type`, `deleted` / `group_deleted`,
+`moderation_state`, `reply_to_id`, plus `content_swept_at` so every surface can say the
+content was removed rather than render an empty row.
+
+**Why a tombstone and not a DELETE.** Four structural reasons, all in migration 070's header:
+seven foreign keys and a `BEFORE DELETE` trigger mean one held row aborts a bulk delete; the
+cascade reaches `reply_to_id` and would take her published answers with it;
+`messages_group_msg_unique` is what makes capture idempotent, so a deleted row is re-inserted
+by the next re-capture; and `media_path` is the only handle on the encrypted originals, so a
+delete orphans those bytes permanently.
+
+**The predicate is an allow-list** (`SWEEPABLE` in `src/archive/retention.ts`), because a
+sweep that erases is the shape where a deny-list fails in the direction you cannot undo. The
+central clause is the strongest positive statement available: **the sender appears nowhere in
+the consent system** - not in `consent`, not in `consent_actions`, not in `consent_gaps`. That
+is deliberately broader than "has no consent row", because `undoLastConsentAction` can restore
+a consent row with its ORIGINAL `opted_in_at`. Also spared: anything with an evidence hold
+(which is where quarantine lives too), a report, a pending destruction, or a
+`moderation_state` other than `none`.
+
+**Why nothing publishable can be lost, structurally.** `recordOptIn` sets `opted_in_at` to the
+`/publish` command's timestamp and publication is forward-only from it, so a member who opts in
+tomorrow can never publish what they said before. Every swept row is older than a bound that is
+itself in the past, so every swept row is on the unreachable side of any future opt-in. Her
+paired reply inherits the same guarantee (a reply publishes only when its parent does) and is
+therefore swept with it, rather than left quoting a member whose words were just erased.
+
+**And the publish derivation cannot move at all**, which is a stronger statement than "the
+WHERE clause is careful": `message_publish_state` reads none of the columns the sweep clears.
+`verify:retention` proves it by comparing the published id list character for character across
+the sweep.
+
+**Both copies, in one piece of work.** The SimpleX core keeps its own full copy on the same
+disk and prunes nothing by default - measured on the host, all six groups had `chat_item_ttl`
+NULL, and **2,709 of 2,714 items a member had DELETED still held their text**, because
+`fullDelete` is off by default and a delete later than 78 hours is refused outright.
+`RuntimeCore.setChatItemTTL` sends `/_ttl <userId> <seconds>` through the scheduler (the
+grammar read off `Commands.hs`, not guessed; the SDK wraps no TTL command), and
+`setCoreRetention` applies it to every hosted profile. It takes effect IMMEDIATELY - the
+handler runs `expireChatItems` whenever the new TTL is shorter than the old - and the page says
+so above the control.
+
+**Where it lives.** `src/archive/retention.ts` (settings, predicate, sweep, hourly timer),
+migration 070 (the mark, the CHECK that makes a content-holding tombstone unrepresentable, two
+partial indexes), `src/web/views/retention.ts` (the page, under Content), and
+`verify:retention`. Ships **switched off**: erasure is not something to inherit from an
+upgrade, so the console states the count first and the operator decides.

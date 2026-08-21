@@ -104,6 +104,15 @@ export interface AdminMessage {
   consentRevoked: boolean;
   /** Consented + not revoked, but this message predates the opt-in (forward-only). */
   beforeOptIn: boolean;
+  /**
+   * When retention removed this row's content, or null (CCB-S5-054, D-240).
+   *
+   * The browser MUST render this: a tombstone whose text is null looks exactly like a
+   * picture with no caption, and an operator reading a blank row would conclude the
+   * capture had failed. It is the D-205 rule applied to a row rather than a page - the
+   * sweep changed what this record is, so the surface that shows records has to say so.
+   */
+  contentSweptAt: string | null;
 }
 
 const VALID_TYPES = new Set(['text', 'image', 'video', 'voice', 'link', 'file']);
@@ -184,10 +193,11 @@ export async function browseMessages(
     has_consent: boolean;
     consent_revoked: boolean;
     before_opt_in: boolean;
+    content_swept_at: string | null;
   }>(
     `SELECT m.id, m.group_id, m.group_msg_id, m.sender_member_id, m.sender_display_name,
             m.sent_at, m.type::text AS type, m.text_body, m.media_path, m.media_mime,
-            m.media_error, m.deleted, m.group_deleted,
+            m.media_error, m.deleted, m.group_deleted, m.content_swept_at,
             m.moderation_state::text AS moderation_state, s.published,
             (c.member_id IS NOT NULL) AS has_consent,
             (c.revoked_at IS NOT NULL) AS consent_revoked,
@@ -220,6 +230,7 @@ export async function browseMessages(
       hasConsent: r.has_consent,
       consentRevoked: r.consent_revoked,
       beforeOptIn: r.before_opt_in,
+      contentSweptAt: r.content_swept_at,
     })),
   };
 }
@@ -236,7 +247,7 @@ async function browseMessagesById(
   const rows = await db.query<Record<string, unknown>>(
     `SELECT m.id, m.group_id, m.group_msg_id, m.sender_member_id, m.sender_display_name,
             m.sent_at, m.type::text AS type, m.text_body, m.media_path, m.media_mime,
-            m.media_error, m.deleted, m.group_deleted,
+            m.media_error, m.deleted, m.group_deleted, m.content_swept_at,
             m.moderation_state::text AS moderation_state, s.published,
             (c.member_id IS NOT NULL) AS has_consent,
             (c.revoked_at IS NOT NULL) AS consent_revoked,
@@ -268,6 +279,7 @@ async function browseMessagesById(
       hasConsent: Boolean(r['has_consent']),
       consentRevoked: Boolean(r['consent_revoked']),
       beforeOptIn: Boolean(r['before_opt_in']),
+      contentSweptAt: (r['content_swept_at'] as string | null) ?? null,
     })),
   };
 }

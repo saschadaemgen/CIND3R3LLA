@@ -259,7 +259,9 @@ export function registerMessages(app: FastifyInstance, ctx: ViewContext): void {
       return html`<tr class="border-t border-slate-100 align-top">
         <td class="px-3 py-2 text-xs whitespace-nowrap text-slate-400">${fmtDate(m.sentAt)}</td>
         <td class="px-3 py-2">
-          <div class="text-sm font-medium">${m.senderDisplayName}</div>
+          <div class="text-sm font-medium">
+            ${m.senderDisplayName === '' ? html`<span class="text-slate-400">name removed</span>` : m.senderDisplayName}
+          </div>
           <div class="font-mono text-xs text-slate-400" title="${m.senderMemberId}">
             ${truncate(m.senderMemberId, 16)}
           </div>
@@ -270,7 +272,15 @@ export function registerMessages(app: FastifyInstance, ctx: ViewContext): void {
           >
         </td>
         <td class="max-w-[16rem] px-3 py-2 text-sm break-words text-slate-700 lg:max-w-md">
-          ${m.textBody ? truncate(m.textBody, 140) : html`<span class="text-slate-300">—</span>`}
+          ${
+            m.contentSweptAt
+              ? html`<span class="rounded border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-xs text-slate-600">
+                  content removed ${fmtDate(m.contentSweptAt)}
+                </span>`
+              : m.textBody
+                ? truncate(m.textBody, 140)
+                : html`<span class="text-slate-300">—</span>`
+          }
           ${
             m.mediaError
               ? html`<div class="mt-1 text-xs text-red-600">

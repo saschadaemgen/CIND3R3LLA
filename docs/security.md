@@ -1729,3 +1729,37 @@ budget's basis is what was actually heard.
 separate for music and spots, derived from the plays log per read so they cannot drift, and
 every refused slot is a counted skip with its reason - a bounded cadence that went quiet must
 be legible as the budgets working, not as a fault.
+
+## 18. Two copies, one promise (CCB-S5-054, D-240)
+
+The archive was never the only place a member's words lived on this host. The SimpleX core
+keeps its own complete copy in SQLite beside it, and by default keeps it for ever.
+
+**What was measured on the production host at stage 0**, and it is the finding worth stating
+plainly because it is the one that would surprise a member: `settings` had zero rows, all six
+groups had `chat_item_ttl` NULL, and **2,709 of 2,714 chat items marked deleted still held
+their full text**. `fullDelete` is off by default, and the core refuses a delete later than 78
+hours outright. So a member deleting a message removed it from what anybody sees and not from
+what the machine holds.
+
+**What is done about it.** Two mechanisms, because there are two databases and neither can
+reach into the other:
+
+- The archive sweep removes the CONTENT of rows nobody consented to, past a bound, leaving a
+  tombstone (architecture §56).
+- `chat_item_ttl` on the core, set per hosted profile through the scheduler, applies to
+  everything the core holds - including the deleted-but-retained items above, which no
+  consent-derived predicate could have reached, because the core has no consent model.
+
+**The asymmetry is deliberate and worth understanding.** The archive sweep is precise: it can
+tell an opted-in member from one who never engaged, and it spares evidence holds, reports and
+pending destructions. The core TTL is blunt: it is one age for everything that profile holds.
+That is acceptable only because Postgres is the authority for anything that must survive -
+published messages, consent records, moderation history and evidence holds all live there and
+none of them are in the core. A deployment that inverted that, and read history back out of
+the core, would be trading a precise guarantee for a blunt one.
+
+**Operational warning, on the page and repeated here**: `APISetChatItemTTL` does not apply
+only going forward. Its handler runs `expireChatItems` immediately whenever the new TTL is
+shorter than the old one or the old one was 0, which is every first use. The first press
+deletes everything already older than the chosen age, at once, for every profile on the host.

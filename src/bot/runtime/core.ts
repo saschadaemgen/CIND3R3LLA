@@ -897,6 +897,84 @@ export class MultiProfileRuntime {
     );
   }
 
+  /**
+   * How long the CORE keeps its own copy, for one hosted profile (CCB-S5-054, D-240).
+   *
+   * ── WHY THIS IS HERE AT ALL ──────────────────────────────────────────────────
+   *
+   * The archive sweep empties Postgres of content nobody consented to. The core holds a
+   * SECOND full copy on the same disk and prunes NOTHING by default: measured on the
+   * production host, all six groups had `chat_item_ttl` NULL, and 2,709 of 2,714 items a
+   * member had DELETED still held their text, because `fullDelete` is off by default and
+   * a delete later than 78 hours is refused outright. A retention promise kept in one
+   * database and broken in the one beside it is not a promise.
+   *
+   * ── THE GRAMMAR, READ FROM THE PARSER RATHER THAN GUESSED (D-209) ────────────
+   *
+   * The SDK 6.5.4 wraps no TTL command, and `bots/api/COMMANDS.md` predates the feature.
+   * `src/Simplex/Chat/Library/Commands.hs` at v6.5.4 settles it in one line:
+   *
+   *     "/_ttl " *> (APISetChatItemTTL <$> A.decimal <* A.space <*> A.decimal)
+   *     "/_ttl " *> (APIGetChatItemTTL <$> A.decimal)
+   *
+   * so the setter is `/_ttl <userId> <seconds>` and the getter is `/_ttl <userId>`, and
+   * the alternatives are ordered such that two decimals reach the setter. The core's own
+   * friendly vocabulary maps to the same integers (`ciTTL`): day 86400, week 604800,
+   * month 2592000, year 31536000, **none 0**. Zero is what NULL behaves as - the expiry
+   * thread is not started at 0 - so 0 is how retention is turned off again.
+   *
+   * ── AND ONE THING THE OPERATOR MUST BE TOLD BEFORE PRESSING IT ───────────────
+   *
+   * `APISetChatItemTTL` does not merely apply going forward. Its handler runs
+   * `expireChatItems user newTTL True` immediately whenever the new TTL is shorter than
+   * the old one or the old one was 0, which is every first use. Setting a month deletes
+   * everything older than a month from the core AT ONCE. The console says so above the
+   * control, because a control that silently erases a year of history the first time it
+   * is pressed is not one an operator can consent to.
+   *
+   * THROUGH THE SCHEDULER, like everything else. The command carries an explicit user id
+   * and that is precisely why it must be scheduled: D-171 records that the core CHECKS a
+   * named id against the active user and refuses with `differentActiveUser`. Naming a
+   * user makes a command refusable, not unmisroutable.
+   */
+  async setChatItemTTL(simplexUserId: number, seconds: number): Promise<void> {
+    const chat = this.requireChat();
+    if (!Number.isInteger(seconds) || seconds < 0) {
+      throw new Error(`setChatItemTTL: ${String(seconds)} is not a whole number of seconds.`);
+    }
+    const command = `/_ttl ${String(simplexUserId)} ${String(seconds)}`;
+    try {
+      await this.scheduler.run(simplexUserId, `setChatItemTTL:${String(simplexUserId)}`, () =>
+        chat.sendChatCmd(command),
+      );
+    } catch (err) {
+      throw new Error(
+        `The core rejected the retention command (/_ttl <userId> <seconds>): ${describeChatError(err)}`,
+      );
+    }
+    log.info('runtime: set the core item retention', { simplexUserId, seconds });
+  }
+
+  /**
+   * What the core's retention is set to for one profile, in seconds. 0 means no expiry.
+   *
+   * Read back rather than remembered: the setting lives in the core's own database, the
+   * console must not present our copy of a number as the core's state (D-205), and this
+   * is the only instrument that can tell "we set it" from "it is set".
+   */
+  async getChatItemTTL(simplexUserId: number): Promise<number> {
+    const chat = this.requireChat();
+    const response = (await this.scheduler.run(
+      simplexUserId,
+      `getChatItemTTL:${String(simplexUserId)}`,
+      () => chat.sendChatCmd(`/_ttl ${String(simplexUserId)}`),
+    )) as { chatItemTTL?: number | null } | null;
+    // `CRChatItemTTL` carries `Maybe Int64`, and the absent case is the same state as 0:
+    // no expiry configured. Returning null here would make every caller re-decide that.
+    const ttl = response?.chatItemTTL;
+    return typeof ttl === 'number' && Number.isFinite(ttl) ? ttl : 0;
+  }
+
   /** The composed-message form of {@link sendGroupTextAsOwner}. */
   async sendGroupComposedAsOwner(
     groupId: number,

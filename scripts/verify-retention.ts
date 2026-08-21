@@ -1,0 +1,604 @@
+/**
+ * The archive stops keeping what nobody agreed to (CCB-S5-054, D-240).
+ *
+ * ── WHAT THIS HAS TO PROVE, AND WHY EACH HALF NEEDS THE OTHER ────────────────
+ *
+ * A sweep that erases content has two ways to be wrong and they point in opposite
+ * directions, so every assertion here comes in pairs. "Nothing published was lost" is
+ * satisfied by a sweep that does nothing at all; "the unconsented rows are empty" is
+ * satisfied by a sweep that empties everything. Neither is worth anything alone, and this
+ * repository has shipped exactly that mistake before - a negative with no positive control
+ * beside it passes forever and says nothing.
+ *
+ * So: every row that must be spared is asserted intact WHILE a row that must be swept is
+ * asserted empty, in the same pass, from the same run.
+ *
+ * ── AND THE ONE THING A HARNESS CANNOT SEE (D-162, D-212) ────────────────────
+ *
+ * That the Retention page's controls are reachable, visible and enabled. Section 7 drives
+ * the real routes and reads the effect back out of the database, which is the regression
+ * guard; the verification is opening the page and pressing the button.
+ *
+ *   npx tsx scripts/verify-retention.ts
+ */
+
+import { PGlite } from '@electric-sql/pglite';
+import { vector } from '@electric-sql/pglite-pgvector';
+import * as argon2 from 'argon2';
+import { mkdtemp, writeFile, readFile, access } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import type { Queryable } from '../src/db/pool.js';
+import { loadMigrationFiles } from '../src/db/migrate.js';
+import { setLogLevel } from '../src/log.js';
+import { buildServer, registerNav } from '../src/web/server.js';
+import { registerAdminViews } from '../src/web/views/index.js';
+import { SettingsService } from '../src/settings/service.js';
+import { SecurityService } from '../src/security/settings.js';
+import { InteractionService } from '../src/interaction/settings.js';
+import type { Config } from '../src/config.js';
+import {
+  RETENTION_MIN_HOURS,
+  SWEEPABLE,
+  cutoffFor,
+  getRetentionSettings,
+  normalizeRetention,
+  sweepUnconsented,
+  sweepableCount,
+  tombstoneCount,
+} from '../src/archive/retention.js';
+
+const OPERATOR = 'operator';
+const PASSWORD = 'retention-test-password';
+
+let failures = 0;
+function check(label: string, ok: boolean, detail = ''): void {
+  if (!ok) failures++;
+  console.log(`  [${ok ? 'PASS' : 'FAIL'}] ${label}${detail ? ` - ${detail}` : ''}`);
+}
+
+/** Long enough ago to be past any bound this schema permits. */
+const OLD = '2026-01-02T10:00:00.000Z';
+/** Inside the bound, whatever the operator picked. */
+const RECENT = new Date(Date.now() - 60_000).toISOString();
+
+interface Seeded {
+  id: number;
+}
+
+async function main(): Promise<void> {
+  setLogLevel('error');
+  console.log('The archive stops keeping what nobody agreed to (CCB-S5-054, D-240)');
+
+  const pg = new PGlite({ extensions: { vector } });
+  const db: Queryable = {
+    async query(sql, values) {
+      const r = await pg.query(sql, values ? [...values] : undefined);
+      return { rows: r.rows as never[], rowCount: (r.affectedRows ?? r.rows.length) as number };
+    },
+  } as Queryable;
+  for (const m of await loadMigrationFiles()) await pg.exec(m.sql);
+
+  // PGlite is ONE connection, so this is a real transaction for the harness's purposes and
+  // is NOT a claim that pool semantics are proven here (D-178's fourth item). The production
+  // path uses the pool's own dedicated client.
+  const transaction = async <R>(fn: (tx: Queryable) => Promise<R>): Promise<R> => {
+    await db.query('BEGIN');
+    try {
+      const out = await fn(db);
+      await db.query('COMMIT');
+      return out;
+    } catch (err) {
+      await db.query('ROLLBACK');
+      throw err;
+    }
+  };
+
+  const mediaRoot = await mkdtemp(join(tmpdir(), 'cind-retention-'));
+
+  /* ── the fixture ─────────────────────────────────────────────────────────── */
+
+  let nextItem = 1000;
+  const insert = async (opts: {
+    member: string;
+    name?: string;
+    at?: string;
+    text?: string;
+    isBot?: boolean;
+    botCategory?: string;
+    replyTo?: number | null;
+    mediaPath?: string | null;
+    moderation?: string;
+  }): Promise<Seeded> => {
+    nextItem += 1;
+    const { rows } = await db.query<{ id: string }>(
+      `INSERT INTO messages
+         (group_id, group_msg_id, sender_member_id, sender_display_name, sent_at, type,
+          text_body, links_text, raw_json, is_bot, bot_category, search_body, reply_to_id,
+          media_path, media_mime, media_size, moderation_state)
+       VALUES (7, $1, $2, $3, $4, 'text', $5, $6, $7::jsonb, $8, $9, $10, $11, $12, $13, $14,
+               $15::moderation_state)
+       RETURNING id`,
+      [
+        nextItem,
+        opts.member,
+        opts.name ?? `Name ${opts.member}`,
+        opts.at ?? OLD,
+        opts.text ?? `said something (${opts.member})`,
+        `https://example.org/${opts.member}`,
+        JSON.stringify({ chatItem: { content: { msgContent: { text: opts.text ?? 'x' } } } }),
+        opts.isBot ?? false,
+        opts.botCategory ?? null,
+        opts.isBot ? (opts.text ?? 'her words') : null,
+        opts.replyTo ?? null,
+        opts.mediaPath ?? null,
+        opts.mediaPath ? 'image/jpeg' : null,
+        opts.mediaPath ? 1234 : null,
+        opts.moderation ?? 'none',
+      ],
+    );
+    const id = Number(rows[0]?.id);
+    await db.query('INSERT INTO links (message_id, url, title) VALUES ($1, $2, $3)', [
+      id,
+      `https://example.org/${opts.member}`,
+      'a link',
+    ]);
+    return { id };
+  };
+
+  // A real file on disk for the media case, so "the bytes are gone" is a filesystem fact.
+  await writeFile(join(mediaRoot, 'photo.jpg'), 'JPEGBYTES');
+
+  const never = await insert({ member: 'm-never', name: 'Nobody Consented' });
+  const neverMedia = await insert({ member: 'm-never', mediaPath: 'photo.jpg' });
+  const neverRecent = await insert({ member: 'm-never', at: RECENT, text: 'said this today' });
+  const herReply = await insert({
+    member: 'bot-1',
+    isBot: true,
+    botCategory: 'conversation',
+    replyTo: never.id,
+    text: 'she answered the question',
+  });
+  const herOwn = await insert({
+    member: 'bot-1',
+    isBot: true,
+    botCategory: 'conversation',
+    text: 'she said something unprompted',
+  });
+
+  const optedBefore = await insert({ member: 'm-opted', text: 'before the opt-in' });
+  const optedAfter = await insert({
+    member: 'm-opted',
+    at: '2026-06-01T10:00:00.000Z',
+    text: 'after the opt-in',
+  });
+  await db.query('INSERT INTO consent (member_id, opted_in_at) VALUES ($1, $2)', [
+    'm-opted',
+    '2026-05-01T00:00:00.000Z',
+  ]);
+
+  const hidden = await insert({ member: 'm-hidden', text: 'hidden by its owner' });
+  await db.query(
+    `INSERT INTO consent (member_id, opted_in_at, revoked_at, revocation_mode)
+     VALUES ($1, $2, $3, 'hide')`,
+    ['m-hidden', '2026-01-01T00:00:00.000Z', '2026-07-01T00:00:00.000Z'],
+  );
+
+  // THE UNDO TRAP. No consent row at all, but a journal entry an undo could act on, which
+  // would restore consent with its ORIGINAL opt-in and republish this.
+  const undone = await insert({ member: 'm-undone', text: 'consent was undone' });
+  await db.query(
+    `INSERT INTO consent_actions (member_id, action, source, at, prev_existed, prev_opted_in_at)
+     VALUES ($1, 'opt_in', 'slash', $2, TRUE, $3)`,
+    ['m-undone', '2026-02-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z'],
+  );
+
+  const gapped = await insert({ member: 'm-gapped', text: 'has a gap and no consent row' });
+  await db.query(
+    'INSERT INTO consent_gaps (member_id, gap_start, gap_end) VALUES ($1, $2, $3)',
+    ['m-gapped', '2026-02-01T00:00:00.000Z', '2026-03-01T00:00:00.000Z'],
+  );
+
+  const held = await insert({ member: 'm-held', text: 'under an evidence hold' });
+  await db.query(
+    `INSERT INTO evidence_holds (message_id, source, state) VALUES ($1, 'report', 'active')`,
+    [held.id],
+  );
+
+  const reported = await insert({ member: 'm-reported', text: 'somebody reported this' });
+  await db.query(
+    `INSERT INTO reports (message_id, reason, reporter_hash) VALUES ($1, 'other', 'hash-1')`,
+    [reported.id],
+  );
+
+  const rejected = await insert({
+    member: 'm-moderated',
+    text: 'the operator rejected this',
+    moderation: 'rejected',
+  });
+
+  const owed = await insert({ member: 'm-owed', text: 'a destruction is already owed' });
+  await db.query(
+    'INSERT INTO pending_destructions (message_id, member_id, requested_by) VALUES ($1, $2, $3)',
+    [owed.id, 'm-owed', 'member'],
+  );
+
+  await db.query(
+    'UPDATE messages SET media_path = $2 WHERE id = $1',
+    [neverMedia.id, 'photo.jpg'],
+  );
+
+  /* ── 1. the shape of the setting ─────────────────────────────────────────── */
+
+  console.log('\n1. The bound is a number the schema justifies, not a preference');
+  check(
+    'the floor is the longest moderation window this schema allows',
+    RETENTION_MIN_HOURS === 604800 / 3600,
+    `${String(RETENTION_MIN_HOURS)}h`,
+  );
+  check('it ships switched OFF', (await getRetentionSettings(db)).enabled === false);
+  check(
+    'a bound below the floor falls back rather than being accepted',
+    normalizeRetention({ enabled: true, hours: 1 }).hours === RETENTION_MIN_HOURS,
+  );
+  check(
+    'and a bound inside the range is kept exactly',
+    normalizeRetention({ enabled: true, hours: 720 }).hours === 720,
+  );
+
+  /* ── 2. the published set cannot move ────────────────────────────────────── */
+
+  console.log('\n2. Nothing published is lost and nothing unpublished becomes public');
+  const publishedIds = async (): Promise<string> => {
+    const { rows } = await db.query<{ ids: string | null }>(
+      `SELECT string_agg(id::text, ',' ORDER BY id) AS ids
+         FROM message_publish_state WHERE published`,
+    );
+    return rows[0]?.ids ?? '';
+  };
+  const before = await publishedIds();
+  check('the fixture actually publishes something', before !== '', `[${before}]`);
+
+  const cutoff = cutoffFor(RETENTION_MIN_HOURS, new Date());
+  const waiting = await sweepableCount(db, cutoff);
+  check('and it has rows waiting to be swept', waiting > 0, `${String(waiting)} row(s)`);
+
+  const outcome = await transaction((tx) => sweepUnconsented(tx, mediaRoot, cutoff));
+  check('the sweep ran', outcome.swept > 0, `${String(outcome.swept)} row(s)`);
+
+  const after = await publishedIds();
+  check('the published set is CHARACTER IDENTICAL afterwards', before === after, `[${after}]`);
+
+  /* ── 3. the allow-list, every clause with its positive control ───────────── */
+
+  console.log('\n3. Every clause is load-bearing, and something IS swept in the same pass');
+  const swept = async (id: number): Promise<boolean> => {
+    const { rows } = await db.query<{ n: string | null }>(
+      'SELECT content_swept_at::text AS n FROM messages WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.n != null;
+  };
+  const textOf = async (id: number): Promise<string | null> => {
+    const { rows } = await db.query<{ t: string | null }>(
+      'SELECT text_body AS t FROM messages WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.t ?? null;
+  };
+
+  check('THE POSITIVE CONTROL: a never-consenting member is swept', await swept(never.id));
+  check('  and its text really is gone', (await textOf(never.id)) === null);
+
+  check('a member who opted in keeps even their PRE-opt-in words', !(await swept(optedBefore.id)));
+  check('  and their published words', !(await swept(optedAfter.id)));
+  check('a member who revoked and HID keeps everything, restorable', !(await swept(hidden.id)));
+  check('a member whose consent was UNDONE is untouched', !(await swept(undone.id)));
+  check('a member with a consent gap and no row is untouched', !(await swept(gapped.id)));
+  check('an evidence hold spares its message', !(await swept(held.id)));
+  check('a report spares its message', !(await swept(reported.id)));
+  check('a rejected message is spared for the operator', !(await swept(rejected.id)));
+  check('an owed destruction is left to the destruction path', !(await swept(owed.id)));
+  check('a message inside the bound is untouched', !(await swept(neverRecent.id)));
+  check('  and still says what it said', (await textOf(neverRecent.id)) === 'said this today');
+
+  /* ── 4. her half of the conversation goes with it ────────────────────────── */
+
+  console.log('\n4. Her reply to a swept question is swept; her own words are not');
+  check('her reply to the swept message is swept too', await swept(herReply.id));
+  const publishedNow = async (id: number): Promise<boolean> => {
+    const { rows } = await db.query<{ p: boolean }>(
+      'SELECT published AS p FROM message_publish_state WHERE id = $1',
+      [id],
+    );
+    return rows[0]?.p === true;
+  };
+  // NOT a restatement of the sweep: this is the REASON it is safe to sweep her reply, read
+  // off the publish view itself. A reply publishes only when its parent does, and this
+  // parent's sender can never opt in backwards.
+  check('  and the view agrees it is not published', !(await publishedNow(herReply.id)));
+  check(
+    '  THE CONTROL: an opted-in member IS published by that same view',
+    await publishedNow(optedAfter.id),
+  );
+  check('her unprompted message is untouched', !(await swept(herOwn.id)));
+  check(
+    '  and still carries its search body, which its CHECK requires',
+    (
+      await db.query<{ b: string | null }>('SELECT search_body AS b FROM messages WHERE id = $1', [
+        herOwn.id,
+      ])
+    ).rows[0]?.b !== null,
+  );
+
+  /* ── 5. what a tombstone is ──────────────────────────────────────────────── */
+
+  console.log('\n5. The content is gone; the fact that a message existed is not');
+  const { rows: tomb } = await db.query<Record<string, unknown>>(
+    `SELECT text_body, links_text, raw_json::text AS raw, sender_display_name, media_path,
+            media_mime, video_title, group_id, group_msg_id, sender_member_id,
+            sent_at::text AS sent_at, type::text AS type
+       FROM messages WHERE id = $1`,
+    [never.id],
+  );
+  const t = tomb[0] ?? {};
+  check('no text', t['text_body'] === null);
+  check('no link text', t['links_text'] === null);
+  check('no raw envelope', t['raw'] === '{}');
+  check('no display name', t['sender_display_name'] === '');
+  check('no media path', t['media_path'] === null);
+  check('THE SKELETON IS KEPT: the room', Number(t['group_id']) === 7);
+  check('  the chat item', Number(t['group_msg_id']) > 0);
+  check('  the member id, which consent binds to', t['sender_member_id'] === 'm-never');
+  check('  when it was said', String(t['sent_at']).startsWith('2026-01-02'));
+  check('  and what kind of thing it was', t['type'] === 'text');
+
+  const { rows: linkRows } = await db.query<{ n: string }>(
+    'SELECT count(*)::text AS n FROM links WHERE message_id = $1',
+    [never.id],
+  );
+  check('the link row is gone', linkRows[0]?.n === '0');
+
+  let bytesGone = false;
+  try {
+    await access(join(mediaRoot, 'photo.jpg'));
+  } catch {
+    bytesGone = true;
+  }
+  check('the media bytes are gone from disk', bytesGone);
+  check('  and the sweep counted the file it removed', outcome.filesRemoved === 1);
+  check(
+    '  while a file that was never there is not an error',
+    (await readFile(join(mediaRoot, 'photo.jpg'), 'utf8').catch(() => null)) === null,
+  );
+
+  /* ── 6. the database refuses a half-swept row ────────────────────────────── */
+
+  console.log('\n6. A tombstone that still holds content cannot exist');
+  let refused = false;
+  try {
+    await db.query('UPDATE messages SET text_body = $2 WHERE id = $1', [never.id, 'put it back']);
+  } catch {
+    refused = true;
+  }
+  check('writing text back into a tombstone is refused by the schema', refused);
+  const stillEmpty = (await textOf(never.id)) === null;
+  check('  and the tombstone is unchanged', stillEmpty);
+
+  let allowed = true;
+  try {
+    await db.query('UPDATE messages SET text_body = $2 WHERE id = $1', [
+      optedAfter.id,
+      'an ordinary edit',
+    ]);
+  } catch {
+    allowed = false;
+  }
+  check('THE CONTROL: an ordinary row still accepts writes', allowed);
+  await db.query('UPDATE messages SET text_body = $2 WHERE id = $1', [
+    optedAfter.id,
+    'after the opt-in',
+  ]);
+
+  /* ── 7. running it again converges ───────────────────────────────────────── */
+
+  console.log('\n7. A second pass sweeps nothing and changes nothing');
+  const tombsBefore = await tombstoneCount(db);
+  const second = await transaction((tx) => sweepUnconsented(tx, mediaRoot, cutoff));
+  check('the second pass sweeps nothing', second.swept === 0);
+  check('  and the tombstone count is unchanged', (await tombstoneCount(db)) === tombsBefore);
+  check('  and the published set STILL has not moved', (await publishedIds()) === after);
+
+  /* ── 8. the mutations ────────────────────────────────────────────────────── */
+
+  console.log('\n8. Mutations: each guard, removed, lets through exactly what it protects');
+  const wouldSweep = async (predicate: string): Promise<number[]> => {
+    const { rows } = await db.query<{ id: string }>(
+      `SELECT m.id FROM messages m WHERE ${predicate} ORDER BY m.id`,
+      [cutoff],
+    );
+    return rows.map((r) => Number(r.id));
+  };
+  const drop = (clause: string): string =>
+    SWEEPABLE.split('\n')
+      .map((line) =>
+        // A dropped line carrying $1 is REPLACED rather than removed: deleting it takes the
+        // only parameter reference with it and the bind fails, which reads as a mutation that
+        // could not run rather than one that let a row through.
+        line.includes(clause)
+          ? line.includes('$1')
+            ? '  AND $1::timestamptz IS NOT NULL'
+            : ''
+          : line,
+      )
+      .join('\n');
+
+  const withoutJournal = await wouldSweep(drop('FROM consent_actions'));
+  check(
+    'without the consent-journal clause, the undone member IS swept',
+    withoutJournal.includes(undone.id),
+  );
+  const withoutGaps = await wouldSweep(drop('FROM consent_gaps'));
+  check('without the gap clause, the gapped member IS swept', withoutGaps.includes(gapped.id));
+  const withoutHolds = await wouldSweep(drop('FROM evidence_holds'));
+  check('without the hold clause, held content IS swept', withoutHolds.includes(held.id));
+  const withoutReports = await wouldSweep(drop('FROM reports'));
+  check('without the report clause, reported content IS swept', withoutReports.includes(reported.id));
+  const withoutAge = await wouldSweep(drop('m.sent_at <'));
+  check('without the age clause, today IS swept', withoutAge.includes(neverRecent.id));
+  const withoutConsent = await wouldSweep(drop('FROM consent c'));
+  check(
+    'without the consent clause, an OPTED-IN member IS swept',
+    withoutConsent.includes(optedBefore.id),
+  );
+  check(
+    '  and the shipped predicate refuses every one of those',
+    (await wouldSweep(SWEEPABLE)).length === 0,
+    'nothing is left to sweep after the real pass',
+  );
+
+  /* ── 9. the grammar of the core command, read from the parser ────────────── */
+
+  console.log('\n9. The core command is the grammar the parser states (D-209)');
+  const coreSrc = await readFile('src/bot/runtime/core.ts', 'utf8');
+  check(
+    'the setter is /_ttl <userId> <seconds>',
+    coreSrc.includes('`/_ttl ${String(simplexUserId)} ${String(seconds)}`'),
+  );
+  check('the getter is /_ttl <userId>', coreSrc.includes('`/_ttl ${String(simplexUserId)}`'));
+  check(
+    'and it goes through the scheduler, because a named user id is refusable (D-171)',
+    /setChatItemTTL[\s\S]{0,600}this\.scheduler\.run/.test(coreSrc),
+  );
+  check(
+    'the immediate-expiry warning is on the page the operator presses',
+    (await readFile('src/web/views/retention.ts', 'utf8')).includes(
+      'This takes effect immediately, not just from now on.',
+    ),
+  );
+
+  /* ── 10. the page, operated ──────────────────────────────────────────────── */
+
+  console.log('\n10. The Retention page, driven through its real routes');
+
+  const adminCfg = {
+    adminPort: 8809,
+    adminUsername: OPERATOR,
+    adminPasswordHash: await argon2.hash(PASSWORD, { type: argon2.argon2id }),
+    sessionSecret: 'retention-secret-0123456789abcdef0123456789ab',
+    publicOrigin: 'https://admin.example.org',
+    rpId: 'admin.example.org',
+    webauthnOrigin: 'https://admin.example.org',
+    rpName: 'Cinderella Admin',
+  } as never;
+  const cfg = {
+    mediaRoot,
+    assetRoot: './state/preview-assets',
+    backupStatusPath: './state/backup-status.json',
+    backupRequestPath: './state/backup-request',
+    backupProgressPath: './state/backup-progress.json',
+    avatarPath: '',
+    databaseUrl: 'postgres://placeholder@127.0.0.1:5432/x',
+    logLevel: 'error',
+  } as unknown as Config;
+
+  registerNav();
+  const app = buildServer({
+    db,
+    adminCfg,
+    transaction,
+    settings: await SettingsService.load(db, 'error'),
+    security: await SecurityService.load(db),
+    interaction: await InteractionService.load(db),
+    cfg,
+    registerViews: registerAdminViews,
+  } as never);
+  await app.ready();
+
+  const loginPage = await app.inject({ method: 'GET', url: '/login' });
+  const loginCookie = String(loginPage.headers['set-cookie'] ?? '');
+  const loginToken = /name="_csrf" value="([^"]+)"/.exec(loginPage.body)?.[1] ?? '';
+  const login = await app.inject({
+    method: 'POST',
+    url: '/login',
+    headers: { cookie: loginCookie, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: `username=${OPERATOR}&password=${encodeURIComponent(PASSWORD)}&_csrf=${encodeURIComponent(loginToken)}`,
+  });
+  const rawCookie = login.headers['set-cookie'];
+  const cookie = (Array.isArray(rawCookie) ? rawCookie : [String(rawCookie ?? '')])
+    .map((c) => c.split(';')[0])
+    .join('; ');
+
+  const get = async (url: string): Promise<string> =>
+    (await app.inject({ method: 'GET', url, headers: { cookie } })).body;
+  const csrfOf = (body: string): string => /name="_csrf" value="([^"]+)"/.exec(body)?.[1] ?? '';
+  const says = (body: string, phrase: string): boolean =>
+    body.replace(/\s+/g, ' ').includes(phrase.replace(/\s+/g, ' '));
+
+  const pageBody = await get('/retention');
+  check('the page renders', pageBody.includes('Retention'));
+  check(
+    'and states what a tombstone is, in the words the operator can repeat',
+    says(pageBody, 'The content is gone. The fact that a message existed is not.'),
+  );
+  check(
+    'it says who is swept rather than leaving it to be inferred',
+    says(pageBody, 'never touched consent at all'),
+  );
+  check('it shows how many are already swept', says(pageBody, 'Already swept'));
+
+  const csrf = csrfOf(pageBody);
+  const saved = await app.inject({
+    method: 'POST',
+    url: '/retention/settings',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: `hours=720&enabled=yes&_csrf=${encodeURIComponent(csrf)}`,
+  });
+  check('saving the bound redirects', saved.statusCode === 302);
+  const readBack = await getRetentionSettings(db);
+  check('  and the DATABASE holds the new bound', readBack.hours === 720, `${String(readBack.hours)}h`);
+  check('  and sweeping is now on', readBack.enabled);
+
+  // A fresh row nobody consented to, old enough for the saved bound, so "Sweep now" has
+  // something to do and the assertion is not vacuous.
+  const later = await insert({ member: 'm-never', text: 'one more nobody agreed to' });
+  const beforeSweepButton = await tombstoneCount(db);
+  const pressed = await app.inject({
+    method: 'POST',
+    url: '/retention/sweep',
+    headers: { cookie, 'content-type': 'application/x-www-form-urlencoded' },
+    payload: `_csrf=${encodeURIComponent(csrfOf(await get('/retention')))}`,
+  });
+  check('pressing Sweep now redirects', pressed.statusCode === 302);
+  check(
+    '  and the row it was pressed for now holds no content',
+    (await textOf(later.id)) === null && (await swept(later.id)),
+  );
+  check(
+    '  and the tombstone count rose by exactly that row',
+    (await tombstoneCount(db)) === beforeSweepButton + 1,
+  );
+  check('  and the published set STILL has not moved', (await publishedIds()) === after);
+
+  const browsed = await get(`/messages?id=${String(never.id)}`);
+  check(
+    'the message browser says the content was removed rather than showing a blank row',
+    says(browsed, 'content removed'),
+  );
+
+  await app.close();
+  await pg.close();
+
+  console.log(
+    failures === 0
+      ? '\nAll retention checks passed.'
+      : `\n${String(failures)} check(s) FAILED.`,
+  );
+  process.exit(failures === 0 ? 0 : 1);
+}
+
+main().catch((err: unknown) => {
+  console.error(err);
+  process.exit(1);
+});

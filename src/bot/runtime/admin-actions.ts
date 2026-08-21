@@ -65,6 +65,8 @@ export class RuntimeActionUnavailableError extends Error {
 
 /** Who the runtime is hosting, for a console that must not act on the wrong identity. */
 export interface HostedIdentity {
+  /** Added CCB-S5-054: the retention page acts per hosted profile and needs the handle. */
+  botProfileId: number;
   simplexUserId: number;
   displayName: string;
   /** `ready` means the core has settled; anything else means it has not (D-125). */
@@ -88,6 +90,7 @@ export function hostedIdentity(botProfileId: number | undefined): HostedIdentity
   const bot = pick(handle, botProfileId);
   if (bot === undefined) return null;
   return {
+    botProfileId: bot.config.botProfileId,
     simplexUserId: bot.simplexUserId,
     displayName: bot.config.displayName,
     state: handle.runtime.state,
@@ -99,6 +102,7 @@ export function hostedIdentities(): HostedIdentity[] {
   if (handle === null) return [];
   const state = handle.runtime.state;
   return handle.bots.map((b) => ({
+    botProfileId: b.config.botProfileId,
     simplexUserId: b.simplexUserId,
     displayName: b.config.displayName,
     state,
@@ -790,4 +794,85 @@ export async function discoverBotChannels(botProfileId: number): Promise<Discove
       channelName: g.groupProfile.displayName || g.localDisplayName,
       link: g.viaGroupLinkUri ?? null,
     }));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * The core's own copy (CCB-S5-054, D-240)
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+export interface CoreRetention {
+  botProfileId: number;
+  displayName: string;
+  /** Seconds. 0 means the core keeps everything for ever, which is the shipped state. */
+  seconds: number;
+}
+
+/**
+ * What the core is currently keeping, per hosted bot, read from the core itself.
+ *
+ * Read rather than remembered on purpose (D-205). The value lives in the core's own
+ * database, one per SimpleX profile, and a console that showed our copy of the number
+ * would keep saying "a month" after a profile was restored from a backup that says
+ * for ever. A bot whose core call fails reports its fault instead of a number, because
+ * "we could not ask" and "it keeps nothing" must not render identically.
+ */
+export async function readCoreRetention(): Promise<
+  { ok: CoreRetention[]; failed: { displayName: string; error: string }[] }
+> {
+  const ok: CoreRetention[] = [];
+  const failed: { displayName: string; error: string }[] = [];
+  for (const identity of hostedIdentities()) {
+    try {
+      const { host, simplexUserId } = requireReadyBot(
+        'core retention cannot be read',
+        identity.botProfileId,
+      );
+      ok.push({
+        botProfileId: identity.botProfileId,
+        displayName: identity.displayName,
+        seconds: await host.runtime.getChatItemTTL(simplexUserId),
+      });
+    } catch (err) {
+      failed.push({
+        displayName: identity.displayName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { ok, failed };
+}
+
+/**
+ * Sets what the core keeps, for EVERY hosted profile.
+ *
+ * Deployment-wide rather than per bot, and that is the honest scope: the question is how
+ * long this HOST keeps a second copy of everything said in every room it is in, which is
+ * one answer for the machine rather than a personality setting. Applying it per bot would
+ * let one profile quietly keep for ever what another had been told to drop, and the
+ * operator would have no page on which to see that.
+ *
+ * Every profile is attempted and every failure is collected, because a partial apply that
+ * reported the first error would leave the operator believing the whole host was covered.
+ */
+export async function setCoreRetention(
+  seconds: number,
+): Promise<{ applied: string[]; failed: { displayName: string; error: string }[] }> {
+  const applied: string[] = [];
+  const failed: { displayName: string; error: string }[] = [];
+  for (const identity of hostedIdentities()) {
+    try {
+      const { host, simplexUserId } = requireReadyBot(
+        'core retention cannot be set',
+        identity.botProfileId,
+      );
+      await host.runtime.setChatItemTTL(simplexUserId, seconds);
+      applied.push(identity.displayName);
+    } catch (err) {
+      failed.push({
+        displayName: identity.displayName,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+  return { applied, failed };
 }

@@ -706,6 +706,21 @@ async function main(): Promise<void> {
   const app = buildServer({
     db,
     adminCfg,
+    // The preview's own transaction, so a route that must be atomic can actually be PRESSED
+    // here (CCB-S5-054). Without it the Retention page's Sweep button would reach the pool,
+    // which in the preview points at a placeholder URL - a control that renders and cannot
+    // work, which is the exact shape D-162 exists to stop.
+    transaction: async (fn) => {
+      await db.query('BEGIN');
+      try {
+        const out = await fn(db);
+        await db.query('COMMIT');
+        return out;
+      } catch (err) {
+        await db.query('ROLLBACK');
+        throw err;
+      }
+    },
     mediaRoot: cfg.mediaRoot,
     settings,
     security,

@@ -140,6 +140,7 @@ import { enqueueModerationExpiry, startQueue, stopQueue } from './queue/index.js
 import { resweepOverdueMutes } from './queue/jobs/moderation-expiry.js';
 import { listOverdueSanctions } from './moderation/store.js';
 import { startDestructionSweeper } from './archive/sweeper.js';
+import { retentionRunner, startRetentionSweeper } from './archive/retention.js';
 
 function runConfigCheck(cfg: Config, localAi: LocalAiConfig): void {
   log.info('Configuration loaded:', redactConfig(cfg));
@@ -1527,6 +1528,19 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
     status.error(`Deferred-destruction sweeper failed to start: ${message}`);
     log.error(`Deferred-destruction sweeper failed to start: ${message}`);
+  }
+
+  // Retention (CCB-S5-054, D-240): the content of messages nobody agreed to keep stops
+  // being kept. Ships OFF, so this starts a timer that reads the setting and does nothing
+  // until the operator has seen the count and switched it on. The boot run matters for the
+  // same reason the destruction sweep's does: a host that was down through the bound comes
+  // back up owing a sweep.
+  try {
+    startRetentionSweeper(retentionRunner(getPool(), cfg.mediaRoot, withTransaction));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    status.error(`Retention sweeper failed to start: ${message}`);
+    log.error(`Retention sweeper failed to start: ${message}`);
   }
 
   log.info('CIND3R3LLA is capturing to PostgreSQL (consent-gated). Press Ctrl+C to stop.');

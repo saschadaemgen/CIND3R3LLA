@@ -31,6 +31,13 @@ hide/restore cycle leaves behind — see the `message_publish_state` /
 `published_messages` views. A revocation hides everything at once; the member then
 chooses **hide** (retained, restorable by them alone) or **delete** (erased, and an
 evidence hold can defer that but never the hiding) — CCB-S3-013.
+**And publication being gated was never the same thing as storage being gated** (CCB-S5-054,
+D-240). Until retention, everything was KEPT whether anybody opted in or not - 64% of his
+archive - and it was found by the operator asking about his own data rather than by anything we
+ran. The content of messages from members who have never touched consent AT ALL is now removed
+past a bound, leaving a tombstone: *the content is gone, the fact that a message existed is
+not*. The SimpleX core's own second copy is bounded from the same page, because a promise kept
+in one database and broken in the one beside it is not a promise.
 
 ## Non-negotiables (base briefing §1)
 
@@ -374,8 +381,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   `bot/` (**the SimpleX adapter, and the ONLY place that may import `simplex-chat`** -
   enforced by `verify:adapter-seam`; core wiring, files, connect, avatar, parsing),
   `capture/` (parse, media, links, persist, her own sends), `consent/`,
-  `archive/` (whether her own messages publish, name redaction, destruction and the
-  deferred-destruction sweeper),
+  `archive/` (whether her own messages publish, name redaction, destruction, the
+  deferred-destruction sweeper, and `retention.ts`, **which stops keeping what nobody agreed
+  to** (CCB-S5-054, D-240): the allow-list predicate, the tombstone that clears content and
+  keeps the skeleton, and the hourly pass. The sentence to repeat is *the content is gone, the
+  fact that a message existed is not*. Nothing here can move the published set, and that is
+  STRUCTURAL rather than careful: `message_publish_state` reads none of the columns the sweep
+  clears, and opt-in is forward-only, so every swept row sits on the unreachable side of every
+  opt-in that has not happened yet. The core's own copy is the SECOND half of the same promise
+  and is set from the same page, `/_ttl <userId> <seconds>` through the scheduler),
   `media/` (metadata detection and stripping, video matchers),
   `interaction/`
   (wake word, intent resolver, dialogue engine, persona, help, `personality.ts`: the
@@ -721,7 +735,15 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   three rules in the D-138 shape - the DJ facts as placeholders she cannot contradict, the
   not-a-manual prohibition, the no-invention fence - plus `album` on the tracks, because it
   is in the tag and the first build dropped it. Re-baselined prompt-identity; the diff is the
-  three sentences).
+  three sentences)
+  · 070 keeping what nobody agreed to (CCB-S5-054, D-240: `content_swept_at`, the CHECK that
+  makes a tombstone still holding content UNREPRESENTABLE, and two partial indexes - the unswept
+  one SHRINKS as the archive is swept, which is the opposite of the usual direction and is the
+  point. A DELETE was the obvious reading of the briefing's shape and is wrong four ways: the
+  020 trigger aborts a bulk statement on ONE held row, the cascade takes her published replies
+  through `reply_to_id`, `(group_id, group_msg_id)` is what makes capture idempotent so a
+  deleted row returns on the next re-capture, and `media_path` is the only handle on the
+  encrypted original).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -729,7 +751,7 @@ evidence hold can defer that but never the hiding) — CCB-S3-013.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **064**, since 064 landed with her music self-knowledge). Stated as a rule
+  (currently **070**, since 070 landed the retention tombstone). Stated as a rule
   rather than a fixed number, because the fixed
   number went stale once already. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
@@ -748,6 +770,13 @@ harnesses (real Postgres-in-WASM, no server needed): `verify:db`,
 provider), `verify:archive` (her own messages + the consent leak guard), plus
 `verify:security`, `verify:public`, `verify:revocation`
 (hide/delete on revocation + the evidence holds; proves no path destroys a held item),
+`verify:retention` (what the archive stops keeping, CCB-S5-054, D-240: the allow-list with
+EVERY clause mutation-proven by neutering it one at a time, every spared row asserted beside a
+swept one in the SAME pass - because "nothing published was lost" passes against a sweep that
+does nothing, and "the unconsented rows are empty" passes against one that empties everything -
+the published id list compared character for character across the sweep, the schema refusing a
+tombstone that still holds content, and the page driven through its real routes. It cannot see
+that the page's controls are reachable (D-162); that was done in a browser),
 `verify:queue`, `verify:capture-events`, `verify:no-dashes`,
 `verify:decisions-index` (the generated index at the top of `docs/decisions.md`, D-157: that it
 matches the headings byte for byte, that every entry has a Status, and above all that **no decision

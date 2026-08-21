@@ -96,7 +96,10 @@ export const MEMBER_DATA_SOURCES: readonly MemberDataSource[] = Object.freeze([
     memberColumns: ['sender_member_id'],
     category: 'archive',
     class: 'archive',
-    label: 'Messages captured in the group, published only where you opted in.',
+    label:
+      'Messages captured in the group, published only where you opted in. If you have never ' +
+      'used the consent commands at all, the CONTENT of yours is removed once it is past the ' +
+      'retention bound the operator set; the row that says a message existed stays (CCB-S5-054).',
   },
   {
     table: 'message_mentions',

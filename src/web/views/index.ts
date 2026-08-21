@@ -18,6 +18,7 @@ import { registerPlugins } from './plugins.js';
 import { registerBridge } from './bridge.js';
 import { registerMusic } from './music.js';
 import { registerCapturePage } from './capture.js';
+import { registerRetentionPage } from './retention.js';
 import { registerWelcomePage } from './welcome.js';
 import { registerKnowledge } from './knowledge.js';
 import { registerEmbeds } from './embeds.js';
@@ -47,6 +48,7 @@ export function registerAdminViews(app: FastifyInstance, ctx: ViewContext): void
   registerBridge(app, ctx);
   registerMusic(app, ctx);
   registerCapturePage(app, ctx);
+  registerRetentionPage(app, ctx);
   registerWelcomePage(app, ctx);
   registerKnowledge(app, ctx);
   registerSecurity(app, ctx);

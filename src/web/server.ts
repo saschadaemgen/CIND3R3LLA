@@ -15,6 +15,7 @@ import fastifyFormbody from '@fastify/formbody';
 import fastifyStatic from '@fastify/static';
 import type { AdminConfig, Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
+import { withTransaction } from '../db/pool.js';
 import type { SettingsService } from '../settings/service.js';
 import type { SecurityService } from '../security/settings.js';
 import { ArchiveService } from '../archive/settings.js';
@@ -55,6 +56,8 @@ declare module 'fastify' {
 /** Everything routes/views need. Built once in buildServer. */
 export interface AdminContext {
   db: Queryable;
+  /** See {@link ViewContext.transaction}. */
+  transaction: <R>(fn: (tx: Queryable) => Promise<R>) => Promise<R>;
   adminCfg: AdminConfig;
   cfg: Config;
   settings: SettingsService;
@@ -69,6 +72,15 @@ export interface AdminContext {
 
 export interface ViewContext {
   db: Queryable;
+  /**
+   * A REAL transaction on a dedicated client (CCB-S5-054).
+   *
+   * Injected rather than imported so a route that must be atomic can be DRIVEN by the
+   * offline harnesses, which run on an in-process Postgres and never reach the pool.
+   * Retention is the first route that needs one: the media bytes and the rows they belong
+   * to have to move together or not at all.
+   */
+  transaction: <R>(fn: (tx: Queryable) => Promise<R>) => Promise<R>;
   adminCfg: AdminConfig;
   cfg: Config;
   settings: SettingsService;
@@ -81,6 +93,8 @@ export interface ViewContext {
 
 export interface ServerDeps {
   db: Queryable;
+  /** See {@link ViewContext.transaction}. Defaults to the pool's own. */
+  transaction?: <R>(fn: (tx: Queryable) => Promise<R>) => Promise<R>;
   adminCfg: AdminConfig;
   cfg: Config;
   settings: SettingsService;
@@ -135,6 +149,8 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
 
   const ctx: AdminContext = {
     db,
+    // The pool's real transaction by default; a harness passes its own engine's.
+    transaction: deps.transaction ?? withTransaction,
     adminCfg,
     cfg,
     settings,
@@ -317,6 +333,7 @@ export function buildServer(deps: ServerDeps): FastifyInstance {
   // Public archive front (CCB-S2-003) — no auth; consent-gated data + media.
   const viewCtx: ViewContext = {
     db,
+    transaction: ctx.transaction,
     adminCfg,
     cfg,
     settings,
@@ -413,6 +430,12 @@ export function registerNav(): void {
           href: '/consent',
           label: 'Consent',
           icon: icon('consent'),
+        },
+        {
+          key: 'retention',
+          href: '/retention',
+          label: 'Retention',
+          icon: icon('shield'),
         },
         {
           key: 'reports',
