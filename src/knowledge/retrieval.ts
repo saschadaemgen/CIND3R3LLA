@@ -180,6 +180,129 @@ export function hasRetrievableContent(text: string): boolean {
   return alphanumeric >= MIN_CONTENT_CHARS;
 }
 
+/**
+ * Whether this message is ASKING something, which is the upstream half of the attribution
+ * defect (CCB-S5-055 stage 1, D-243).
+ *
+ * ── WHY THE FLOOR WAS NEVER GOING TO CARRY THIS ──────────────────────────────
+ *
+ * The trigger's own comment argued that `always` is safe because "the RELEVANCE FLOOR is
+ * what decides whether anything is used". Measured on the operator's deployment, it does
+ * not. Of 38 source lines emitted, all 38 came from free conversation and 16 named a
+ * document with nothing to do with the answer - a greeting, a translation, an
+ * acknowledgement, and a pasted deploy log, each of which cleared a 0.60 floor against his
+ * corpus. The reason is the one `hasRetrievableContent` already states for emoji and which
+ * turns out to be true of ordinary sentences too: **a similarity score is a property of the
+ * corpus, not a statement about the message.** Two documents in his corpus sit high enough
+ * against almost anything that they were handed over for a migration log.
+ *
+ * D-183 is the rule: when a lane states a bar, the bar is a predicate over the TEXT or it
+ * does not exist. This is that predicate.
+ *
+ * ── IT IS AN ALLOW-LIST, PER D-201 ───────────────────────────────────────────
+ *
+ * The obvious shape is a list of things that are not questions - greetings, thanks, log
+ * output - and that is a deny-list on a path where the unlisted case is the one that leaks.
+ * So this states what MAY retrieve: a message that asks something. A question mark, an
+ * interrogative word, or an explicit request to look in his documents.
+ *
+ * ── WHAT IT DELIBERATELY DOES NOT DO ─────────────────────────────────────────
+ *
+ * It does not try to judge whether the question is ABOUT his documents. Nothing in the text
+ * can know that, the floor cannot know it either, and guessing would refuse real questions -
+ * which the trigger's comment correctly calls the worse defect, because she would answer
+ * without the documents and say nothing about why. It removes the class that provably is not
+ * a question, and the declaration downstream removes the rest.
+ *
+ * SELF-QUESTIONS ARE EXCLUDED, reusing D-238's closed set through `asksAboutSelf`: "what are
+ * your functions" is a question, and the answer is never in the operator's documents. That
+ * sighting named an SS7 paper.
+ */
+/**
+ * Interrogatives that mark a question WHEREVER they appear.
+ *
+ * German `was` is deliberately absent, and that is the kind of collision a word list has to
+ * be built around rather than discovered by: it is "what" in German and a past copula in
+ * English, so admitting it anywhere would admit every English sentence containing "it was".
+ * It is handled as a leading word below, where "Was ist..." is a question and "it was live"
+ * is not.
+ */
+const INTERROGATIVE =
+  /\b(what|whats|who|whose|whom|when|where|why|how|which|wer|wen|wem|wessen|wann|wo|woher|wohin|warum|wieso|weshalb|wie|welche[rsnm]?)\b/iu;
+
+/**
+ * An explicit request for information, anywhere in the message. Not a question by grammar,
+ * but a request by intent, and refusing "explain the handover" would be absurd.
+ *
+ * CALIBRATED AGAINST THE REAL TRAFFIC rather than imagined. Every message that produced a
+ * source line on the operator's deployment was read back out of the archive and run through
+ * this predicate: every genuine document question was question-shaped, and exactly ONE was
+ * missed - "Name the five mistakes a new developer is most likely to make" - which is why
+ * "name the" and "list the" are here. The messages themselves are not reproduced in this
+ * repository, which is public; only the shapes they taught.
+ */
+const INFORMATION_REQUEST =
+  /\b(tell me|explain|describe|summari[sz]e|name the|list the|give me|erklär|erklaere|erkläre|beschreib|zusammenfass|nenne|liste)/iu;
+
+/**
+ * Auxiliaries that mark a question only by INVERSION, so they count only at the start of the
+ * message or of a sentence inside it.
+ *
+ * This is the clause that "Aktivity Stream is live." caught during the check's first run: a
+ * bare `\b(is|are|was|can|does)\b` match admits most declarative sentences ever written, and
+ * a predicate that admits statements is the `always` trigger again with extra steps.
+ */
+const LEADING_AUXILIARY =
+  /(^|[.!?]\s+)(is|are|was|were|do|does|did|can|could|will|would|should|has|have|ist|sind|war|waren|kann|kannst|könnte|hat|haben|wird|würde|soll|darf)\b/iu;
+
+export function looksLikeAQuestion(text: string): boolean {
+  const t = text.trim();
+  if (t === '') return false;
+  if (t.includes('?')) return true;
+  if (INTERROGATIVE.test(t)) return true;
+  if (INFORMATION_REQUEST.test(t)) return true;
+  return LEADING_AUXILIARY.test(t);
+}
+
+/** Possessives and pronouns that make a question about HER rather than about his documents. */
+const SELF_REFERENCE = new Set([
+  'you',
+  'your',
+  'yours',
+  'yourself',
+  'du',
+  'dein',
+  'deine',
+  'deinem',
+  'deinen',
+  'deiner',
+  'deines',
+  'dich',
+  'dir',
+]);
+
+export function asksAboutSelf(text: string): boolean {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .some((token) => SELF_REFERENCE.has(token));
+}
+
+/**
+ * The whole upstream decision, in one predicate, so there is one place to read and one
+ * place to mutate.
+ *
+ * `explicitlyAsked` is the operator's own "check your documents" phrasing, which overrides
+ * everything: if a member says so in words, she looks, whatever shape the sentence has.
+ */
+export function shouldRetrieve(text: string, explicitlyAsked: boolean): boolean {
+  if (explicitlyAsked) return true;
+  if (!hasRetrievableContent(text)) return false;
+  if (!looksLikeAQuestion(text)) return false;
+  if (asksAboutSelf(text)) return false;
+  return true;
+}
+
 /** The RRF constant. See the header: the paper's value, not a measured one. */
 export const RRF_K = 60;
 
@@ -271,19 +394,82 @@ export function retrieve(
 }
 
 /**
- * The documents an answer actually drew on, for the attribution line.
+ * The documents that were PUT IN FRONT OF HER, in the order the passages were handed over.
  *
- * APPLICATION-WRITTEN, following D-137: the model is never asked which document it used and
- * never writes a character of this line. It says which documents were PUT IN FRONT OF IT,
- * which is a fact the application knows, rather than a claim the model makes.
+ * This is a fact the application knows, and since CCB-S5-055 it is no longer the attribution:
+ * it is the candidate list the declaration selects from, and the operator's record of what a
+ * turn was holding. `attributionForUsed` is what a member sees.
  *
- * De-duplicated and ordered by best-scoring chunk, so a document contributing three chunks is
- * named once.
+ * The ORDER is load-bearing now in a way it was not before: index `n` here is index `n` in the
+ * `referenceDocuments` array the model is shown, so the two must be built from the same
+ * `outcome.selected` in the same order. They are.
  */
-export function attributionFor(outcome: RetrievalOutcome): string[] {
+export function documentsHanded(outcome: RetrievalOutcome): string[] {
   const seen = new Map<number, string>();
   for (const c of outcome.selected) {
     if (!seen.has(c.documentId)) seen.set(c.documentId, c.documentTitle);
   }
   return [...seen.values()];
+}
+
+/**
+ * The documents the answer actually USED, from the model's own declaration (D-243).
+ *
+ * ── WHY THIS REPLACES NAMING WHAT WAS HANDED OVER ────────────────────────────
+ *
+ * D-137 chose to name what she was handed, reasoning that it is a fact the code knows while
+ * "which documents she used" is a claim she would sometimes get wrong. The reasoning is sound
+ * and the conclusion was not: a correct refusal to use a document still printed as
+ * provenance. Measured on the deployment, 16 of 38 lines named a document unrelated to the
+ * answer, and the last one certified invented claims about a third party.
+ *
+ * ── IT IS THE WEB MECHANISM, AND IT TRANSFERS ────────────────────────────────
+ *
+ * `attribution.ts` has done exactly this for search since CCB-S4-042: the model returns the
+ * indices of the results it used, and everything about that list is treated as untrusted -
+ * out-of-range, duplicate, non-integer and negative entries are dropped rather than clamped,
+ * because a clamped index cites something the answer did not use.
+ *
+ * The operator asked whether it transfers, given web results arrive as a small numbered set.
+ * Passages do too: `maxChunks` and the character budget bound `outcome.selected` to a handful,
+ * and both ride in the SAME user-message JSON as positional arrays. So the property that makes
+ * the web mechanism work is present here.
+ *
+ * It is better here in one respect. The model is shown the passage text and NEVER the document
+ * name (CCB-S5-027, D-180), so its declaration is over anonymous slots and the application does
+ * the naming. It cannot invent a title; it can only point at a slot it was given.
+ *
+ * It is worse in one respect, stated rather than glossed: a passage is a CHUNK, so several
+ * indices can name one document. They are de-duplicated by `documentId`, which is why this
+ * takes the outcome rather than the already-flattened list.
+ *
+ * ── AND THE DECLARATION IS A VETO, NOT A SOURCE OF TRUTH ─────────────────────
+ *
+ * This is the part that matters, and it is why a self-report is acceptable here when D-183
+ * says a bar in a prompt is not a bar. Retrieval decides what CAN be cited; the declaration
+ * can only narrow that set. Neither alone can produce a citation, and nothing the model says
+ * can add a document that was not retrieved - an index outside the handed set is dropped, not
+ * clamped. The failure that remains is a model declaring a passage it did not really use,
+ * which prints a line no worse than the one this replaces; the failure it removes is the one
+ * that actually happened, six times.
+ */
+export function attributionForUsed(
+  handedTitles: readonly string[],
+  used: readonly number[],
+): string[] {
+  const seen: string[] = [];
+  for (const index of used) {
+    // Untrusted input, dropped rather than clamped, exactly as the web path does. An index
+    // outside the handed set is the case that matters: it is how a model would name a
+    // document that was never retrieved, and dropping it is what makes the declaration
+    // incapable of ADDING a source.
+    if (!Number.isInteger(index) || index < 0 || index >= handedTitles.length) continue;
+    const title = handedTitles[index];
+    if (title === undefined) continue;
+    // De-duplicated by TITLE, which is equivalent to de-duplicating by document: several
+    // chunks of one document carry the same one, and a document contributing three passages
+    // must be named once.
+    if (!seen.includes(title)) seen.push(title);
+  }
+  return seen;
 }

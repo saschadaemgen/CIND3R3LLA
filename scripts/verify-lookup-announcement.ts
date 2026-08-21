@@ -54,7 +54,7 @@ import {
   type LookupKind,
 } from '../src/interaction/lookup-announcement.js';
 import { renderPromptRule } from '../src/interaction/prompt-rules.js';
-import { attributionFor } from '../src/knowledge/retrieval.js';
+import { documentsHanded } from '../src/knowledge/retrieval.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import type { AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import { setLogLevel } from '../src/log.js';
@@ -660,7 +660,7 @@ async function main(): Promise<void> {
       documentTitle: `doc-${String(k + 1)}.md`,
       body: `passage ${String(k + 1)}`,
     }));
-    const sources = attributionFor({
+    const sources = documentsHanded({
       candidates: [],
       selected,
       charsUsed: 0,

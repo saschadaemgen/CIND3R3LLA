@@ -81,7 +81,7 @@ import {
   type BotPersonality,
 } from './personality.js';
 import { lookupBrief, shouldAnnounce, type LookupKind } from './lookup-announcement.js';
-import { hasRetrievableContent } from '../knowledge/retrieval.js';
+import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieval.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
@@ -4391,6 +4391,13 @@ export class InteractionEngine {
     // the application prints; they are deliberately not carried into anything the model is
     // shown. See `AiReplyRequest.knowledgePassages` for what that buys and what it costs.
     let knowledgePassages: { text: string }[] = [];
+    // The document title behind each passage, in the ORDER the passages were handed over,
+    // so the model's declaration can be mapped back through the same list it was shown
+    // (CCB-S5-055, D-243). Index n here is index n in `referenceDocuments`.
+    let passageTitles: string[] = [];
+    // What the model said it used. `null` means it was never asked - a different state from
+    // "asked and declared nothing", and the two must not print alike.
+    let declaredDocuments: readonly number[] | null = null;
     const knowledge = this.deps.knowledge?.() ?? null;
     // ── NOTHING TO LOOK UP MEANS NO LOOKUP (CCB-S5-037, D-195) ────────────────
     //
@@ -4405,10 +4412,15 @@ export class InteractionEngine {
     // having: a reaction no longer costs an embedding call at all, so the second model stops
     // being invoked on the reply path for messages that were never going to use it.
     if (knowledge && this.deps.botProfileId != null && hasRetrievableContent(msg.text)) {
+      // NOTE: the fuller gate (is this message asking anything at all?) lives in
+      // `KnowledgeService.query` since D-243, so that it holds for every caller rather than
+      // for this one. This cheap check stays because it is what makes a reaction cost no
+      // embedding call at all, which is the CCB-S5-037 saving.
       try {
         const found = await knowledge.query(this.deps.botProfileId, msg.text);
         knowledgePassages = found.passages.map((p) => ({ text: p.text }));
         knowledgeSources = found.sources;
+        passageTitles = found.passages.map((p) => p.title);
       } catch (error) {
         log.warn(
           `Interaction: the knowledge base could not be read (${
@@ -4476,6 +4488,13 @@ export class InteractionEngine {
               // incapable of causing anything, exactly as the history and the search
               // results are. Empty unless something cleared the relevance floor.
               ...(knowledgePassages.length ? { knowledgePassages } : {}),
+              // WHICH OF THEM THE ANSWER USED (CCB-S5-055, D-243), the web mechanism one
+              // source along. Fires only when passages were attached and the model answered,
+              // so a thrown request or a missing field leaves this null and nothing is
+              // attributed. The declaration can only NARROW what retrieval already admitted.
+              onDocumentsUsed: (indices) => {
+                declaredDocuments = indices;
+              },
               // The book, when they are asking about it (CCB-S4-045).
               ...disclosure,
               // A page answer tells her only THAT a page is being printed under her reply,
@@ -4604,50 +4623,51 @@ export class InteractionEngine {
     // that - `KnowledgeService.query` derives the passages and the sources from the same
     // `outcome.selected`, so they are non-empty together - and this was the one branch that
     // could, by throwing the line away rather than by never building it.
-    // ── THE SOURCE LINE IS OFF (CCB-S5-056) ────────────────────────────────
+    // ── THE SOURCE LINE NAMES WHAT THE ANSWER USED (CCB-S5-055, D-243) ─────
     //
-    // It printed a false attribution six times in a week, and the sixth certified an
-    // invented answer about a third party's roadmap and pricing, in public, in a room full
-    // of people who use that product. A missing attribution is a small loss. A false one is
-    // the product's promise breaking in the most visible place it has - and the line makes
-    // it WORSE rather than better, because without it a member reads a guess and with it a
-    // member reads a citation.
+    // It is back on, and it is a different line from the one CCB-S5-056 turned off. That
+    // one named the documents she was HANDED (D-137), so a correct refusal to use a
+    // document still printed as provenance: six false attributions in a week, the last
+    // certifying invented claims about a third party.
     //
-    // WHY IT WAS WRONG, which is not what five investigations went looking for. D-137 chose
-    // deliberately to name the documents she was HANDED rather than the documents she used,
-    // on the reasoning that the first is a fact this code knows and the second is a claim
-    // she would sometimes get wrong. That reasoning holds and the conclusion does not: a
-    // correct refusal to use a document still prints as provenance, so the line says "this
-    // answer came from here" about answers that came from nowhere near it.
+    // THIS IS THE WEB MECHANISM, ONE SOURCE ALONG. Since CCB-S4-042 the model returns the
+    // indices of the search results it used and the application prints those and nothing
+    // else. Passages now ride in the same user-message JSON as a numbered array, so the
+    // same declaration works, and it is SAFER here: the model never sees a document name
+    // (D-180), so it can only point at a slot it was given, never invent a title.
     //
-    // This is stop-the-bleeding and it is not the fix. CCB-S5-055 is the fix: attribution
-    // that states the source the answer actually came from, or none. Until that can be
-    // PROVEN correct, nothing is printed.
+    // THE DECLARATION IS A VETO, NOT A SOURCE OF TRUTH, which is what makes a self-report
+    // acceptable where D-183 says a prompt sentence is not a bar. Retrieval decides what
+    // CAN be named; this can only narrow it. An index outside the handed set is DROPPED
+    // rather than clamped, so nothing the model says can add a document that was never
+    // retrieved.
     //
-    // THE PERSONA STRING STAYS, and deliberately. `protected-text.ts` derives the lines she
-    // may not write from the persona templates that carry placeholders, so removing
-    // `knowledgeSources` would take the marker with it and she could then write the forged
-    // line herself with nothing left to strip it (D-180). The application stops printing it;
-    // the guard against her printing it must not move.
-    //
-    // WHAT IS RECORDED INSTEAD. Every turn that had documents in hand logs what it had and
-    // what it printed, which is the instrument CCB-S5-055 stage 0 asks for and the thing
-    // five diagnoses lacked: both halves have been measured in isolation and come back
-    // clean while a member still sees the line, so the emission is the path nobody watched.
+    // THREE STATES, and they are deliberately distinguishable in the record: never asked
+    // (no passages), asked and declared nothing (the case that produced every sighting),
+    // and asked and declared something.
+    const usedTitles =
+      declaredDocuments === null ? [] : attributionForUsed(passageTitles, declaredDocuments);
+    if (usedTitles.length > 0 && spoken !== null) {
+      body = `${body}
+${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
+        sources: usedTitles.join(', '),
+      })}`;
+    }
+    // The instrument stays (CCB-S5-056). It now records the DIFFERENCE between what was
+    // handed over and what was used, which is the number that would have caught this a
+    // week ago: every sighting was a turn where those two disagreed and only the first was
+    // printed.
     if (knowledgeSources.length > 0 && spoken !== null) {
-      log.info('Interaction: knowledge documents were in hand; NO source line was printed', {
+      log.info('Interaction: documents in hand, and what the answer declared', {
         lane: 'conversation',
         botProfileId: this.deps.botProfileId,
-        documents: knowledgeSources.length,
-        // The document NAMES, which are the operator's own file titles rather than member
-        // content, and the whole point of the record: a sixth sighting can be matched
-        // against what was actually held at the time.
+        // The operator's own file titles, never member content.
         handed: knowledgeSources.join(', '),
         passages: knowledgePassages.length,
-        printed: 'none',
+        declared: declaredDocuments === null ? 'not asked' : JSON.stringify(declaredDocuments),
+        printed: usedTitles.length === 0 ? 'none' : usedTitles.join(', '),
       });
     }
-
     const sent = await this.replyWithText(msg, s, lang, body, 'conversation');
     // 'rate-limited' is a separate outcome rather than a missing row, because a dropped
     // reply and a reply that never happened look identical from the group and the

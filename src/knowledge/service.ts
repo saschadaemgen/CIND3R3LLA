@@ -22,7 +22,12 @@ import {
 } from '../db/knowledge.js';
 import { chunkDocument, ingestSignature } from './chunk.js';
 import type { Embedder } from './embed.js';
-import { attributionFor, retrieve, type RetrievalOutcome } from './retrieval.js';
+import {
+  documentsHanded,
+  retrieve,
+  shouldRetrieve,
+  type RetrievalOutcome,
+} from './retrieval.js';
 import { asksForDocuments } from '../plugins/knowledge-base/settings.js';
 import type { KnowledgeSettings } from '../plugins/knowledge-base/settings.js';
 
@@ -226,7 +231,21 @@ export class KnowledgeService {
     //
     // `off` costs no embedding call at all, which is the point of it.
     if (settings.trigger === 'off') return empty;
-    if (settings.trigger === 'explicit' && !asksForDocuments(text)) return empty;
+    const explicitlyAsked = asksForDocuments(text);
+    if (settings.trigger === 'explicit' && !explicitlyAsked) return empty;
+
+    // ── AND ON 'always', THE MESSAGE STILL HAS TO BE ASKING SOMETHING (D-243) ──
+    //
+    // The trigger's own comment argued that 'always' is safe because the relevance floor
+    // decides. Measured on the deployment it does not: a greeting, a translation, an
+    // acknowledgement and a pasted deploy log all cleared a 0.60 floor against his corpus,
+    // because a similarity score is a property of the CORPUS rather than a statement about
+    // the message. 'always' now means every free-conversation QUESTION, which is what the
+    // console has always said it means.
+    //
+    // Deliberately not a judgement about whether the question is about his documents -
+    // nothing in the text can know that, and refusing a real question is the worse defect.
+    if (!shouldRetrieve(text, explicitlyAsked)) return empty;
 
     const corpus = await botCorpusSize(this.deps.db, botProfileId);
     // Nothing granted means no embedding call at all. A bot with no documents must not cost
@@ -248,7 +267,10 @@ export class KnowledgeService {
       // as part of the document: prepending "From X, under Y (part 3 of 9)." to the text
       // she is shown would be the application putting words in the document's mouth.
       passages: outcome.selected.map((c) => ({ title: c.documentTitle, text: c.body })),
-      sources: attributionFor(outcome),
+      // What was HANDED OVER, which is no longer the attribution: it is the candidate list
+      // the model's declaration selects from, and index n here is index n in the
+      // `referenceDocuments` array it is shown. `attributionForUsed` is what a member sees.
+      sources: documentsHanded(outcome),
     };
   }
 

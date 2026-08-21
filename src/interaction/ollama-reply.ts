@@ -217,6 +217,23 @@ export interface AiReplyRequest {
    */
   onSourcesUsed?: (indices: readonly number[]) => void;
   /**
+   * Which of the OPERATOR'S DOCUMENTS the answer used, declared by the model (D-243).
+   *
+   * The same shape and the same fail-closed direction as {@link onSourcesUsed}, one source
+   * along. Called only when passages were attached AND the model answered, so a missing
+   * field, an older model, a malformed response or a thrown request all leave the caller
+   * with no declaration and therefore no attribution.
+   *
+   * A SEPARATE field from `usedResults` rather than one shared list, because the two index
+   * into different arrays and a single list could not say which. Keeping them apart also
+   * means each fails closed on its own.
+   *
+   * Indices are positions in the `referenceDocuments` array as it was sent, which is
+   * `outcome.selected` in order. Passed through unvalidated beyond being numbers, for the
+   * reason above it: the caller owns the list and is the one place that decides range.
+   */
+  onDocumentsUsed?: (indices: readonly number[]) => void;
+  /**
    * What was said in this chat before the current message (CCB-S4-044, D-147).
    *
    * UNTRUSTED, and it rides in the USER message inside {@link HISTORY_FENCE}, never in the
@@ -478,11 +495,25 @@ export function replyTokenCap(maxChars: number): number {
   return Math.max(320, Math.ceil(maxChars / 2) + envelope);
 }
 
-function responseSchema(maxChars: number, withSources: boolean): Record<string, unknown> {
+function responseSchema(
+  maxChars: number,
+  withSources: boolean,
+  withDocuments: boolean,
+): Record<string, unknown> {
   return {
     type: 'object',
     additionalProperties: false,
-    required: withSources ? ['reply', 'usedResults'] : ['reply'],
+    required: [
+      'reply',
+      ...(withSources ? ['usedResults'] : []),
+      // Same rule as usedResults and for the same reason (CCB-S5-055, D-243): present ONLY
+      // when passages are attached, because a field asking which documents were used on a
+      // request carrying none is an invitation to invent some; and REQUIRED when present,
+      // because strict json_schema needs it listed and because a model that must answer
+      // cannot quietly skip it. An empty array is the honest answer and is what the caller
+      // reads as "attribute nothing".
+      ...(withDocuments ? ['usedDocuments'] : []),
+    ],
     properties: {
       reply: {
         type: 'string',
@@ -492,6 +523,14 @@ function responseSchema(maxChars: number, withSources: boolean): Record<string, 
       ...(withSources
         ? {
             usedResults: {
+              type: 'array',
+              items: { type: 'integer', minimum: 0 },
+            },
+          }
+        : {}),
+      ...(withDocuments
+        ? {
+            usedDocuments: {
               type: 'array',
               items: { type: 'integer', minimum: 0 },
             },
@@ -628,7 +667,11 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
   return assemblePrompt(request.rules, lanesForMode(request.mode), context, values).join('\n');
 }
 
-function parseCompletion(value: unknown): { reply: string; usedResults: number[] } {
+function parseCompletion(value: unknown): {
+  reply: string;
+  usedResults: number[];
+  usedDocuments: number[];
+} {
   const envelope = asRecord(value, 'completion envelope');
   const choices = envelope['choices'];
   if (!Array.isArray(choices) || choices.length === 0) {
@@ -660,12 +703,16 @@ function parseCompletion(value: unknown): { reply: string; usedResults: number[]
   // attribution, which is the direction this is allowed to fail in. Anything that is not
   // a finite number is dropped here; range is the caller's business, since the caller is
   // the one holding the result list.
+  const declaredDocs = result['usedDocuments'];
+  const usedDocuments = Array.isArray(declaredDocs)
+    ? declaredDocs.filter((n): n is number => typeof n === 'number')
+    : [];
   const declared = result['usedResults'];
   const usedResults = Array.isArray(declared)
     ? declared.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
     : [];
 
-  return { reply, usedResults };
+  return { reply, usedResults, usedDocuments };
 }
 
 function cleanLiterals(values: readonly string[] | undefined): string[] {
@@ -1008,6 +1055,7 @@ export async function generateOllamaReply(
             )
           : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
   const hasWebResults = (request.webResults?.length ?? 0) > 0;
+  const hasDocuments = (request.knowledgePassages?.length ?? 0) > 0;
   const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
@@ -1063,8 +1111,14 @@ export async function generateOllamaReply(
                     // UNNAMED, since CCB-S5-027. See the field's own documentation: the
                     // title was the one string she could copy to forge a citation that
                     // looked real, and she was being handed it beside the passage.
+                    // NUMBERED since CCB-S5-055 (D-243), so the declaration has an
+                    // unambiguous thing to point at. The index rides OUTSIDE the fence, so
+                    // the passage text inside it stays verbatim and the fence still means
+                    // exactly "the operator gave me this". The numbering is positional and
+                    // matches `outcome.selected`, which is the same order the application
+                    // maps back through - see `attributionForUsed`.
                     referenceDocuments: request.knowledgePassages.map(
-                      (p) => `${KNOWLEDGE_FENCE}${p.text}${KNOWLEDGE_FENCE}`,
+                      (p, i) => `[${String(i)}] ${KNOWLEDGE_FENCE}${p.text}${KNOWLEDGE_FENCE}`,
                     ),
                   }
                 : {}),
@@ -1097,7 +1151,7 @@ export async function generateOllamaReply(
           json_schema: {
             name: 'cinderella_reply',
             strict: true,
-            schema: responseSchema(maxChars, hasWebResults),
+            schema: responseSchema(maxChars, hasWebResults, hasDocuments),
           },
         },
       }),
@@ -1156,6 +1210,9 @@ export async function generateOllamaReply(
     // a blocked literal or a leaked placeholder must not leave a source declaration behind
     // it, because the caller would then attribute a reply the member never sees.
     if (hasWebResults) request.onSourcesUsed?.(completion.usedResults);
+    // The same hand-back for documents (CCB-S5-055, D-243). Fired only when passages were
+    // attached, so a caller can tell "declared nothing" from "was never asked".
+    if (hasDocuments) request.onDocumentsUsed?.(completion.usedDocuments);
 
     callOk = true;
     callChars = reply.length;

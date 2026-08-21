@@ -123,6 +123,7 @@
     "calibrate:knowledge-relevance": "tsx scripts/calibrate-knowledge-relevance.ts",
     "verify:cheap-queries": "tsx scripts/verify-cheap-queries.ts",
     "verify:retention": "tsx scripts/verify-retention.ts",
+    "verify:attribution": "tsx scripts/verify-attribution.ts",
     "measure:knowledge-retrieval": "tsx scripts/measure-knowledge-retrieval.ts",
     "measure:prompt": "tsx scripts/measure-prompt.ts",
     "measure:music-parse": "tsx scripts/measure-music-parse.ts",

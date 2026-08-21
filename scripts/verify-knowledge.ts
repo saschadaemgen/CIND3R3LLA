@@ -36,7 +36,7 @@ import {
 } from '../src/knowledge/chunk.js';
 import {
   retrieve,
-  attributionFor,
+  documentsHanded,
   RETRIEVAL_DEFAULTS,
   type Candidate, hasRetrievableContent } from '../src/knowledge/retrieval.js';
 import { Embedder, EMBEDDING_DIMENSIONS, DOCUMENT_PREFIX, QUERY_PREFIX } from '../src/knowledge/embed.js';
@@ -389,9 +389,12 @@ async function main(): Promise<void> {
   const abovefloor = retrieve([fat(1, 0.9)], { ...RETRIEVAL_DEFAULTS, minScore: 0.45 });
   check('CONTROL: a chunk above the floor IS selected, so the floor discriminates',
     abovefloor.selected.length === 1);
-  check('attribution names the document once per document',
-    attributionFor(abovefloor).length === 1);
-  check('and names nothing when nothing was selected', attributionFor(belowFloor).length === 0);
+  // `documentsHanded` since CCB-S5-055 (D-243): this is the CANDIDATE list the model's
+  // declaration selects from, not the attribution any more. What a member actually sees is
+  // `attributionForUsed`, and `verify:attribution` owns that.
+  check('the handed list names the document once per document',
+    documentsHanded(abovefloor).length === 1);
+  check('and hands over nothing when nothing was selected', documentsHanded(belowFloor).length === 0);
 
   /* ── 5. The fence ───────────────────────────────────────────────────────── */
 
@@ -570,7 +573,12 @@ async function main(): Promise<void> {
   // been an assertion that passed against a fusion ignoring its weights entirely.
   const scoresUnder = async (kw: number, vec: number): Promise<string> => {
     tuned = normalizeKnowledge({ ...BASE, keywordWeight: kw, vectorWeight: vec });
-    const r = await tunedService.query(reader, 'differentActiveUser apiListGroups');
+    // QUESTION-SHAPED since CCB-S5-055 (D-243), because retrieval is now gated on the
+    // message ASKING something. The bare keyword string this used to send is refused by
+    // `shouldRetrieve`, and that is the gate working rather than a limit on the fusion: the
+    // query here is arbitrary and exists only to produce a candidate set. Calibrated against
+    // the real traffic, every genuine document question a member sent was question-shaped.
+    const r = await tunedService.query(reader, 'what is differentActiveUser in apiListGroups?');
     return r.outcome.candidates
       .map((c) => `${String(c.chunkId)}=${c.finalScore.toFixed(5)}`)
       .join(',');

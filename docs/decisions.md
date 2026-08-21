@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 241 decisions</strong> — newest first. Highest allocated: <strong>D-242</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 242 decisions</strong> — newest first. Highest allocated: <strong>D-243</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-243 | The attribution names what the answer used, and retrieval stops running on everything | IMPLEMENTED |
 | D-242 | The source line is off, because a false attribution is worse than none | IMPLEMENTED |
 | D-241 | The retention floor was unfounded, and the sweep had six ways to be mistaken for something else | IMPLEMENTED |
 | D-240 | Keeping what nobody agreed to: the tombstone, and both copies | IMPLEMENTED |
@@ -270,6 +271,81 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-243 - The attribution names what the answer used, and retrieval stops running on everything
+
+**Status: IMPLEMENTED** (CCB-S5-055 stage 1, migration 072). The emission is rebuilt; it is
+**not yet proven against a live model**, which is stage 4.
+
+**TWO HALVES, AND THE OPERATOR ASKED FOR BOTH BECAUSE EITHER ALONE LEAVES A HOLE.** Downstream,
+the line now states what the answer used. Upstream, a message that is not asking anything no
+longer reaches the corpus at all. Without the gate the announcement still fires for a deploy
+log; without the declaration a retrieved-but-unused document is still cited.
+
+**THE DOWNSTREAM HALF IS THE WEB MECHANISM, TRANSFERRED RATHER THAN REINVENTED**, which is what
+the operator asked for. `attribution.ts` has done this for search since CCB-S4-042: the model
+returns the indices of the results it used and the application prints those and nothing else.
+`usedDocuments` is the same field one source along, `attributionForUsed` the same untrusted-input
+discipline - out-of-range, duplicate, negative and non-integer entries DROPPED rather than
+clamped.
+
+**Why it transfers, since the two differ in that web results arrive as a small numbered set:**
+passages do too. `maxChunks` and the character budget bound the selection to a handful, and both
+ride in the SAME user-message JSON as positional arrays, so the property the web mechanism rests
+on is present. **It is safer here in one respect and weaker in another, and both are stated.**
+Safer: the model is shown passage TEXT and never a document name (D-180), so its declaration is
+over anonymous numbered slots and the application does the naming - it cannot invent a title,
+only point at a slot it was given. Weaker: a passage is a CHUNK, so several indices can name one
+document, which is why they are de-duplicated by title.
+
+**AND THE DECLARATION IS A VETO, NOT A SOURCE OF TRUTH.** This is what makes a self-report
+acceptable where D-183 says a sentence in a prompt is not a bar. Retrieval decides what CAN be
+named; the declaration can only narrow that set; neither alone can produce a citation. Nothing
+the model says can add a document that was not retrieved. The residual is a model declaring a
+passage it did not really use, which prints a line no worse than the one it replaces; what it
+removes is the failure that actually happened, six times.
+
+**THE UPSTREAM HALF, WHICH IS THE ONE NOBODY HAD ASKED ABOUT.** The trigger defaults to `always`
+and its own comment argued that was safe because "the RELEVANCE FLOOR is what decides whether
+anything is used". Measured on the deployment, it does not: of 38 lines, a greeting, an
+acknowledgement, a translation request and a pasted deploy log all cleared a 0.60 floor. The
+reason is the one `hasRetrievableContent` already stated for emoji and which turns out to hold
+for ordinary sentences too - **a similarity score is a property of the CORPUS, not a statement
+about the message.** Two documents in his corpus sit high enough against almost anything that
+they were handed over for migration output.
+
+`shouldRetrieve` is the predicate D-183 requires: a question mark, an interrogative, an explicit
+information request, or a leading auxiliary. An ALLOW-LIST per D-201, because the obvious shape
+- a list of things that are not questions - leaks on the case nobody listed. Self-questions are
+excluded through D-238's closed set: "what are your functions" is a question whose answer is
+never in the operator's documents, and that sighting named an SS7 paper.
+
+It deliberately does NOT judge whether the question is ABOUT his documents. Nothing in the text
+can know that, the floor cannot either, and refusing a real question is the worse defect - which
+the trigger's comment says correctly and is the half of its reasoning that survives.
+
+**CALIBRATED AGAINST THE REAL TRAFFIC, NOT AGAINST IMAGINATION.** Every message that produced a
+source line was read back out of the archive and run through the predicate. Every genuine
+document question was question-shaped; exactly one was missed - "Name the five mistakes a new
+developer is most likely to make" - which is why "name the" and "list the" are in the vocabulary.
+The check's own fusion-weight query was a bare keyword string that the gate correctly refuses,
+and it was changed to a question with the reason recorded, because it was an arbitrary test
+fixture rather than a claim about what members type. The messages themselves are not in this
+repository, which is public; only the shapes they taught.
+
+**A WORD LIST COLLISION WORTH RECORDING, because it was caught by the check on its first run and
+not by review.** German `was` is "what" and English `was` is a past copula, so admitting it
+anywhere admits every sentence containing "it was". Same for `is`, `are`, `can`: as bare word
+matches they admit most declarative sentences ever written, and "Aktivity Stream is live." went
+straight through. They count only by INVERSION now, at the start of a sentence. A predicate that
+admits statements is the `always` trigger again with extra steps.
+
+**WHAT IS NOT PROVEN.** That a real model declares honestly. The mechanism is mutation-proven
+offline and the failure direction is bounded, but whether `qwen3:32b` returns an empty
+`usedDocuments` when it answers from its own knowledge is a measurement, not a deduction, and it
+is stage 4's. Until then the line is rebuilt rather than trusted.
+
 ---
 
 ### D-242 - The source line is off, because a false attribution is worse than none
