@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 236 decisions</strong> — newest first. Highest allocated: <strong>D-237</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 237 decisions</strong> — newest first. Highest allocated: <strong>D-238</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-238 | She does not search the web to learn about herself | IMPLEMENTED |
 | D-237 | A picture that arrives late is noticed | IMPLEMENTED |
 | D-236 | The stream stops reading everything to count anything | IMPLEMENTED |
 | D-235 | A control belongs on the page where the decision is made | IMPLEMENTED |
@@ -265,6 +266,47 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-238 - She does not search the web to learn about herself
+
+**Status: IMPLEMENTED** (CCB-S5-052, no migration). A defect I introduced in D-234, one
+briefing earlier.
+
+Both of these reached a member. *"What's your most efficient function"* went to the web and
+came back with a Quora page about algorithms. *"What's your zodiac sign"* announced a lookup.
+**The answer to a question about her can never be out there**, so the search is not merely
+wasteful: it guarantees a wrong source, and a bot searching the internet to learn about itself
+is worse than useless.
+
+**THE DEFECT IS D-201'S SHAPE, IN A PREDICATE I WROTE TO SATISFY D-183.** `asksWhatSomethingIs`
+excluded self-questions with `SELF_SUBJECTS`, a deny-list of NOUNS - `you`, `name`, `archive`,
+`playlist` and so on - and required only that *some* token be off that list. So it failed OPEN
+on the noun nobody listed. `function`, `efficient` and `zodiac` are not on any list and never
+could be, and *"what is your name"* only ever passed **by accident**, because `name` happened
+to be on it. I wrote a deny-list on a guard path eleven days after the standing rule saying not
+to, and did not recognise it.
+
+**The fix is the closed set.** A possessive or a pronoun - `your`, `you`, `yours`, `dein`,
+`ihre` and their forms - is a vocabulary nobody extends, and it is the thing that actually
+decides: if a member says it anywhere in the subject, they are asking about HER. Checked over
+every token rather than the first, so *"what is the most efficient function you have"* is
+caught as well.
+
+**The cost, stated rather than discovered later**: *"what is your opinion on the Zeliqua
+protocol"* now stays conversation rather than searching. That is the right trade - they asked
+for her view, not for a definition - and it is a narrow loss against a fault that reached
+members twice in one conversation.
+
+`verify:lookup-honesty` section 7 pins all five production shapes, with three positive
+controls beside them, because a predicate that refused everything would pass every negative.
+
+**AND THE HALF THAT IS WORKING, recorded because it is the same lane.** Asked something the
+results did not cover, she wrote: *"I looked, and what came back was about something else
+entirely. I am not going to dress that up as an answer."* A member replied *"I stand
+corrected."* That is the CCB-S5-028 floor and the honest-nothing line doing exactly what they
+were built for, and it stays.
+
 ---
 
 ### D-237 - A picture that arrives late is noticed

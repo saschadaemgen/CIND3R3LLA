@@ -32,6 +32,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { vector } from '@electric-sql/pglite-pgvector';
 import type { Queryable } from '../src/db/pool.js';
 import { loadMigrationFiles } from '../src/db/migrate.js';
+import { asksWhatSomethingIs } from '../src/interaction/rules.js';
 import { WebSearchService } from '../src/plugins/web-search/service.js';
 import {
   WEB_SEARCH_DEFAULTS,
@@ -430,10 +431,40 @@ async function main(): Promise<void> {
     /irrelevant is not using it/.test(byId.get('web.fence.rejected-is-not-used')?.text ?? ''),
   );
 
+  // ── SHE DOES NOT SEARCH THE WEB TO LEARN ABOUT HERSELF (CCB-S5-052, D-238) ─
+  //
+  // Both of these reached a member. "what's your most efficient function" went to the web
+  // and came back with a Quora page about algorithms; "what's your zodiac sign" announced a
+  // lookup. The answer to a question about her can never be out there, so the search is not
+  // merely wasteful, it guarantees a wrong source.
+  //
+  // The defect was D-201's shape in my own predicate: `SELF_SUBJECTS` is a deny-list of
+  // NOUNS, so it failed open on the noun nobody listed. `function`, `efficient` and `zodiac`
+  // are not on any list and never could be, and "what is your name" only ever passed because
+  // `name` happened to be on it. A possessive is a CLOSED set and is what actually decides.
+  console.log('\n7. A question about HER never becomes a web search\n');
+  const SELF_QUESTIONS = [
+    "what's your most efficient function",
+    'what is your zodiac sign',
+    'what are your functions',
+    'what is your name',
+    'what is the most efficient function you have',
+  ];
+  for (const q of SELF_QUESTIONS) {
+    check(`"${q}" stays a conversation`, !asksWhatSomethingIs(q), 'would have searched');
+  }
+  // THE POSITIVE CONTROL. A predicate that refused everything would pass all five above,
+  // so the questions the trigger EXISTS for must still reach the lane.
+  const REAL_LOOKUPS = ['what is a SINA Box?', 'what is Matter over Thread?', 'what is the capital of France'];
+  for (const q of REAL_LOOKUPS) {
+    check(`POSITIVE CONTROL: "${q}" still searches`, asksWhatSomethingIs(q), 'no longer searches');
+  }
+
   console.log(
     failures === 0
-      ? '\nA question stays in the building, results below the bar never reach her, and no ' +
-          'source line can stand under an answer that used nothing.'
+      ? '\nA question stays in the building, results below the bar never reach her, no ' +
+          'source line can stand under an answer that used nothing, and she does not go ' +
+          'looking on the web for herself.'
       : `\n${failures} CHECK(S) FAILED.`,
   );
   await pg.close();

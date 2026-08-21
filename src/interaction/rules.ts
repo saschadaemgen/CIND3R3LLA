@@ -1743,6 +1743,36 @@ const DEFINITION_QUESTION =
  * multi-word subject needs only one non-generic token, because "what is a SINA Box" is the
  * case and "box" alone is not.
  */
+/**
+ * A word that makes the subject HERS, whatever noun follows it (CCB-S5-052, D-238).
+ *
+ * ── WHY THIS EXISTS, AND WHY THE LIST ABOVE WAS NOT ENOUGH ───────────────────
+ *
+ * `SELF_SUBJECTS` is a deny-list of NOUNS, and that is D-201's failure mode written out:
+ * it fails OPEN on the noun nobody thought of. Measured in production, twice in one
+ * conversation: "what's your most efficient function" went to the web and came back with a
+ * Quora page about algorithms, and "what's your zodiac sign" announced a lookup - because
+ * `function`, `efficient` and `zodiac` are not on any list and never could be. "what is your
+ * name" only ever worked by accident, because `name` happened to be on it.
+ *
+ * A POSSESSIVE OR A PRONOUN IS A CLOSED SET, and it is the thing that actually decides. If a
+ * member says "your" or "you" anywhere in the subject, they are asking about HER, and the
+ * answer is not on the web by construction: a bot searching the internet to learn about
+ * itself is worse than useless, because the answer can never be there.
+ *
+ * Applied to ANY token rather than the first, so "what is the most efficient function you
+ * have" is caught as well as "what is your zodiac sign".
+ *
+ * The cost is stated: "what is your opinion on the Zeliqua protocol" now stays conversation
+ * rather than searching. That is the right trade - they asked for HER view, not for a
+ * definition - and it is a narrow loss against a fault that reached members twice.
+ */
+const SELF_REFERENCE = new Set([
+  'you', 'your', 'yours', 'yourself', 'u', 'ur',
+  'du', 'dein', 'deine', 'deinem', 'deinen', 'deiner', 'deines', 'dich', 'dir',
+  'ihr', 'ihre', 'ihrem', 'ihren', 'ihrer', 'sie',
+]);
+
 export function asksWhatSomethingIs(text: string): boolean {
   const m = DEFINITION_QUESTION.exec(text.trim());
   if (m === null) return false;
@@ -1750,7 +1780,10 @@ export function asksWhatSomethingIs(text: string): boolean {
   if (subject === '') return false;
   const tokens = normTokens(subject);
   if (tokens.length === 0 || tokens.length > 8) return false;
-  // At least one token that is not about her and not a bare generic noun.
+  // ABOUT HER: never a lookup, whatever the noun. Checked FIRST and over every token,
+  // because this is the closed set and the noun list below is not.
+  if (tokens.some((t) => SELF_REFERENCE.has(t))) return false;
+  // At least one token that is not about this product and not a bare generic noun.
   return tokens.some((t) => !SELF_SUBJECTS.has(t) && t.length > 2);
 }
 
