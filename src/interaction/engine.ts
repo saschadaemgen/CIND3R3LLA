@@ -4604,20 +4604,48 @@ export class InteractionEngine {
     // that - `KnowledgeService.query` derives the passages and the sources from the same
     // `outcome.selected`, so they are non-empty together - and this was the one branch that
     // could, by throwing the line away rather than by never building it.
-    // ── THE SOURCE LINE IS PRINTED, NOT WRITTEN (CCB-S5-022, D-137) ────────
+    // ── THE SOURCE LINE IS OFF (CCB-S5-056) ────────────────────────────────
     //
-    // Same shape as the search sources and the law page: application-owned text appended
-    // verbatim. She is told, in the registry, not to write one; this is why. It names the
-    // documents she was actually HANDED, which is a fact this code knows, rather than the
-    // documents she believes she used, which is a claim she would sometimes get wrong.
+    // It printed a false attribution six times in a week, and the sixth certified an
+    // invented answer about a third party's roadmap and pricing, in public, in a room full
+    // of people who use that product. A missing attribution is a small loss. A false one is
+    // the product's promise breaking in the most visible place it has - and the line makes
+    // it WORSE rather than better, because without it a member reads a guess and with it a
+    // member reads a citation.
     //
-    // Attached only when a passage really reached her. A source line under an answer that
-    // used nothing is the defect CCB-S4-042 fixed for search, in a new place.
+    // WHY IT WAS WRONG, which is not what five investigations went looking for. D-137 chose
+    // deliberately to name the documents she was HANDED rather than the documents she used,
+    // on the reasoning that the first is a fact this code knows and the second is a claim
+    // she would sometimes get wrong. That reasoning holds and the conclusion does not: a
+    // correct refusal to use a document still prints as provenance, so the line says "this
+    // answer came from here" about answers that came from nowhere near it.
+    //
+    // This is stop-the-bleeding and it is not the fix. CCB-S5-055 is the fix: attribution
+    // that states the source the answer actually came from, or none. Until that can be
+    // PROVEN correct, nothing is printed.
+    //
+    // THE PERSONA STRING STAYS, and deliberately. `protected-text.ts` derives the lines she
+    // may not write from the persona templates that carry placeholders, so removing
+    // `knowledgeSources` would take the marker with it and she could then write the forged
+    // line herself with nothing left to strip it (D-180). The application stops printing it;
+    // the guard against her printing it must not move.
+    //
+    // WHAT IS RECORDED INSTEAD. Every turn that had documents in hand logs what it had and
+    // what it printed, which is the instrument CCB-S5-055 stage 0 asks for and the thing
+    // five diagnoses lacked: both halves have been measured in isolation and come back
+    // clean while a member still sees the line, so the emission is the path nobody watched.
     if (knowledgeSources.length > 0 && spoken !== null) {
-      body = `${body}
-${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
-        sources: knowledgeSources.join(', '),
-      })}`;
+      log.info('Interaction: knowledge documents were in hand; NO source line was printed', {
+        lane: 'conversation',
+        botProfileId: this.deps.botProfileId,
+        documents: knowledgeSources.length,
+        // The document NAMES, which are the operator's own file titles rather than member
+        // content, and the whole point of the record: a sixth sighting can be matched
+        // against what was actually held at the time.
+        handed: knowledgeSources.join(', '),
+        passages: knowledgePassages.length,
+        printed: 'none',
+      });
     }
 
     const sent = await this.replyWithText(msg, s, lang, body, 'conversation');

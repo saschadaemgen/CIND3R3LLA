@@ -230,8 +230,12 @@ async function main(): Promise<void> {
   );
 
   check(
-    'the attribution map covers every kind, and the archive has none to name',
-    KINDS.every((k) => k in ATTRIBUTION_KEY) && ATTRIBUTION_KEY.archive === null,
+    'the attribution map covers every kind; only the web still names a source',
+    KINDS.every((k) => k in ATTRIBUTION_KEY) &&
+      ATTRIBUTION_KEY.archive === null &&
+      // CCB-S5-056: the knowledge base has none to name either, until an attribution can be
+      // proven to name the source the answer used rather than the one it was handed.
+      ATTRIBUTION_KEY.knowledge === null,
   );
 
   /* ── 3. The rate is measured from her own replies ───────────────────────── */
@@ -387,7 +391,16 @@ async function main(): Promise<void> {
     // A db that counts archive searches and can be made to fail, over the real schema.
     const spyDb = {
       query: async (sql: string, values?: readonly unknown[]) => {
-        if (/published_messages|message_publish_state/i.test(sql) && /count/i.test(sql)) {
+        // `published_message_index` is here since CCB-S5-051 (D-236) moved the archive count
+        // onto the content-free view, and its absence is why this check went red and STAYED
+        // red: the count was running perfectly and the spy was watching a view name the
+        // query no longer uses. A verifier defect, not an implementation defect (D-111) -
+        // and D-105's lesson in a new place, because repointing a query means walking the
+        // checks that watch it, not only the checks in the same briefing's list.
+        if (
+          /published_message_index|published_messages|message_publish_state/i.test(sql) &&
+          /count/i.test(sql)
+        ) {
           archiveCounted += 1;
           if (opts.countThrows) throw new Error('archive count exploded');
         }
@@ -665,16 +678,44 @@ async function main(): Promise<void> {
     knowledgePassages: [{ text: 'Pancakes are cooked on a griddle.' }],
     knowledgeSources: ['handbook.md'],
   });
+  // WITHDRAWN UNDER CCB-S5-056. This asserted that she announces AND names the document she
+  // was handed. The announcement half stands; the naming half is exactly the defect. The
+  // line reported what was HANDED OVER rather than what the answer USED, so a correct
+  // refusal to use a document still printed as provenance - six sightings in a week, the
+  // sixth putting a document name under invented claims about a third party's roadmap and
+  // pricing. Nothing is printed until an attribution can be proven to name the source the
+  // answer actually used (CCB-S5-055).
   check(
-    'she announced, and the answer names the document she was handed',
-    attributed.announced &&
-      attributed.sent.some((t) => t.includes('handbook.md')),
+    'she still announces that she is reading his documents',
+    attributed.announced,
     attributed.sent.join(' | ').slice(0, 90),
   );
-  // POSITIVE CONTROL: the attribution is not simply always present.
   check(
-    '  and an answer she was handed nothing for names nothing',
+    '  but the answer names NO document, even though one was handed over',
+    !attributed.sent.some((t) => t.includes('handbook.md')),
+    attributed.sent.join(' | ').slice(0, 90),
+  );
+  check(
+    '  and no source line of any kind is printed for it',
+    !attributed.sent.some((t) => t.includes('From what you gave me')),
+  );
+  // THE CONTROL THAT KEEPS THIS HONEST: "names no document" is satisfied by a bot that
+  // answers nothing at all, so the answer itself must still arrive.
+  check(
+    '  THE CONTROL: the answer itself still reaches the member',
+    attributed.sent.some((t) => t.trim().length > 0),
+  );
+  check(
+    '  and an answer she was handed nothing for still names nothing',
     !kbMiss.sent.some((t) => t.includes('handbook.md')),
+  );
+  // THE WEB LINE IS NOT WITHDRAWN, and the difference is the point: those are real links to
+  // real pages, chosen from the model's own declaration of which results it used, and they
+  // have never been wrong. Asserted here so that turning the knowledge line off cannot be
+  // read later as a decision about attribution in general.
+  check(
+    'the web keeps its attribution while the knowledge base loses its own',
+    ATTRIBUTION_KEY.web === 'searchSources' && ATTRIBUTION_KEY.knowledge === null,
   );
 
   // THE ONE BRANCH THAT COULD CONTRADICT, read from the source because it is an ORDER

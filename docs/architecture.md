@@ -3665,14 +3665,26 @@ then the relevance floor on cosine, below which NOTHING is retrieved; then the b
 drops whole chunks and never truncates. The order is load-bearing: a budget with room in it
 must not be able to pull in an irrelevant chunk.
 
-**Fenced, unnamed, and attributed.** Passages ride in the USER message inside `KNOWLEDGE_FENCE`
-(`<<<REFERENCE-DOCUMENT>>>`, its own marker, never the search one), with four registry rules
-selected only when passages are attached. The source line is written by the application
-(D-137); a registry rule tells her not to write one, and since CCB-S5-027 she also has no
-document NAME to write into one: `knowledgePassages` carries `{ text }` only, the title having
-been dropped from the type rather than merely left unrendered (D-180, §50). The application
-therefore names every document she was HANDED rather than the ones she used, which is a
-deliberate trade recorded in that entry.
+**Fenced, unnamed, and — since CCB-S5-056 — not attributed at all.** Passages ride in the USER
+message inside `KNOWLEDGE_FENCE` (`<<<REFERENCE-DOCUMENT>>>`, its own marker, never the search
+one), with four registry rules selected only when passages are attached. A registry rule tells
+her not to write a source line, and since CCB-S5-027 she also has no document NAME to write into
+one: `knowledgePassages` carries `{ text }` only, the title having been dropped from the type
+rather than merely left unrendered (D-180, §50).
+
+**The application no longer writes one either** (D-242). D-137 had it name every document she was
+HANDED rather than the ones she used, on the reasoning that the first is a fact the code knows
+and the second is a claim she would get wrong. The reasoning holds; the conclusion does not, and
+it produced six false attributions in a week - the last of them a document name under invented
+claims about a third party's roadmap and pricing, in public. **A missing attribution is a small
+loss and a false one is the promise breaking**, so nothing is printed until an attribution can be
+proven to name the source the answer actually used (CCB-S5-055). The persona template stays,
+because `protected-text.ts` derives the forgery marker from it and removing it would let her
+write the line herself with nothing left to strip it. The WEB citations are untouched: real links
+to real pages, from the model's own declaration of which results it used.
+
+Every turn that had documents in hand now logs what it held and that nothing was printed, which
+is the instrument five diagnoses of this defect lacked.
 
 **Per bot.** The plugin's `enabled` is per bot through CCB-S5-021's mechanism, which needed one
 inventory row and no new machinery. The document GRANT is a row in

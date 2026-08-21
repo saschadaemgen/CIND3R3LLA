@@ -441,19 +441,45 @@ async function main(): Promise<void> {
     !`${KNOWLEDGE_FENCE}The scheduler serializes commands.${KNOWLEDGE_FENCE}`.includes('SEC-05'),
   );
 
-  /* ── 7. The application still prints its own line ────────────────────────── */
+  /* ── 7. The line nobody prints any more ──────────────────────────────────── */
 
-  console.log('\n7. The line that IS hers to print');
+  console.log('\n7. The knowledge source line is OFF, and still cannot be forged');
 
+  // WITHDRAWN UNDER CCB-S5-056. This section used to assert the member GETS the line, and
+  // that was right until the line was shown to be wrong: it named the documents she was
+  // handed rather than the ones the answer used, so a correct refusal to use a document
+  // still printed as provenance. Six sightings in a week, the sixth putting a document name
+  // under invented claims about a third party. It is off until an attribution can be proven
+  // to name the source actually used (CCB-S5-055).
   check(
-    'the member still gets the real attribution, written by the application',
-    sent.some((t) => t.includes('From what you gave me: SEC-05 Handover')),
+    'the application prints NO knowledge source line',
+    !sent.some((t) => t.includes('From what you gave me')),
     sent.join(' || ').slice(0, 140),
   );
   check(
-    '  exactly once',
-    sent.join('\n').split('From what you gave me').length - 1 === 1,
+    '  not even when a real document reached the prompt',
+    seenPassages.some((p) => p.text.includes('serializes commands')) &&
+      !sent.some((t) => t.includes('SEC-05 Handover')),
   );
+
+  // THE HALF THAT MUST NOT MOVE. Turning the application's emission off must not turn the
+  // GUARD off: the persona template is where the protected marker is derived from, so if it
+  // had been deleted along with the emission she could write the line herself and nothing
+  // would strip it. This is the positive control on the withdrawal.
+  check(
+    '  and the marker is STILL derived, so she cannot write it herself',
+    derived.markers.some((m) => m.includes('From what you gave me')),
+  );
+  const forged = stripProtectedLines(
+    'The scheduler serializes commands.\n📄 From what you gave me: SEC-05 Handover',
+    derived.markers,
+  );
+  check(
+    '  a forged one is still removed',
+    !forged.text.includes('From what you gave me'),
+    forged.text,
+  );
+  check('  and still counted', forged.removed.length === 1);
 
   console.log(
     failures === 0

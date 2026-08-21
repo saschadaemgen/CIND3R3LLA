@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 240 decisions</strong> — newest first. Highest allocated: <strong>D-241</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 241 decisions</strong> — newest first. Highest allocated: <strong>D-242</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-242 | The source line is off, because a false attribution is worse than none | IMPLEMENTED |
 | D-241 | The retention floor was unfounded, and the sweep had six ways to be mistaken for something else | IMPLEMENTED |
 | D-240 | Keeping what nobody agreed to: the tombstone, and both copies | IMPLEMENTED |
 | D-239 | The false source line: the floor is not the fault, and the guard now says when it fires | PARTIALLY RESOLVED, and said so |
@@ -269,6 +270,75 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-242 - The source line is off, because a false attribution is worse than none
+
+**Status: IMPLEMENTED** (CCB-S5-056). Stop-the-bleeding, not the fix. CCB-S5-055 is the fix.
+
+**WHAT IS OFF AND WHAT IS NOT.** The knowledge-base line, `📄 From what you gave me: {sources}`,
+is no longer printed on any lane. The WEB citations stay: those are real links to real pages,
+chosen from the model's own declaration of which results it used, dropped rather than clamped
+when the declaration is out of range, and they have never been wrong. The distinction is the
+decision, not a scope accident.
+
+**WHY.** Six false attributions in a week. Five named a document that had nothing to do with
+the answer (a heart emoji, "Correction accepted", a Greek translation, a question about music,
+a question about her own functions). The sixth is a different thing wearing the same clothes:
+asked whether SimpleX was dead and charging money, she produced confident claims about a third
+party's roadmap and pricing - IoT sensors, LoRa, "a standard subscription model" - and the
+application printed `SimpleGo README` underneath. In public, in a room of people who use that
+product.
+
+**A missing attribution is a small loss. A false one is the promise breaking in the most
+visible place it has**, and the line makes it WORSE rather than better: without it a member
+reads a guess, with it a member reads a citation.
+
+**THE CAUSE, WHICH WAS NAMED A WEEK AGO AND NEVER TESTED.** D-137 chose deliberately to name
+the documents she was HANDED rather than the ones she used, reasoning that the first is a fact
+the code knows and the second is a claim she would sometimes get wrong. The reasoning holds and
+the conclusion does not: **a correct refusal to use a document still prints as provenance.** So
+the line says "this answer came from here" about answers that came from nowhere near it.
+
+**THE PATTERN WORTH RECORDING, and it is the operator's own framing: when a diagnosis is
+available and unproven, it gets re-derived rather than tested.** Five investigations measured
+the relevance floor; the floor was raised once and measured three times; the emission itself was
+never instrumented. D-239 is the clearest case - it measured retrieval on the real corpus, found
+0 selected and `emptyBecauseOfFloor: true`, correctly concluded the floor was not the fault, and
+still did not look at the line, because the line had already been "explained" by D-137. An
+explanation that nobody has tested is more durable than one that has been, because there is no
+result to contradict.
+
+**TWO THINGS THAT DELIBERATELY DID NOT MOVE.**
+
+The PERSONA STRING stays. `protected-text.ts` derives the lines she may not write from the
+templates carrying placeholders, so deleting `knowledgeSources` would take the marker with it
+and she could then forge the line herself with nothing left to strip it (D-180). The
+application stops printing; the guard against her printing must not. `verify:protected-text`
+section 7 now asserts both halves in one pass - no line printed, and a forged one still removed
+and counted.
+
+The RETRIEVAL GATE stays as it is, because it was already right: below the floor
+`knowledgePassages` is empty, so no passage reaches the model, no announcement fires, and there
+was never anything to attribute. "If nothing clears the floor she does not answer from documents
+and does not imply she did" was structurally true before this change and is asserted rather than
+newly built.
+
+**AND THE EMISSION IS NOW RECORDED**, which is the half five diagnoses lacked and the instrument
+CCB-S5-055 stage 0 asks for: every turn that had documents in hand logs the lane, how many, their
+titles, how many passages, and that nothing was printed. Both halves of this defect have been
+measured in isolation and come back clean while a member still saw the line, so the emission is
+the path nobody has watched.
+
+**ONE PRE-EXISTING RED CHECK WAS FOUND AND FIXED ON THE WAY, and it is a verifier defect
+(D-111).** `verify:lookup-announcement` asserted "a real archive search announces AND runs the
+count" and reported `counted=0`. The count was running perfectly; the spy watched for
+`published_messages` / `message_publish_state`, and CCB-S5-051 (D-236) had repointed that count
+onto `published_message_index`. It had been red since that briefing landed and nothing said so,
+because the suite list that briefing ran did not include this check. **That is D-105 in a new
+place: repointing a query means walking the checks that watch it, not only the checks in the
+same briefing's list.**
+
 ---
 
 ### D-241 - The retention floor was unfounded, and the sweep had six ways to be mistaken for something else

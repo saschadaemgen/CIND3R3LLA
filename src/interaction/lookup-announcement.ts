@@ -190,9 +190,21 @@ export function lookupBrief(kind: LookupKind): string {
  *
  * `archive` has none: its answer is a count of what this group said, and there is no source
  * to name beyond the group itself.
+ *
+ * `knowledge` has none SINCE CCB-S5-056, and that is a withdrawal rather than an absence.
+ * The line printed a false attribution six times in a week; the sixth put a document name
+ * under invented claims about a third party. The application stops printing it until an
+ * attribution can be proven to name the source the answer actually used, which is
+ * CCB-S5-055. **The persona string itself stays** - `protected-text.ts` derives what she may
+ * not write from the templates carrying placeholders, so removing it would take the marker
+ * with it and let her forge the line herself with nothing left to strip it (D-180).
+ *
+ * `web` keeps its line, and the distinction is the whole point: those are real links to real
+ * pages, chosen from the model's own declaration of which results it used, and they have
+ * never been wrong.
  */
 export const ATTRIBUTION_KEY: Record<LookupKind, string | null> = {
   web: 'searchSources',
-  knowledge: 'knowledgeSources',
+  knowledge: null,
   archive: null,
 };
