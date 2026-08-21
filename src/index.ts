@@ -1531,10 +1531,15 @@ async function runApp(cfg: Config, localAi: LocalAiConfig): Promise<void> {
   }
 
   // Retention (CCB-S5-054, D-240): the content of messages nobody agreed to keep stops
-  // being kept. Ships OFF, so this starts a timer that reads the setting and does nothing
-  // until the operator has seen the count and switched it on. The boot run matters for the
-  // same reason the destruction sweep's does: a host that was down through the bound comes
-  // back up owing a sweep.
+  // being kept. Ships OFF, so this arms a timer that reads the setting each night and does
+  // nothing until the operator has seen the count and switched it on.
+  //
+  // NO BOOT RUN, unlike the destruction sweeper directly above, and the difference is the
+  // point rather than an oversight. That one is a backstop under a member's own erasure
+  // request, so a host that was down when a hold expired owes them a pass on the way up.
+  // This one erases on a schedule the operator must be able to predict, and running at boot
+  // would put that back on the restart clock. A missed night costs nothing: the bound is an
+  // AGE, so tomorrow's pass takes what last night's would have.
   try {
     startRetentionSweeper(retentionRunner(getPool(), cfg.mediaRoot, withTransaction));
   } catch (err) {

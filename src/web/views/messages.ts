@@ -113,7 +113,13 @@ export function mediaCell(m: {
   mediaPath: string | null;
   mediaMime: string | null;
   mediaError: string | null;
+  /** Set when retention removed the file (CCB-S5-054, D-241). */
+  contentSweptAt?: string | null;
 }): SafeHtml {
+  // BEFORE every other branch, because a tombstone matches the "missing" one exactly: no
+  // path, no error, a media type. Badging a deliberate erasure amber as though the receipt
+  // had failed is the defect the dashboard count had, one surface further on.
+  if (m.contentSweptAt) return badge('removed', 'slate');
   if (m.mediaPath && m.mediaMime?.startsWith('image/')) {
     const src = `/media/msg/${String(m.id)}`;
     return html`<a href="${src}" target="_blank" rel="noopener"

@@ -38,11 +38,25 @@ import { SettingsService } from '../src/settings/service.js';
 import { SecurityService } from '../src/security/settings.js';
 import { InteractionService } from '../src/interaction/settings.js';
 import type { Config } from '../src/config.js';
+import { MAX_HISTORY_LIMITS } from '../src/interaction/history.js';
+import { resolveMemberByDisplayName } from '../src/db/bot-messages.js';
+import { dashboardStats } from '../src/db/admin-queries.js';
+import { memberArchiveCounts } from '../src/db/member-stats.js';
+import { memberMessageCount } from '../src/db/consent.js';
 import {
+  markInterruptedMediaReceipts,
+  updateMedia,
+  upsertMessage,
+} from '../src/db/messages.js';
+import {
+  DEFAULT_RETENTION,
   RETENTION_MIN_HOURS,
   SWEEPABLE,
   cutoffFor,
   getRetentionSettings,
+  msUntilNextMidnight,
+  nextMidnight,
+  startRetentionSweeper,
   normalizeRetention,
   sweepUnconsented,
   sweepableCount,
@@ -231,11 +245,41 @@ async function main(): Promise<void> {
 
   /* ── 1. the shape of the setting ─────────────────────────────────────────── */
 
-  console.log('\n1. The bound is a number the schema justifies, not a preference');
+  console.log('\n1. The bound is a number the code justifies, not a preference');
+  // D-241: the floor shipped at 168h on a moderation argument that does not hold. A
+  // violation row carries its own copy of the group, the member, the display name at the
+  // time, the role and the kind, and NO foreign key to messages, so a sweep leaves every
+  // count byte-identical. The only finite window over message content anywhere in the tree
+  // is her conversation memory's, and the floor is the first whole day above it.
+  const mod029Sql = await readFile('migrations/029_moderation.sql', 'utf8');
   check(
-    'the floor is the longest moderation window this schema allows',
-    RETENTION_MIN_HOURS === 604800 / 3600,
-    `${String(RETENTION_MIN_HOURS)}h`,
+    'THE CLAIM THE OLD FLOOR RESTED ON IS FALSE: no violation row points at a message',
+    !/REFERENCES\s+messages/i.test(mod029Sql) && !/message_id/i.test(mod029Sql),
+  );
+  check(
+    '  and the moderation tables keep their own copy of who it was',
+    /member_display_name/.test(mod029Sql) && /member_role/.test(mod029Sql),
+  );
+  check('the floor is 24 hours', RETENTION_MIN_HOURS === 24, String(RETENTION_MIN_HOURS) + 'h');
+  check(
+    '  which clears the ONLY finite window over message content, twice over',
+    RETENTION_MIN_HOURS * 60 >= 2 * MAX_HISTORY_LIMITS.windowMinutes,
+    'memory max ' + String(MAX_HISTORY_LIMITS.windowMinutes) + ' min',
+  );
+  check(
+    '  and that window is READ from the code rather than restated here',
+    MAX_HISTORY_LIMITS.windowMinutes === 720,
+  );
+  check(
+    'a fresh deployment gets the shortest bound',
+    DEFAULT_RETENTION.hours === RETENTION_MIN_HOURS,
+    String(DEFAULT_RETENTION.hours) + 'h',
+  );
+  const pageSrc = await readFile('src/web/views/retention.ts', 'utf8');
+  check('  and 24 hours is a bound the operator can pick', pageSrc.includes("label: '24 hours'"));
+  check(
+    '  THE CONTROL: the longer bounds are still offered, not replaced',
+    pageSrc.includes("label: '7 days'") && pageSrc.includes("label: '1 year'"),
   );
   check('it ships switched OFF', (await getRetentionSettings(db)).enabled === false);
   check(
@@ -346,9 +390,14 @@ async function main(): Promise<void> {
   check('no text', t['text_body'] === null);
   check('no link text', t['links_text'] === null);
   check('no raw envelope', t['raw'] === '{}');
-  check('no display name', t['sender_display_name'] === '');
   check('no media path', t['media_path'] === null);
-  check('THE SKELETON IS KEPT: the room', Number(t['group_id']) === 7);
+  // THE DISPLAY NAME IS PART OF THE SKELETON, and 070 clearing it was withdrawn in 071
+  // (D-241). Who said something is not what they said, and removing a sender from
+  // `resolveMemberByDisplayName`'s DISTINCT set can turn an ambiguous name into a confident
+  // one - which publishes a mention on the strength of the wrong member's consent. Section
+  // 12 drives that case.
+  check('THE SKELETON IS KEPT: who said it', t['sender_display_name'] === 'Nobody Consented');
+  check('  the room', Number(t['group_id']) === 7);
   check('  the chat item', Number(t['group_msg_id']) > 0);
   check('  the member id, which consent binds to', t['sender_member_id'] === 'm-never');
   check('  when it was said', String(t['sent_at']).startsWith('2026-01-02'));
@@ -585,6 +634,273 @@ async function main(): Promise<void> {
   check(
     'the message browser says the content was removed rather than showing a blank row',
     says(browsed, 'content removed'),
+  );
+
+  /* ── 11. the schedule is a time, not a consequence of the restart clock ──── */
+
+  console.log('\n11. The bound is an age; the schedule is midnight');
+  const at = (iso: string): Date => new Date(iso);
+  check(
+    'an afternoon arms for midnight tonight',
+    nextMidnight(at('2026-08-21T14:37:00')).getHours() === 0 &&
+      nextMidnight(at('2026-08-21T14:37:00')).getDate() === 22,
+    nextMidnight(at('2026-08-21T14:37:00')).toString(),
+  );
+  check(
+    'one second before midnight still arms for tonight, not tomorrow night',
+    nextMidnight(at('2026-08-21T23:59:59')).getDate() === 22,
+  );
+  check(
+    'AT midnight it arms for the NEXT one, so a pass cannot re-fire into itself',
+    nextMidnight(at('2026-08-21T00:00:00')).getDate() === 22,
+  );
+  check(
+    'it crosses a month boundary without arithmetic of its own',
+    nextMidnight(at('2026-08-31T22:00:00')).getMonth() === 8,
+  );
+  check(
+    'it crosses a year boundary',
+    nextMidnight(at('2026-12-31T22:00:00')).getFullYear() === 2027,
+  );
+  check(
+    'the wait is always positive, so a timer can never be armed for the past',
+    msUntilNextMidnight(at('2026-08-21T00:00:00')) > 0 &&
+      msUntilNextMidnight(at('2026-08-21T23:59:59.999')) > 0,
+  );
+
+  // THE ONE THAT MATTERS, and it is the behaviour the operator asked for: starting the
+  // sweeper must not sweep. A boot run would put erasure back on the restart clock, which
+  // is exactly what "at a time he can predict" rules out.
+  let ranAtBoot = 0;
+  const schedule = startRetentionSweeper({
+    runOnce: async () => {
+      ranAtBoot += 1;
+      return null;
+    },
+  });
+  await new Promise((r) => setTimeout(r, 50));
+  check('arming the sweeper does NOT sweep', ranAtBoot === 0);
+  schedule.stop();
+  check('  and the schedule can be stopped', true);
+
+  // THE POSITIVE CONTROL. Without it, "does not run at boot" passes against a runner that
+  // is never called at all, which is the same shape as retention being dead.
+  let fired = 0;
+  const soon = startRetentionSweeper(
+    {
+      runOnce: async () => {
+        fired += 1;
+        return null;
+      },
+    },
+    // A clock one millisecond before midnight, so the armed timer is due almost at once.
+    () => new Date(new Date().setHours(23, 59, 59, 999)),
+  );
+  await new Promise((r) => setTimeout(r, 120));
+  soon.stop();
+  // The stub clock stays one millisecond before midnight, so this also shows the timer
+  // RE-ARMING after each pass rather than firing once and dying, which is the difference
+  // between a nightly sweep and a sweep that happened once on the day it was deployed.
+  check(
+    '  but the armed timer DOES fire when its time comes, and re-arms after each pass',
+    fired >= 2,
+    `${String(fired)} pass(es)`,
+  );
+
+  /* ── 12. a tombstone is not a fault, and not an opportunity ─────────────── */
+
+  console.log('\n12. What a tombstone must never be mistaken for (D-241)');
+
+  // A. THE NAME. Two members have used one name; one is swept. The resolver must still see
+  // both, because seeing only one would resolve the mention and publish it.
+  await db.query(
+    `INSERT INTO messages (group_id, group_msg_id, sender_member_id, sender_display_name,
+                           sent_at, type, text_body, raw_json)
+     VALUES (7, 9001, 'm-never', 'Robin', $1, 'text', 'the swept Robin', '{}'::jsonb),
+            (7, 9002, 'm-opted', 'Robin', $2, 'text', 'the consented Robin', '{}'::jsonb)`,
+    [OLD, '2026-06-02T10:00:00.000Z'],
+  );
+  const ambiguousBefore = await resolveMemberByDisplayName(db, 'Robin');
+  check('a name two members have used resolves to NOBODY', ambiguousBefore === null);
+  await transaction((tx) => sweepUnconsented(tx, mediaRoot, cutoff));
+  const ambiguousAfter = await resolveMemberByDisplayName(db, 'Robin');
+  check(
+    '  and it STILL resolves to nobody after the sweep, so the mention stays withheld',
+    ambiguousAfter === null,
+    String(ambiguousAfter),
+  );
+  check(
+    '  THE CONTROL: a name only one member has used still resolves',
+    (await resolveMemberByDisplayName(db, 'Nobody Consented')) === 'm-never',
+  );
+
+  // B. THE HOLD, IN THE DATABASE RATHER THAN IN TYPESCRIPT. Migration 020 put this guarantee
+  // in a trigger precisely because an application predicate cannot deliver it; 020's trigger
+  // is BEFORE DELETE and the sweep UPDATEs, so 071 extends it. Driven by clearing a held row
+  // DIRECTLY, which is what an ad-hoc remediation script would do.
+  const heldNow = await insert({ member: 'm-held2', text: 'held and old' });
+  await db.query(
+    `INSERT INTO evidence_holds (message_id, source, state) VALUES ($1, 'report', 'active')`,
+    [heldNow.id],
+  );
+  let sweepRefused = false;
+  try {
+    await db.query(
+      `UPDATE messages SET text_body = NULL, links_text = NULL, raw_json = '{}'::jsonb,
+              media_path = NULL, content_swept_at = now() WHERE id = $1`,
+      [heldNow.id],
+    );
+  } catch {
+    sweepRefused = true;
+  }
+  check('the DATABASE refuses to sweep held content, not just the predicate', sweepRefused);
+  check('  and the held content is still there', (await textOf(heldNow.id)) === 'held and old');
+  let ordinaryAllowed = true;
+  try {
+    await db.query('UPDATE messages SET text_body = $2 WHERE id = $1', [
+      heldNow.id,
+      'held and old',
+    ]);
+  } catch {
+    ordinaryAllowed = false;
+  }
+  check('  THE CONTROL: an ordinary update of a held row is untouched', ordinaryAllowed);
+
+  // MUTATION: drop 071's trigger and the held content goes, which is the state the code was
+  // in when it was pushed. Restored immediately afterwards.
+  await db.query('DROP TRIGGER messages_evidence_hold_sweep_guard ON messages');
+  let sweptWithoutGuard = false;
+  try {
+    await db.query(
+      `UPDATE messages SET text_body = NULL, links_text = NULL, raw_json = '{}'::jsonb,
+              media_path = NULL, content_swept_at = now() WHERE id = $1`,
+      [heldNow.id],
+    );
+    sweptWithoutGuard = true;
+  } catch {
+    sweptWithoutGuard = false;
+  }
+  check(
+    '  MUTATION: without the trigger, held content IS erased',
+    sweptWithoutGuard && (await textOf(heldNow.id)) === null,
+  );
+  await db.query(
+    `UPDATE messages SET text_body = 'held and old', content_swept_at = NULL WHERE id = $1`,
+    [heldNow.id],
+  );
+  await db.query(
+    `CREATE TRIGGER messages_evidence_hold_sweep_guard BEFORE UPDATE ON messages
+       FOR EACH ROW EXECUTE FUNCTION guard_evidence_hold_sweep()`,
+  );
+
+  // C. CAPTURE MUST NOT CRASH AGAINST A TOMBSTONE. The 070 CHECK turned a re-capture or an
+  // edit into an exception on the path D-190 says must fail TOWARDS capturing.
+  let recaptured = 0;
+  try {
+    recaptured = await upsertMessage(db, {
+      groupId: 7,
+      groupMsgId: 1001,
+      sharedMsgId: null,
+      senderMemberId: 'm-never',
+      senderDisplayName: 'Nobody Consented',
+      sentAt: OLD,
+      type: 'text',
+      textBody: 'the same chat item, delivered again',
+      linksText: null,
+      rawJson: { chatItem: {} },
+    } as never);
+  } catch (err) {
+    check('re-capturing a swept message does not throw', false, String(err));
+  }
+  check('re-capturing a swept message does not throw', recaptured > 0);
+  const revived = await db.query<{ t: string | null; s: string | null }>(
+    'SELECT text_body AS t, content_swept_at::text AS s FROM messages WHERE group_id = 7 AND group_msg_id = 1001',
+  );
+  check('  and it revives the row rather than half-writing it', revived.rows[0]?.s === null);
+  check(
+    '  with the content that actually arrived',
+    revived.rows[0]?.t === 'the same chat item, delivered again',
+  );
+
+  // D. A FILE THAT LANDS AFTER THE SWEEP. Same shape, and the one media state that cannot be
+  // repaired by retrying: bytes on disk with nothing pointing at them.
+  const lateFile = await insert({ member: 'm-never', text: 'a picture is coming' });
+  await transaction((tx) => sweepUnconsented(tx, mediaRoot, cutoff));
+  check('the row for a late file was swept', await swept(lateFile.id));
+  const lateRow = await db.query<{ group_msg_id: string }>(
+    'SELECT group_msg_id FROM messages WHERE id = $1',
+    [lateFile.id],
+  );
+  const updated = await updateMedia(db, 7, Number(lateRow.rows[0]?.group_msg_id), {
+    mediaPath: 'late.jpg',
+    mediaMime: 'image/jpeg',
+    mediaSize: 10,
+  });
+  check('  the arriving file is recorded rather than refused', updated === 1);
+  check('  and the row owns its bytes again', !(await swept(lateFile.id)));
+
+  // E. NEITHER READER MAY REPORT AN ERASURE AS A FAILED RECEIPT.
+  const mediaTomb = await insert({ member: 'm-never', mediaPath: 'gone.jpg' });
+  await writeFile(join(mediaRoot, 'gone.jpg'), 'BYTES');
+  await db.query("UPDATE messages SET type = 'image' WHERE id = $1", [mediaTomb.id]);
+  await transaction((tx) => sweepUnconsented(tx, mediaRoot, cutoff));
+  check('a swept picture is a tombstone', await swept(mediaTomb.id));
+  const flagged = await markInterruptedMediaReceipts(db);
+  const stamped = await db.query<{ e: string | null }>(
+    'SELECT media_error AS e FROM messages WHERE id = $1',
+    [mediaTomb.id],
+  );
+  check(
+    '  the boot flagger does not stamp it "receipt interrupted"',
+    stamped.rows[0]?.e === null,
+    `flagged ${String(flagged)} row(s)`,
+  );
+  const stats = await dashboardStats(db, 24);
+  check(
+    '  and the dashboard does not count it as a failed or at-risk receipt',
+    stats.mediaFailed === 0 && stats.mediaAtRisk === 0,
+    `failed ${String(stats.mediaFailed)}, at risk ${String(stats.mediaAtRisk)}`,
+  );
+  // THE POSITIVE CONTROL. Without it both assertions pass against a flagger that flags
+  // nothing and a dashboard that counts nothing, which is the same shape as the feature
+  // being dead.
+  const genuinelyMissing = await insert({ member: 'm-opted', text: 'a real lost receipt' });
+  await db.query("UPDATE messages SET type = 'image' WHERE id = $1", [genuinelyMissing.id]);
+  const flagged2 = await markInterruptedMediaReceipts(db);
+  const stamped2 = await db.query<{ e: string | null }>(
+    'SELECT media_error AS e FROM messages WHERE id = $1',
+    [genuinelyMissing.id],
+  );
+  check(
+    '  THE CONTROL: a genuinely missing file IS still flagged',
+    flagged2 >= 1 && (stamped2.rows[0]?.e ?? '').includes('interrupted'),
+  );
+  check(
+    '  and the dashboard DOES count that one',
+    (await dashboardStats(db, 24)).mediaFailed >= 1,
+  );
+
+  // F. SHE MUST NOT CLAIM CUSTODY OF WHAT SHE HAS ERASED. This is CCB-S3-031 pointing the
+  // other way: that rule stops her claiming destruction over retained content; this stops
+  // her claiming retention over destroyed content.
+  const counts = await memberArchiveCounts(db, 'm-never');
+  const rawRows = await db.query<{ n: string }>(
+    'SELECT count(*)::text AS n FROM messages WHERE sender_member_id = $1',
+    ['m-never'],
+  );
+  check(
+    'the STATUS count excludes tombstones',
+    counts.total < Number(rawRows.rows[0]?.n ?? 0),
+    `${String(counts.total)} of ${String(rawRows.rows[0]?.n)} rows`,
+  );
+  check(
+    '  THE CONTROL: it still counts what she really holds',
+    counts.total >= 1,
+    `${String(counts.total)}`,
+  );
+  check(
+    'and the revocation count agrees, so no restore is promised over erased content',
+    (await memberMessageCount(db, 'm-never')) === counts.total,
   );
 
   await app.close();

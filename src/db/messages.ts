@@ -54,7 +54,16 @@ export async function upsertMessage(db: Queryable, row: MessageRow): Promise<num
        type                = EXCLUDED.type,
        text_body           = EXCLUDED.text_body,
        links_text          = EXCLUDED.links_text,
-       raw_json            = EXCLUDED.raw_json
+       raw_json            = EXCLUDED.raw_json,
+       -- A RE-CAPTURE UN-TOMBSTONES THE ROW (CCB-S5-054, D-241). The row is the same chat
+       -- item, so (group_id, group_msg_id) conflicts and this UPDATE runs; without
+       -- clearing the mark it would write content onto a row still stamped as swept, which
+       -- the 070 CHECK refuses - turning an edit or a re-delivery into an exception on the
+       -- CAPTURE path, where D-190 says we fail TOWARDS capturing.
+       -- Reviving it is also the honest answer rather than a workaround: the content is
+       -- genuinely here again, and tonight's pass takes it again on the same terms, because
+       -- sent_at is unchanged and the sender still consented to nothing.
+       content_swept_at    = NULL
      RETURNING id`,
     [
       row.groupId,
@@ -140,8 +149,15 @@ export async function updateMedia(
   media: MediaInput,
 ): Promise<number> {
   const { rowCount } = await db.query(
+    // THE SAME REVIVAL AS THE CAPTURE WRITE (CCB-S5-054, D-241). The bytes are downloaded
+    // and encrypted into MEDIA_ROOT before this runs, so a file that lands after its row was
+    // swept would otherwise write a path onto a tombstone and be refused by the 070 CHECK -
+    // leaving the bytes on disk with nothing pointing at them, which is the one media state
+    // that cannot be repaired by retrying. Clearing the mark makes the row own its file
+    // again, and tonight's pass removes both together.
     `UPDATE messages
-       SET media_path = $3, media_mime = $4, media_size = $5, media_error = NULL
+       SET media_path = $3, media_mime = $4, media_size = $5, media_error = NULL,
+           content_swept_at = NULL
      WHERE group_id = $1 AND group_msg_id = $2`,
     [groupId, groupMsgId, media.mediaPath, media.mediaMime, media.mediaSize],
   );
@@ -157,11 +173,18 @@ export async function updateMedia(
  */
 export async function markInterruptedMediaReceipts(db: Queryable): Promise<number> {
   const { rowCount } = await db.query(
+    // A TOMBSTONE IS NOT AN INTERRUPTED RECEIPT (CCB-S5-054, D-241). This reads "no path and
+    // no error" as "the file never arrived", which is exactly what a retention sweep leaves
+    // behind on purpose. Without this clause every restart stamped a fabricated fault across
+    // the whole swept archive, and the fault then rode into the dashboard's failed-receipts
+    // count. The sweep changed what these rows ARE; the things that describe them have to be
+    // told (D-205).
     `UPDATE messages
        SET media_error = 'receipt interrupted (process restart) — not captured'
      WHERE type IN ('image', 'video', 'voice', 'file')
        AND media_path IS NULL
        AND media_error IS NULL
+       AND content_swept_at IS NULL
        AND deleted = FALSE
        AND group_deleted = FALSE`,
   );

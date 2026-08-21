@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 239 decisions</strong> — newest first. Highest allocated: <strong>D-240</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 240 decisions</strong> — newest first. Highest allocated: <strong>D-241</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-241 | The retention floor was unfounded, and the sweep had six ways to be mistaken for something else | IMPLEMENTED |
 | D-240 | Keeping what nobody agreed to: the tombstone, and both copies | IMPLEMENTED |
 | D-239 | The false source line: the floor is not the fault, and the guard now says when it fires | PARTIALLY RESOLVED, and said so |
 | D-238 | She does not search the web to learn about herself | IMPLEMENTED |
@@ -268,6 +269,85 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-241 - The retention floor was unfounded, and the sweep had six ways to be mistaken for something else
+
+**Status: IMPLEMENTED** (CCB-S5-054 revision, migration 071). Corrects D-240 in place.
+
+**THE FLOOR WAS SET FROM A DEPENDENCY THAT DOES NOT EXIST, AND THE OPERATOR CAUGHT IT.** D-240
+put the minimum bound at 168 hours because migration 029 caps a moderation window at 604800
+seconds. The premise is true; the inference is not. What a moderation window counts is rows in
+`cinderella_violations`, which carries its own copy of the group, the member, **the display name
+at the time**, the role and the kind, and has **no foreign key to `messages` at all** - a fact
+stage 0 had already reported ("the violations table survives a sweep intact") and I set the
+floor from it anyway.
+
+**SO EVERY READER OF MESSAGE CONTENT WAS SWEPT BEFORE THE NUMBER MOVED**, seven lenses over the
+tree with three adversarial verifiers on each claim: 54 verdicts, 19 surviving. The result is
+unusually clean and is the finding rather than the number. **No reader has a finite window over
+message content.** Each one either needs it at the instant the message arrives and never again
+(moderation, capture, media stripping, the reply path) or reaches back with no time bound at all
+(the console, `latestMemberAudio`, the name resolver). The single exception is her CONVERSATION
+MEMORY: `listGroupHistory` is bounded by `windowMinutes`, which `MAX_HISTORY_LIMITS` caps at
+**720 minutes**. That is the only number a floor can honestly be read from, so the floor is
+**24 hours** - the first whole day above it, and twice it. `verify:retention` asserts the
+relationship between the two constants rather than the number, because they sit in different
+trees with nothing linking them and raising the memory ceiling would otherwise make the floor
+silently wrong with every check green (the D-105 shape).
+
+The longer bounds stay selectable. What changed is what a deployment gets without deciding.
+
+**AND AGE IS NOT SCHEDULE.** The sweep ran hourly from boot, so WHEN content was erased depended
+on when the process last restarted. It is now a nightly pass at local midnight that re-arms
+itself, and it deliberately does **not** run at boot - unlike the destruction sweeper beside it,
+which should, because that one is a backstop under a member's own erasure request. A missed night
+costs nothing, since the bound is an age and tomorrow's pass takes what last night's would have.
+
+**THE SIX WAYS A TOMBSTONE WAS MISTAKEN FOR SOMETHING ELSE.** None of these was a floor question
+and all of them shipped:
+
+1. **The hold guard had a door the sweep walks through.** Migration 020 put it in the database
+   *precisely* because "application-level checks cannot deliver that... the next ad-hoc
+   remediation script would too". It is a BEFORE **DELETE** trigger; the sweep UPDATEs. So held
+   content had one `NOT EXISTS` clause in TypeScript in front of it, and a hold placed between
+   the sweep's read and its write was invisible to both. I wrote the script that comment is
+   about. 071 adds the BEFORE UPDATE branch; the predicate is repeated in the UPDATE's own WHERE
+   for the two guards that have no trigger.
+2. **Clearing the display name could turn a withhold into a publish.**
+   `resolveMemberByDisplayName` resolves only when EXACTLY one sender has used a name; nobody and
+   more-than-one both return null, and a null mention is redacted or withheld. Clearing a name
+   REMOVES a sender from that set, so a name two members shared resolved to the survivor and her
+   reply published on the strength of the wrong person's consent. Withdrawn: **who said something
+   is the skeleton; what they said is the content**, and the row keeps `sender_member_id` anyway.
+3. **Every restart stamped a fabricated fault across the swept archive.**
+   `markInterruptedMediaReceipts` reads "no path and no error" as "the file never arrived", and
+   070 cleared `media_error` too, so a swept picture matched every clause.
+4. **The dashboard counted erasures as failed receipts**, growing a red banner that rose with
+   every night the archive did its job.
+5. **Capture crashed against a tombstone.** The 070 CHECK turned a re-capture or an edit into an
+   exception on the path D-190 says must fail TOWARDS capturing. `upsertMessage`, `updateMedia`
+   and `video.ts` now clear the mark: a re-capture REVIVES the row, which is honest rather than a
+   workaround, and tonight's pass takes it again on the same terms.
+6. **She claimed custody of content she had erased.** "I keep {total} of your messages... the rest
+   rest quietly here with me" counted tombstones, and so did the surviving-count that decides
+   whether a revocation promises a restore. This is CCB-S3-031 pointing the other way: that rule
+   stops consent copy claiming destruction over retained content, and this is the mirror.
+
+**AND ONE THAT WOULD HAVE HUNG THE FIRST SWEEP.** `filesOwnedBy` walks the whole media tree on
+every call - correct for a destruction, and about 3,300 whole-tree walks inside one transaction
+for the first production pass. Nothing would have failed; it would have sat there, which is the
+worst way for this to go wrong, because a sweep that hangs looks exactly like a sweep that is
+working. `filesOwnedByMany` does one query and one walk, and `isIdNamed` is now expressed through
+the batch form's own rule so the two cannot drift.
+
+**THE METHOD NOTE, because it is the transferable part.** The floor was wrong for the same reason
+the D-238 deny-list was wrong: it was set from the case in front of me rather than from the set of
+cases. What corrected it was not thinking harder but ENUMERATING - every reader of every cleared
+column, each claim put to verifiers told to refute it. Five of the six defects above were found by
+that sweep and none by the checks, which were green throughout. A guard's correctness is a claim
+about a population, and populations are surveyed rather than reasoned about.
+
 ---
 
 ### D-240 - Keeping what nobody agreed to: the tombstone, and both copies

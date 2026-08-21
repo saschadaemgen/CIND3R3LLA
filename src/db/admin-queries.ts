@@ -47,6 +47,10 @@ export async function dashboardStats(db: Queryable, alertHours: number): Promise
        FROM messages
        WHERE type IN ('image', 'video', 'voice', 'file')
          AND media_path IS NULL
+         -- A swept row has no path BECAUSE retention removed it, which is the opposite of a
+         -- failed receipt (CCB-S5-054, D-241). Counting tombstones here grew a red banner
+         -- that rose with every night the archive did its job.
+         AND content_swept_at IS NULL
          AND deleted = FALSE`,
       [String(alertHours)],
     ),

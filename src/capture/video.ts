@@ -62,8 +62,15 @@ export async function captureVideoLink(
 
   const title = msg.linkPreview?.title ?? null;
   await db.query(
+    // `content_swept_at` is cleared with them (CCB-S5-054, D-241): this is the third
+    // writer of content onto a message row, beside `upsertMessage` and `updateMedia`. It
+    // runs inside capture, so the row was revived moments ago and this is belt-and-braces
+    // today - but a writer that can put a title onto a row still stamped as swept is
+    // refused by the 070 CHECK, and the family has to be consistent or the next one added
+    // will be the one that is not.
     `UPDATE messages
-        SET video_provider = $2, video_id = $3, video_start = $4, video_title = $5
+        SET video_provider = $2, video_id = $3, video_start = $4, video_title = $5,
+            content_swept_at = NULL
       WHERE id = $1`,
     [messageId, match.provider, match.videoId, match.startSeconds, title],
   );
@@ -93,7 +100,9 @@ export async function captureVideoLink(
     await writeMediaFile(abs, thumb.data);
     const mime =
       extname(rel) === '.png' ? 'image/png' : extname(rel) === '.webp' ? 'image/webp' : 'image/jpeg';
-    await db.query('UPDATE messages SET media_path = $2, media_mime = $3, media_size = $4 WHERE id = $1', [
+    await db.query(
+      'UPDATE messages SET media_path = $2, media_mime = $3, media_size = $4, content_swept_at = NULL WHERE id = $1',
+      [
       messageId,
       rel,
       mime,

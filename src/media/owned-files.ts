@@ -60,16 +60,16 @@ export function withinRoot(mediaRoot: string, absPath: string): boolean {
 
 /** Files whose basename identifies them as belonging to this message. */
 function isIdNamed(fileName: string, messageId: number, inDerived: boolean): boolean {
-  // Strip one trailing `.tmp` so a partial write is matched like its target.
-  const name = fileName.endsWith('.tmp') ? fileName.slice(0, -'.tmp'.length) : fileName;
-  const dot = name.indexOf('.');
-  const stem = dot === -1 ? name : name.slice(0, dot);
-  // `<bucket>/thumb-<id><ext>` — a video-link thumbnail, anywhere in the tree.
-  if (stem === `thumb-${messageId}`) return true;
-  // `derived/<bucket>/<id><ext>` — a stripped derivative. Only under `derived/`,
-  // because a bare `<id>.jpg` elsewhere would be an original whose name merely
-  // happened to be numeric, and originals are found through the DB column.
-  return inDerived && stem === String(messageId);
+  // Expressed through `idNamedBy` since CCB-S5-054 so the single-message and batch forms
+  // cannot drift: one rule about which names belong to which id, asked in two directions.
+  //
+  // The rule itself is unchanged. `<bucket>/thumb-<id><ext>` is a video-link thumbnail and
+  // matches anywhere in the tree; `derived/<bucket>/<id><ext>` is a stripped derivative and
+  // matches ONLY under `derived/`, because a bare `<id>.jpg` elsewhere would be an original
+  // whose name merely happened to be numeric, and originals are found through the DB
+  // column. A trailing `.tmp` is stripped first so a partial write matches its target, and
+  // the match is on the whole stem, so message 9 never matches `91.jpg`.
+  return idNamedBy(fileName, inDerived) === String(messageId);
 }
 
 async function walk(
@@ -116,6 +116,98 @@ export interface OwnedFiles {
  * only on the row being destroyed, and once it is gone those bytes are
  * unreachable by any enumeration.
  */
+/**
+ * The same enumeration for MANY messages, walking the tree ONCE (CCB-S5-054, D-241).
+ *
+ * `filesOwnedBy` is written for one message and does a full recursive walk of the media
+ * tree on every call, which is right for a destruction (one member, a handful of items)
+ * and catastrophic for a retention sweep: the first pass on the production archive would
+ * be roughly 3,300 whole-tree walks and 3,300 round trips, inside one transaction holding
+ * locks on every row it is clearing. Nothing would have failed - it would simply have sat
+ * there, which is the worst way for this to go wrong, because a sweep that hangs looks
+ * exactly like a sweep that is working.
+ *
+ * One query for the stored paths, one walk for the id-named artifacts. Same containment
+ * test, same `.tmp` sidecars, same "only keep what exists" rule, so what it enumerates for
+ * a given id is identical to what the single-message form would.
+ */
+export async function filesOwnedByMany(
+  db: Queryable,
+  mediaRoot: string,
+  messageIds: readonly number[],
+): Promise<OwnedFiles> {
+  const root = resolve(mediaRoot);
+  const paths = new Set<string>();
+  const rejected: string[] = [];
+  if (messageIds.length === 0) return { paths: [], rejected: [] };
+
+  const { rows } = await db.query<{
+    id: string;
+    media_path: string | null;
+    media_derived_path: string | null;
+  }>(
+    'SELECT id, media_path, media_derived_path FROM messages WHERE id = ANY($1::bigint[])',
+    [[...messageIds]],
+  );
+  for (const row of rows) {
+    for (const rel of [row.media_path, row.media_derived_path]) {
+      if (!rel) continue;
+      const abs = resolve(root, rel);
+      if (!withinRoot(root, abs)) {
+        rejected.push(rel);
+        continue;
+      }
+      paths.add(abs);
+      paths.add(`${abs}.tmp`);
+    }
+  }
+
+  // ONE walk for the whole set. A Set membership test per file replaces one walk per id.
+  const wanted = new Set(messageIds.map((n) => String(n)));
+  await walk(root, 0, false, (abs, fileName, inDerived) => {
+    const id = idNamedBy(fileName, inDerived);
+    if (id !== null && wanted.has(id) && withinRoot(root, abs)) paths.add(abs);
+  });
+
+  const existing: string[] = [];
+  for (const p of paths) {
+    try {
+      const s = await stat(p);
+      if (s.isFile()) existing.push(p);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'ENOENT') continue;
+      throw err;
+    }
+  }
+  if (rejected.length > 0) {
+    log.error(
+      `Media: ${rejected.length} stored media path(s) in a batch lie outside the media root; ` +
+        `they were NOT enumerated for deletion.`,
+    );
+  }
+  return { paths: existing.sort(), rejected };
+}
+
+/**
+ * Which message id a filename is named after, or null.
+ *
+ * The inverse of {@link isIdNamed}, so the batch form can ask "whose is this?" once per
+ * file instead of asking "is this yours?" once per file per id. The two must agree, and
+ * `isIdNamed` is now expressed in terms of this one so they cannot drift.
+ */
+function idNamedBy(fileName: string, inDerived: boolean): string | null {
+  const name = fileName.endsWith('.tmp') ? fileName.slice(0, -'.tmp'.length) : fileName;
+  const dot = name.indexOf('.');
+  const stem = dot === -1 ? name : name.slice(0, dot);
+  if (stem.startsWith('thumb-')) {
+    const rest = stem.slice('thumb-'.length);
+    return /^\d+$/.test(rest) ? rest : null;
+  }
+  if (inDerived && /^\d+$/.test(stem)) return stem;
+  return null;
+}
+
 export async function filesOwnedBy(
   db: Queryable,
   mediaRoot: string,

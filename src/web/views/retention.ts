@@ -28,13 +28,15 @@
 import type { FastifyInstance } from 'fastify';
 import type { ViewContext } from '../server.js';
 import { html, page } from '../html.js';
-import { badge, card, pageHeader } from './ui.js';
+import { badge, card, fmtDate, pageHeader } from './ui.js';
 import {
   DEFAULT_RETENTION,
   RETENTION_MAX_HOURS,
   RETENTION_MIN_HOURS,
   cutoffFor,
   getRetentionSettings,
+  lastSweptAt,
+  nextMidnight,
   saveRetentionSettings,
   sweepUnconsented,
   sweepableCount,
@@ -73,7 +75,9 @@ function describeCoreTtl(seconds: number): string {
 
 /** The bounds the operator may pick, in the units he thinks in. */
 const BOUND_CHOICES: { hours: number; label: string }[] = [
-  { hours: RETENTION_MIN_HOURS, label: '7 days' },
+  { hours: RETENTION_MIN_HOURS, label: '24 hours' },
+  { hours: 3 * 24, label: '3 days' },
+  { hours: 7 * 24, label: '7 days' },
   { hours: 14 * 24, label: '14 days' },
   { hours: 30 * 24, label: '30 days' },
   { hours: 90 * 24, label: '90 days' },
@@ -97,6 +101,8 @@ export function registerRetentionPage(app: FastifyInstance, ctx: ViewContext): v
       const cutoff = cutoffFor(settings.hours, new Date());
       const waiting = await sweepableCount(db, cutoff);
       const tombstones = await tombstoneCount(db);
+      const lastSwept = await lastSweptAt(db);
+      const nextRun = nextMidnight(new Date());
       const core = runtimeAdminAvailable()
         ? await readCoreRetention()
         : { ok: [], failed: [] as { displayName: string; error: string }[] };
@@ -163,12 +169,14 @@ export function registerRetentionPage(app: FastifyInstance, ctx: ViewContext): v
                   <div class="text-xs text-slate-500">rows holding no content</div>
                 </div>
                 <div class="rounded-lg border border-slate-200 px-3 py-2">
-                  <div class="text-xs uppercase tracking-wide text-slate-500">Sweeping</div>
+                  <div class="text-xs uppercase tracking-wide text-slate-500">Next sweep</div>
                   <div class="text-2xl font-semibold text-slate-900">
-                    ${settings.enabled ? 'On' : 'Off'}
+                    ${settings.enabled ? 'Midnight' : 'Off'}
                   </div>
                   <div class="text-xs text-slate-500">
-                    ${settings.enabled ? 'runs once an hour' : 'nothing is being removed'}
+                    ${settings.enabled
+                      ? html`${fmtDate(nextRun.toISOString())}`
+                      : 'nothing is being removed'}
                   </div>
                 </div>
               </div>
@@ -193,9 +201,18 @@ export function registerRetentionPage(app: FastifyInstance, ctx: ViewContext): v
                 </button>
               </form>
               <p class="mt-3 text-xs text-slate-500">
-                The shortest bound is 7 days, which is the longest window moderation can be
-                configured to count violations over. Sweeping ships switched off, so nothing is
-                removed until the number above has been read and this has been turned on.
+                The bound is an AGE and the schedule is a TIME, and they are separate: the sweep
+                runs once a night at midnight on this host and takes everything older than the
+                bound. It does not run at startup, so restarting the bot never brings an erasure
+                forward. 24 hours is the shortest offered and is what a new deployment gets: the
+                only thing that reads a message's content after the fact is her conversation
+                memory, which cannot look back further than 12 hours at any setting. The longer
+                bounds are there for a longer moderation rhythm, or simply to have a week to look
+                at what arrived. Sweeping ships switched off, so nothing is removed until the
+                number above has been read and this has been turned on.
+                ${lastSwept === null
+                  ? html`Nothing has been swept yet.`
+                  : html`Last swept ${fmtDate(lastSwept)}.`}
               </p>
               <form method="post" action="/retention/sweep" class="mt-4 border-t border-slate-200 pt-4">
                 <input type="hidden" name="_csrf" value="${csrf}" />

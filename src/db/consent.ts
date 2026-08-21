@@ -124,7 +124,12 @@ export async function revocationRefusal(db: Queryable, memberId: string): Promis
 /** How many of this member's messages the archive still holds. */
 export async function memberMessageCount(db: Queryable, memberId: string): Promise<number> {
   const { rows } = await db.query<{ n: string }>(
-    'SELECT count(*)::text AS n FROM messages WHERE sender_member_id = $1',
+    // TOMBSTONES ARE NOT SURVIVORS (CCB-S5-054, D-241). This count decides whether she says
+    // "hidden, and you can bring them back" or admits everything is already destroyed
+    // (CCB-S3-031, revocation.ts). A member swept before they ever opted in, who later opts
+    // in and then revokes, would otherwise be promised a restore of content that no longer
+    // exists, which is the exact sentence that rule was written to prevent.
+    'SELECT count(*)::text AS n FROM messages WHERE sender_member_id = $1 AND content_swept_at IS NULL',
     [memberId],
   );
   return Number(rows[0]?.n ?? 0);
