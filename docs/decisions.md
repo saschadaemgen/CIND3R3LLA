@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 250 decisions</strong> — newest first. Highest allocated: <strong>D-252</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 251 decisions</strong> — newest first. Highest allocated: <strong>D-253</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-253 | The repetition gate: a property where the sampler is a probability | IMPLEMENTED |
 | D-252 | The repetition window ships measured, and the reply path moves to the endpoint that carries it | IMPLEMENTED |
 | D-251 | The announcement says where she is looking, or it is not sent | IMPLEMENTED |
 | D-250 | A member's clock starts when they finish reading | IMPLEMENTED |
@@ -279,6 +280,67 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-253 - The repetition gate: a property where the sampler is a probability
+
+**Status: IMPLEMENTED** (CCB-S5-060 stage 2).
+
+D-252's sampler window took the known trigger from 5 of 5 verbatim repeats to 0 of 5, and 0 of
+5 is a measurement, not a property. The mechanism behind the defect is the model's induction
+circuitry completing a quoted prefix with what followed it last time (Olsson et al., arXiv
+2209.11895) - the same circuitry that makes in-context learning work at all - so no sampler
+setting and no prompt sentence retires it. The gate is the property: **a near-duplicate of
+something she recently said in this room is not sent, whatever produced it.**
+
+**THE SHAPE.** `withFreshWords` wraps the model call in the conversation and lookup lanes.
+Character 5-gram Jaccard against her last five MODEL-WORDED replies in the room; at or above
+0.8 the call is resampled, up to twice - each retry a fresh call at temperature 0.7 under the
+D-252 window, usually enough to land elsewhere. If every attempt lands on the same ground the
+answer is NULL and the lane's EXISTING model-failure path takes over: for conversation that is
+"I could not find my words just now", which is literally true here - she could not find fresh
+ones. No new fallback copy, no new way to fail.
+
+**EVERY NUMBER IS THE STAGE-0 MEASUREMENT'S.** Threshold 0.8 and the 5-gram measure are what
+was calibrated against his 723 archived replies, where the 486 case scores 1.0000 on both
+pairs. The 40-character floor is the measured short-line class - 8 of the 26 her-lane hits
+were the 18-character holding line, the false positive the research predicted, arriving
+exactly as predicted. The window of five is what the measurement compared against. The ring is
+in memory and per room: a restart costs at most one repeat, and the alternative was a database
+read per conversational reply for five strings.
+
+**SCOPED TO HER OWN WORDS, WHICH IS THE MEASUREMENT'S SHARPEST FINDING.** 29 of 55 naive-gate
+hits were application templates that MUST repeat - seven of them consent confirmations, whose
+silent loss is the one failure this product cannot have (CCB-S3-023). So the gate wraps the
+model-worded text BEFORE the application appends anything, and templates never pass through
+it. The check proves this end to end: two members asking to publish get byte-identical
+confirmation questions, both sent.
+
+**THE RING HOLDS WHAT THE ROOM SAW.** Replies are recorded only when they actually left - a
+rate-limited reply reached nobody, so a later near-duplicate of it is not a repeat to any
+member and must not be refused as one. And it holds `spoken`, not the composed body, because
+the application appends its lines after.
+
+**COUNTED WHERE THE OPERATOR LOOKS.** The give-up is a new `repeated` outcome in the
+conversation log, beside `spoken` / `rate-limited` / `unavailable`, because a guard firing and
+a model failing need opposite responses from an operator - the D-248 lesson about ambiguous
+surfaces, applied before it had to be re-learned. The Diagnostics page counts it.
+
+**A STATED BOUNDARY, AND A VACUOUS CHECK CAUGHT IN REVIEW.** Restyling every quote in a reply
+breaks enough 5-gram shingles to land at 0.76, under the threshold, so a whole-string
+punctuation rewrite would ship. The measured production repeats scored 1.0000 - the model
+copies bytes, not styles - and loosening the normalisation to catch the hypothetical would
+invalidate the false-positive rates the scoping rests on. The check states the boundary with
+the score printed beside it. Its first draft asserted `!x || x`, which is always true - the
+vacuous-check anti-pattern this repository hunts, caught while reading the diff rather than by
+anything that ran.
+
+**PROVEN AS THE BRIEFING ASKED.** The exact 187-byte production reply, driven through the real
+engine: the first occurrence SENDS (the positive control), the duplicate never does, three
+model calls are counted (one plus two resamples), the deterministic line goes out, a resample
+that lands elsewhere ships the variant, and below the floor the duplicate ships - which proves
+the refusal above the floor comes from the gate's criterion and nothing else.
+
 ---
 
 ### D-252 - The repetition window ships measured, and the reply path moves to the endpoint that carries it

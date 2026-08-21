@@ -1274,7 +1274,8 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                 <dd>
                   ${conversationStats.total} attempt(s): ${conversationStats.spoken} answered,
                   ${conversationStats.rateLimited} dropped by the reply limit,
-                  ${conversationStats.unavailable} with the model unable to speak
+                  ${conversationStats.unavailable} with the model unable to speak,
+                  ${conversationStats.repeated} stopped by the repetition gate
                 </dd>
                 <dt class="text-slate-500">Average model latency</dt>
                 <dd>

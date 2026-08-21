@@ -203,6 +203,27 @@ export class ConversationState {
   private readonly chats = new Map<number, ChatEntry>();
   private lastPruneAt = 0;
 
+  /**
+   * Her recent MODEL-WORDED replies, per room, for the repetition gate (D-253).
+   *
+   * Only text the model wrote enters this: the deterministic templates repeat by design
+   * and must never be witnesses against themselves. In memory on purpose - a restart
+   * forgets it, which costs at most one repeat after a deploy, and the alternative is a
+   * database read on every conversational reply for a window of five strings.
+   */
+  private readonly modelReplies = new Map<number, string[]>();
+
+  noteModelReply(groupId: number, text: string, window: number): void {
+    const list = this.modelReplies.get(groupId) ?? [];
+    list.push(text);
+    if (list.length > window) list.splice(0, list.length - window);
+    this.modelReplies.set(groupId, list);
+  }
+
+  recentModelReplies(groupId: number): readonly string[] {
+    return this.modelReplies.get(groupId) ?? [];
+  }
+
   private static key(groupId: number, memberId: string): string {
     return `${groupId}:${memberId}`;
   }

@@ -82,6 +82,7 @@ import {
 } from './personality.js';
 import { lookupBrief, shouldAnnounce, type LookupKind, namesDestination } from './lookup-announcement.js';
 import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieval.js';
+import { REPETITION_RESAMPLES, REPETITION_WINDOW, isNearDuplicate } from './repetition.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
@@ -2495,13 +2496,16 @@ export class InteractionEngine {
         })
       : '';
 
-    await this.replyWithText(
+    const lookupSent = await this.replyWithText(
       msg,
       s,
       lang,
       attribution ? `${answer.text}\n${attribution}` : answer.text,
       'lookup',
     );
+    // The gate's ring, same terms as the conversation lane (D-253): the model text, only
+    // when it left, never the attribution the application appended after it.
+    if (lookupSent) this.state.noteModelReply(msg.groupId, answer.text, REPETITION_WINDOW);
     return true;
   }
 
@@ -2552,7 +2556,8 @@ export class InteractionEngine {
 
     let spoken: string | null = null;
     try {
-      spoken =
+      // The same closure shape as the conversation lane, for the same gate (D-253).
+      const attempt = async (): Promise<string | null> =>
         (
           await personalize({
             kind: 'lookup',
@@ -2585,6 +2590,7 @@ export class InteractionEngine {
             },
           })
         )?.trim() || null;
+      spoken = (await this.withFreshWords(msg.groupId, attempt)).text;
     } catch (error) {
       log.debug(
         `Lookup: wording the results failed (${
@@ -4469,9 +4475,13 @@ export class InteractionEngine {
       }
     }
 
+    let repeatedGaveUp = false;
     if (personalize) {
       try {
-        spoken =
+        // A CLOSURE, because the repetition gate re-runs it (D-253). Each resample is a
+        // fresh model call with the same request; the declaration callbacks fire per call,
+        // so what ships is always attributed by the call that produced it.
+        const attempt = async (): Promise<string | null> =>
           (
             await personalize({
               kind: 'conversation',
@@ -4535,6 +4545,9 @@ export class InteractionEngine {
               music: await this.musicPromptFacts(),
             })
           )?.trim() || null;
+        const fresh = await this.withFreshWords(msg.groupId, attempt);
+        spoken = fresh.text;
+        repeatedGaveUp = fresh.repeatedGaveUp;
       } catch (error) {
         log.debug(
           `Interaction: free conversation failed (${
@@ -4556,7 +4569,11 @@ export class InteractionEngine {
       recordConversation({
         at: this.now(),
         groupId: msg.groupId,
-        outcome: 'unavailable',
+        // A guard firing and a model failing need opposite responses from an operator, so
+        // the repetition gate's give-up is its own outcome (D-253) rather than another
+        // 'unavailable' - which is the D-248 lesson about ambiguous surfaces, applied
+        // before it is re-learned.
+        outcome: repeatedGaveUp ? 'repeated' : 'unavailable',
         latencyMs: this.now() - startedAt,
       });
 
@@ -4690,6 +4707,13 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
       });
     }
     const sent = await this.replyWithText(msg, s, lang, body, 'conversation');
+    // THE GATE'S RING HOLDS WHAT THE ROOM SAW (D-253): the MODEL text, recorded only when
+    // the reply actually left. A rate-limited reply reached nobody, so a later
+    // near-duplicate of it is not a repeat to the member and must not be refused as one.
+    // `spoken` rather than `body`, because the application appends its lines after.
+    if (sent && spoken !== null) {
+      this.state.noteModelReply(msg.groupId, spoken, REPETITION_WINDOW);
+    }
     // 'rate-limited' is a separate outcome rather than a missing row, because a dropped
     // reply and a reply that never happened look identical from the group and the
     // operator has to be able to tell them apart. It is the one thing this log records
@@ -4824,6 +4848,59 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
       // withholds together.
       replyTo: { groupId: msg.groupId, itemId: msg.itemId },
     });
+  }
+
+  /**
+   * The repetition gate (CCB-S5-060 stage 2, D-253): a near-duplicate of something she
+   * recently said in this room is not sent, whatever produced it.
+   *
+   * The D-252 sampler makes the verbatim repeat improbable; this makes it a property. The
+   * mechanism behind the defect is the model's own induction circuitry completing a quoted
+   * prefix with what followed it last time, which no prompt sentence retires - the prompt
+   * asked five times over and she repeated 187 bytes three times anyway.
+   *
+   * RESAMPLE, THEN GIVE WAY. A duplicate is retried up to {@link REPETITION_RESAMPLES}
+   * times - each retry a fresh model call at temperature 0.7 under the sampler window,
+   * which is usually enough to land elsewhere. If every attempt lands on the same ground,
+   * the answer is NULL and the lane's existing model-failure path takes over: for
+   * conversation that is the honest "I could not find my words" line, which is literally
+   * true here - she could not find fresh ones. No new fallback copy, no new way to fail.
+   *
+   * SCOPED TO HER OWN WORDS. Only the conversation and lookup lanes call this, on the
+   * model-worded text BEFORE the application appends anything. Templates never pass
+   * through it: the stage-0 measurement found 29 of 55 naive-gate hits were application
+   * lines that MUST repeat - seven of them consent confirmations, whose silent loss is the
+   * one failure this product cannot have (CCB-S3-023).
+   */
+  private async withFreshWords(
+    groupId: number,
+    attempt: () => Promise<string | null>,
+  ): Promise<{ text: string | null; repeatedGaveUp: boolean }> {
+    const priors = this.state.recentModelReplies(groupId);
+    let candidate = await attempt();
+    if (candidate === null) return { text: null, repeatedGaveUp: false };
+    for (let retry = 0; retry < REPETITION_RESAMPLES; retry++) {
+      if (!isNearDuplicate(candidate, priors)) return { text: candidate, repeatedGaveUp: false };
+      log.debug(
+        `Interaction: reply was a near-duplicate of a recent one in group ${String(groupId)}; ` +
+          `resampling (${String(retry + 1)} of ${String(REPETITION_RESAMPLES)}).`,
+      );
+      const next = await attempt();
+      // A model that stops answering mid-gate is a model failure, not a repetition: the
+      // lane's own null path owns it and the count below stays honest.
+      if (next === null) return { text: null, repeatedGaveUp: false };
+      candidate = next;
+    }
+    if (!isNearDuplicate(candidate, priors)) return { text: candidate, repeatedGaveUp: false };
+    // Every attempt landed on the same ground. Counted where the operator already looks
+    // (the Diagnostics conversation log carries the 'repeated' outcome), and logged with
+    // the group so a live report can be matched to it - never with the text, which is her
+    // reply about a member's message.
+    log.info(
+      `Interaction: ${String(1 + REPETITION_RESAMPLES)} attempts all near-duplicated a recent ` +
+        `reply in group ${String(groupId)}; sending the deterministic line instead.`,
+    );
+    return { text: null, repeatedGaveUp: true };
   }
 
   private async sendReply(

@@ -35,7 +35,14 @@ export type ConversationOutcome =
   /** The model spoke and the rate limit dropped the reply before it left. */
   | 'rate-limited'
   /** The model could not speak. The deterministic fallback decided what happened next. */
-  | 'unavailable';
+  | 'unavailable'
+  /**
+   * Every attempt near-duplicated something she recently said here, so the repetition gate
+   * sent the deterministic line instead (D-253). Its own outcome because a guard firing and
+   * a model failing need opposite responses from an operator, and CCB-S3-023 says a
+   * fallback that can mask a fault is counted where the admin can see the count.
+   */
+  | 'repeated';
 
 export interface ConversationEvent {
   /** Epoch ms. */
@@ -57,6 +64,7 @@ export const CONVERSATION_OUTCOMES: Record<ConversationOutcome, string> = {
   spoken: 'She answered in her own words',
   'rate-limited': 'Model answered, but the reply limit dropped it',
   unavailable: 'Model could not speak; the guards decided what followed',
+  repeated: 'Every attempt repeated a recent reply; the deterministic line went out instead',
 };
 
 const buffer: ConversationEvent[] = [];
@@ -78,16 +86,18 @@ export function conversationSummary(): {
   rateLimited: number;
   unavailable: number;
   averageLatencyMs: number | null;
+  repeated: number;
 } {
   const spoken = buffer.filter((e) => e.outcome === 'spoken').length;
   const rateLimited = buffer.filter((e) => e.outcome === 'rate-limited').length;
   const unavailable = buffer.filter((e) => e.outcome === 'unavailable').length;
+  const repeated = buffer.filter((e) => e.outcome === 'repeated').length;
   const averageLatencyMs =
     buffer.length === 0
       ? null
       : Math.round((buffer.reduce((sum, e) => sum + e.latencyMs, 0) / buffer.length) * 10) / 10;
 
-  return { total: buffer.length, spoken, rateLimited, unavailable, averageLatencyMs };
+  return { total: buffer.length, spoken, rateLimited, unavailable, repeated, averageLatencyMs };
 }
 
 /** Test hook — the harness asserts on a clean buffer. */
