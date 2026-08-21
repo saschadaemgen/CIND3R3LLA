@@ -47,7 +47,7 @@ import { loadConfig } from '../config.js';
 import type { CapturedMessage } from '../capture/message.js';
 import { detectAddress } from './addressing.js';
 import { asksWhatSomethingIs, carryOverSlots, resolveIntent } from './resolver.js';
-import { ConversationState, type PendingChoice, type PendingConfirmation } from './state.js';
+import { ConversationState, type PendingChoice, type PendingConfirmation, readingAllowanceMs } from './state.js';
 import {
   NEAR_MISS_EXCERPT,
   recordNearMiss,
@@ -4865,7 +4865,20 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
 
     // §2 — the window refreshes on every reply she actually sends.
     if (openWindow) {
-      this.state.openFollowUp(msg.groupId, msg.senderMemberId, now, s.followUpSeconds * 1000);
+      // ZERO MEANS ZERO, and the harness caught this within a minute of the allowance being
+      // added. `followUpSeconds: 0` is an operator saying there is NO follow-up window: a
+      // bare "yes" is never an answer and every message must name her. Adding a reading
+      // allowance on top of that turned his off switch into a short window, which is the
+      // exact defect class this season keeps finding - a control that says off and is not.
+      //
+      // The allowance is an allowance on HIS setting, never a floor under it.
+      const base = s.followUpSeconds * 1000;
+      this.state.openFollowUp(
+        msg.groupId,
+        msg.senderMemberId,
+        now,
+        base === 0 ? 0 : base + readingAllowanceMs(out.text),
+      );
     }
     return true;
   }

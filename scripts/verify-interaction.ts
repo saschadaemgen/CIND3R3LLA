@@ -42,6 +42,7 @@ import {
 import { formatOutbound, sanitizeDisplayName } from '../src/interaction/reply.js';
 import { clearNearMisses, recentNearMisses } from '../src/interaction/near-misses.js';
 import { detectLanguage } from '../src/interaction/text.js';
+import { readingAllowanceMs } from '../src/interaction/state.js';
 import { setLogLevel } from '../src/log.js';
 
 /**
@@ -551,11 +552,37 @@ async function main(): Promise<void> {
   check('it reaches the confirmation', inWindow.replies[0]?.includes('Say *yes*') === true);
 
   coolDown();
-  await say('Cinderella what can you do');
-  clock.advanceSeconds(90); // past the 60s window
+  // ── THE WAIT IS DERIVED, NOT TYPED (CCB-S5-057, D-250) ────────────────────
+  //
+  // This used to advance a hardcoded 90 seconds "past the 60s window". The window is now
+  // the operator's `followUpSeconds` PLUS the time it takes to read what she just sent,
+  // because a member's clock starts when they finish reading rather than when she sends -
+  // which is how a member hit this in the lookup lane, the longest thing she writes.
+  //
+  // The help reply is long, so its door is about 110 seconds and a 90-second advance was
+  // still inside it. The concept under test is unchanged: the window EXPIRES. So the wait
+  // is computed from the reply that opened it, and this assertion cannot go stale again the
+  // next time a reply's length changes.
+  const opener = await say('Cinderella what can you do');
+  const openerText = opener.replies.join('\n');
+  const doorMs = 60_000 + readingAllowanceMs(openerText);
+  clock.advanceSeconds(Math.ceil(doorMs / 1000) + 5);
   const outOfWindow = await say('publish me');
-  check('the same message after the window is ignored', !outOfWindow.handled);
+  check(
+    'the same message after the window is ignored',
+    !outOfWindow.handled,
+    `door was ${(doorMs / 1000).toFixed(0)}s for a ${String(openerText.length)}-char reply`,
+  );
   check('and she stays silent', outOfWindow.replies.length === 0);
+
+  // THE NEW BEHAVIOUR, pinned: a longer reply holds the door open longer. Without this the
+  // change above is invisible to the suite and could be reverted silently.
+  check(
+    'a long reply earns a longer door than a short one',
+    readingAllowanceMs('x'.repeat(1400)) > readingAllowanceMs('x'.repeat(80)),
+    `${String(Math.round(readingAllowanceMs('x'.repeat(1400)) / 1000))}s vs ` +
+      `${String(Math.round(readingAllowanceMs('x'.repeat(80)) / 1000))}s`,
+  );
 
   coolDown();
   const replyToBot = await say('publish me', { quotedFromBot: true });

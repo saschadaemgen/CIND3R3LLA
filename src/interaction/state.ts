@@ -154,6 +154,50 @@ function trim(times: number[], now: number): number[] {
   return times.filter((t) => t > cutoff);
 }
 
+/**
+ * How long a member needs to READ a reply, before the clock on answering it starts
+ * (CCB-S5-057, D-250).
+ *
+ * ── THE DEFECT A MEMBER FOUND HIMSELF ───────────────────────────────────────
+ *
+ * The help says: once we are talking you can follow up for a moment without repeating my
+ * name. The window is 60 seconds and it opens when SHE SENDS. That is fine for an ordinary
+ * reply, which arrives in about four seconds and is two sentences long - the member is
+ * already reading it as it lands and answers inside the minute.
+ *
+ * It is not fine for a lookup, which is where he hit it. That lane announces, then searches,
+ * then writes the longest thing she sends. The member's own clock does not start when she
+ * sends; it starts when they have finished READING. So the lane's own latency and its own
+ * length eat the window from both ends, and a bare follow-up is then refused at the address
+ * gate - before dispatch, before the model, with no near-miss and no conversation row. The
+ * member has to retype her name and nothing anywhere records that they tried.
+ *
+ * ── WHY THIS IS NOT ANOTHER MUSIC-SHAPED SPECIAL CASE ───────────────────────
+ *
+ * CCB-S5-048 widened the door for a live music card, bounded by the card's own expiry. That
+ * was right and it was narrow: the same reasoning applies to anything long she sends, and
+ * the lookup lane proved it by breaking in exactly the way the music lane had. So this is
+ * not a second special case, it is the general form of the first one - the door stays open
+ * as long as what she put in front of you takes to deal with.
+ *
+ * ── THE NUMBER, AND WHERE IT COMES FROM ─────────────────────────────────────
+ *
+ * 15 characters a second, which is roughly 180 words a minute: ordinary adult reading of
+ * unfamiliar prose, at the slow end of the usual range because a member is reading in a chat
+ * client on a phone, often mid-conversation, and the cost of being slightly generous is one
+ * extra bare line treated as addressed while the cost of being tight is the defect above.
+ *
+ * It is an allowance ON TOP of the operator's own `followUpSeconds`, never a replacement:
+ * his setting still says how long a member has to ANSWER, and this says how long they had
+ * their head down first. A two-sentence reply adds about seven seconds and a full-budget
+ * lookup answer adds about ninety, which is the difference the lane needed.
+ */
+const READING_CHARS_PER_SECOND = 15;
+
+/** The reading allowance for one reply, in milliseconds. Pure, so a check can pin it. */
+export function readingAllowanceMs(text: string): number {
+  return Math.round((text.length / READING_CHARS_PER_SECOND) * 1000);
+}
 export class ConversationState {
   private readonly members = new Map<string, MemberEntry>();
   private readonly chats = new Map<number, ChatEntry>();

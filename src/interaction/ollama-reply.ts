@@ -380,16 +380,6 @@ export const HISTORY_FENCE = '<<<UNTRUSTED-CHAT-HISTORY>>>';
  */
 export const KNOWLEDGE_FENCE = '<<<REFERENCE-DOCUMENT>>>';
 
-/**
- * How hard the decoder is pushed away from tokens already in front of it (CCB-S5-057, D-245).
- *
- * Exported so the measurement and the check read the SAME number the transport sends, rather
- * than a copy of it that can drift. Qwen's guidance is 0 to 2 for repetition, with a warning
- * that high values cause occasional language mixing - which for a bilingual deployment is a
- * visible regression rather than a footnote, so this starts below the ceiling.
- */
-export const PRESENCE_PENALTY = 1.0;
-
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
 
@@ -1154,44 +1144,34 @@ export async function generateOllamaReply(
         ],
         stream: false,
         temperature: 0.7,
-        // ── SHE REPEATED 187 BYTES VERBATIM, THREE TIMES (CCB-S5-057, D-245) ──
+        // ── NO PRESENCE PENALTY, AND THAT IS A MEASUREMENT (CCB-S5-057, D-245) ──
         //
-        // Observed in the live room: three consecutive replies byte-identical, to three
-        // DIFFERENT member messages, one of them a fresh addressed question. Not a cache and
-        // not a replay - the journal shows three separate `Local AI worded a reply` entries,
-        // so the model generated the same string three times.
+        // She repeated 187 bytes verbatim, three times, to three different member messages.
+        // Not a cache and not a replay: the journal shows three separate model calls. Her own
+        // replies ride back into the prompt as conversation memory, and by the third turn the
+        // member had quoted a phrase from inside her own remembered answer.
         //
-        // The mechanism is a feedback loop the application builds. Her own replies ride back
-        // into the prompt as conversation memory (D-147), so by the second turn her previous
-        // answer is the most salient thing in the context, and by the third the member had
-        // quoted a phrase from inside it. `temperature` was the ONLY sampling field sent: no
-        // seed, no penalty of any kind, nothing anywhere comparing a new reply to the last.
+        // A presence penalty was the obvious instrument and Qwen's guidance recommends one
+        // for repetition, so it shipped at 1.0 and was then measured against the production
+        // model on the operator's hardware, reproducing the live failure. It does not work:
         //
-        // WHY A SAMPLING PARAMETER RATHER THAN A SENTENCE, and this is measured rather than
-        // argued. The prompt already carried an anti-reuse instruction FIVE times, once per
-        // dial - "you may not send it again, in whole or in part... including when the
-        // message you receive is word for word the one it answers" - and she sent it again
-        // anyway, three times. A request in the prompt did not hold what a decoding
-        // constraint does.
+        //     penalty   "that's what I'm talking about"   "I don't understand that"
+        //       0.0            0 of 5                          5 of 5
+        //       1.0            1 of 5                          4 of 5
+        //       1.5            3 of 5                          5 of 5
         //
-        // THE VALUE, AND IT IS NOT YET MEASURED - said plainly because the first draft of
-        // this comment claimed it was. Qwen's own guidance puts presence_penalty in 0 to 2
-        // for exactly this and warns that higher values cause occasional language mixing,
-        // which is not theoretical here: this deployment answers in English AND German,
-        // often in the same room, so the ceiling of the band is the wrong place to start and
-        // 1.0 is deliberately below it.
+        // The case that matters is unmoved at every value, and the case that was FINE gets
+        // worse as the penalty rises. That is not a dose to tune: presence_penalty pushes the
+        // decoder away from tokens it has already emitted IN THIS COMPLETION, and this
+        // repetition is across requests, so there is nothing in scope for it to penalise -
+        // while the pressure it does apply costs the model its own fresh vocabulary and makes
+        // the remembered text relatively MORE likely.
         //
-        // `npm run measure:repetition` reproduces the live failure against the real model and
-        // prints the repeat rate at 0, 1.0 and 1.5. It has NOT produced a number: the model
-        // host serves `/api/tags` instantly and cannot complete a chat request inside sixty
-        // seconds, because nothing is loaded and a cold 32B load takes longer. Eighteen of
-        // eighteen requests failed, and "0 repeats at every penalty" over eighteen failures
-        // is the vacuous pass this repository keeps writing checks to avoid - so it is
-        // reported as no result rather than as a good one.
-        //
-        // What IS established is the direction: the prompt already asked for this five times
-        // over, once per dial, and she repeated 187 bytes verbatim three times anyway.
-        presence_penalty: PRESENCE_PENALTY,
+        // So the field is gone rather than left at a value that buys nothing and harms at
+        // 1.5. What the measurement does establish is where the fix has to live: the trigger
+        // is a member message quoting her own remembered reply, which is deterministic and
+        // visible to the application, and a prompt already asked her not to do this five
+        // times over. `npm run measure:repetition` is the harness; D-245 has the numbers.
         max_tokens: replyTokenCap(maxChars),
         reasoning_effort: 'none',
         response_format: {

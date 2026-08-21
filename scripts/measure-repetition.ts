@@ -31,8 +31,40 @@
  */
 
 const BASE = process.env['LOCAL_AI_BASE_URL'] ?? 'http://127.0.0.1:11434';
-const MODEL = process.env['LOCAL_AI_MODEL'] ?? 'qwen3:32b';
 const RUNS = Number(process.argv[2] ?? 6);
+
+/**
+ * The model PRODUCTION ACTUALLY USES, read from the routing row rather than from the
+ * environment.
+ *
+ * This cost the first three attempts at this measurement and is worth the query. The reply
+ * path takes its model from `local-ai-model-routing` in the database; `LOCAL_AI_MODEL` in
+ * the environment is a stale fallback that nothing on that path reads. The two disagreed -
+ * the row said qwen3:14b and the environment said qwen3:32b - so every probe requested a
+ * model that was NOT resident, evicted the one that was, and timed out on a cold load of
+ * twenty gigabytes while the right model sat in VRAM doing nothing.
+ *
+ * Measuring a model the deployment does not run is not a measurement of the deployment,
+ * which is the whole of D-184 in one sentence. So this asks the database.
+ */
+async function resolveModel(): Promise<string> {
+  const fromEnv = process.env['MEASURE_MODEL'];
+  if (fromEnv) return fromEnv;
+  const url = process.env['DATABASE_URL'];
+  if (!url) return process.env['LOCAL_AI_MODEL'] ?? 'qwen3:14b';
+  const { Pool } = await import('pg');
+  const pool = new Pool({ connectionString: url });
+  try {
+    const { rows } = await pool.query<{ value: { replyModel?: string } }>(
+      "SELECT value FROM settings WHERE key = 'local-ai-model-routing'",
+    );
+    return rows[0]?.value?.replyModel ?? process.env['LOCAL_AI_MODEL'] ?? 'qwen3:14b';
+  } finally {
+    await pool.end();
+  }
+}
+
+let MODEL = 'qwen3:14b';
 
 /**
  * Her own reply, as it went out, and as it comes back to her in the next prompt.
@@ -101,6 +133,7 @@ function repeats(reply: string): boolean {
 }
 
 async function main(): Promise<void> {
+  MODEL = await resolveModel();
   console.log(`Repetition under a presence penalty (CCB-S5-057, D-245)`);
   console.log(`model: ${MODEL}   runs per cell: ${String(RUNS)}\n`);
   console.log('Her previous reply, as it comes back to her in the prompt:');

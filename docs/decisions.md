@@ -18,10 +18,13 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 245 decisions</strong> — newest first. Highest allocated: <strong>D-248</strong>. Not allocated: D-108, D-245, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 248 decisions</strong> — newest first. Highest allocated: <strong>D-250</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-250 | A member's clock starts when they finish reading | IMPLEMENTED |
+| D-249 | One anti-reuse sentence instead of five | IMPLEMENTED |
+| D-245 | The presence penalty does not work, measured | WITHDRAWN AFTER MEASUREMENT |
 | D-248 | Nothing disagreed; the log line could not be attributed | IMPLEMENTED |
 | D-247 | Her own law stopped contradicting her own capability | IMPLEMENTED |
 | D-244 | A snippet is not a page, so it is not cited as one | IMPLEMENTED |
@@ -274,6 +277,113 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-250 - A member's clock starts when they finish reading
+
+**Status: IMPLEMENTED** (CCB-S5-057). Found by a member, in the lookup lane.
+
+The help says: *once we are talking you can follow up for a moment without repeating my name.*
+The window is 60 seconds and it opens WHEN SHE SENDS. That is fine for an ordinary reply, which
+arrives in about four seconds and is two sentences long: the member is already reading it as it
+lands and answers inside the minute.
+
+It is not fine for a lookup. That lane announces, then searches, then writes the longest thing
+she sends, so the lane's own latency and its own length eat the window from both ends. A bare
+follow-up is then refused at the ADDRESS GATE - before dispatch, before the model, with no
+near-miss and no conversation row - and the member has to retype her name while nothing
+anywhere records that they tried.
+
+**THE GENERAL FORM OF A FIX THAT WAS TOO NARROW.** CCB-S5-048 widened the door for a live music
+card, bounded by the card's own expiry. That was right and it was narrow: the same reasoning
+applies to anything long she sends, and the lookup lane proved it by breaking the same way. So
+the door is now the operator's `followUpSeconds` PLUS the time it takes to read what she just
+sent - the general case the music fix was one instance of.
+
+**THE NUMBER.** 15 characters a second, about 180 words a minute: ordinary adult reading of
+unfamiliar prose, at the slow end because a member is reading in a chat client, often on a
+phone, mid-conversation. Being slightly generous costs one extra bare line treated as addressed;
+being tight costs the defect above. A two-sentence reply adds 7 seconds, the full help adds 97,
+and a full-budget reply adds 93 - bounded, because the reply itself is.
+
+**AND ZERO STILL MEANS ZERO**, which the harness caught within a minute of the allowance being
+added. `followUpSeconds: 0` is an operator saying there is no follow-up window at all; adding a
+reading allowance on top turned his off switch into a short window. That is the defect class
+this season keeps finding, and it nearly shipped inside the fix for another one. The allowance
+is an allowance on his setting, never a floor under it.
+
+**One assertion was repointed rather than relaxed.** `verify:interaction` advanced a hardcoded
+90 seconds "past the 60s window" and the door is now 157 seconds for the help reply. The concept
+under test is unchanged - the window expires - so the wait is computed from the reply that
+opened it and cannot go stale again the next time a reply's length changes. A positive control
+pins the new behaviour beside it, because otherwise the change would be invisible to the suite.
+
+---
+
+### D-249 - One anti-reuse sentence instead of five
+
+**Status: IMPLEMENTED** (CCB-S5-057, migration 074). Measured: **14,443 -> 13,298 characters**,
+a saving of **1,145**, with `{{dialAxes}}` falling from 3,240 to 1,765.
+
+`dial.axis.no-reuse` was a `dial-axis` TEMPLATE rule, and `dialAxesBlock` renders every template
+once per axis. Five axes, so the same sentence appeared five times about five different
+calibration examples.
+
+**IT IS CONSOLIDATED AND NOT DELETED, AND THE DISTINCTION IS THE POINT.** The first reading was
+that it should go: it is a request in a prompt not to repeat wording, it was there five times
+over, and she repeated 187 bytes verbatim three times anyway. All true - and it guards a
+DIFFERENT failure from the one that was observed. Migration 035 says what it was written for:
+asked the calibration question itself, the model returned the CALIBRATION LINE almost verbatim.
+That is the model copying a string out of its own PROMPT. The room's repetition was the model
+copying its own PREVIOUS REPLY out of conversation memory. Different source, different
+mechanism, and D-245's measurement speaks only to the second.
+
+So deleting it would have removed a guard nobody has measured, on the strength of evidence about
+something else. It says the same thing once instead of five times, and the lane changed from
+`dial-axis` to `dialled` because a `dial-axis` rule is rendered per axis by construction - there
+is no way to say it once from inside that lane.
+
+---
+
+### D-245 - The presence penalty does not work, measured
+
+**Status: WITHDRAWN AFTER MEASUREMENT** (CCB-S5-057). Shipped, measured, removed the same day.
+
+Qwen's guidance recommends a presence penalty for repetition, so one shipped at 1.0 - below the
+1.5 ceiling because the same guidance warns of language mixing and this deployment answers in
+two languages in one room. Then it was measured against the production model on the operator's
+own hardware, reproducing the live failure: her own reply in the history, and the follow-up that
+got it back.
+
+```
+penalty   "that's what I'm talking about"   "I don't understand that"
+  0.0            0 of 5                          5 of 5
+  1.0            1 of 5                          4 of 5
+  1.5            3 of 5                          5 of 5
+```
+
+**The case that matters is unmoved at every value, and the case that was FINE gets worse as the
+penalty rises.** That is not a dose to tune. `presence_penalty` pushes the decoder away from
+tokens it has already emitted IN THIS COMPLETION, and this repetition is across requests, so
+there is nothing in scope for it to penalise - while the pressure it does apply costs the model
+its own fresh vocabulary and makes the remembered text relatively more likely.
+
+**AND THE MEASUREMENT ITSELF FAILED THREE TIMES FIRST, FOR A REASON WORTH KEEPING.** The reply
+path takes its model from `local-ai-model-routing` in the database; `LOCAL_AI_MODEL` in the
+environment is a stale fallback nothing on that path reads. The two disagreed - the row said
+qwen3:14b, the environment said qwen3:32b - so every probe requested a model that was not
+resident, evicted the one that was, and timed out on a cold load of twenty gigabytes while the
+right model sat in VRAM doing nothing. **Measuring a model the deployment does not run is not a
+measurement of the deployment**, which is D-184 in one sentence, so the harness now reads the
+routing row.
+
+**WHAT IS ESTABLISHED, AND WHERE THE FIX HAS TO LIVE.** The trigger is deterministic and visible
+to the application: the member's message quotes a phrase from inside her own remembered reply,
+and she reproduces it 5 times out of 5. A prompt already asked her not to, five times over. So
+the remaining instrument is an application-level check - compare a new reply against her last
+one in this chat and refuse to send the same thing twice - which is not built and is the
+recommended next step.
+
 ---
 
 ### D-248 - Nothing disagreed; the log line could not be attributed
