@@ -696,6 +696,117 @@ because nothing was built to switch off.
       Note `capture_events.payload` (migration 018) has **no production writer yet**, so its shape can
       still be defined in domain terms for free.
 
+## Promised in conversation and never written down (CCB-S5-059)
+
+**Why this section exists, and it is the point of it.** Everything below was asked for by the
+operator, acknowledged, and then lost - because it was passed as a sentence in a message rather
+than as a briefing, a decision entry or a backlog row. A briefing starts from zero context, so a
+sentence that lives only in a chat does not survive being read once.
+
+None of this is a decision to build. It is a decision to STOP LOSING IT. Recording it also fixes
+the thing the operator named last: **an item that was decided against should say so, and an item
+nobody has looked at should not be indistinguishable from one that was.** So each row carries
+where it actually stands.
+
+### From the welcome plugin - four additions, specified and queued after stage 5, never built
+
+Stage 5 closed and none of these was built. All four were specified in detail at the time.
+
+- [ ] **Her own arrival text, per bot.** NOT LOOKED AT. When she JOINS A GROUP she introduces
+      herself, and that is a different message from greeting a member: the member is being told
+      the rules, she is being introduced. The event already exists and already fires on exactly
+      that: `arrivalNotice(wakeWord)` in `src/consent/commands.ts:97`, whose text is the
+      hardcoded `ARRIVAL_TEMPLATE` with a `{wake}` placeholder. It becomes a per-bot key
+      alongside the member greeting, which is the mechanism the welcome plugin already has.
+- [ ] **Which bots are eligible to greet.** NOT LOOKED AT. Configurable per deployment: only
+      one bot, or several taking turns at random. The claim path already makes this safe, so
+      the change is deciding WHO MAY ATTEMPT rather than adding coordination.
+      **One caveat, and it must be a stated suppression reason rather than silence:** if the
+      eligible bot is not in the room, nobody greets, and the operator would never find that
+      himself. That is the D-205 family - a rule that quietly does nothing looks identical to
+      a feature that is switched off.
+- [ ] **Several greeting texts per bot, picked at random.** NOT LOOKED AT. A group with thirty
+      joins a month hears the same sentence thirty times. Same shape as the retort pools, and
+      **cheaper alongside the arrival text than after it**, since both turn one string into a
+      list and the console work is otherwise the same work twice.
+- [ ] **A second bot following the greeting with a line of its own.** REPORTED ON, NOT BUILT.
+      Cinderella greets, Rick adds a remark. The report was given and its conclusion is the
+      part worth keeping: the follower is told THAT a greeting happened and BY WHOM, never
+      what it said. That keeps it entirely outside D-180 - nothing another bot wrote enters
+      the model's context, so there is no path by which one bot's words become an example the
+      other learns to imitate.
+
+### From the channel bridge - four items, named repeatedly and never briefed
+
+- [ ] **The key rework, from the local group id to the stable channel key.** NOT BRIEFED. The
+      core's numeric group id is local to one profile and a rejoin gives the same room a new
+      one, which is the standing rule in `CLAUDE.md` and the reason `origin.ts` already derives
+      `channelKey` from the channel LINK. The bridge's own tables are still keyed on the local
+      id, so a rejoin can orphan a record. **The reasoning was written down and the schema did
+      not follow it**, which is the sentence that standing rule uses about itself.
+- [ ] **Immediate first announcement.** NOT BRIEFED. A fresh post should announce on arrival
+      rather than waiting for the next tick, which at a 60-minute cadence can be an hour of a
+      standing announcement nobody has seen yet.
+- [ ] **Cross-bot duplicate refusal, keyed on the CHANNEL rather than the group id.** NOT
+      BRIEFED. Two bots subscribed to one channel can both announce it. Keying the refusal on
+      the group id would be defeated by exactly the rejoin it is meant to survive, which is the
+      standing rule again.
+- [ ] **Incognito per bot.** CONFIRMED VIABLE, NEVER BUILT. `/_connect group #<id> incognito=on`
+      was confirmed against the core.
+
+### Two inheritance defects
+
+- [ ] **The false shared-wake-word warning at boot.** CONFIRMED IN THE CODE, NOT FIXED.
+      `src/index.ts:993` reads `effective.wakeWord === interaction.get().wakeWord`, which is
+      string equality and not inheritance provenance - so two bots that happen to have been
+      given the same name trigger a warning about sharing the SHARED value. It needs **two
+      tests, not one**: is this bot on the inherited value or on its own, and do any two bots
+      collide. Those are different questions and the warning currently asks neither.
+- [ ] **Nicknames inherit.** NAMED WHILE FIXING THE ORIGIN DEFAULT, LEFT OPEN.
+      `nicknames.words` still defaults to `['cindy', 'cindi', 'cin', 'ella']`
+      (`src/interaction/settings.ts:1107`), so a new bot with a blank origin still answers to
+      another bot's pet forms. The reason is on record and is the whole argument: **"Cindy" is
+      a pet form of ONE name.** A second bot inheriting them refuses a name that was never
+      theirs, which is the retort firing on somebody else's behalf.
+
+### Operator decisions still unanswered
+
+- [ ] **The 1,255 duplicate messages from 7 to 12 August.** FOUND AND COUNTED, NEVER ACTED ON.
+- [ ] **The primary bot, step two.** D-173 left `selected_for_runtime` read by nothing, with its
+      column, index and data still present; step two drops them.
+- [ ] **`otplib` v12 to v13.** Deprecation warnings on every install. D-174's discipline
+      applies: establish reachability before urgency, and read the INSTALLED version rather
+      than the lockfile.
+- [ ] **The deploy that hangs on a GitHub download.** Retrying usually works and **nobody has
+      established why**, which is the shape D-239 warns about: a diagnosis that is available
+      and unproven gets re-derived rather than tested.
+
+### Ideas from this session, recorded before they go the same way
+
+- [ ] **Animated cover videos**, generated with the ffmpeg that now ships: zoom, pan, a pulse on
+      the beat, glitch, waveform. Configurable in the admin - on or off, which effects, how
+      many, how strong. Inheritance deployment to playlist to track, **with the source of an
+      effective value visible**, a preview, and the file-size cost stated, because motion is
+      not free.
+- [ ] **An advertising interface for spots**, as its own area, reusing the bridge's cadence
+      model. And beyond advertising: **a bot announcing its own new capabilities once**, when a
+      capability is switched on.
+- [ ] **Video generation through Seedance on fal.ai** for marketing material. A cloud service,
+      so it belongs to the declared tier and **never touches customer content**, and it needs a
+      SPEND BOUND, since each call costs real money.
+- [ ] **A one-time link, sent privately in chat**, opening a page that does not know who the
+      member is. For settings, and for the midnight design's withdrawal path where identity
+      must be proven without a form.
+- [ ] **A member profile she can recite** - how many messages, how many tracks, which tastes -
+      deletable in named parts. The SHAPE is already recorded in D-217; what is not recorded is
+      that he asked for **the recital itself**.
+- [ ] **Playing a video from their own library into the chat**, which is the same send path with
+      no encode.
+- [ ] **A member's uploaded MP3 entering the library**, rather than only being played once.
+      Waits on the file consent work.
+
+---
+
 ## Left open by CCB-S5-028, deliberately
 
 - [ ] **Answer from the web and say she also has material on it.** CCB-S5-028 decided that the
