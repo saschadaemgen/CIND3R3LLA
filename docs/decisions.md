@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 248 decisions</strong> — newest first. Highest allocated: <strong>D-250</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 249 decisions</strong> — newest first. Highest allocated: <strong>D-251</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-251 | The announcement says where she is looking, or it is not sent | IMPLEMENTED |
 | D-250 | A member's clock starts when they finish reading | IMPLEMENTED |
 | D-249 | One anti-reuse sentence instead of five | IMPLEMENTED |
 | D-245 | The presence penalty does not work, measured | WITHDRAWN AFTER MEASUREMENT |
@@ -277,6 +278,47 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-251 - The announcement says where she is looking, or it is not sent
+
+**Status: IMPLEMENTED** (CCB-S5-057). The operator has asked for this repeatedly.
+
+`lookupBrief` names the destination in the prompt on every lookup and always has. Nothing
+required it to SURVIVE her wording, and the lane is capped at 40 to 200 characters with an
+over-length reply discarded entirely, which is steady pressure toward dropping exactly that
+clause. Production emitted **"Looking up now."** for all three kinds.
+
+Those are three different promises taking three different amounts of time: a network round
+trip, a query over this group's own archive, and a local read of the operator's files. And
+since the knowledge attribution was withdrawn (D-242) and the archive never had one, **for two
+of the three kinds this line is the only place a member is ever told where she looked.**
+
+**AN ALLOW-LIST OF PHRASINGS, NOT THE EXACT-LITERAL MACHINERY.** `requiredLiterals` already
+exists and was the obvious tool. It is the wrong one: it demands one string verbatim, so a line
+saying "out on the internet" instead of "the web" would be thrown away for saying the right
+thing in her own words. The point is that she names the place, not that she names it in the
+application's vocabulary. So `namesDestination` is a set of acceptable markers per destination,
+in both languages, and the line passes if it carries any of them.
+
+**AND A LINE THAT NAMES NOWHERE IS DROPPED RATHER THAN REPLACED.** The lane's own comment
+records why there is no canned fallback: "let me look that up" every time the model is busy is
+the sentence the whole feature was written to avoid. That reasoning holds for this case too, so
+an unnamed line is treated as no line and the member gets silence and then the answer, which is
+the pre-CCB-S5-025 behaviour rather than a new failure. Naming the wrong place does not rescue a
+line either: the markers are per kind.
+
+**THE FIXTURES WERE THE INTERESTING PART.** Six checks went red immediately, and every one was
+a fake model returning a holding line that named nowhere. `verify:lookup-announcement` used the
+bare marker `<<HOLDING-LINE>>`; `verify:search` returned its attack payload for the announcement
+as well as the answer; and one fixture said **"Not in my head. Going to look."** - a line that
+reads perfectly and still does not say where.
+
+That last one is the defect in miniature, and it had been sitting in the suite as the model of
+correct behaviour. **The fixtures were green over a line no member should ever have received**,
+which is the same shape as a check that passes for the wrong reason: a fixture is an assertion
+about what good output looks like, and this one was wrong.
+
 ---
 
 ### D-250 - A member's clock starts when they finish reading

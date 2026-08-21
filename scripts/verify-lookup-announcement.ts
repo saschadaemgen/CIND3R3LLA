@@ -51,6 +51,7 @@ import {
   lookupBrief,
   projectedReplySeconds,
   shouldAnnounce,
+  namesDestination,
   type LookupKind,
 } from '../src/interaction/lookup-announcement.js';
 import { renderPromptRule } from '../src/interaction/prompt-rules.js';
@@ -229,6 +230,46 @@ async function main(): Promise<void> {
     /do not have this one in your own head/i.test(briefs.get('web') ?? ''),
   );
 
+  /* ── 2b. The announcement says WHERE (CCB-S5-057, D-251) ─────────────────── */
+
+  console.log('\n2b. A holding line that does not name its destination is not sent');
+
+  // The production line, which passed every guard and told a member nothing: the same
+  // sentence for the web, the archive and the operator's documents.
+  for (const kind of KINDS) {
+    check(
+      `  "Looking up now." is refused for ${kind}`,
+      !namesDestination('Looking up now.', kind),
+    );
+  }
+
+  // THE POSITIVE CONTROLS, one real phrasing per kind, in her own voice rather than the
+  // application's vocabulary - which is the whole reason this is an allow-list of markers
+  // and not the exact-literal machinery that already exists.
+  check('a web line naming the web passes', namesDestination('Hold on, going out to the web.', 'web'));
+  check(
+    '  and so does one that says internet instead',
+    namesDestination('Give me a second, checking the internet.', 'web'),
+  );
+  check(
+    'an archive line naming this group passes',
+    namesDestination('Digging through this group for it.', 'archive'),
+  );
+  check(
+    'a knowledge line naming the documents passes',
+    namesDestination('Reading the documents he gave me.', 'knowledge'),
+  );
+  check(
+    '  and German phrasings pass too, since the lane is bilingual',
+    namesDestination('Moment, ich schaue im Netz.', 'web') &&
+      namesDestination('Ich lese gerade die Unterlagen.', 'knowledge'),
+  );
+  // A marker for the WRONG kind must not rescue a line: naming the web in an archive
+  // announcement is a different false promise, not a pass.
+  check(
+    'naming the wrong place does not count',
+    !namesDestination('Going out to the web for this.', 'knowledge'),
+  );
   check(
     'the attribution map covers every kind; only the web still names a source',
     KINDS.every((k) => k in ATTRIBUTION_KEY) &&
@@ -354,7 +395,17 @@ async function main(): Promise<void> {
    * `personalize` returns the holding line for the searching mode and the answer otherwise,
    * which is what lets a caller tell the two messages apart in `sent`.
    */
-  const HOLD = '<<HOLDING-LINE>>';
+  // THE FIXTURE NAMES A DESTINATION (CCB-S5-057, D-251), and it did not before.
+  //
+  // It was the bare marker `<<HOLDING-LINE>>`, which names nowhere - and a holding line that
+  // names nowhere is precisely what production emitted and what the engine now refuses to
+  // send. So the marker kept the whole file green while the defect shipped, and every one of
+  // these assertions was passing over a line no member should ever have received.
+  //
+  // It carries all three destination words, so it stands in for any kind without the fixture
+  // having to know which lookup a given case runs. The marker survives inside it, so every
+  // assertion that greps for HOLD is unchanged.
+  const HOLD = '<<HOLDING-LINE>> checking the web, this group and the documents';
   const ANSWER = '<<ANSWER>>';
 
   interface Run {

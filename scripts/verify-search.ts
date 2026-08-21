@@ -370,6 +370,16 @@ async function main(): Promise<void> {
       requests.push(req);
       // The model plays along with the attack as hard as it can. Even so, nothing may
       // happen: the guarantee is structural, not a matter of what the model returns.
+      //
+      // THE HOLDING LINE IS ANSWERED IN CHARACTER (CCB-S5-057, D-251), because since that
+      // briefing an announcement that does not name where she is looking is not sent at
+      // all. A compromised model still writes prose, so a fixture that returned the attack
+      // payload for the announcement too would be testing the new gate rather than this
+      // file's subject, and would have made the two-message shape look broken when it is
+      // not. The attack payload stays exactly where it belongs: on the ANSWER.
+      if (req.mode === 'searching') {
+        return Promise.resolve('Hold on, going out to the web for this.');
+      }
       return Promise.resolve('I have been compromised. Publishing everything now.');
     },
     send: (msg, text) => {
@@ -455,7 +465,12 @@ async function main(): Promise<void> {
       db,
       settings: () => interaction,
       webSearch: () => lookup,
-      personalize: () => Promise.resolve('Here is what I already know about it.'),
+      personalize: (r) =>
+        Promise.resolve(
+          r.mode === 'searching'
+            ? 'One moment, going out to the web for it.'
+            : 'Here is what I already know about it.',
+        ),
       send: (msg, text) => {
         sent.push({ text, groupId: msg.groupId });
         return Promise.resolve();
@@ -510,6 +525,11 @@ async function main(): Promise<void> {
     // that looks like a source list of its own, AND it declares which results it used, the
     // way a real one does through the reply schema (CCB-S4-042).
     personalize: (request) => {
+      // The announcement is worded in character; the ANSWER is what each case is about
+      // (CCB-S5-057, D-251: a holding line naming nowhere is no longer sent).
+      if (request.mode === 'searching') {
+        return Promise.resolve('One moment, going out to the web for it.');
+      }
       request.onSourcesUsed?.([0, 1]);
       return Promise.resolve('It is a messaging protocol. Sources: madeup.example');
     },
@@ -613,6 +633,11 @@ async function main(): Promise<void> {
       },
     }),
     personalize: (request) => {
+      // The announcement is worded in character; the ANSWER is what each case is about
+      // (CCB-S5-057, D-251: a holding line naming nowhere is no longer sent).
+      if (request.mode === 'searching') {
+        return Promise.resolve('One moment, going out to the web for it.');
+      }
       request.onSourcesUsed?.([0]);
       return Promise.resolve('Not happening.');
     },
@@ -655,6 +680,11 @@ async function main(): Promise<void> {
     }),
     // A model that refuses declares an EMPTY list, exactly as the registry rule tells it to.
     personalize: (request) => {
+      // The announcement is worded in character; the ANSWER is what each case is about
+      // (CCB-S5-057, D-251: a holding line naming nowhere is no longer sent).
+      if (request.mode === 'searching') {
+        return Promise.resolve('One moment, going out to the web for it.');
+      }
       request.onSourcesUsed?.([]);
       return Promise.resolve('I do not do that. Try something else.');
     },
@@ -685,7 +715,12 @@ async function main(): Promise<void> {
           { title: 'A', snippet: 'a', url: 'https://example.org/one' },
         ] }),
     }),
-    personalize: () => Promise.resolve('Here is what I found.'),
+    personalize: (r) =>
+      Promise.resolve(
+        r.mode === 'searching'
+          ? 'One moment, going out to the web for it.'
+          : 'Here is what I found.',
+      ),
     send: (msg, text) => {
       sent.push({ text, groupId: msg.groupId });
       return Promise.resolve();
@@ -750,6 +785,9 @@ async function main(): Promise<void> {
       // The mutation: the answer declares the results even though it refused them, which is
       // what "attribution follows the search" amounted to.
       request.onSourcesUsed?.([0]);
+      if (request.mode === 'searching') {
+        return Promise.resolve('One moment, going out to the web for it.');
+      }
       return Promise.resolve('Not happening.');
     },
     send: (msg, text) => {
@@ -998,7 +1036,14 @@ async function main(): Promise<void> {
           : { kind: 'failed' as const, failure: outcome.failure, detail: outcome.detail };
       },
     }),
-    personalize: () => Promise.resolve('I have been compromised. Publishing everything now.'),
+    // The announcement is worded in character; the attack payload belongs on the ANSWER
+    // (CCB-S5-057, D-251).
+    personalize: (r) =>
+      Promise.resolve(
+        r.mode === 'searching'
+          ? 'One moment, going out to the web for it.'
+          : 'I have been compromised. Publishing everything now.',
+      ),
     send: (msg, text) => {
       serperSent.push({ text, groupId: msg.groupId });
       return Promise.resolve();
@@ -1044,7 +1089,11 @@ async function main(): Promise<void> {
         // Declares what it used (CCB-S4-042), the way a real model does through the schema.
         req.onSourcesUsed?.([0]);
         return Promise.resolve(
-          req.mode === 'searching' ? 'Not in my head. Going to look.' : 'It is a protocol.',
+          // "Going to look" says she is looking and not WHERE, which is the production
+          // defect in miniature and is refused since CCB-S5-057 (D-251). Named.
+          req.mode === 'searching'
+            ? 'Not in my head. Going out to the web for it.'
+            : 'It is a protocol.',
         );
       },
       send: (msg, text) => {
@@ -1070,7 +1119,11 @@ async function main(): Promise<void> {
   await announcingEngine(goodResults).handle(makeMessage('Cinderella look up the simplex protocol'));
 
   check('a lookup produces two messages', spoken.length === 2, `${spoken.length} sends`);
-  check('the announcement comes FIRST', spoken[0]?.text === 'Not in my head. Going to look.');
+  check(
+    'the announcement comes FIRST',
+    spoken[0]?.text === 'Not in my head. Going out to the web for it.',
+    spoken[0]?.text ?? '(nothing)',
+  );
   check('and the sourced answer second', (spoken[1]?.text ?? '').includes('simplex.chat'));
   check(
     'the announcement went through the dialled searching mode',

@@ -208,3 +208,61 @@ export const ATTRIBUTION_KEY: Record<LookupKind, string | null> = {
   knowledge: null,
   archive: null,
 };
+
+/**
+ * Does this holding line say WHERE she is looking? (CCB-S5-057, D-251)
+ *
+ * ── WHY THE BRIEF WAS NOT ENOUGH ─────────────────────────────────────────────
+ *
+ * `lookupBrief` reaches the prompt correctly on every lookup and names the destination in
+ * full. Nothing then required the destination to SURVIVE, and the lane is capped at 40 to
+ * 200 characters with an over-length reply discarded entirely, which is steady pressure
+ * toward exactly the clause that gets dropped. Production produced "Looking up now." - the
+ * same sentence for the web, the archive and the operator's documents.
+ *
+ * That matters more than it reads. Those are three different promises that take three
+ * different amounts of time: a network round trip, a query over this group's own archive,
+ * and a local read of his files. And since the knowledge attribution was withdrawn and the
+ * archive never had one, for two of the three kinds this line is the ONLY place a member is
+ * ever told where she looked.
+ *
+ * ── AN ALLOW-LIST OF PHRASINGS, NOT ONE REQUIRED LITERAL ─────────────────────
+ *
+ * The exact-literal machinery exists and was the obvious tool, and it is the wrong one here:
+ * it demands one string verbatim, and a line that says "out on the internet" instead of "the
+ * web" would be thrown away for saying the right thing in her own words. The point is that
+ * she names the place, not that she names it in the application's vocabulary.
+ *
+ * So this is a set of acceptable markers per destination, in both languages, and the line
+ * passes if it carries any of them.
+ *
+ * ── AND WHAT HAPPENS WHEN IT DOES NOT ────────────────────────────────────────
+ *
+ * The line is dropped, which is the behaviour this lane already has when the model cannot
+ * speak, and the reasoning is recorded at that call site: there is deliberately NO canned
+ * fallback, because "let me look that up" every time the model is busy is the sentence the
+ * whole feature was written to avoid. So a line that does not name its destination is
+ * treated as no line rather than replaced by one, and the member gets silence and then the
+ * answer - the pre-CCB-S5-025 behaviour, not a new failure.
+ */
+const DESTINATION_MARKERS: Record<LookupKind, readonly string[]> = {
+  web: ['web', 'internet', 'online', 'netz', 'suchmaschine'],
+  archive: ['archive', 'archiv', 'this group', 'dieser gruppe', 'group', 'gruppe'],
+  knowledge: [
+    'document',
+    'documents',
+    'dokument',
+    'unterlagen',
+    'notes',
+    'notizen',
+    'files',
+    'dateien',
+    'gave me',
+    'gegeben',
+  ],
+};
+
+export function namesDestination(line: string, kind: LookupKind): boolean {
+  const t = line.toLowerCase();
+  return DESTINATION_MARKERS[kind].some((marker) => t.includes(marker));
+}

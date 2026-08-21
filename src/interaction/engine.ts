@@ -80,7 +80,7 @@ import {
   type BotIdentity,
   type BotPersonality,
 } from './personality.js';
-import { lookupBrief, shouldAnnounce, type LookupKind } from './lookup-announcement.js';
+import { lookupBrief, shouldAnnounce, type LookupKind, namesDestination } from './lookup-announcement.js';
 import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieval.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
@@ -2277,6 +2277,27 @@ export class InteractionEngine {
     // this whole feature was written to avoid, and it would be the version members saw
     // every time the model was busy.
     if (!line) return false;
+
+    // ── AND IT HAS TO SAY WHERE (CCB-S5-057, D-251) ────────────────────────
+    //
+    // `lookupBrief` names the destination in the prompt on every lookup, and nothing
+    // required it to SURVIVE her wording. The lane is capped at 40 to 200 characters with
+    // an over-length reply discarded, which is steady pressure toward dropping exactly that
+    // clause, and production produced "Looking up now." for all three kinds.
+    //
+    // Those are three different promises taking three different amounts of time, and since
+    // the knowledge attribution was withdrawn and the archive never had one, for two of the
+    // three this line is the ONLY place a member is told where she looked.
+    //
+    // Dropped rather than replaced, on the same reasoning as the paragraph above: a line
+    // that does not name its destination is treated as no line, so the member gets the
+    // silence this lane already documents rather than a canned sentence.
+    if (!namesDestination(line, kind)) {
+      log.debug(
+        `Lookup: the ${kind} announcement did not name where she was looking; not sending it.`,
+      );
+      return false;
+    }
 
     // UNCOUNTED as well as undroppable, which is what the call site's comment always meant
     // and what the code did not do until CCB-S5-025. A lookup costs exactly one unit of a
