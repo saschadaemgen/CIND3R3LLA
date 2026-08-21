@@ -25,9 +25,12 @@
  * What is kept is HER OUTPUT, bounded, and never a member's message. The console is
  * passkey-gated, and it already shows every word she says on the Messages page.
  *
- * IN MEMORY ONLY, capped, gone on restart. Diagnostics, not a record.
+ * THE BUFFER IS IN MEMORY, capped, and gone on restart: it is the Diagnostics tile, not a
+ * record. Every strip ALSO writes one INFO line to the journal (CCB-S5-053), because five
+ * reports of a false source line arrived without anybody being able to say whether the guard
+ * had fired, and a tile that a restart empties cannot answer that.
  */
-
+import { log } from '../log.js';
 import type { RemovedLine } from './protected-text.js';
 
 export interface ForgeryEvent {
@@ -55,6 +58,29 @@ export function recordForgedLine(entry: Omit<ForgeryEvent, 'text'> & { text: str
   total += 1;
   buffer.unshift({ ...entry, text: entry.text.slice(0, MAX_EXCERPT) });
   if (buffer.length > LIMIT) buffer.length = LIMIT;
+
+  // ── IT ALSO REACHES THE JOURNAL (CCB-S5-053, D-239) ────────────────────────
+  //
+  // This buffer is in memory and capped at fifty, so it is emptied by every restart and
+  // overwritten by volume. That is fine for a dashboard tile and useless for an
+  // investigation, and the false source line has now been reported FIVE times without
+  // anybody being able to say whether the guard fired.
+  //
+  // That is the whole difficulty: with no record, "she printed a source line" is compatible
+  // with the guard never running AND with the guard running and something later re-adding
+  // one, and the two need opposite fixes. Four of the five diagnoses reached for the
+  // relevance floor because it was the only number anybody could see.
+  //
+  // INFO, because the default level is info and a line nobody sees is the state this is
+  // fixing. The EXCERPT only, never the whole reply: this is her output about a member's
+  // question, and the marker plus a fragment is what identifies the shape without putting a
+  // conversation in the log.
+  log.info('Interaction: removed a forged application line from her reply', {
+    kind: entry.kind,
+    where: entry.where,
+    botProfileId: entry.botProfileId,
+    excerpt: entry.text.slice(0, 80),
+  });
 }
 
 /** Most recent first. */

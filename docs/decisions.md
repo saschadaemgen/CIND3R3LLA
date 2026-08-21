@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 237 decisions</strong> — newest first. Highest allocated: <strong>D-238</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 238 decisions</strong> — newest first. Highest allocated: <strong>D-239</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-239 | The false source line: the floor is not the fault, and the guard now says when it fires | PARTIALLY RESOLVED, and said so |
 | D-238 | She does not search the web to learn about herself | IMPLEMENTED |
 | D-237 | A picture that arrives late is noticed | IMPLEMENTED |
 | D-236 | The stream stops reading everything to count anything | IMPLEMENTED |
@@ -266,6 +267,73 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-239 - The false source line: the floor is not the fault, and the guard now says when it fires
+
+**Status: PARTIALLY RESOLVED, and said so** (CCB-S5-053). The cause is narrowed from five
+candidates to one unobserved path; the instrument to catch it is built. The line itself is not
+yet proven fixed.
+
+**WHAT WAS MEASURED, ON HIS CORPUS, THROUGH THE REAL CODE.** Four previous diagnoses reasoned
+about the relevance floor and raised it; the fifth sighting arrived with the floor at 0.60.
+Reasoning about the floor measures ONE INPUT to the decision rather than the decision, which is
+how a defect survives five rounds. `measure:knowledge-retrieval` drives the real `searchChunks`
+and the real `retrieve()` against his 54 documents and 659 chunks with the production embedder:
+
+```
+candidates: 20      floor (cosine): 0.6
+0.5235  SimpleGo README
+0.5097  SS7 Attack Notable Incidents and Regulatory Response
+...     every candidate below the floor
+SELECTED: 0 passage(s)      emptyBecauseOfFloor: true
+```
+
+Repeated for five phrasings of the question he actually asked - "what are your functions",
+"what can you do", "what are your capabilities", "tell me about your functions", "what
+functions do you have" - and every one returns **0 selected**. The SS7 document IS among the
+candidates, at rank 2, and was **never selected**, so the model was never shown it.
+
+**THE FLOOR IS NOT THE FAULT. The application was handed nothing, and the line was invented.**
+Raising the floor a sixth time would have aimed at the half that is already working, which is
+what the previous four changes did.
+
+**AND THE GUARD IS NOT MISCONFIGURED EITHER.** Derived from his LIVE persona: 140 templates,
+54 markers, the source-line marker present. Driven against the forged line in ten shapes - own
+line, inline after a sentence, blank line between, bold markdown, no emoji, leading spaces,
+no space after the colon, title case, the German wording, and a bare "Source:" - **every one is
+stripped.** The running process was current (started 21:26 against source last modified 13:57
+the same day), and the journal carries no "could not read the persona" fault.
+
+So both halves work in isolation and a member still saw the line. **I could not identify the
+path from here, and I am not going to name one on inference** - that is precisely what the
+previous four diagnoses did.
+
+**WHAT IS BUILT INSTEAD: the guard now says when it fires.** `recordForgedLine` wrote only to
+an in-memory buffer capped at fifty and emptied by every restart - fine for a dashboard tile,
+useless for an investigation. With no record, "she printed a source line" is equally consistent
+with the guard never running AND with the guard running and something later re-adding one, and
+those need opposite fixes. Every strip now also writes one INFO line to the journal, carrying
+the lane, the position and an 80-character excerpt - never the whole reply, because that is her
+output about a member's question. **The sixth sighting will name its own cause**: a strip line
+in the window means the guard fired and something downstream re-added the text; no strip line
+means the reply never reached the guard.
+
+**THE DENY-LIST FINDING, which is bigger than the two defects it caused.** D-201 says a guard
+must be an allow-list because a deny-list fails open. It is now the rule this repository has
+broken most often - the wake-word guard, the blocked literals, `membershipIsActive`, and in
+D-238 `asksWhatSomethingIs`, which I wrote *to satisfy D-183* eleven days after D-201 was
+recorded, and which failed open on `function`, `efficient` and `zodiac`.
+
+Worth stating why, because "be more careful" has not worked four times: **a deny-list is what
+you reach for when you are thinking about the cases you have seen, and a closed set is what you
+reach for when you accept you cannot see them all.** Every one of these was written by someone
+holding a concrete list of failures and fixing exactly those. The list is the natural shape of
+that thinking, and it is wrong for the same reason it is natural. The question that catches it
+is not "have I covered the cases" but "who owns this vocabulary, and can it grow without me" -
+nouns, member display names, and `GroupMemberStatus` values all grow; pronouns and possessives
+do not.
+
 ---
 
 ### D-238 - She does not search the web to learn about herself

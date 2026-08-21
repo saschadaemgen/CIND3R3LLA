@@ -122,6 +122,7 @@
     "calibrate:knowledge-floor": "tsx scripts/calibrate-knowledge-floor.ts",
     "calibrate:knowledge-relevance": "tsx scripts/calibrate-knowledge-relevance.ts",
     "verify:cheap-queries": "tsx scripts/verify-cheap-queries.ts",
+    "measure:knowledge-retrieval": "tsx scripts/measure-knowledge-retrieval.ts",
     "measure:prompt": "tsx scripts/measure-prompt.ts",
     "measure:music-parse": "tsx scripts/measure-music-parse.ts",
     "measure:stream-latency": "tsx scripts/measure-stream-latency.ts",
