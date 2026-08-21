@@ -36,6 +36,7 @@ import { insertBotMessage } from '../src/db/bot-messages.js';
 import { recordOptIn } from '../src/db/consent.js';
 import {
   MIN_MARKER_CHARS,
+  SHIPPED_ATTRIBUTION_OPENERS,
   markersFromTemplates,
   stripProtectedLines,
 } from '../src/interaction/protected-text.js';
@@ -113,9 +114,22 @@ async function main(): Promise<void> {
     'the knowledge source line is protected',
     has('📄 From what you gave me:') && has('📄 Aus deinen Unterlagen:'),
   );
+  // REWORDED under CCB-S5-055 (D-244): a snippet is not a page, so the line no longer says
+  // the answer came from the web. The marker is derived from the template, so it follows the
+  // wording automatically; what this asserts is that a marker still EXISTS for both
+  // languages and still opens with the search emoji.
   check(
-    'the web source line is protected',
-    has('🔎 From the web:') && has('🔎 Aus dem Netz:'),
+    'the web source line is protected, in both languages',
+    derived.markers.some((m) => m.startsWith('🔎') && /previews/i.test(m)) &&
+      derived.markers.some((m) => m.startsWith('🔎') && /Vorschauen/i.test(m)),
+  );
+  // AND THE OLD WORDING IS STILL PROTECTED, permanently. Her memory holds a month of replies
+  // carrying it, and a persona edited today does not unteach a month of thread - which is
+  // exactly what `SHIPPED_ATTRIBUTION_OPENERS` exists for.
+  check(
+    '  and so is the wording it replaced, because her memory still holds it',
+    SHIPPED_ATTRIBUTION_OPENERS.includes('From the web:') &&
+      SHIPPED_ATTRIBUTION_OPENERS.includes('Aus dem Netz:'),
   );
   check(
     'the moderation warning is protected, both languages',

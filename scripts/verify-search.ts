@@ -554,7 +554,7 @@ async function main(): Promise<void> {
     'the deep URL is carried, not just the host',
     answer.includes('(https://www.simplex.chat/docs)') &&
       answer.includes('(https://en.wikipedia.org/wiki/X)'),
-    answer.slice(answer.indexOf('From the web')),
+    answer.slice(answer.indexOf('🔎')),
   );
   check(
     'behind a numbered link, because a dot in the display text kills the parse',
@@ -632,7 +632,7 @@ async function main(): Promise<void> {
   );
   check(
     'and NO domain reaches the chat',
-    !sent.some((s) => /xnxx|From the web|Aus dem Netz/i.test(s.text)),
+    !sent.some((s) => /xnxx|🔎/u.test(s.text)),
     sent.map((s) => s.text).join(' | '),
   );
 
@@ -667,7 +667,7 @@ async function main(): Promise<void> {
   const refusal = sent[sent.length - 1]?.text ?? '';
   check(
     'a search that ran but produced a refusal ships no sources at all',
-    !refusal.includes('naughty.example') && !refusal.includes('From the web'),
+    !refusal.includes('naughty.example') && !refusal.includes('🔎'),
     refusal,
   );
 
@@ -694,7 +694,7 @@ async function main(): Promise<void> {
   await silentModel.handle(makeMessage('Cinderella look up the simplex protocol'));
   check(
     'no declaration means no attribution, so the failure direction is a missing line',
-    !(sent[sent.length - 1]?.text ?? '').includes('From the web'),
+    !(sent[sent.length - 1]?.text ?? '').includes('🔎'),
     sent[sent.length - 1]?.text ?? '',
   );
 

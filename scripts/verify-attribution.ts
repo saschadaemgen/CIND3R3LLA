@@ -199,6 +199,61 @@ function main(): void {
     attributionForUsed([README], [0]).join() === README,
   );
 
+  /* ── 3b. a snippet is not a page ─────────────────────────────────────────── */
+
+  console.log('\n3b. The web line does not claim the answer came from the page (D-244)');
+
+  // MEASURED on the deployment, and this is why the wording changed. Asked for the latest
+  // SimpleX beta, she replied "v7.0. SimpleX public names for channels and businesses
+  // (BETA)." - a near-verbatim copy of the serper snippet for the GitHub releases page,
+  // whose live content says 7.1. The model could not have known either version: its
+  // training predates both. It read a STALE EXCERPT and the application printed the page
+  // underneath it.
+  //
+  // A snippet's age is not knowable. Of the five results that query returns, ONE carries a
+  // date field, as the string "3 years ago", and the one that produced the wrong answer
+  // carries none. And a date would be the PAGE's publication date in any case: for exactly
+  // the pages whose content moves - a releases index, a downloads page - that is meaningless
+  // and the CRAWL date is what matters, which no search API returns.
+  const persona = readFileSync(new URL('../src/interaction/settings.ts', import.meta.url), 'utf8');
+  const leadOf = (line: string): string => {
+    const m = new RegExp(`  searchSources: '([^']*)\\{sources\\}',`).exec(line);
+    return m?.[1] ?? '';
+  };
+  const leads = persona
+    .split('\n')
+    .filter((l) => l.includes('searchSources:') && l.includes('{sources}'))
+    .map(leadOf);
+  check('both languages carry a web attribution lead', leads.length === 2, leads.join(' | '));
+  check(
+    'neither claims the answer came FROM the web',
+    !leads.some((l) => /from the web|aus dem netz/i.test(l)),
+    leads.join(' | '),
+  );
+  check(
+    'both say what it was actually built from',
+    leads.every((l) => /previews|Vorschauen/i.test(l)),
+  );
+  check(
+    '  and both say it can be out of date',
+    leads.every((l) => /out of date|veraltet/i.test(l)),
+  );
+  check(
+    '  and both point at the page as the thing to check',
+    leads.every((l) => /check the page|Prüf die Seite/i.test(l)),
+  );
+  // THE LEGACY MARKERS STAY PROTECTED, which is the half a reword would quietly lose: her
+  // own memory still holds a month of replies carrying the old wording, and she can copy
+  // one back. `protected-text.ts` keeps the shipped openers permanently for that reason.
+  const protectedText = readFileSync(
+    new URL('../src/interaction/protected-text.ts', import.meta.url),
+    'utf8',
+  );
+  check(
+    'the OLD wording is still stripped if she writes it from memory',
+    /'From the web:'/.test(protectedText) && /'Aus dem Netz:'/.test(protectedText),
+  );
+
   /* ── 4. the wiring, read from the source ─────────────────────────────────── */
 
   console.log('\n4. The wiring, because a pure function proves nothing on its own');

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 242 decisions</strong> — newest first. Highest allocated: <strong>D-243</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 243 decisions</strong> — newest first. Highest allocated: <strong>D-244</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-244 | A snippet is not a page, so it is not cited as one | IMPLEMENTED |
 | D-243 | The attribution names what the answer used, and retrieval stops running on everything | IMPLEMENTED |
 | D-242 | The source line is off, because a false attribution is worse than none | IMPLEMENTED |
 | D-241 | The retention floor was unfounded, and the sweep had six ways to be mistaken for something else | IMPLEMENTED |
@@ -271,6 +272,75 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-244 - A snippet is not a page, so it is not cited as one
+
+**Status: IMPLEMENTED** (CCB-S5-055, no migration). The relabel. Fetching pages is a separate
+question and is NOT built.
+
+**THE CORRECTION THAT SHARPENED IT, and it was the operator's.** The first reading of this
+defect was that she searched, got three real links, and answered from her own knowledge. That is
+wrong, and the reason it is wrong is decisive: **`qwen3:32b` predates both versions**, so it
+could not have produced "v7.0" from its weights at all.
+
+Measured against his configured provider (serper), same query. Result [1]:
+
+```
+https://github.com/simplex-chat/simplex-chat/releases
+date:    (absent)
+snippet: "New in v7.0. SimpleX public names for channels and businesses (BETA)."
+```
+
+Her reply was **`v7.0. SimpleX public names for channels and businesses (BETA).`** A near-verbatim
+copy. She read a stale excerpt, could not check it against the page it came from, and the
+application printed that page underneath as the source. **The citation is what made it
+dangerous**: it points a member at the correct page while the answer states a number the page no
+longer contains.
+
+**IS A SNIPPET'S AGE KNOWABLE? NO, AND NOT AS A GAP IN THIS PROVIDER.** Of the five results:
+
+| result | date field | version in snippet |
+|---|---|---|
+| simplex.chat/downloads | absent | none |
+| **github …/releases** | **absent** | **v7.0** |
+| reddit (2022) | "3 years ago" | v4.3 |
+| play.google.com | absent | v7.0 |
+| simplex.chat/blog/2022… | absent | v3.1 |
+
+Three different versions across five snippets, two of them years old. One result in five carries
+a date, as an imprecise human string, and **the one that produced the wrong answer carries
+none.** And a date would be the PAGE's publication date in any case: for exactly the pages whose
+content moves - a releases index, a downloads page, a status page - publication date is
+meaningless and the CRAWL date is the only thing that matters. **No search API returns it.**
+
+**SO THE WEB MECHANISM WAS WORKING AND THE LABEL WAS FALSE.** The model declared which results
+it used, honestly; it did use those snippets; the application printed them. Nothing in
+CCB-S4-042's machinery misbehaved. What was false is the sentence: `🔎 From the web: github.com`
+claims the answer came from that page, and it came from a search engine's cache of it. **The
+same defect class as the document line, one lane over: naming a source the answer did not come
+from.**
+
+The line now says what the answer was actually built from and hands the page over as the thing
+to check, in both languages. It does not make her answers more accurate; it stops them being
+certified.
+
+**WHAT WAS DELIBERATELY NOT DONE.** Fetching the page. It would make the citation true, and it
+reverses a decision the adapters record explicitly - "a provider offering page bodies would be
+offering a much larger injection surface" - on a path that already has a prompt-injection
+briefing behind it (D-141). It needs its own threat model, HTML extraction, size and timeout
+limits and SSRF handling, and it is a briefing rather than a line. The operator chose the
+relabel now, with fetching left open.
+
+**TWO THINGS THE REWORD WOULD HAVE QUIETLY BROKEN.** The checks asserting a source line is
+ABSENT were matching the literal `From the web`, so a reword would have made every one of them
+pass for the wrong reason - the same shape as the stale spy found earlier the same day. They
+match `🔎` now, which survives a reword and is identical in both languages. And her own memory
+holds a month of replies carrying the OLD wording, which she can copy back;
+`SHIPPED_ATTRIBUTION_OPENERS` keeps those protected permanently, and that is now asserted
+rather than assumed. Its own comment had already anticipated this: *a persona edited last week
+does not unteach a month of thread.*
+
 ---
 
 ### D-243 - The attribution names what the answer used, and retrieval stops running on everything

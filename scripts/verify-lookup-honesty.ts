@@ -341,7 +341,7 @@ async function main(): Promise<void> {
   );
   check(
     '  so no source line can be printed, even though the model declared [0, 1]',
-    !rejectedRun.sent.some((t) => t.includes('From the web')),
+    !rejectedRun.sent.some((t) => t.includes('🔎')),
     rejectedRun.sent.join(' || ').slice(0, 120),
   );
   check(
@@ -372,7 +372,7 @@ async function main(): Promise<void> {
   );
   check(
     'MUTATION: a model that declares nothing gets no source line',
-    !declaredNothing.sent.some((t) => t.includes('From the web')),
+    !declaredNothing.sent.some((t) => t.includes('🔎')),
     declaredNothing.sent.join(' || ').slice(0, 120),
   );
 
@@ -387,7 +387,7 @@ async function main(): Promise<void> {
   );
   check(
     '  and a model that declares a result it was given DOES get one',
-    declaredSomething.sent.some((t) => t.includes('From the web')),
+    declaredSomething.sent.some((t) => t.includes('🔎')),
     declaredSomething.sent.join(' || ').slice(0, 140),
   );
 
