@@ -81,12 +81,13 @@ const config: LocalAiConfig = {
 let nextReply = '';
 const fakeFetch: FetchLike = (input) => {
   const url = new URL(String(input));
-  if (url.pathname !== '/v1/chat/completions') {
+  // The native endpoint since D-252; the envelope below matches it.
+  if (url.pathname !== '/api/chat') {
     return Promise.resolve(new Response('not found', { status: 404 }));
   }
   return Promise.resolve(
     new Response(
-      JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: nextReply }) } }] }),
+      JSON.stringify({ message: { content: JSON.stringify({ reply: nextReply }) }, done_reason: 'stop' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ),
   );
@@ -358,7 +359,9 @@ async function main(): Promise<void> {
     !AI_PERSONALIZED_KEYS.has('searchNoWords' as never),
   );
 
-  const HOLD = '<<HOLDING-LINE>>';
+  // Names its destination, because a holding line that names nowhere is refused since
+  // D-251 - and the bare marker was exactly the production defect standing in a fixture.
+  const HOLD = '<<HOLDING-LINE>> reading the documents he gave me';
 
   // THE METER IS A MODULE SINGLETON AND SECTIONS 1 TO 3 HAVE BEEN FEEDING IT.
   //

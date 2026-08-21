@@ -391,7 +391,7 @@ function modelDetailPanel(
  */
 import {
   CONTEXT_MEASUREMENTS,
-  REASONING_EFFORT_SENT,
+  REASONING_WIRE_FIELD,
   REASONING_MEASUREMENTS,
   REASONING_SOURCE,
   SERVED_CONTEXT_TOKENS,
@@ -403,7 +403,7 @@ function reasoningCard(): SafeHtml {
 
     <p class="setup-card-note">
       She is running with reasoning <strong>off</strong>
-      (<code>reasoning_effort: "${REASONING_EFFORT_SENT}"</code>). That is an explicit choice in
+      (<code>${REASONING_WIRE_FIELD}</code>). That is an explicit choice in
       the code, not the runtime's default: Ollama runs a reasoning pass by default for models
       that support it, and this application turns it off on every request.
     </p>

@@ -82,12 +82,13 @@ const config: LocalAiConfig = {
 let nextReply = '';
 const fakeFetch: FetchLike = (input) => {
   const url = new URL(String(input));
-  if (url.pathname !== '/v1/chat/completions') {
+  // The native endpoint since D-252; the envelope below matches it.
+  if (url.pathname !== '/api/chat') {
     return Promise.resolve(new Response('not found', { status: 404 }));
   }
   return Promise.resolve(
     new Response(
-      JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: nextReply }) } }] }),
+      JSON.stringify({ message: { content: JSON.stringify({ reply: nextReply }) }, done_reason: 'stop' }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     ),
   );

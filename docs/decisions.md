@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 249 decisions</strong> — newest first. Highest allocated: <strong>D-251</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 250 decisions</strong> — newest first. Highest allocated: <strong>D-252</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-252 | The repetition window ships measured, and the reply path moves to the endpoint that carries it | IMPLEMENTED |
 | D-251 | The announcement says where she is looking, or it is not sent | IMPLEMENTED |
 | D-250 | A member's clock starts when they finish reading | IMPLEMENTED |
 | D-249 | One anti-reuse sentence instead of five | IMPLEMENTED |
@@ -278,6 +279,90 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-252 - The repetition window ships measured, and the reply path moves to the endpoint that carries it
+
+**Status: IMPLEMENTED** (CCB-S5-060 stage 1). The line for the whole briefing, in the
+operator's words: both defects were addressed for weeks with sentences in a prompt, and both
+survived. What changed is not a better sentence - it is accepting that a request to a model is
+not a guarantee, and that everything this product promises has to be a property of the
+application instead.
+
+**WHAT SHIPS.** `repeat_penalty: 1.1` over `repeat_last_n: 2048`, on the reply path, in the
+her-voice modes only (`conversation`, `retort`, `searching`). The reply transport moves from
+`/v1/chat/completions` to the native `/api/chat`, because the window rides in Ollama's
+`options`, which the OpenAI-compatible layer does not carry. The RESOLVER stays on `/v1` - it
+needs none of this, and moving a working transport for symmetry is how regressions happen.
+
+**WHY THE WINDOW, AND WHY IT WAS MISSED FOR SO LONG.** presence_penalty was measured useless
+(D-245): it acts within one completion and the repetition is across requests. repeat_penalty is
+a different instrument - it spans the last `repeat_last_n` tokens of CONTEXT, which includes
+the prompt and therefore her own remembered reply. Its DEFAULT window is 64 tokens, nowhere
+near far enough to reach a reply quoted in a 4,000-token prompt. Every earlier impression that
+"repetition penalties do nothing here" was an impression about that default, not about the
+mechanism. Measured on the deployment, against the known trigger:
+
+```
+baseline (1.0 / 64)      5 of 5 repeats
+1.1 / 512                1 of 5
+1.1 / 2048               0 of 5     <- shipped
+1.1 / 4096               0 of 5
+```
+
+**THE COST WAS MEASURED BEFORE IT SHIPPED**, per the operator's instruction and in the exact
+request shape that ships (native endpoint, strict schema, `think: false`), because measuring a
+different shape is measuring a different thing. `npm run measure:sampler-cost`, n=5 per cell:
+
+```
+                         sampler off     sampler ON (1.1/2048)
+trigger (her own reply)  4/5 repeated    0/5
+ordinary English         0 flagged       0 flagged
+ordinary German          0 language mix  0 language mix
+free-mode literals       0/5 lost        0/5 lost  (216, 108, 0.00004241, 4.24)
+```
+
+No empties, no schema failures, no length collapse in any cell. Qwen3's card recommends these
+penalties off; the measurement is what earns the exception, and it is scoped to earn it only
+where it pays.
+
+**HER-VOICE MODES ONLY, AND THE REASON IS THE LANES' OWN JOBS.** In `free` and `locked` the
+model rephrases a draft the application composed. The draft sits inside the penalty window, so
+the penalty pushes the decoder away from the very text the lane must reproduce - the required
+literals - for zero benefit: the observed repetition never involved those lanes, whose drafts
+differ every turn. The measurement showed the literals would in fact survive (5 of 5), so this
+is a choice made on reasoning with the measurement as backstop, not a retreat from a failure.
+
+**THE ENDPOINT MOVE, PROVEN BEFORE IT WAS MADE.** Stage 0 drove the strict schema,
+`think: false`, log probabilities and the sampler options together against the deployment in
+one request and everything held. What the move touched beside the transport: the reasoning
+constant became the wire field it actually sends (`think: false`, was
+`reasoning_effort: 'none'` - same decision, different spelling; the console states the new
+field and `verify:reasoning` pins the source against it, including that the old field is gone
+from the code while staying in the comment that explains the rename); six harness stubs and
+one capture that spoke the OpenAI envelope; and `measure:reply-latency`, which now measures
+the endpoint production actually uses, because a latency tool on a different endpoint is a
+number about a system nobody runs.
+
+One of those harness failures was D-251's fixture defect in a second file:
+`verify:name-guard`'s holding line was the bare marker, naming nowhere, and the destination
+gate refused it. The fixture now names its destination.
+
+**THE NEAR-MISS, RECORDED AT THE OPERATOR'S INSTRUCTION.** During stage 0, `repeat_last_n: -1`
+produced `repeated 0/5` - and all five were EMPTY replies. That line was minutes from being
+reported as the penalty working, and it was the eighteen-failed-probes mistake (D-245) in a new
+costume: a measurement whose failure mode produces the same output as success. It was caught by
+reading the samples rather than by any check, which is why every measurement harness in this
+repository now prints the replies beside the counts, and why "read the samples, not only the
+counts" is in their footers as an instruction rather than a habit.
+
+**WHAT THIS DOES NOT CLOSE.** The sampler makes the verbatim repeat improbable; it does not
+make it impossible, and nothing here compares a reply against what she last said. That is the
+similarity gate - stage 2, scoped to her own words with the length floor and the template
+exemption the stage-0 measurement found. The operator has also directed stage 3: the
+confidence signal HEDGES rather than suppresses, because losing one correct answer in five is
+too high a price for silence, and a hedge is honest where silence is only safe.
+
 ---
 
 ### D-251 - The announcement says where she is looking, or it is not sent

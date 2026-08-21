@@ -1230,16 +1230,17 @@ async function main(): Promise<void> {
   // The bound: far tighter than a normal reply, and it scales with verbosity.
   let announceMax = 0;
   const capture = (_url: URL | string, init?: RequestInit): Promise<Response> => {
+    // The schema rides in the native `format` field since D-252, not the OpenAI
+    // `response_format` wrapper - this capture went red the moment the transport moved,
+    // which is the assertion doing its job.
     const body = JSON.parse(String(init?.body ?? '{}')) as {
-      response_format?: {
-        json_schema?: { schema?: { properties?: { reply?: { maxLength?: number } } } };
-      };
+      format?: { properties?: { reply?: { maxLength?: number } } };
     };
-    announceMax =
-      body.response_format?.json_schema?.schema?.properties?.reply?.maxLength ?? 0;
+    announceMax = body.format?.properties?.reply?.maxLength ?? 0;
     return Promise.resolve(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: 'ok' }) } }] }),
+        // The native envelope since D-252, matching the endpoint the transport now uses.
+        JSON.stringify({ message: { content: JSON.stringify({ reply: 'ok' }) }, done_reason: 'stop' }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
     );

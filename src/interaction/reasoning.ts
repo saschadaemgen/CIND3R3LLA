@@ -34,8 +34,16 @@
  * change with its own costs that nobody has asked for or measured.
  */
 
-/** What the application sends, on every request, today. */
-export const REASONING_EFFORT_SENT = 'none' as const;
+/**
+ * What the application sends, on every request, today.
+ *
+ * The WIRE FIELD changed with the endpoint (CCB-S5-060, D-252): `reasoning_effort: 'none'`
+ * was the OpenAI-compatible spelling and `think: false` is the native one. The DECISION is
+ * unchanged - reasoning off, chosen by the application, on every request - and the console
+ * states the field as it is actually sent, because a page showing a field the code no
+ * longer contains is the drift this constant exists to prevent.
+ */
+export const REASONING_WIRE_FIELD = 'think: false' as const;
 
 /** Where that value comes from, for the console to state plainly. */
 export const REASONING_SOURCE =

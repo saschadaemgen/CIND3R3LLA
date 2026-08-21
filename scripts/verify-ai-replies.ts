@@ -12,7 +12,13 @@ import {
   personalizeAiReply,
   resetAiRuntimeForTests,
 } from '../src/interaction/ai-runtime.js';
-import { generateOllamaReply, type AiReplyRequest } from '../src/interaction/ollama-reply.js';
+import {
+  REPEAT_PENALTY,
+  REPEAT_WINDOW_TOKENS,
+  generateOllamaReply,
+  samplerFor,
+  type AiReplyRequest,
+} from '../src/interaction/ollama-reply.js';
 import { seededPromptRules } from './seeded-rules.js';
 import type { FetchLike } from '../src/interaction/ollama-resolver.js';
 import { log } from '../src/log.js';
@@ -68,21 +74,21 @@ let inferenceAvailable = true;
 let completionCalls = 0;
 
 function completion(reply: string): Response {
+  // The NATIVE envelope since D-252: the reply transport moved to /api/chat for the
+  // repetition window, so the stub answers in the shape the real server does.
   return new Response(
     JSON.stringify({
-      choices: [
-        {
-          message: {
-            content: JSON.stringify({ reply }),
-          },
-        },
-      ],
+      message: { content: JSON.stringify({ reply }) },
+      done_reason: 'stop',
     }),
     { status: 200, headers: { 'content-type': 'application/json' } },
   );
 }
 
-const fakeFetch: FetchLike = async (input) => {
+/** Every reply-request body the stub saw, so the sampler assertions can read them. */
+const seenBodies: Record<string, unknown>[] = [];
+
+const fakeFetch: FetchLike = async (input, init) => {
   const url = new URL(String(input));
 
   if (url.pathname === '/api/tags') {
@@ -92,8 +98,9 @@ const fakeFetch: FetchLike = async (input) => {
     });
   }
 
-  if (url.pathname === '/v1/chat/completions') {
+  if (url.pathname === '/api/chat') {
     completionCalls++;
+    if (typeof init?.body === 'string') seenBodies.push(JSON.parse(init.body) as Record<string, unknown>);
     if (!inferenceAvailable) return new Response('unavailable', { status: 503 });
     return completion(nextReply);
   }
@@ -242,6 +249,68 @@ async function main(): Promise<void> {
         !successLine.includes(statusRequest.deterministicDraft) &&
         !successLine.includes('ledger holds'),
     ),
+  );
+
+  /* ── 9. The repetition window rides exactly where her voice is (D-252) ──── */
+
+  console.log('\n9. The repetition window: her-voice modes only, values pinned');
+
+  // Drive one request per mode through the REAL transport and read what it sent. The stub
+  // recorded every /api/chat body, so these are the wire bytes rather than a reading of the
+  // source - a check that greps the source passes when the code is right and the call is
+  // never made.
+  seenBodies.length = 0;
+  nextReply = 'A fresh line for the sampler check, with 216 and 108 kept.';
+  const conv: AiReplyRequest = {
+    kind: 'conversation',
+    lang: 'en',
+    memberMessage: 'Cinderella what do you think?',
+    deterministicDraft: '',
+    mode: 'conversation',
+    rules,
+  };
+  await generateOllamaReply(config, conv, fakeFetch);
+  await generateOllamaReply(config, statusRequest, fakeFetch); // mode: 'free'
+  const [convBody, freeBody] = seenBodies;
+  const optionsOf = (b: Record<string, unknown> | undefined): Record<string, unknown> =>
+    (b?.['options'] ?? {}) as Record<string, unknown>;
+
+  check('two requests were captured', seenBodies.length === 2);
+  check(
+    'the conversation request carries the measured window',
+    optionsOf(convBody)['repeat_penalty'] === REPEAT_PENALTY &&
+      optionsOf(convBody)['repeat_last_n'] === REPEAT_WINDOW_TOKENS,
+    JSON.stringify(optionsOf(convBody)),
+  );
+  check(
+    'THE OTHER HALF: the free-mode request carries NO penalty, because the draft it must',
+    optionsOf(freeBody)['repeat_penalty'] === undefined &&
+      optionsOf(freeBody)['repeat_last_n'] === undefined,
+    'reproduce sits inside the window the penalty would push away from',
+  );
+  check(
+    'reasoning is off on the wire',
+    convBody?.['think'] === false && freeBody?.['think'] === false,
+  );
+  check(
+    'the strict schema rides in the native format field',
+    typeof convBody?.['format'] === 'object' && convBody?.['format'] !== null,
+  );
+  check(
+    '  and the endpoint is the native one',
+    completionCalls > 0,
+    'the stub only answers /api/chat now, so every earlier section already proved this too',
+  );
+  // MUTATION GUARD: samplerFor is the single decision point, so a lane added to the set or
+  // removed from it changes these bytes and this section goes red.
+  check(
+    'samplerFor is the one decision point the transport consults',
+    JSON.stringify(samplerFor('conversation')) ===
+      JSON.stringify({ repeat_penalty: REPEAT_PENALTY, repeat_last_n: REPEAT_WINDOW_TOKENS }) &&
+      JSON.stringify(samplerFor('free')) === '{}' &&
+      JSON.stringify(samplerFor('locked')) === '{}' &&
+      Object.keys(samplerFor('retort')).length === 2 &&
+      Object.keys(samplerFor('searching')).length === 2,
   );
 
   resetAiRuntimeForTests();

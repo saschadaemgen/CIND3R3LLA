@@ -95,7 +95,10 @@ async function callWithBudget(prompt: string, probe: Probe, maxChars: number): P
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
-    const res = await fetch(`${HOST}/v1/chat/completions`, {
+    // The native endpoint since D-252, so the rate this measures is the rate the
+    // transport actually gets. A latency tool on a different endpoint than production is
+    // a number about a system nobody runs.
+    const res = await fetch(`${HOST}/api/chat`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       signal: controller.signal,
@@ -121,22 +124,14 @@ async function callWithBudget(prompt: string, probe: Probe, maxChars: number): P
           },
         ],
         stream: false,
-        temperature: 0.7,
-        max_tokens: MAX_TOKENS,
-        reasoning_effort: 'none',
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'cinderella_reply',
-            strict: true,
-            schema: {
-              type: 'object',
-              additionalProperties: false,
-              required: ['reply'],
-              properties: { reply: { type: 'string', minLength: 1, maxLength: maxChars } },
-            },
-          },
+        think: false,
+        format: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['reply'],
+          properties: { reply: { type: 'string', minLength: 1, maxLength: maxChars } },
         },
+        options: { temperature: 0.7, num_predict: MAX_TOKENS },
       }),
     });
 
@@ -144,10 +139,11 @@ async function callWithBudget(prompt: string, probe: Probe, maxChars: number): P
     if (!res.ok) return { ms, httpOk: false, finish: String(res.status), parsed: false, chars: 0, note: `HTTP ${String(res.status)}` };
 
     const json = (await res.json()) as {
-      choices?: { message?: { content?: string }; finish_reason?: string }[];
+      message?: { content?: string };
+      done_reason?: string;
     };
-    const content = json.choices?.[0]?.message?.content ?? '';
-    const finish = json.choices?.[0]?.finish_reason ?? 'unknown';
+    const content = json.message?.content ?? '';
+    const finish = json.done_reason ?? 'unknown';
 
     // Exactly what `parseCompletion` does: JSON.parse, then read `reply`.
     try {

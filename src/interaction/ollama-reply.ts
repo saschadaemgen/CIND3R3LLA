@@ -380,6 +380,37 @@ export const HISTORY_FENCE = '<<<UNTRUSTED-CHAT-HISTORY>>>';
  */
 export const KNOWLEDGE_FENCE = '<<<REFERENCE-DOCUMENT>>>';
 
+/**
+ * The repetition window (CCB-S5-060 stage 1, D-252). Exported so the check reads the SAME
+ * numbers the transport sends rather than a copy that can drift.
+ *
+ * 1.1 over 2048 tokens: the smallest measured pair that took the known trigger from 5 of 5
+ * verbatim repeats to 0 of 5, with the cost measured at nothing detectable - no language
+ * mixing, no empties, no schema failures, no lost literals at n=5 per cell. The DEFAULT
+ * window of 64 is why `repeat_penalty` looked useless for as long as nobody measured it:
+ * her remembered reply sits far more than 64 tokens back in the prompt.
+ */
+export const REPEAT_PENALTY = 1.1;
+export const REPEAT_WINDOW_TOKENS = 2048;
+
+/**
+ * Which modes carry the repetition window: the ones where the WORDS ARE HERS.
+ *
+ * `free` and `locked` rephrase a draft the application composed; the draft sits inside the
+ * penalty window and the penalty pushes the decoder away from it, which fights the lane's
+ * whole job for zero benefit - the observed repetition never involved those lanes. This is
+ * the same her-words boundary the similarity measurement found: 29 of 55 flagged repeats
+ * were application templates that MUST repeat.
+ */
+const SAMPLED_MODES: ReadonlySet<AiReplyMode> = new Set(['conversation', 'retort', 'searching']);
+
+/** The sampler options for one mode: the window where her voice is, nothing elsewhere. */
+export function samplerFor(mode: AiReplyMode): Record<string, number> {
+  return SAMPLED_MODES.has(mode)
+    ? { repeat_penalty: REPEAT_PENALTY, repeat_last_n: REPEAT_WINDOW_TOKENS }
+    : {};
+}
+
 const DEFAULT_MAX_CHARS = 700;
 const LOCKED_LEAD_MAX_CHARS = 180;
 
@@ -673,13 +704,10 @@ function parseCompletion(value: unknown): {
   usedDocuments: number[];
 } {
   const envelope = asRecord(value, 'completion envelope');
-  const choices = envelope['choices'];
-  if (!Array.isArray(choices) || choices.length === 0) {
-    throw new Error('Ollama returned no reply choice.');
-  }
-
-  const choice = asRecord(choices[0], 'completion choice');
-  const message = asRecord(choice['message'], 'completion message');
+  // The NATIVE envelope since D-252: `{ message: { content } }` rather than the OpenAI
+  // `choices` array. One endpoint, one shape; the /v1 form is gone from this function
+  // because keeping both would mean the dead branch passes review forever.
+  const message = asRecord(envelope['message'], 'completion message');
   const content = message['content'];
   if (typeof content !== 'string' || content.trim() === '') {
     throw new Error('Ollama returned an empty reply completion.');
@@ -1056,7 +1084,15 @@ export async function generateOllamaReply(
           : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
   const hasWebResults = (request.webResults?.length ?? 0) > 0;
   const hasDocuments = (request.knowledgePassages?.length ?? 0) > 0;
-  const endpoint = new URL('/v1/chat/completions', `${config.baseUrl}/`);
+  // ── THE NATIVE ENDPOINT, SINCE CCB-S5-060 (D-252) ────────────────────────
+  //
+  // The reply path used /v1/chat/completions from the day it was built. It moved because
+  // the repetition window rides in Ollama's `options`, which the OpenAI-compatible layer
+  // does not carry - and the move was PROVEN before it was made: the strict schema,
+  // `think: false`, log probabilities and the sampler options were driven together against
+  // the deployment and all held on one request. The RESOLVER stays on /v1: it needs none
+  // of this, and moving a working transport for symmetry is how regressions happen.
+  const endpoint = new URL('/api/chat', `${config.baseUrl}/`);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
   // Opened before the request and closed in `finally`, so a throw, a timeout and an abort
@@ -1143,44 +1179,50 @@ export async function generateOllamaReply(
           },
         ],
         stream: false,
-        temperature: 0.7,
-        // ── NO PRESENCE PENALTY, AND THAT IS A MEASUREMENT (CCB-S5-057, D-245) ──
-        //
-        // She repeated 187 bytes verbatim, three times, to three different member messages.
-        // Not a cache and not a replay: the journal shows three separate model calls. Her own
-        // replies ride back into the prompt as conversation memory, and by the third turn the
-        // member had quoted a phrase from inside her own remembered answer.
-        //
-        // A presence penalty was the obvious instrument and Qwen's guidance recommends one
-        // for repetition, so it shipped at 1.0 and was then measured against the production
-        // model on the operator's hardware, reproducing the live failure. It does not work:
-        //
-        //     penalty   "that's what I'm talking about"   "I don't understand that"
-        //       0.0            0 of 5                          5 of 5
-        //       1.0            1 of 5                          4 of 5
-        //       1.5            3 of 5                          5 of 5
-        //
-        // The case that matters is unmoved at every value, and the case that was FINE gets
-        // worse as the penalty rises. That is not a dose to tune: presence_penalty pushes the
-        // decoder away from tokens it has already emitted IN THIS COMPLETION, and this
-        // repetition is across requests, so there is nothing in scope for it to penalise -
-        // while the pressure it does apply costs the model its own fresh vocabulary and makes
-        // the remembered text relatively MORE likely.
-        //
-        // So the field is gone rather than left at a value that buys nothing and harms at
-        // 1.5. What the measurement does establish is where the fix has to live: the trigger
-        // is a member message quoting her own remembered reply, which is deterministic and
-        // visible to the application, and a prompt already asked her not to do this five
-        // times over. `npm run measure:repetition` is the harness; D-245 has the numbers.
-        max_tokens: replyTokenCap(maxChars),
-        reasoning_effort: 'none',
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'cinderella_reply',
-            strict: true,
-            schema: responseSchema(maxChars, hasWebResults, hasDocuments),
-          },
+        // Reasoning stays OFF, as it always has; only the FIELD changed with the endpoint.
+        // `reasoning_effort: 'none'` was the OpenAI-compatible spelling and `think: false`
+        // is the native one; the console states this value and `verify:reasoning` pins the
+        // source against it, so the two cannot drift apart.
+        think: false,
+        // The strict schema, in the native endpoint's own field. Measured honoured on the
+        // deployment before the move: the same schema, `think: false` and the sampler
+        // options were driven together and came back as valid structured output.
+        format: responseSchema(maxChars, hasWebResults, hasDocuments),
+        options: {
+          temperature: 0.7,
+          num_predict: replyTokenCap(maxChars),
+          // ── THE REPETITION WINDOW, MEASURED TWICE BEFORE IT SHIPPED (D-245, D-252) ──
+          //
+          // She repeated 187 bytes verbatim, three times, to three different member
+          // messages: her own replies ride back into the prompt as conversation memory,
+          // and the member quoted a phrase from inside one. A prompt rule asked her not
+          // to, five times over, and did not hold - which is this briefing's whole point.
+          //
+          // presence_penalty was tried first and measured USELESS (D-245): it acts within
+          // one completion and this repetition is across requests. repeat_penalty is not
+          // the same thing - it spans the last `repeat_last_n` tokens of CONTEXT, which
+          // includes the prompt and therefore her own remembered reply. Its DEFAULT window
+          // is 64 tokens, nowhere near far enough to reach a reply quoted in a 4,000-token
+          // prompt, which is why it always looked useless too. Measured on the deployment:
+          //
+          //     baseline (1.0 / 64)        5 of 5 repeats
+          //     1.1 / 512                  1 of 5
+          //     1.1 / 2048                 0 of 5      <- shipped
+          //     1.1 / 4096                 0 of 5
+          //
+          // And the COST was measured before shipping, per the operator's instruction,
+          // in this exact request shape (native endpoint, strict schema, think off):
+          // ordinary English and German replies show no language mixing, no empties, no
+          // schema failures at n=5 per cell, and free-mode required literals survive
+          // 5 of 5. `npm run measure:sampler-cost` is the harness; D-252 has the numbers.
+          //
+          // HER-VOICE MODES ONLY. In `free` and `locked` the model rephrases a draft the
+          // application composed, the draft sits inside the penalty window, and pushing
+          // the decoder away from it fights the lane's whole job for zero benefit - the
+          // observed repetition never involved those lanes. Qwen3's card recommends these
+          // penalties off, so they are applied exactly where they earn their cost and
+          // nowhere else.
+          ...samplerFor(request.mode),
         },
       }),
       signal: controller.signal,

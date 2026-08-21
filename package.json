@@ -126,6 +126,7 @@
     "verify:attribution": "tsx scripts/verify-attribution.ts",
     "measure:knowledge-retrieval": "tsx scripts/measure-knowledge-retrieval.ts",
     "measure:repetition": "tsx scripts/measure-repetition.ts",
+    "measure:sampler-cost": "tsx scripts/measure-sampler-cost.ts",
     "measure:prompt": "tsx scripts/measure-prompt.ts",
     "measure:music-parse": "tsx scripts/measure-music-parse.ts",
     "measure:stream-latency": "tsx scripts/measure-stream-latency.ts",

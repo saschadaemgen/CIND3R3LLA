@@ -92,6 +92,18 @@ const fakeFetch: FetchLike = async (input, init) => {
     );
   }
 
+  if (url.pathname === '/api/chat') {
+    // The REPLY path since D-252: native endpoint, native envelope; the resolver stays on
+    // /v1 below.
+    if (replyFails) return new Response('unavailable', { status: 503 });
+    return new Response(
+      JSON.stringify({
+        message: { content: JSON.stringify({ reply: 'Your archive contains 12 messages. 🔐' }) },
+        done_reason: 'stop',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
   if (url.pathname === '/v1/chat/completions') {
     if (replyFails) return new Response('unavailable', { status: 503 });
 

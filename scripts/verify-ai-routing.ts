@@ -98,6 +98,21 @@ const fakeFetch: FetchLike = async (input, init) => {
     );
   }
 
+  if (url.pathname === '/api/chat') {
+    // The REPLY path since D-252: native endpoint, native envelope. The resolver stays on
+    // /v1 below, which is exactly the split the transport now has.
+    const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+      model?: string;
+    };
+    requestedModels.push(body.model ?? '');
+    return new Response(
+      JSON.stringify({
+        message: { content: JSON.stringify({ reply: 'Your archive contains 12 messages. 🔐' }) },
+        done_reason: 'stop',
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }
   if (url.pathname === '/v1/chat/completions') {
     const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
       model?: string;

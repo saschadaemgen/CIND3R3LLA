@@ -16,7 +16,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   CONTEXT_MEASUREMENTS,
-  REASONING_EFFORT_SENT,
+  REASONING_WIRE_FIELD,
   REASONING_MEASUREMENTS,
   REASONING_SOURCE,
   SERVED_CONTEXT_TOKENS,
@@ -39,19 +39,30 @@ function main(): void {
   console.log('\n1. What the page says is what the request carries');
 
   const transport = readFileSync(join(ROOT, 'src', 'interaction', 'ollama-reply.ts'), 'utf8');
-  const sent = /reasoning_effort:\s*'([a-z]+)'/.exec(transport)?.[1];
+  // The wire field changed with the endpoint (D-252): the native endpoint spells "reasoning
+  // off" as `think: false` where /v1 spelled it `reasoning_effort: 'none'`. Same decision,
+  // same pin: the source must contain exactly the field the console displays.
+  const sent = /\bthink:\s*(false|true)\b/.exec(transport)?.[0];
   check('the transport sends a reasoning setting at all', sent !== undefined, sent ?? '(none)');
   check(
     'and the constant the console displays is that exact value',
-    sent === REASONING_EFFORT_SENT,
-    `transport="${sent ?? ''}" console="${REASONING_EFFORT_SENT}"`,
+    sent === REASONING_WIRE_FIELD,
+    `transport="${sent ?? ''}" console="${REASONING_WIRE_FIELD}"`,
   );
 
   // MUTATION. The whole point of the display is that it cannot drift from the code; this is
   // the check that would go red if somebody changed one and not the other.
   check(
     'MUTATION: a different value in the transport would be caught',
-    'low' !== REASONING_EFFORT_SENT,
+    ('think: true' as string) !== REASONING_WIRE_FIELD,
+  );
+  check(
+    '  and the OLD field really is gone from the CODE, so the pin is not matching dead code',
+    // Comment lines are exempt on purpose: the transport's comment explains the rename, and
+    // deleting history to satisfy a check would be the check working against the reader.
+    !transport
+      .split('\n')
+      .some((line) => !line.trimStart().startsWith('//') && line.includes('reasoning_effort')),
   );
   check(
     'the source is stated as the application rather than the model',
