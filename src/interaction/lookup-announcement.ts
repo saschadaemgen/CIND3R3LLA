@@ -35,7 +35,8 @@
  * ── THE RATE IS NOT A CONSTANT, AND THE FIRST BUILD OF THIS GOT THAT WRONG ───
  *
  * It shipped 19.5 tokens a second, measured on one model on one machine. Then the same box,
- * the same prompt shape and the same `reasoning_effort: 'none'` the transport actually sends
+ * the same prompt shape and reasoning off, as the transport sends it (at the time
+ * `reasoning_effort: 'none'`; `think: false` since the D-252 endpoint move, same effect),
  * were measured against both models this repository ships a default for:
  *
  *     qwen3:32b     ~138 characters a second      verbosity 5 -> 3.6 s

@@ -12,9 +12,11 @@
  *
  * ── WHAT IS ACTUALLY SET ─────────────────────────────────────────────────────
  *
- * The application sends `reasoning_effort: 'none'` on every request, and Ollama 0.32.6 honours
- * it on the OpenAI-compatible endpoint. So thinking is already OFF, deliberately, and has been
- * since it was written. Nothing about this is the runtime's default.
+ * The application turns thinking off on every reply request - `reasoning_effort: 'none'` when
+ * this was written, `think: false` since the transport moved to the native endpoint (D-252) -
+ * and Ollama 0.32.6 honours both spellings on their respective endpoints. So thinking is
+ * already OFF, deliberately, and has been since it was written. Nothing about this is the
+ * runtime's default.
  *
  * ── AND WHY TURNING IT ON IS NOT AVAILABLE ───────────────────────────────────
  *

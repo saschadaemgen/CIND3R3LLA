@@ -769,6 +769,24 @@ Stage 5 closed and none of these was built. All four were specified in detail at
       a pet form of ONE name.** A second bot inheriting them refuses a name that was never
       theirs, which is the retort firing on somebody else's behalf.
 
+### From CCB-S5-060 - what fetching the page would take, reported so it is not owed twice
+
+- [ ] **The page fetch behind the web search.** REPORTED, DELIBERATELY UNBUILT (D-244, D-255).
+      The briefing asked what it would take, and the answer is a briefing of its own, not a
+      feature slipped in beside one. The build itself is ordinary: a fetcher in the search
+      plugin (deployment-wide per `scope.ts`, like the provider credential), timeouts, a size
+      cap, HTML-to-text extraction. What makes it its own briefing is the safety surface: a
+      fetched page is the same untrusted text a snippet is, at two or three orders of
+      magnitude more of it, chosen by whoever controls the page. It needs its own token
+      ceiling, its own relevance floor measured the way `relevance.ts`'s was, the same
+      fenced-into-the-user-message rule the results already have, and the D-183 discipline
+      that every one of those bars is a predicate rather than a prompt sentence. It also
+      needs the latency stated before it ships (a fetch plus extraction plus a longer prompt,
+      on hardware where the reply time is already long enough to announce, D-251). What it
+      buys: the crawl-date problem dissolves for fetched pages - a page read now is current
+      now - so the snippet rule shrinks to the values she quotes from previews she still did
+      not open. Until then the snippet rule is the stopgap, and it is deterministic.
+
 ### Operator decisions still unanswered
 
 - [ ] **The 1,255 duplicate messages from 7 to 12 August.** FOUND AND COUNTED, NEVER ACTED ON.

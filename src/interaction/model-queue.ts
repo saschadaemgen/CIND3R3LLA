@@ -221,7 +221,7 @@ export class ModelQueueMeter {
    * the lookup, which is milliseconds. So the decision needs a generation rate. The first
    * build of this shipped one as a constant, measured on one model on one machine, and that
    * was wrong in a way worth recording: measured on the same box, the same prompt shape and
-   * the same `reasoning_effort: 'none'` the transport sends, `qwen3:32b` wrote at ~138
+   * reasoning off as the transport sends it (`think: false` since D-252), `qwen3:32b` wrote at ~138
    * characters a second and `qwen3.5:9b` at ~414. Both are models this repository ships a
    * default for, they are THREE TIMES apart, and the operator's own production figure of a
    * 16.4 second reply matches neither, because production is different hardware again.

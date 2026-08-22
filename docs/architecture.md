@@ -2735,9 +2735,11 @@ rule (`has-model`). Removed from the shipped origin, because prose cannot know w
 selected on the Models page this morning. Migration 036 moves the column default and rewrites
 existing rows; a default applies to an INSERT and never to an UPDATE.
 
-### 37.7 Sampling is unchanged, and the console says why
+### 37.7 Sampling, and why there is no task lane
 
-Temperature 0.7 and `reasoning_effort: 'none'` on every call. **There is no task lane.** A
+Temperature 0.7 and thinking off (`think: false` since the D-252 endpoint move) on every
+call, plus - since CCB-S5-060 - the measured repetition pair (`repeat_penalty 1.1` over
+`repeat_last_n 2048`) on the her-voice modes only. **There is no task lane.** A
 spell-check is not a command, so it arrives as UNKNOWN and is answered in `conversation` mode
 with the same sampling as small talk. Distinguishing a task from a conversation is a resolver
 change, not a settings change, so nothing was invented here and the AI Models page states the
@@ -3350,8 +3352,11 @@ mutation in `verify:rule-creation`.
 ## 45. What she thinks with (CCB-S4-052, D-154)
 
 `qwen3:32b` is a reasoning model and Ollama runs a reasoning pass by default for models that
-support it. This application does not: `ollama-reply.ts` sends `reasoning_effort: 'none'` on
-every request, on the OpenAI-compatible endpoint, and Ollama 0.32.6 honours it.
+support it. This application does not: `ollama-reply.ts` turns thinking off on every request -
+`reasoning_effort: 'none'` on the OpenAI-compatible endpoint when this was built, `think: false`
+since the reply path moved to the native endpoint (CCB-S5-060, D-252) - and Ollama 0.32.6
+honours both spellings on their respective endpoints. The resolver, still on `/v1`, keeps the
+old spelling.
 
 ### 45.1 Measured, in the production request shape
 
@@ -3867,7 +3872,8 @@ about this deployment: roughly where a silence in a live group stops reading as 
 starts reading as being ignored.
 
 The rate is not a constant, and the first build of this got that wrong. Measured on one machine
-with the transport's own request shape (`reasoning_effort: 'none'`), four warm runs each:
+with the transport's own request shape at the time (reasoning off, then spelled
+`reasoning_effort: 'none'`; `think: false` since D-252), four warm runs each:
 
 | model | measured | verbosity 5 | announces from |
 |---|---|---|---|
@@ -4187,3 +4193,47 @@ migration 070 (the mark, the CHECK that makes a content-holding tombstone unrepr
 partial indexes), `src/web/views/retention.ts` (the page, under Content), and
 `verify:retention`. Ships **switched off**: erasure is not something to inherit from an
 upgrade, so the console states the count first and the operator decides.
+
+## 57. Honesty as a property (CCB-S5-060, D-252 to D-255)
+
+Three application-side gates on what she asserts, each shipped against a measurement taken on
+the operator's hardware, plus one prompt rule reworded with its null result stated.
+
+**The transport moved to the native endpoint** (D-252). The reply path posts to `/api/chat` -
+the only endpoint that carries `options` sampler fields, `think: false` and `logprobs` - with
+the JSON schema in the native `format` field. The resolver stays on `/v1`. With that door open,
+`repeat_penalty 1.1` over `repeat_last_n 2048` rides on the her-voice modes only
+(`conversation`, `retort`, `searching`), because the default 64-token window was why the
+penalty always looked useless: the verbatim-repeat trigger went 5 of 5 to 0 of 5, measured in
+the shipping request shape before it shipped, with free-recall literals proven to survive.
+
+**The repetition gate makes fresh words a property** (D-253, `src/interaction/repetition.ts`).
+The sampler is a probability; the gate is the guarantee: a near-duplicate (character 5-gram
+Jaccard at or above 0.8, 40-character floor) of one of her last five model-worded replies in
+the room is resampled up to twice and otherwise gives way to the lane's existing model-failure
+line. Scoped to her own words BEFORE the application appends anything, because 29 of 55 naive
+hits were templates that must repeat, seven of them consent confirmations. The give-up is its
+own `repeated` outcome on Diagnostics.
+
+**The confidence hedge and the snippet rule** (D-255, `src/interaction/confidence.ts`). The
+minimum token probability over the tokens inside the reply's string value - value-interior
+because the schema grammar forces the key token at raw probability 0.000, which made the naive
+minimum a constant zero in both classes - is compared to a measured 0.70; below it the answer
+still goes out and the application appends `unsureNote` under it. Hedge, never suppress: the
+operator's decision, at a measured cost of 2 in 10 correct answers wrongly hedged against 9 of
+9 induced fabrications caught. A null signal hedges nothing. Separately, a version or price in
+a web answer that also appears in a handed snippet gets `snippetNote` - a preview value nobody
+opened (the D-244 case), decided deterministically. Both notes joined the protected-text strip
+floor the day they were added (the D-180 question): a counterfeit note is stripped and
+counted, and the history she is shown never contains one.
+
+**The abstention rule is a scoring scheme** (D-254, migration 075). Rewritten per the
+scoring-rule finding (arXiv 2604.03904); the A/B on this deployment is a null - both wordings
+equivalent in the minimal and the full assembled prompt, 2 to 4 of 12 residual confident
+inventions under either - so the registry text carries the stronger published shape while the
+gates above are what hold.
+
+**Where it lives.** `src/interaction/ollama-reply.ts` (endpoint, sampler, `onConfidence`),
+`repetition.ts`, `confidence.ts`, the ring in `state.ts`, the notes in `settings.ts`, the
+floor additions in `protected-text.ts`; `verify:repetition-gate` and `verify:honesty-gates`;
+the measurements in `scripts/measure-sampler-cost.ts` and `scripts/measure-abstention.ts`.
