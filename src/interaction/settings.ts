@@ -134,6 +134,15 @@ export const PERSONA_KEYS = [
   // not answer. Deliberately NOT collapsed into either line above: she did find things, and
   // she did not find nothing, and the honest statement is that she could not check them.
   'searchUnchecked',
+  // CCB-S5-060 (D-255). The confidence hedge: appended by the application under a
+  // conversational answer whose own token probabilities say the model was guessing.
+  // Hedge, never suppress - the operator's decision: a wrongly-hedged correct answer
+  // costs one honest sentence, where a wrongly-suppressed one costs the answer.
+  'unsureNote',
+  // CCB-S5-060 (D-255). The snippet rule: appended when a version or price in her web
+  // answer also appears in a search preview she was handed, because no search API returns
+  // the crawl date and a stale snippet cannot be recognised as stale (D-244).
+  'snippetNote',
   // CCB-S5-031. The lookup RAN and came back with something, and the reply was then lost:
   // the model failed, or this application's own guard threw her answer away. Distinct from
   // every line above because those all describe the lookup failing, and saying one of them
@@ -256,6 +265,10 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   rulesNoSuchLaw: 'conversation',
   searchEmpty: 'lookup',
   searchIrrelevant: 'lookup',
+  // Each rides on the message it hedges, so it shares that message's category - the
+  // moderationWarning precedent: one message, one category.
+  unsureNote: 'conversation',
+  snippetNote: 'lookup',
   searchUnchecked: 'lookup',
   searchNoWords: 'lookup',
   bridgeAttribution: 'bridge',
@@ -586,6 +599,10 @@ const PERSONA_EN: PersonaStrings = {
   searchIrrelevant:
     '🕳️ I looked, and what came back was about something else entirely. I am not going to ' +
     'dress that up as an answer.',
+  unsureNote:
+    '🌫️ That last part is from memory and I could not check it. Weigh it accordingly.',
+  snippetNote:
+    '⚠️ That number is from a search preview. I have not read the page it came from.',
   searchUnchecked:
     '🌫️ I looked, but I could not check whether any of it was actually about your question, ' +
     'so I am leaving it alone rather than guessing.',
@@ -784,6 +801,10 @@ const PERSONA_DE: PersonaStrings = {
   searchIrrelevant:
     '🕳️ Ich habe nachgeschaut, und was zurueckkam, ging um etwas voellig anderes. Daraus ' +
     'mache ich dir keine Antwort.',
+  unsureNote:
+    '🌫️ Das Letzte ist aus dem Gedaechtnis, pruefen konnte ich es nicht. Nimm es entsprechend.',
+  snippetNote:
+    '⚠️ Die Zahl stammt aus einer Suchvorschau. Die Seite dahinter habe ich nicht gelesen.',
   searchUnchecked:
     '🌫️ Ich habe nachgeschaut, konnte aber nicht pruefen, ob davon ueberhaupt etwas zu ' +
     'deiner Frage gehoert. Dann lasse ich es lieber, statt zu raten.',

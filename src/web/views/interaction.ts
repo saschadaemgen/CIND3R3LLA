@@ -432,6 +432,8 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     label: 'Web search found things and their relevance could not be checked',
     vars: '',
   },
+  unsureNote: { label: 'Low-confidence note (appended)', vars: '' },
+  snippetNote: { label: 'Snippet-value note (appended)', vars: '' },
   searchNoWords: {
     label: 'A lookup ran and found something, and the reply was then lost',
     vars: '',

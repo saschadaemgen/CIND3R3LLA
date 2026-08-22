@@ -726,9 +726,12 @@ async function main(): Promise<void> {
     'the no-invented-facts rule names the specific things she has invented',
     clocked.includes('the roadmap, the release dates') && clocked.includes('not even a vague one'),
   );
+  // Migration 075 (CCB-S5-060, D-254) rewrote this rule as a scoring scheme: plain
+  // instruction and reward framing measured EQUIVALENT here, and the scoring text carries
+  // the same demand in the shape the abstention paper found stronger elsewhere.
   check(
     'and tells her to say she does not know instead of filling the gap',
-    clocked.includes('filling the gap is the one thing you must not do'),
+    clocked.includes('Saying plainly that you do not know earns half a point'),
   );
   // CCB-S4-044 replaced the instruction this used to assert. D-140 booked that in advance:
   // "you have no memory of this conversation" became a false statement she was told to make
@@ -764,7 +767,7 @@ async function main(): Promise<void> {
   const replying = (text: string) => async (_url: URL | string, init?: RequestInit): Promise<Response> => {
     JSON.parse(String(init?.body ?? '{}'));
     return Promise.resolve(
-      new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: text }) } }] }), {
+      new Response(JSON.stringify({ message: { content: JSON.stringify({ reply: text }) } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
       }),
@@ -925,13 +928,14 @@ async function main(): Promise<void> {
 
   let sentMax = 0;
   const capturingFetch = (_url: URL | string, init?: RequestInit): Promise<Response> => {
+    // The schema rides in the native `format` field since D-252, not the OpenAI wrapper.
     const body = JSON.parse(String(init?.body ?? '{}')) as {
-      response_format?: { json_schema?: { schema?: { properties?: { reply?: { maxLength?: number } } } } };
+      format?: { properties?: { reply?: { maxLength?: number } } };
     };
-    sentMax = body.response_format?.json_schema?.schema?.properties?.reply?.maxLength ?? 0;
+    sentMax = body.format?.properties?.reply?.maxLength ?? 0;
     return Promise.resolve(
       new Response(
-        JSON.stringify({ choices: [{ message: { content: JSON.stringify({ reply: 'ok' }) } }] }),
+        JSON.stringify({ message: { content: JSON.stringify({ reply: 'ok' }) } }),
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
     );
@@ -1062,7 +1066,7 @@ async function main(): Promise<void> {
     sentSystem = body.messages.find((m) => m.role === 'system')?.content ?? '';
     return new Response(
       JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ reply: 'Sharper than that.' }) } }],
+        message: { content: JSON.stringify({ reply: 'Sharper than that.' }) },
       }),
       { status: 200, headers: { 'content-type': 'application/json' } },
     );

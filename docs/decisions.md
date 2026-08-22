@@ -18,10 +18,12 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 251 decisions</strong> — newest first. Highest allocated: <strong>D-253</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 253 decisions</strong> — newest first. Highest allocated: <strong>D-255</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-255 | The confidence hedge and the snippet rule: what she asserts carries its own weather report | IMPLEMENTED |
+| D-254 | The abstention rule as a scoring scheme, and the honest null beside it | IMPLEMENTED |
 | D-253 | The repetition gate: a property where the sampler is a probability | IMPLEMENTED |
 | D-252 | The repetition window ships measured, and the reply path moves to the endpoint that carries it | IMPLEMENTED |
 | D-251 | The announcement says where she is looking, or it is not sent | IMPLEMENTED |
@@ -280,6 +282,106 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-255 - The confidence hedge and the snippet rule: what she asserts carries its own weather report
+
+**Status: IMPLEMENTED** (CCB-S5-060 stages 3 and 4).
+
+**THE SIGNAL IS THE MODEL'S OWN TOKEN PROBABILITIES, AND THE MEAN DOES NOT SEPARATE.** A
+fabrication is fluent: over the stage-0 probes the mean token probability of a fabricated
+answer (0.94) sat beside a known one (0.98), because almost every token of a confident lie is
+an ordinary word confidently chosen. The MINIMUM separates, because somewhere in a fabricated
+reply is the point where the invented specific was chosen against live alternatives. The
+transport requests `logprobs: true` on the native endpoint - only when a caller has attached a
+listener, so the command lanes pay nothing - and hands the caller one number per reply.
+
+**THE GRAMMAR-FORCED-TOKEN TRAP, WHICH THE FIRST IN-ENVELOPE MEASUREMENT FELL INTO.** The
+reply ships inside a strict JSON schema, and a grammar FORCES tokens: the key token `reply`
+carries the model's raw probability for a token it was never free to refuse, measured at
+0.000 on every reply in both classes. A naive minimum over the whole completion is a constant
+zero and separates nothing - a gate built on it would have hedged everything or nothing, and
+every check written against the constant would have stayed green. So the minimum is taken
+over the tokens INSIDE the reply's string value only (`confidence.ts`, escape-aware span),
+where the grammar leaves the model free and the probabilities mean what they say. The trap is
+pinned in `verify:honesty-gates` with the forced key at logprob -30 in the fixture.
+
+**THE THRESHOLD IS 0.70, MEASURED TWICE ON HIS HARDWARE.** On plain-text replies (stage 0)
+the best split was 0.708, catching 11 of 14 fabrications. In the shipping envelope with
+value-interior extraction, every one of 9 induced fabrications scored at or below 0.696 and
+eight of ten knowns at or above 0.775. At 0.70 that is 9 of 9 caught, with the cost stated
+rather than hidden: **2 of 10 correct answers are wrongly hedged.**
+
+**HEDGE, NEVER SUPPRESS - THE OPERATOR'S DECISION, VERBATIM:** *"use it to hedge, not to
+suppress. Losing one correct answer in five is too high a price for silence, and a hedge is
+honest where silence is only safe."* So the answer always goes out; below the threshold the
+application appends its own line under it (persona `unsureNote`, EN and DE), and a missing
+instrument hedges NOTHING - a null signal means no hedge, because hedging on a broken
+instrument would caveat every reply the day logprobs break, a silent regression wearing a
+disclaimer. Suppression stays available to him later if hedging proves too weak.
+
+**THE SNIPPET RULE IS THE DETERMINISTIC HALF OF D-244.** No search API returns the crawl
+date, so the v7.0 answer was unavoidable given what she was handed, and fetching the page
+stays deliberately unbuilt (an injection surface with its own briefing behind it). What is
+enforceable today: a VERSION or PRICE in her web answer that also appears in a snippet she
+was handed is a value copied from a preview nobody opened, and the application says so under
+the answer (`snippetNote`), between her words and the source line. The pattern is
+deliberately narrow - versions and prices, the two shapes production actually got wrong -
+because one matching years or bare integers would hedge half of ordinary conversation. A
+value she produced WITHOUT a snippet source is the confidence hedge's territory, one lane
+over. And the black-box alternative the briefing asked to be costed: a k-sample consistency
+check needs k full generations per reply on hardware that already queues every bot through
+one serialized scheduler, so at any k it multiplies reply latency and GPU residency by k; the
+logprob signal rides on the single generation already being made.
+
+**BOTH NOTES WENT THROUGH THE D-180 QUESTION ON THE DAY THEY WERE ADDED.** An appended line
+becomes, through memory, an example of how she writes - and a counterfeit hedge is the forged
+source line in a new costume: an instrument line a member reads as the application speaking.
+Neither note carries a placeholder, so the derived-marker rule cannot cover them; both went
+into the strip floor (`SHIPPED_ATTRIBUTION_OPENERS`, sigil included, line-start anchored),
+which runs over her completions AND over the history she is shown. A forged note is stripped
+and counted, and twenty hedged answers teach her nothing about hedging, because she never
+sees a hedge again after it is sent.
+
+**WHAT THE HARNESS'S OWN FAILURES TAUGHT.** `verify:honesty-gates`'s engine section failed
+its first two runs because the fixture returned near-identical wording every call and the
+REPETITION gate (D-253) refused the later turns - two gates on one lane, and a fixture has to
+be innocent of both to test either. A one-digit variation scores ~0.97 Jaccard; the fixture
+now words each attempt genuinely differently, and the collision is recorded in its comment.
+
+---
+
+### D-254 - The abstention rule as a scoring scheme, and the honest null beside it
+
+**Status: IMPLEMENTED** (CCB-S5-060, migration 075).
+
+The briefing's prompt-side arm: recent work (arXiv 2604.03904) finds models abstain more
+readily when honesty is framed as a SCORING RULE than when it is politely requested, because
+binary-graded training rewards a guess over a blank. So `grounding.say-you-do-not-know` was
+rewritten from an instruction into the scheme itself: a correct answer earns one point,
+saying plainly that you do not know earns half a point, a wrong or invented answer costs
+three. `verify:prompt-identity` re-baselined; the diff is the one rule.
+
+**THE A/B ON THIS DEPLOYMENT IS A NULL, AND IT IS REPORTED AS ONE** (ground rule 1: a
+measurement with no result is not a pass, and a result that says "no difference" is a
+result). Old wording against scoring wording, measured in BOTH shapes - the minimal prompt
+and the full assembled registry prompt - against the production model on his hardware: the
+two wordings are equivalent here. Under the full prompt most probes come back as
+persona-voiced honesty either way, with 2 to 4 of 12 residual confident inventions under
+EITHER wording. The scoring text ships because it carries the same demand in the shape the
+paper found stronger elsewhere and costs nothing here; the honest claim is that it settles
+the residue nowhere, which is the briefing's own thesis - **the remainder belongs to
+application-side gates** (D-253, D-255), and a rule in the registry was never going to be the
+thing that holds.
+
+**TWO CORRECTIONS THE MEASUREMENT FORCED.** The instrument misclassified first: the refusal
+regex counted persona-voiced honesty ("a question for the folks running the servers", "never
+heard of it") as fabrication, and the numbers only became legible after it was widened - the
+samples, not the counts, are the primary instrument, which is why every measurement script
+now prints them. And the stage-0 framing was wrong: the 14-of-16 fabrication baseline was
+taken with NO abstention rule in the prompt at all, so it measured the bare model, not the
+rule failing. The rule was never shown to be broken; it was shown to be absent.
+
 ---
 
 ### D-253 - The repetition gate: a property where the sampler is a probability

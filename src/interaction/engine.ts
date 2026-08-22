@@ -83,6 +83,7 @@ import {
 import { lookupBrief, shouldAnnounce, type LookupKind, namesDestination } from './lookup-announcement.js';
 import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieval.js';
 import { REPETITION_RESAMPLES, REPETITION_WINDOW, isNearDuplicate } from './repetition.js';
+import { CONFIDENCE_HEDGE_THRESHOLD, snippetValueAsserted } from './confidence.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
@@ -2496,11 +2497,31 @@ export class InteractionEngine {
         })
       : '';
 
+    // ── THE SNIPPET RULE (CCB-S5-060 stage 4, D-255) ───────────────────────
+    //
+    // A version or price in her answer that ALSO appears in a snippet she was handed is a
+    // value copied from a preview nobody opened - the v7.0 case, where the snippet said 7.0
+    // and the page it pointed at said 7.1. No search API returns the crawl date, so a stale
+    // snippet cannot be recognised as stale, and until fetching the page exists (an
+    // injection surface, deliberately unbuilt) the honest move is the application saying
+    // where the number came from, under the answer, in its own line.
+    //
+    // Deterministic on both sides: the value pattern is narrow (versions and prices, the
+    // two shapes production actually got wrong) and the comparison is against the snippets
+    // she was handed this turn. A value she produced WITHOUT a snippet source is the
+    // confidence hedge's territory, one lane over. And it is a use of the results the
+    // D-145 reasoning permits: it can only ever REDUCE the answer's claimed authority.
+    const snippetValue = snippetValueAsserted(
+      answer.text,
+      outcome.results.map((r) => `${r.title}\n${r.snippet}`),
+    );
+    const snippetLine = snippetValue ? `\n${this.persona(s, lang, 'snippetNote')}` : '';
+
     const lookupSent = await this.replyWithText(
       msg,
       s,
       lang,
-      attribution ? `${answer.text}\n${attribution}` : answer.text,
+      `${answer.text}${snippetLine}${attribution ? `\n${attribution}` : ''}`,
       'lookup',
     );
     // The gate's ring, same terms as the conversation lane (D-253): the model text, only
@@ -4476,6 +4497,9 @@ export class InteractionEngine {
     }
 
     let repeatedGaveUp = false;
+    // The model's confidence over the reply it wrote (D-255). Null means the transport
+    // could not measure, and null means NO hedge.
+    let replyConfidence: number | null = null;
     if (personalize) {
       try {
         // A CLOSURE, because the repetition gate re-runs it (D-253). Each resample is a
@@ -4525,6 +4549,9 @@ export class InteractionEngine {
               // attributed. The declaration can only NARROW what retrieval already admitted.
               onDocumentsUsed: (indices) => {
                 declaredDocuments = indices;
+              },
+              onConfidence: (p) => {
+                replyConfidence = p;
               },
               // The book, when they are asking about it (CCB-S4-045).
               ...disclosure,
@@ -4706,6 +4733,27 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
         printed: usedTitles.length === 0 ? 'none' : usedTitles.join(', '),
       });
     }
+    // ── THE CONFIDENCE HEDGE (CCB-S5-060 stage 3, D-255) ───────────────────
+    //
+    // Hedge, never suppress - the operator's decision, verbatim: "losing one correct
+    // answer in five is too high a price for silence, and a hedge is honest where silence
+    // is only safe." Below the measured threshold the application appends its own caveat
+    // and the answer still goes out. The line is a persona template, so the operator can
+    // reword it, and it is APPENDED rather than worded by the model, the D-137 shape.
+    //
+    // The threshold was measured twice on his hardware: 0.708 on plain replies, and in
+    // the shipping envelope every induced fabrication scored at or below 0.696 with eight
+    // of ten correct answers at or above 0.775. The cost at 0.70 is two of ten correct
+    // answers carrying one honest sentence they did not need.
+    if (
+      spoken !== null &&
+      replyConfidence !== null &&
+      replyConfidence < CONFIDENCE_HEDGE_THRESHOLD
+    ) {
+      body = `${body}
+${this.persona(s, lang, 'unsureNote')}`;
+    }
+
     const sent = await this.replyWithText(msg, s, lang, body, 'conversation');
     // THE GATE'S RING HOLDS WHAT THE ROOM SAW (D-253): the MODEL text, recorded only when
     // the reply actually left. A rate-limited reply reached nobody, so a later

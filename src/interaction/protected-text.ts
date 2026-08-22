@@ -151,6 +151,18 @@ export const SHIPPED_ATTRIBUTION_OPENERS: readonly string[] = [
   'Sources:',
   'Quelle:',
   'Quellen:',
+  // The honesty notes (CCB-S5-060, D-255). Both are APPENDED under her words with no
+  // placeholder, so the derived-marker rule cannot cover them, and both are instrument
+  // lines a member reads as the application speaking - a counterfeit hedge is the forged
+  // source line in a new costume. The openers carry their sigils because the exact copy
+  // is the observed failure shape (memory teaches bytes rather than styles, D-253), and
+  // an emoji-led line start is never ordinary prose. Line-start matching also keeps the
+  // note out of the HISTORY she is shown, which is the D-180 half: an appended line she
+  // never sees again is a format she cannot learn.
+  '🌫️ That last part is from memory',
+  '⚠️ That number is from a search preview',
+  '🌫️ Das Letzte ist aus dem Gedaechtnis',
+  '⚠️ Die Zahl stammt aus einer Suchvorschau',
 ];
 
 /**

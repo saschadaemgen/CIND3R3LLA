@@ -33,6 +33,7 @@ import { recordBlockedName } from './blocked-name-log.js';
 import { stripInventedRefusals } from './capability-claims.js';
 import { recordInventedRefusal } from './invented-refusal-log.js';
 import type { Intent } from './intent.js';
+import { minReplyTokenProb, type TokenLogprob } from './confidence.js';
 
 export type AiReplyMode = 'free' | 'locked' | 'conversation' | 'retort' | 'searching';
 
@@ -233,6 +234,17 @@ export interface AiReplyRequest {
    * reason above it: the caller owns the list and is the one place that decides range.
    */
   onDocumentsUsed?: (indices: readonly number[]) => void;
+  /**
+   * The model's own confidence over the reply it just wrote (CCB-S5-060 stage 3, D-255):
+   * the MINIMUM token probability across the reply value, with the schema's grammar-forced
+   * tokens excluded, because a forced token carries a raw probability the model was never
+   * free to act on (measured at 0.000 on every reply, both classes).
+   *
+   * Same fail-closed family as the declarations above it, pointing the other way: called
+   * only when the transport could actually measure, so a missing signal means NO HEDGE
+   * rather than a caveat under every reply the moment logprobs break.
+   */
+  onConfidence?: (minProb: number) => void;
   /**
    * What was said in this chat before the current message (CCB-S4-044, D-147).
    *
@@ -696,6 +708,30 @@ export function systemPrompt(request: AiReplyRequest, outputMaxChars: number): s
   };
 
   return assemblePrompt(request.rules, lanesForMode(request.mode), context, values).join('\n');
+}
+
+/**
+ * The minimum reply-value token probability from the native payload, or null.
+ *
+ * Delegates the span arithmetic to `confidence.ts`; this only digs the raw content and the
+ * logprob entries out of the envelope. Null on any missing piece, and null means NO HEDGE.
+ */
+function confidenceOf(payload: unknown): number | null {
+  if (!payload || typeof payload !== 'object') return null;
+  const envelope = payload as {
+    message?: { content?: unknown };
+    logprobs?: unknown;
+  };
+  const content = envelope.message?.content;
+  const entries = envelope.logprobs;
+  if (typeof content !== 'string' || !Array.isArray(entries)) return null;
+  const usable = entries.filter(
+    (e): e is TokenLogprob =>
+      !!e &&
+      typeof (e as TokenLogprob).token === 'string' &&
+      typeof (e as TokenLogprob).logprob === 'number',
+  );
+  return minReplyTokenProb(content, usable);
 }
 
 function parseCompletion(value: unknown): {
@@ -1179,6 +1215,9 @@ export async function generateOllamaReply(
           },
         ],
         stream: false,
+        // Log probabilities, requested only when the caller listens (D-255): the payload
+        // grows by one entry per token, and a signal nobody reads is weight for nothing.
+        ...(request.onConfidence ? { logprobs: true } : {}),
         // Reasoning stays OFF, as it always has; only the FIELD changed with the endpoint.
         // `reasoning_effort: 'none'` was the OpenAI-compatible spelling and `think: false`
         // is the native one; the console states this value and `verify:reasoning` pins the
@@ -1232,7 +1271,8 @@ export async function generateOllamaReply(
       throw new Error(`Ollama reply HTTP ${response.status}.`);
     }
 
-    const completion = parseCompletion(await response.json());
+    const payload = await response.json();
+    const completion = parseCompletion(payload);
     // FIRST, before cleaning and before every other guard (CCB-S5-027). See
     // `guardProtectedText`: the lines the application writes are taken back out of hers
     // here, so nothing further down can measure, reject or ship one.
@@ -1283,6 +1323,12 @@ export async function generateOllamaReply(
     // The same hand-back for documents (CCB-S5-055, D-243). Fired only when passages were
     // attached, so a caller can tell "declared nothing" from "was never asked".
     if (hasDocuments) request.onDocumentsUsed?.(completion.usedDocuments);
+    // The confidence signal (D-255), after every guard for the same reason as the
+    // declarations above: a hedge must describe a reply the member actually receives.
+    if (request.onConfidence) {
+      const minProb = confidenceOf(payload);
+      if (minProb !== null) request.onConfidence(minProb);
+    }
 
     callOk = true;
     callChars = reply.length;
