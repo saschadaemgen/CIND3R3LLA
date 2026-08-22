@@ -191,6 +191,20 @@ in one database and broken in the one beside it is not a promise.
   commit message and the register row state what is unproven, in those words, rather than
   describing it as delivered. And when a claim turns out to be wrong, it is corrected IN PLACE
   per D-191/D-193 so the mistake stays legible, never edited away.
+- **Nothing is written into the production checkout that is not a `git pull`** (standing rule,
+  CCB-S5-060 close-out, third occurrence). Measurement and probe scripts are run on the host
+  because the numbers must come from his hardware (D-184), and three times the script was
+  copied to `/opt/cinderella/scripts/<name>.ts`, run, left there, and then PUSHED at the same
+  path - so the next `git pull` refused with "untracked working tree files would be
+  overwritten by merge", and the operator had to decide what to delete from a production
+  checkout before he could deploy. That is not a judgement he should be handed.
+  So: a file that goes to the host for a run goes to **`/opt/cinderella/tmp/`**, which is
+  git-ignored and INSIDE the tree, so `../src/...` imports and `node_modules` still resolve and
+  a pull can never collide with it - `scp x.ts vps:/opt/cinderella/tmp/` then
+  `npx tsx tmp/x.ts` from the repo root. Never `scripts/`, never the root. And it is
+  **removed when the run finishes** (`rm` in the same command, or a dedicated cleanup call) -
+  a run that dies half-way leaves a file behind, which is exactly what happened. Check with
+  `git status --porcelain` on the host before reporting: it must print nothing.
 - **Surface failures, never swallow them** (standing rule, CCB-S3-023). A caught error
   must not be converted into a value that reads as a legitimate result (masking), and a
   degraded/absent function must not run silently. Log with actionable context (operation,
