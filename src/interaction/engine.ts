@@ -85,8 +85,10 @@ import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieva
 import { REPETITION_RESAMPLES, REPETITION_WINDOW, isNearDuplicate } from './repetition.js';
 import {
   CONFIDENCE_HEDGE_THRESHOLD,
+  type LockReason,
+  carriesCheckableClaim,
   givenFactValues,
-  hedgeExempt,
+  lockedReply,
   snippetValueAsserted,
 } from './confidence.js';
 import { attributable, looksLikeRefusal } from './provenance.js';
@@ -2617,7 +2619,21 @@ export class InteractionEngine {
             },
           })
         )?.trim() || null;
-      spoken = (await this.withFreshWords(msg.groupId, attempt)).text;
+      // The lock for this lane (D-256): an answer drawn from the same results a second
+      // time is supposed to be similar, so declared sources - after the refusal floor - wave
+      // it through the repetition gate. One reason in the shared vocabulary, 'sources-used'.
+      spoken = (
+        await this.withFreshWords(msg.groupId, attempt, (text) =>
+          lockedReply({
+            page: false,
+            requiredLiterals: [],
+            documentsUsed: false,
+            sourcesUsed: used.length > 0 && !looksLikeRefusal(text),
+            givenFacts: [],
+            reply: text,
+          }),
+        )
+      ).text;
     } catch (error) {
       log.debug(
         `Lookup: wording the results failed (${
@@ -4514,6 +4530,31 @@ export class InteractionEngine {
     // The model's confidence over the reply it wrote (D-255). Null means the transport
     // could not measure, and null means NO hedge.
     let replyConfidence: number | null = null;
+    // ── ONE LOCK PREDICATE FOR TWO GATES (D-256) ─────────────────────────────
+    //
+    // The repetition gate and the confidence hedge ask the same question about the same
+    // reply - is this the application's truth, or hers alone? - and for one week only the
+    // hedge had the answer, so the gate threw away three correct "18" answers in a row and
+    // sent "I could not find my words" for a question the model had answered each time. The
+    // predicate is built ONCE here and handed to both. `documentsUsed` is evaluated against
+    // the candidate text because the declaration fires per attempt and the evidence rule
+    // reads the words; the music facts are read once for the prompt and the lock alike.
+    const musicFacts = await this.musicPromptFacts();
+    const lockedBy = (text: string): LockReason | null =>
+      lockedReply({
+        page: page !== undefined,
+        requiredLiterals: overviewLiterals(disclosure.ruleOverview),
+        documentsUsed:
+          declaredDocuments !== null &&
+          attributable(
+            declaredDocuments,
+            knowledgePassages.map((p) => p.text),
+            text,
+            msg.text,
+          ).length > 0,
+        givenFacts: givenFactValues(musicFacts),
+        reply: text,
+      });
     if (personalize) {
       try {
         // A CLOSURE, because the repetition gate re-runs it (D-253). Each resample is a
@@ -4583,10 +4624,10 @@ export class InteractionEngine {
               // conversation is where somebody asks what year it is, and where she
               // answered from two-year-old training data because nobody had told her.
               now: { at: new Date(this.now()), timeZone: this.timeZone },
-              music: await this.musicPromptFacts(),
+              music: musicFacts,
             })
           )?.trim() || null;
-        const fresh = await this.withFreshWords(msg.groupId, attempt);
+        const fresh = await this.withFreshWords(msg.groupId, attempt, lockedBy);
         spoken = fresh.text;
         repeatedGaveUp = fresh.repeatedGaveUp;
       } catch (error) {
@@ -4790,18 +4831,27 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
     // that must never be hedged, because hedging them teaches a member to ignore the warning
     // everywhere. So the hedge is for a reply that is HERS ALONE: not a printed page, not a
     // reply carrying literals the application required, not one the documents were used for,
-    // and not one that restates a fact the application handed her. `hedgeExempt` is the
-    // inventory; a new kind of locked reply is added there, not here.
-    const exempt = hedgeExempt({
-      page: page !== undefined,
-      requiredLiterals: overviewLiterals(disclosure.ruleOverview),
-      documentsUsed: usedTitles.length > 0,
-      givenFacts: givenFactValues(await this.musicPromptFacts()),
-      reply: spoken ?? '',
-    });
+    // and not one that restates a fact the application handed her. `lockedReply` is the
+    // inventory - the SAME predicate the repetition gate waves through on, built once above
+    // as `lockedBy` - and a new kind of locked reply is added there, not here.
+    //
+    // ── AND ONLY ON A CHECKABLE CLAIM (D-256, second amendment) ────────────
+    //
+    // Observed live: asked whether consciousness could arise in a system like her she
+    // answered "Consciousness isn't a switch you flip. It's a question of how deep the
+    // mirror goes." - a view her rules permit - with the hedge under it. A view is not a
+    // checkable claim, and hedging one makes her sound unsure of her own position rather
+    // than honest. Every fabrication this was built against carried a SPECIFIC (a version,
+    // a price, an acquisition, a count), so the hedge is for a reply that carries one.
+    const exempt = spoken === null ? null : lockedBy(spoken);
+    const identityWords = [this.facts(s).name ?? '', this.facts(s).label ?? '']
+      .join(' ')
+      .split(/\s+/)
+      .filter((w) => w !== '');
     if (
       spoken !== null &&
       exempt === null &&
+      carriesCheckableClaim(spoken, lang, identityWords) &&
       replyConfidence !== null &&
       replyConfidence < CONFIDENCE_HEDGE_THRESHOLD
     ) {
@@ -4978,12 +5028,33 @@ ${this.persona(s, lang, 'unsureNote')}`;
   private async withFreshWords(
     groupId: number,
     attempt: () => Promise<string | null>,
+    /**
+     * The lane's lock predicate (D-256): the reason this candidate is the application's
+     * truth rather than hers alone, or null. A LOCKED reply is waved through unjudged,
+     * because a restated DJ count, a page, an overview with its counts, or an answer drawn
+     * from the same document is SUPPOSED to be byte-similar the second time - the truth did
+     * not change between the two askings. Observed live: three correct "18" answers in a row
+     * thrown away for "I could not find my words". Same predicate as the hedge's.
+     */
+    locked?: (text: string) => LockReason | null,
   ): Promise<{ text: string | null; repeatedGaveUp: boolean }> {
     const priors = this.state.recentModelReplies(groupId);
+    // Locked, or fresh: either way this candidate ships. Checked on EVERY candidate, not
+    // only the first, because a resample can land on a restated fact too.
+    const ships = (text: string): boolean => {
+      const lock = locked?.(text) ?? null;
+      if (lock !== null) {
+        log.debug(
+          `Interaction: reply in group ${String(groupId)} is locked (${lock}); the repetition gate does not judge it.`,
+        );
+        return true;
+      }
+      return !isNearDuplicate(text, priors);
+    };
     let candidate = await attempt();
     if (candidate === null) return { text: null, repeatedGaveUp: false };
     for (let retry = 0; retry < REPETITION_RESAMPLES; retry++) {
-      if (!isNearDuplicate(candidate, priors)) return { text: candidate, repeatedGaveUp: false };
+      if (ships(candidate)) return { text: candidate, repeatedGaveUp: false };
       log.debug(
         `Interaction: reply was a near-duplicate of a recent one in group ${String(groupId)}; ` +
           `resampling (${String(retry + 1)} of ${String(REPETITION_RESAMPLES)}).`,
@@ -4994,7 +5065,7 @@ ${this.persona(s, lang, 'unsureNote')}`;
       if (next === null) return { text: null, repeatedGaveUp: false };
       candidate = next;
     }
-    if (!isNearDuplicate(candidate, priors)) return { text: candidate, repeatedGaveUp: false };
+    if (ships(candidate)) return { text: candidate, repeatedGaveUp: false };
     // Every attempt landed on the same ground. Counted where the operator already looks
     // (the Diagnostics conversation log carries the 'repeated' outcome), and logged with
     // the group so a live report can be matched to it - never with the text, which is her

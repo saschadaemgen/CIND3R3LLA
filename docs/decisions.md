@@ -363,8 +363,39 @@ low confidence standing by rather than asserted. Deliberately not recognised: a 
 given value at all ("Plenty, darling"), because restatement is the predicate that keeps an
 invented count - "300 tracks" against a sheet that says 18 - hedgeable.
 
-**PROVEN.** `verify:honesty-gates` §5 and §6 drive both live cases through the real engine with
-a fake library and a fake knowledge store: the DJ answer goes out unhedged at a confidence that
+**SECOND AMENDMENT: ONE LOCK, TWO GATES; AND A VIEW IS NOT A CLAIM.** The next live round found
+the REPETITION GATE refusing the same class: "how many tracks do you have?" twice in one session,
+the model answering correctly in under a second each time, and the gate throwing all three
+attempts away for "I could not find my words" - a restated fact is *supposed* to be byte-similar,
+because the truth did not change between the two askings. The hedge already knew this class and
+the gate did not, which is exactly the drift the operator asked to be ruled out: the two gates
+ask the same question about the same replies. So the inventory is ONE predicate, `lockedReply`
+(page, required literals, documents used, sources used, a restated given fact), built once per
+turn in the conversation lane as `lockedBy`, handed to `withFreshWords` - which waves a locked
+candidate through unjudged, on every candidate and not only the first - and used by the hedge
+for its exemption; `hedgeExempt` no longer exists to drift, and the harness reads the source to
+hold both consumers to the one name. The lookup lane locks on declared sources after the refusal
+floor (`sources-used`), for the same reason: an answer drawn from the same results twice is not
+a repetition. Proven end to end: the same true count asked twice goes out both times in ONE
+attempt, while a memory answer repeated word for word is still refused after three.
+
+And the smaller one: asked whether consciousness could arise in a system like her she answered
+*"Consciousness isn't a switch you flip. It's a question of how deep the mirror goes."* - a view
+her rules permit - with the hedge under it. A view is not a checkable claim, and hedging one
+makes her sound unsure of her own position rather than honest. Every fabrication this work was
+built against carried a SPECIFIC - a version, a price, an acquisition, a count - so the hedge
+is now for a reply that carries one (`carriesCheckableClaim`): a digit, a URL, a product-style
+or all-caps token (SimpleX, XFTP, TLS), or in English a proper noun inside a sentence. The
+allow-list direction again, stating what MAY be hedged rather than trying to recognise an
+opinion, which has no reliable marker (the live reply has no "I think" in it). Two stated costs:
+a fabrication with no specific at all goes unhedged; and German capitalises every noun, so the
+proper-noun test is English only and a German fabrication naming a plain-cased entity with no
+number goes unhedged. The measured threshold and its 9-of-9 / 2-of-10 figures are unchanged -
+every probe in that measurement carried a specific - so this removes hedges from a class the
+measurement never contained rather than moving the bar.
+
+**PROVEN.** `verify:honesty-gates` §5 to §7 drive all four live cases through the real engine
+with a fake library and a fake knowledge store: the DJ answer goes out unhedged at a confidence that
 hedges a memory answer in the same run; the refusal goes out with no source line though both
 passages were declared; a true answer is cited by title and only the passage it used, and is
 not hedged. Mutations: the shipped behaviour (declaration alone) prints both titles on the

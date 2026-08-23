@@ -108,8 +108,16 @@ export function minReplyTokenProb(
  */
 export const HEDGED_LANE = 'conversation' as const;
 
-/** Why a reply is exempt from the hedge, for the log and the harness. */
-export type HedgeExemption = 'page' | 'required-literals' | 'documents-used' | 'given-fact';
+/**
+ * Why a reply is LOCKED - the application's truth rather than hers alone - for the log and
+ * the harness. One vocabulary for the two consumers, so they cannot drift apart.
+ */
+export type LockReason =
+  | 'page'
+  | 'required-literals'
+  | 'documents-used'
+  | 'sources-used'
+  | 'given-fact';
 
 /**
  * The facts the application handed her for this reply, as the literal values it rendered
@@ -237,21 +245,88 @@ export function assertsGivenFact(
 /**
  * The inventory of locked replies, in one place (the operator's words: the gate needs to
  * know which lanes carry application-supplied facts and skip them, and the same question
- * applies to any locked reply). Returns the first reason the hedge does not apply, or null
- * when the reply is hers alone and the confidence signal may speak.
+ * applies to any locked reply). Returns the first reason the reply is the application's
+ * truth rather than hers alone, or null when it is hers and the two gates may judge it.
+ *
+ * ── ONE PREDICATE, TWO CONSUMERS (D-256, second amendment) ──────────────────
+ *
+ * The confidence hedge and the repetition gate (D-253) ask the same question about the same
+ * replies: a DJ count restated is not doubt, and it is not a repetition either - it is the
+ * truth not having changed between two askings. Observed live as both: the hedge under "18
+ * tracks", and then the gate throwing away three correct "18" answers in a row and sending
+ * "I could not find my words" for a question the model had answered in under a second each
+ * time. So this is the one inventory, the hedge exempts on it and the gate waves through on
+ * it, and a new kind of locked reply is added HERE and reaches both.
  */
-export function hedgeExempt(input: {
+export function lockedReply(input: {
   page: boolean;
   requiredLiterals: readonly string[];
   documentsUsed: boolean;
+  sourcesUsed?: boolean;
   givenFacts: readonly string[];
   reply: string;
-}): HedgeExemption | null {
+}): LockReason | null {
   if (input.page) return 'page';
   if (input.requiredLiterals.length > 0) return 'required-literals';
   if (input.documentsUsed) return 'documents-used';
+  if (input.sourcesUsed) return 'sources-used';
   if (assertsGivenFact(input.reply, input.givenFacts) !== null) return 'given-fact';
   return null;
+}
+
+/* ── WHAT THE HEDGE IS FOR: A CHECKABLE CLAIM, NOT A VIEW (D-256) ─────────── */
+
+/**
+ * Does the reply carry something that could be checked - a number, a date, a version, a
+ * price, a URL, a product-style name, or (in English) a proper noun inside a sentence?
+ *
+ * Observed live: asked whether consciousness could arise in a system like her she answered
+ * "Consciousness isn't a switch you flip. It's a question of how deep the mirror goes." - a
+ * stated view her rules permit - and the hedge went under it. A view is not a checkable claim,
+ * and hedging one makes her sound unsure of her own position rather than honest. Every
+ * fabrication this work was built against carried a SPECIFIC: a version number, a price, an
+ * acquisition, a channel count. So the hedge is for a reply that carries one.
+ *
+ * The allow-list direction again: state what MAY be hedged - a specific - rather than trying
+ * to recognise an opinion, which has no reliable marker ("I think" is absent from the live
+ * reply). A fabrication with no specific at all goes unhedged, and that is the stated cost.
+ *
+ * German capitalises every noun, so the proper-noun test is English only; in German the
+ * hedge fires on digits, values, URLs and product-style names (SimpleX, XFTP, v7), and a
+ * German fabrication naming a plain-cased entity with no number goes unhedged. Stated cost.
+ */
+export function carriesCheckableClaim(
+  reply: string,
+  lang: string,
+  exemptNames: readonly string[] = [],
+): boolean {
+  const text = reply.normalize('NFC');
+  if (/\d/.test(text)) return true;
+  if (/https?:\/\/|www\.|\.[a-z]{2,4}\/|@[\p{L}\p{N}_]+\.[\p{L}]{2,}/iu.test(text)) return true;
+  // A product-style token: internal capitals or an all-caps acronym of two or more letters,
+  // excluding sentence-initial words and the exempt names.
+  const exempt = new Set(exemptNames.map((n) => n.toLowerCase()));
+  const tokens = [...text.matchAll(/(^|[.!?…\n]\s*|["“„(]\s*)?([\p{L}][\p{L}'’-]*)/gu)];
+  for (const m of tokens) {
+    const word = m[2] ?? '';
+    if (exempt.has(word.toLowerCase())) continue;
+    if (/^[\p{Lu}]{2,}$/u.test(word)) return true; // TLS, SMP, XFTP
+    if (/^[\p{Lu}]?[\p{Ll}]+[\p{Lu}]/u.test(word)) return true; // SimpleX, GoChat, iPhone
+  }
+  if (lang.toLowerCase().startsWith('en')) {
+    for (const m of tokens) {
+      // Sentence start: after terminal punctuation or an opening quote, or with no letter
+      // before it at all (an emoji-led reply starts with a sigil, not a word).
+      const sentenceStart =
+        (m[1] ?? '') !== '' || m.index === 0 || !/\p{L}/u.test(text.slice(0, m.index));
+      const word = m[2] ?? '';
+      if (sentenceStart) continue;
+      if (exempt.has(word.toLowerCase())) continue;
+      if (word === 'I' || /^I['’]/.test(word)) continue;
+      if (/^[\p{Lu}][\p{Ll}'’-]+$/u.test(word)) return true; // Meta, Berlin, Zeliqua
+    }
+  }
+  return false;
 }
 
 /**

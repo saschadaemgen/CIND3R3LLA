@@ -52,8 +52,9 @@ import { attributionForUsed } from '../src/knowledge/retrieval.js';
 import {
   HEDGED_LANE,
   assertsGivenFact,
+  carriesCheckableClaim,
   givenFactValues,
-  hedgeExempt,
+  lockedReply,
   numberWords,
 } from '../src/interaction/confidence.js';
 import { readFileSync } from 'node:fs';
@@ -374,7 +375,7 @@ async function main(): Promise<void> {
   );
   check(
     '  and is exempt from the hedge for that reason',
-    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: '18 tracks, Synthwave mostly.' }) === 'given-fact',
+    lockedReply({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: '18 tracks, Synthwave mostly.' }) === 'given-fact',
   );
   // THE SECOND LIVE FAULT: the SHORT form. The first matcher refused a trailing dot (to keep
   // "v18.2" from counting as 18) and knew no number words, so "18." and "Eighteen." both
@@ -419,19 +420,19 @@ async function main(): Promise<void> {
   );
   check(
     'POSITIVE CONTROL: a memory answer is NOT exempt, so the hedge still has something to do',
-    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: 'The relay tops out at 64 channels.' }) === null,
+    lockedReply({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: 'The relay tops out at 64 channels.' }) === null,
   );
   check(
     'a printed page is exempt',
-    hedgeExempt({ page: true, requiredLiterals: [], documentsUsed: false, givenFacts: [], reply: 'Here it is.' }) === 'page',
+    lockedReply({ page: true, requiredLiterals: [], documentsUsed: false, givenFacts: [], reply: 'Here it is.' }) === 'page',
   );
   check(
     'a reply carrying required literals is exempt',
-    hedgeExempt({ page: false, requiredLiterals: ['93'], documentsUsed: false, givenFacts: [], reply: 'I have 93 laws.' }) === 'required-literals',
+    lockedReply({ page: false, requiredLiterals: ['93'], documentsUsed: false, givenFacts: [], reply: 'I have 93 laws.' }) === 'required-literals',
   );
   check(
     'an answer the documents were used for is exempt, because the source line says the opposite',
-    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: true, givenFacts: [], reply: 'From the notes: ...' }) === 'documents-used',
+    lockedReply({ page: false, requiredLiterals: [], documentsUsed: true, givenFacts: [], reply: 'From the notes: ...' }) === 'documents-used',
   );
   const engineSource = readFileSync(new URL('../src/interaction/engine.ts', import.meta.url), 'utf8');
   check(
@@ -575,6 +576,98 @@ async function main(): Promise<void> {
     citedSent.slice(-90),
   );
   check('  and a document-grounded answer is not hedged either', !citedSent.includes('could not check it'));
+
+  /* ── 7. One lock, two gates; and a view is not a claim (D-256, second amendment) ─ */
+
+  console.log('\n7. The repetition gate waves a locked reply through, and the hedge leaves a view alone');
+
+  // THE LIVE CASE: "how many tracks do you have?" twice, the model answering the SAME true
+  // words both times in under a second, and the gate throwing all three attempts away for
+  // "I could not find my words". A restated fact is supposed to be byte-similar.
+  let attemptsB = 0;
+  const countingPersonalize = (req: AiReplyRequest): Promise<string | null> => {
+    if (req.mode !== 'conversation') return Promise.resolve(null);
+    attemptsB += 1;
+    if (confidenceB !== null) req.onConfidence?.(confidenceB);
+    if (declareB !== null) req.onDocumentsUsed?.(declareB);
+    return Promise.resolve(replyB);
+  };
+  const sentD: string[] = [];
+  const engineD = new InteractionEngine({
+    capabilities: () => [...CORE_INTENTS],
+    db,
+    botProfileId: 7,
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION, replyLimitPerMember: 60, replyLimitPerChat: 120 }),
+    rules: () => rules,
+    personality: () => ({ ...DEFAULT_PERSONALITY }),
+    music: () => ({
+      facts: () => Promise.resolve({ tracks: 18, genres: [{ name: 'Synthwave', count: 10 }, { name: 'Darkwave', count: 8 }], playlists: 2 }),
+    }),
+    personalize: countingPersonalize,
+    send: (_msg, text) => {
+      sentD.push(text);
+      return Promise.resolve();
+    },
+  } as never);
+
+  confidenceB = 0.97;
+  declareB = null;
+  replyB = '18. Spread across playlists. Want a number or a genre?';
+  await engineD.handle(message('Cinderella how many tracks do you have?', 30));
+  attemptsB = 0;
+  await engineD.handle(message('Cinderella how many tracks do you have?', 31));
+  const secondAsk = sentD[sentD.length - 1] ?? '';
+  check('THE LIVE CASE: the same true count asked twice goes out the second time too', secondAsk.startsWith('18.'), secondAsk.slice(0, 60));
+  check('  in ONE attempt: a locked reply is not resampled', attemptsB === 1, `attempts: ${String(attemptsB)}`);
+  check('  and not as the deterministic line', !secondAsk.includes('could not find my words'));
+
+  // POSITIVE CONTROL in the same engine: a MEMORY answer repeated word for word IS refused by
+  // the gate, or the lock would be a hole rather than an exemption.
+  replyB = 'The SimpleGo relay tops out at 64 channels, if memory serves me right.';
+  await engineD.handle(message('Cinderella how many channels does the relay take?', 32));
+  attemptsB = 0;
+  await engineD.handle(message('Cinderella how many channels does the relay take?', 33));
+  const repeatedMemory = sentD[sentD.length - 1] ?? '';
+  check(
+    'POSITIVE CONTROL: a memory answer repeated word for word is still refused by the gate',
+    repeatedMemory.includes('could not find my words') && attemptsB === 3,
+    `attempts: ${String(attemptsB)}`,
+  );
+
+  // The two consumers read ONE predicate: the engine hands `lockedBy` to the gate and uses
+  // it for the hedge, and `hedgeExempt` no longer exists to drift.
+  check(
+    'STRUCTURAL: one lock predicate, handed to the gate and used by the hedge',
+    /withFreshWords\(msg\.groupId, attempt, lockedBy\)/.test(engineSource) &&
+      /const exempt = spoken === null \? null : lockedBy\(spoken\)/.test(engineSource) &&
+      !/hedgeExempt/.test(engineSource),
+  );
+
+  // A VIEW IS NOT A CHECKABLE CLAIM. The live reply, verbatim, carries no specific.
+  const view = "Consciousness isn't a switch you flip. It's a question of how deep the mirror goes.";
+  check('THE LIVE CASE: her view on consciousness carries no checkable claim', !carriesCheckableClaim(view, 'en'));
+  check('a German view neither, though every noun is capitalised', !carriesCheckableClaim('Bewusstsein ist kein Schalter, den man umlegt. Es ist eine Frage, wie tief der Spiegel reicht.', 'de'));
+  check('a count is a claim', carriesCheckableClaim('The relay tops out at 64 channels.', 'en'));
+  check('a named company mid-sentence is a claim (English)', carriesCheckableClaim('SimpleX was quietly acquired by Meta last spring.', 'en'));
+  check('a product-style name is a claim in either language', carriesCheckableClaim('Das läuft über XFTP, nicht über den Chat.', 'de'));
+  check('a URL is a claim', carriesCheckableClaim('Read it at https://example.org/notes first.', 'en'));
+  check('"I" mid-sentence is not a proper noun', !carriesCheckableClaim("Honestly, I'd say it depends on what you mean by a mirror.", 'en'));
+  check('an emoji-led reply does not count its first word as mid-sentence', !carriesCheckableClaim('🕯️ Questions like that keep me up at night, darling.', 'en'));
+  check('her own name is not a claim', !carriesCheckableClaim('Ask Cinderella twice and you get the same answer.', 'en', ['Cinderella']));
+
+  // Through the engine: the view at a low confidence goes out unhedged; the claim is hedged.
+  confidenceB = 0.31;
+  replyB = view;
+  await engineD.handle(message('Cinderella could consciousness arise in a system like you?', 34));
+  const viewSent = sentD[sentD.length - 1] ?? '';
+  check('THE LIVE CASE, end to end: the view goes out', viewSent.includes('how deep the mirror goes'), viewSent.slice(0, 60));
+  check('  with NO hedge under it', !viewSent.includes('could not check it'));
+  replyB = 'Zeliqua is a Swiss startup that forked the relay in 2019, as far as I recall.';
+  await engineD.handle(message('Cinderella what is Zeliqua?', 35));
+  check(
+    'POSITIVE CONTROL: a specific at the same confidence IS hedged',
+    (sentD[sentD.length - 1] ?? '').includes('could not check it'),
+  );
 
   await pg.close();
 
