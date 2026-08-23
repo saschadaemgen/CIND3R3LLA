@@ -263,9 +263,12 @@ function main(): void {
     new URL('../src/interaction/ollama-reply.ts', import.meta.url),
     'utf8',
   );
+  // Since D-256 the declaration passes through the evidence gate first (`attributable`), which
+  // can only shrink it: the engine still attributes FROM the declaration and from nothing else.
   check(
-    'the engine attributes from the declaration',
-    /attributionForUsed\(passageTitles, declaredDocuments\)/.test(engine),
+    'the engine attributes from the declaration, through the evidence gate',
+    /attributable\(\s*declaredDocuments,/.test(engine) &&
+      /attributionForUsed\(passageTitles, evidenced\)/.test(engine),
   );
   check(
     '  and prints only when that is non-empty',
@@ -273,7 +276,7 @@ function main(): void {
   );
   check(
     '  and a model that was never asked is a distinct state from one that declared nothing',
-    /declaredDocuments === null \? \[\] :/.test(engine) &&
+    /declaredDocuments === null \|\| spoken === null\s*\? \[\]/.test(engine) &&
       /declared: declaredDocuments === null \? 'not asked'/.test(engine),
   );
   check(

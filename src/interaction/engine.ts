@@ -83,7 +83,13 @@ import {
 import { lookupBrief, shouldAnnounce, type LookupKind, namesDestination } from './lookup-announcement.js';
 import { attributionForUsed, hasRetrievableContent } from '../knowledge/retrieval.js';
 import { REPETITION_RESAMPLES, REPETITION_WINDOW, isNearDuplicate } from './repetition.js';
-import { CONFIDENCE_HEDGE_THRESHOLD, snippetValueAsserted } from './confidence.js';
+import {
+  CONFIDENCE_HEDGE_THRESHOLD,
+  givenFactValues,
+  hedgeExempt,
+  snippetValueAsserted,
+} from './confidence.js';
+import { attributable, looksLikeRefusal } from './provenance.js';
 import { modelQueue } from './model-queue.js';
 import { renderPromptRule, type PromptRule, type PromptRuleSet } from './prompt-rules.js';
 import { recitalTransitionAsk } from './recital.js';
@@ -2622,7 +2628,15 @@ export class InteractionEngine {
 
     if (!spoken) return null;
 
-    return { text: spoken, sources: attributionFor(results, used) };
+    // THE DECLARATION DOES NOT HOLD ON A REFUSAL (D-256), here as in the knowledge lane: a
+    // refusal-shaped answer cites nothing whatever it declared. Only the FLOOR is applied on
+    // this lane; the evidence rule's numbers were measured on document passages, and a web
+    // snippet is a different length of text with a different vocabulary, so its threshold is
+    // owed its own measurement (D-184) rather than borrowed.
+    return {
+      text: spoken,
+      sources: looksLikeRefusal(spoken) ? [] : attributionFor(results, used),
+    };
   }
 
   /**
@@ -4710,8 +4724,26 @@ export class InteractionEngine {
     // THREE STATES, and they are deliberately distinguishable in the record: never asked
     // (no passages), asked and declared nothing (the case that produced every sighting),
     // and asked and declared something.
-    const usedTitles =
-      declaredDocuments === null ? [] : attributionForUsed(passageTitles, declaredDocuments);
+    //
+    // ── AND THE DECLARATION DOES NOT HOLD ON A REFUSAL (D-256) ─────────────
+    //
+    // Observed live: asked how many people use SimpleX she said she did not know, correctly,
+    // and declared two passages anyway, so the line named documents for an answer that used
+    // nothing. Measured on his corpus, the declaration was false on 6 of 15: the model reads
+    // "used" as "consulted". So a declared passage is printed only when the ANSWER carries
+    // evidence of it - content terms from the passage beyond the member's own question, or a
+    // near-verbatim reproduction - and never under a refusal-shaped answer. `attributable`
+    // can only shrink the declared set; the failure direction stays a missing line.
+    const evidenced =
+      declaredDocuments === null || spoken === null
+        ? []
+        : attributable(
+            declaredDocuments,
+            knowledgePassages.map((p) => p.text),
+            spoken,
+            msg.text,
+          );
+    const usedTitles = attributionForUsed(passageTitles, evidenced);
     if (usedTitles.length > 0 && spoken !== null) {
       body = `${body}
 ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
@@ -4730,6 +4762,9 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
         handed: knowledgeSources.join(', '),
         passages: knowledgePassages.length,
         declared: declaredDocuments === null ? 'not asked' : JSON.stringify(declaredDocuments),
+        // What survived the evidence rule (D-256), so a declaration the answer did not bear
+        // out is visible as the difference between these two.
+        evidenced: JSON.stringify(evidenced),
         printed: usedTitles.length === 0 ? 'none' : usedTitles.join(', '),
       });
     }
@@ -4745,8 +4780,28 @@ ${fillPersona(this.persona(s, lang, 'knowledgeSources'), {
     // the shipping envelope every induced fabrication scored at or below 0.696 with eight
     // of ten correct answers at or above 0.775. The cost at 0.70 is two of ten correct
     // answers carrying one honest sentence they did not need.
+    //
+    // ── AND NEVER ON APPLICATION-SUPPLIED TRUTH (D-256) ────────────────────
+    //
+    // Observed live: "how many tracks do you have?" came back with the count and the genres
+    // from the database - ground truth she cannot be wrong about - and the hedge under it.
+    // The token minimum was low because listing given items in a free order makes every next
+    // item a choice among the rest, which is not doubt. The DJ facts are exactly the class
+    // that must never be hedged, because hedging them teaches a member to ignore the warning
+    // everywhere. So the hedge is for a reply that is HERS ALONE: not a printed page, not a
+    // reply carrying literals the application required, not one the documents were used for,
+    // and not one that restates a fact the application handed her. `hedgeExempt` is the
+    // inventory; a new kind of locked reply is added there, not here.
+    const exempt = hedgeExempt({
+      page: page !== undefined,
+      requiredLiterals: overviewLiterals(disclosure.ruleOverview),
+      documentsUsed: usedTitles.length > 0,
+      givenFacts: givenFactValues(await this.musicPromptFacts()),
+      reply: spoken ?? '',
+    });
     if (
       spoken !== null &&
+      exempt === null &&
       replyConfidence !== null &&
       replyConfidence < CONFIDENCE_HEDGE_THRESHOLD
     ) {

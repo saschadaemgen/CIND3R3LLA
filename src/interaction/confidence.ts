@@ -98,6 +98,73 @@ export function minReplyTokenProb(
   return min;
 }
 
+/* ── WHAT IS NEVER HEDGED: APPLICATION-SUPPLIED TRUTH (D-256) ──────────────── */
+
+/**
+ * The one lane whose replies may carry the hedge. Every other lane words an application
+ * draft or an application fact, and a hedge there would caveat the application's own truth.
+ * The engine attaches `onConfidence` in exactly one place, and `verify:honesty-gates` reads
+ * the source to hold it there.
+ */
+export const HEDGED_LANE = 'conversation' as const;
+
+/** Why a reply is exempt from the hedge, for the log and the harness. */
+export type HedgeExemption = 'page' | 'required-literals' | 'documents-used' | 'given-fact';
+
+/**
+ * The facts the application handed her for this reply, as the literal values it rendered
+ * into the prompt. A reply that restates one of them is not speaking from memory on that
+ * point. Numbers and names from the DJ sheet today (CCB-S5-044); anything else the
+ * application renders as a placeholder value and wants exempt joins this list.
+ */
+export function givenFactValues(
+  music: { tracks: number; genres: readonly string[]; playlists: number } | undefined,
+): string[] {
+  if (!music) return [];
+  return [String(music.tracks), String(music.playlists), ...music.genres].filter(
+    (v) => v.trim() !== '',
+  );
+}
+
+/**
+ * Does the reply state one of the given values, as a whole word? A number matches only with
+ * no digit, letter or dot on either side ("18" in "18 tracks", not in "v18.2" or "180"); a
+ * name matches case-insensitively at word boundaries.
+ */
+export function assertsGivenFact(reply: string, facts: readonly string[]): string | null {
+  const text = reply.normalize('NFC');
+  for (const fact of facts) {
+    const f = fact.normalize('NFC').trim();
+    if (f === '') continue;
+    const escaped = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const pattern = /^\d+$/.test(f)
+      ? new RegExp(`(?<![\\p{L}\\p{N}.])${escaped}(?![\\p{L}\\p{N}.])`, 'u')
+      : new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
+    if (pattern.test(text)) return f;
+  }
+  return null;
+}
+
+/**
+ * The inventory of locked replies, in one place (the operator's words: the gate needs to
+ * know which lanes carry application-supplied facts and skip them, and the same question
+ * applies to any locked reply). Returns the first reason the hedge does not apply, or null
+ * when the reply is hers alone and the confidence signal may speak.
+ */
+export function hedgeExempt(input: {
+  page: boolean;
+  requiredLiterals: readonly string[];
+  documentsUsed: boolean;
+  givenFacts: readonly string[];
+  reply: string;
+}): HedgeExemption | null {
+  if (input.page) return 'page';
+  if (input.requiredLiterals.length > 0) return 'required-literals';
+  if (input.documentsUsed) return 'documents-used';
+  if (assertsGivenFact(input.reply, input.givenFacts) !== null) return 'given-fact';
+  return null;
+}
+
 /**
  * Version strings and prices - the two value shapes production actually fabricated or
  * copied stale ("v7.0", "$4.99 per month"). Deliberately narrow: a value pattern that

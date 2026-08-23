@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 253 decisions</strong> — newest first. Highest allocated: <strong>D-255</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 254 decisions</strong> — newest first. Highest allocated: <strong>D-256</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-256 | The declaration is a veto, the evidence is the rule; and the hedge never touches what she was handed | IMPLEMENTED |
 | D-255 | The confidence hedge and the snippet rule: what she asserts carries its own weather report | IMPLEMENTED |
 | D-254 | The abstention rule as a scoring scheme, and the honest null beside it | IMPLEMENTED |
 | D-253 | The repetition gate: a property where the sampler is a probability | IMPLEMENTED |
@@ -282,6 +283,78 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-256 - The declaration is a veto, the evidence is the rule; and the hedge never touches what she was handed
+
+**Status: IMPLEMENTED** (CCB-S5-060 live-test follow-up, the operator's six live probes: four
+correct, two faults).
+
+**FAULT ONE, AND IT IS THE ONE THAT HAS COST THE MOST.** Asked how many people use SimpleX she
+said she did not know - correctly - and the application printed `📄 From what you gave me:` with
+two document titles under it. D-243's rebuilt source line names what the model DECLARED it used
+through `usedDocuments`, with the reasoning that a declaration can only narrow what retrieval
+admitted. That reasoning is still right and it has a hole: a veto that does not fire is
+indistinguishable from a use that happened. **The declaration does not hold on a refusal.**
+Measured on his corpus and his model (`npm run measure:provenance`, eighteen questions through
+the production request shape): of fifteen replies that declared a document, **six were
+refusal-shaped** - "isn't mentioned in the provided documents", "not specified", "no info on",
+"not sure, but probably less than a million" - and every one of them declared anyway. The model
+reads "used" as "consulted".
+
+**THE RULE: EVIDENCE OF USE, OR NO LINE** (`src/interaction/provenance.ts`). A declared passage
+is printed only when the ANSWER carries content terms from it beyond the member's own question -
+the question subtracted because a refusal is built from the question's words and a passage on
+the same topic shares all of them for free; stopwords subtracted because "the servers" proves
+nothing. The allow-list direction (D-201): state what may be cited, refuse the rest, and the
+failure is a missing line on a paraphrase, which is the direction D-243 already chose. A
+refusal-shaped answer is refused outright by a floor (`looksLikeRefusal`, EN and DE, widened to
+every form the measurement met) - the floor is a term list and fails open on wording it has not
+seen, which is why it is the floor and the evidence is the rule: in the measurement the floor
+recognised three of the six, and the evidence rule held on all six.
+
+**THE NUMBERS.** Seven true answers carried 4 to 12 passage terms; the six refusals carried 0
+(five) or 3 (one, naming "the beta notes from 2026" it had checked, which the floor caught). So
+`EVIDENCE_MIN_TERMS = 2`: every true answer clears it with margin and every refusal the floor
+missed sits at 0. **And the case the term rule alone gets wrong**, found by reading the replies
+and not the bands: "what is the latest SimpleGo version" -> `v0.2.0-beta`, a TRUE answer from the
+release notes, tokenises to ONE term and would have lost its citation. Its 5-gram shingle share
+against the passage is 1.00 where the highest refusal measured 0.26, so a short near-verbatim
+answer has a second door at `EVIDENCE_VERBATIM_SHARE = 0.5`. One measured reply ("who funds
+SimpleX" -> "AGPL headers across 47 files, no funding listed") was refusal-CLASSED and genuinely
+used the document; it is cited, correctly, which is the rule telling the truth against the
+label. The lookup lane gets the floor only: the evidence numbers were measured on document
+passages, a web snippet is a different length of text, and its threshold is owed its own
+measurement rather than borrowed (D-184).
+
+**FAULT TWO.** "How many tracks do you have?" returned 18 and the genres from the database -
+ground truth she cannot be wrong about - with the hedge under it. The token minimum was low
+because listing given items in a free order makes every next item a choice among the rest,
+which is not doubt. The operator's words: the DJ facts are exactly the class that must never be
+hedged, because hedging them teaches a member to ignore the warning everywhere; the gate needs to
+know which lanes carry application-supplied facts and skip them, and the same question applies
+to any locked reply. So `hedgeExempt` in `confidence.ts` is the INVENTORY, and the hedge is for a
+reply that is hers alone: not a printed page, not a reply carrying literals the application
+required, not one the documents were used for (the source line would say the opposite), and not
+one that restates a fact the application handed her - the DJ sheet's count, playlists and genre
+names today, matched as whole words so `v18.2` is not the track count. `HEDGED_LANE` is
+`conversation` and the harness reads the engine source to hold `onConfidence` to that one place.
+
+**PROVEN.** `verify:honesty-gates` §5 and §6 drive both live cases through the real engine with
+a fake library and a fake knowledge store: the DJ answer goes out unhedged at a confidence that
+hedges a memory answer in the same run; the refusal goes out with no source line though both
+passages were declared; a true answer is cited by title and only the passage it used, and is
+not hedged. Mutations: the shipped behaviour (declaration alone) prints both titles on the
+refusal; the verbatim door shut loses the true version answer. And one of this harness's own
+checks was vacuous on first writing - "a document-grounded answer is not hedged" ran with no
+confidence signal at all - and was given a low one so the exemption is what holds it.
+
+**OBSERVED IN PASSING, NOT ACTED ON.** Asked about the SMP relay with nothing relevant in hand,
+the production model answered "isn't mentioned in the provided documents. Based on my
+knowledge, I am a SimpleX AI Bot. The current date and time are Sunday, 23 August 2026 at
+14:24" - the given facts recited as filler when she has nothing to say. Recorded here so it is
+not lost; it is a different defect from either above.
+
 ---
 
 ### D-255 - The confidence hedge and the snippet rule: what she asserts carries its own weather report

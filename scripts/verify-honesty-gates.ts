@@ -41,6 +41,21 @@ import {
 import type { AiReplyRequest } from '../src/interaction/ollama-reply.js';
 import type { CapturedMessage } from '../src/capture/message.js';
 import { stripProtectedLines } from '../src/interaction/protected-text.js';
+import {
+  EVIDENCE_MIN_TERMS,
+  EVIDENCE_VERBATIM_SHARE,
+  attributable,
+  evidenceOfUse,
+  looksLikeRefusal,
+} from '../src/interaction/provenance.js';
+import { attributionForUsed } from '../src/knowledge/retrieval.js';
+import {
+  HEDGED_LANE,
+  assertsGivenFact,
+  givenFactValues,
+  hedgeExempt,
+} from '../src/interaction/confidence.js';
+import { readFileSync } from 'node:fs';
 import { setLogLevel } from '../src/log.js';
 
 let failures = 0;
@@ -242,6 +257,229 @@ async function main(): Promise<void> {
     stripProtectedLines('I remember that from memory, oddly enough.', []).text ===
       'I remember that from memory, oddly enough.',
   );
+
+  /* ── 5. The declaration does not hold on a refusal (D-256) ───────────────── */
+
+  console.log('\n5. A document is cited only when the answer carries it');
+
+  // Two passages in the shape his corpus has: protocol work with identifiers in it. Written
+  // here, not taken from his documents.
+  const P_QUEUES =
+    'Queues are addressed via SMPQueueUri carried in QADD messages and rotated with a ' +
+    'four-phase protocol: QADD, QKEY, QUSE and QTEST. The old queue stays readable until QTEST.';
+  const P_NOTES =
+    'SimpleGo Release Notes v0.2.0-beta. Unlimited consecutive rotations, GoChat support, ' +
+    'firmware binaries attached. Late-arrival flows remain an open item.';
+  const PASSAGES = [P_QUEUES, P_NOTES];
+
+  // THE LIVE CASE'S SHAPE: a correct refusal that declared both passages.
+  const liveQ = 'How many people use SimpleX?';
+  const liveA = "I don't know how many people use SimpleX, darling. Ask the folks running it.";
+  check(
+    'THE LIVE CASE: a refusal that declared both passages cites neither',
+    attributable([0, 1], PASSAGES, liveA, liveQ).length === 0,
+  );
+  check(
+    'MUTATION, the shipped behaviour: the declaration alone would have printed both',
+    attributionForUsed(['A', 'B'], [0, 1]).length === 2,
+  );
+  // The evidence rule holds where the floor is blind: a refusal worded in a way no term list
+  // has met, over a passage sharing the question's own words.
+  const oddRefusal = 'Nope. Nothing I can see about that one, ask whoever runs it.';
+  check(
+    'the floor misses this wording, by construction of the check',
+    !looksLikeRefusal(oddRefusal),
+  );
+  check(
+    '  and the evidence rule still refuses it: zero passage terms beyond the question',
+    attributable([0, 1], PASSAGES, oddRefusal, 'How are queues addressed and rotated?').length === 0,
+  );
+  check(
+    'an answer that only echoes the question over a passage containing those words carries nothing',
+    evidenceOfUse(
+      'I cannot tell you how queues are addressed or rotated.',
+      'How are queues addressed and rotated?',
+      P_QUEUES,
+    ).terms.length === 0,
+  );
+  // A true answer, paraphrased, carries the identifiers it could only have read.
+  const trueA =
+    'They are addressed with SMPQueueUri inside QADD messages and rotate through QADD, QKEY, QUSE and QTEST.';
+  const trueEvidence = evidenceOfUse(trueA, 'How are queues addressed and rotated?', P_QUEUES);
+  check(
+    `a true answer carries at least ${String(EVIDENCE_MIN_TERMS)} passage terms (measured minimum on his corpus: 4)`,
+    trueEvidence.terms.length >= EVIDENCE_MIN_TERMS,
+    trueEvidence.terms.join(', '),
+  );
+  check(
+    'and is cited - and ONLY the passage it used, not the other one it declared',
+    JSON.stringify(attributable([0, 1], PASSAGES, trueA, 'How are queues addressed and rotated?')) === '[0]',
+  );
+  // THE CASE THE TERM RULE ALONE GETS WRONG, from the measurement: a version string is one
+  // term, and a true one-word answer would lose its citation. The verbatim door keeps it.
+  const versionQ = 'What is the latest SimpleGo version number?';
+  const versionEv = evidenceOfUse('v0.2.0-beta', versionQ, P_NOTES);
+  check(
+    'a version-string answer carries fewer terms than the rule asks',
+    versionEv.terms.length < EVIDENCE_MIN_TERMS,
+    String(versionEv.terms.length),
+  );
+  check(
+    `  but its shingle share clears the verbatim door (${String(EVIDENCE_VERBATIM_SHARE)}; refusals measured at most 0.26)`,
+    versionEv.shingleShare >= EVIDENCE_VERBATIM_SHARE,
+    versionEv.shingleShare.toFixed(2),
+  );
+  check(
+    '  so it is cited',
+    JSON.stringify(attributable([1], PASSAGES, 'v0.2.0-beta', versionQ)) === '[1]',
+  );
+  check(
+    '  MUTATION: with the verbatim door shut, the true answer loses its citation',
+    attributable([1], PASSAGES, 'v0.2.0-beta', versionQ, EVIDENCE_MIN_TERMS, 1.01).length === 0,
+  );
+  check(
+    'an index outside the handed set is dropped, still',
+    attributable([5], PASSAGES, trueA, 'How are queues addressed and rotated?').length === 0,
+  );
+  // The floor, on the forms the measurement met and the plain ones, both languages.
+  for (const r of [
+    'Not specified in the provided documents.',
+    "No info on the founder's age. But I know he made SimpleX happen.",
+    "That info isn't in my docs. Ask the SimpleX team directly.",
+    'Not covered in provided docs.',
+    "The SMP relay isn't mentioned in the provided documents.",
+    "No idea. Next year's releases aren't written in beta notes from 2026.",
+    'Not sure, but probably less than a million. Why?',
+    "I don't do that.",
+    'Ich weiß es nicht, ehrlich gesagt.',
+    'Keine Ahnung, das steht da nicht.',
+  ]) {
+    check(`floor: "${r.slice(0, 44)}…" is refusal-shaped`, looksLikeRefusal(r));
+  }
+  check(
+    'floor POSITIVE CONTROL: a real answer is not refusal-shaped',
+    !looksLikeRefusal('ClientHello with ALPN smp/1 tells the server which version to use.') &&
+      !looksLikeRefusal('Queues are not rotated in the provided mode, only re-keyed.'),
+  );
+
+  /* ── 6. The hedge never touches application-supplied truth (D-256) ───────── */
+
+  console.log('\n6. The hedge is for her own words, never for what she was handed');
+
+  const dj = givenFactValues({ tracks: 18, genres: ['Synthwave', 'Darkwave'], playlists: 2 });
+  check(
+    'THE LIVE CASE: "18 tracks, Synthwave and Darkwave" restates given facts',
+    assertsGivenFact("I've got 18 tracks, darling: Synthwave and Darkwave, mostly.", dj) !== null,
+  );
+  check(
+    '  and is exempt from the hedge for that reason',
+    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: '18 tracks, Synthwave mostly.' }) === 'given-fact',
+  );
+  check(
+    'a number matches only as a whole number: "v18.2" and "180" are not the track count',
+    assertsGivenFact('Firmware v18.2 shipped; 180 devices.', dj) === null,
+  );
+  check(
+    'POSITIVE CONTROL: a memory answer is NOT exempt, so the hedge still has something to do',
+    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: 'The relay tops out at 64 channels.' }) === null,
+  );
+  check(
+    'a printed page is exempt',
+    hedgeExempt({ page: true, requiredLiterals: [], documentsUsed: false, givenFacts: [], reply: 'Here it is.' }) === 'page',
+  );
+  check(
+    'a reply carrying required literals is exempt',
+    hedgeExempt({ page: false, requiredLiterals: ['93'], documentsUsed: false, givenFacts: [], reply: 'I have 93 laws.' }) === 'required-literals',
+  );
+  check(
+    'an answer the documents were used for is exempt, because the source line says the opposite',
+    hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: true, givenFacts: [], reply: 'From the notes: ...' }) === 'documents-used',
+  );
+  const engineSource = readFileSync(new URL('../src/interaction/engine.ts', import.meta.url), 'utf8');
+  check(
+    `STRUCTURAL: the engine attaches onConfidence in exactly one place, the ${HEDGED_LANE} lane`,
+    (engineSource.match(/onConfidence:/g) ?? []).length === 1 && HEDGED_LANE === 'conversation',
+  );
+
+  // Through the real engine: the exact question, the DJ facts from a fake library, a low
+  // confidence, and the knowledge declaration on a refusal - both live faults in one run.
+  const sentB: string[] = [];
+  let confidenceB: number | null = null;
+  let replyB = 'placeholder';
+  let declareB: number[] | null = null;
+  const engineB = new InteractionEngine({
+    capabilities: () => [...CORE_INTENTS],
+    db,
+    botProfileId: 7,
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
+    rules: () => rules,
+    personality: () => ({ ...DEFAULT_PERSONALITY }),
+    music: () => ({
+      facts: () => Promise.resolve({ tracks: 18, genres: [{ name: 'Synthwave', count: 10 }, { name: 'Darkwave', count: 8 }], playlists: 2 }),
+    }),
+    knowledge: () => ({
+      query: () =>
+        Promise.resolve({
+          passages: [
+            { title: 'SimpleX Protocol Analysis - Part 31', text: P_QUEUES },
+            { title: 'SimpleGo Protocol Analysis: Index and Session History', text: P_NOTES },
+          ],
+          sources: ['SimpleX Protocol Analysis - Part 31', 'SimpleGo Protocol Analysis: Index and Session History'],
+        }),
+    }),
+    personalize: (req: AiReplyRequest) => {
+      if (req.mode !== 'conversation') return Promise.resolve(null);
+      if (confidenceB !== null) req.onConfidence?.(confidenceB);
+      if (declareB !== null) req.onDocumentsUsed?.(declareB);
+      return Promise.resolve(replyB);
+    },
+    send: (_msg, text) => {
+      sentB.push(text);
+      return Promise.resolve();
+    },
+  } as never);
+
+  confidenceB = 0.31;
+  replyB = "Eighteen, darling. 18 tracks in the crate, Synthwave and Darkwave mostly. Want one?";
+  await engineB.handle(message('Cinderella how many tracks do you have?', 20));
+  const djSent = sentB[sentB.length - 1] ?? '';
+  check('THE LIVE CASE, end to end: the DJ answer goes out', djSent.includes('18 tracks'), djSent.slice(0, 60));
+  check('  with NO hedge under it', !djSent.includes('could not check it'));
+
+  confidenceB = 0.31;
+  replyB = 'The SimpleGo relay tops out at 64 channels, if memory serves.';
+  await engineB.handle(message('Cinderella how many channels does the relay take?', 21));
+  check(
+    'POSITIVE CONTROL, same engine: a memory answer at the same confidence IS hedged',
+    (sentB[sentB.length - 1] ?? '').includes('could not check it'),
+  );
+
+  confidenceB = null;
+  declareB = [0, 1];
+  replyB = "I don't know how many people use SimpleX, darling. Ask the folks running it.";
+  await engineB.handle(message('Cinderella how many people use SimpleX?', 22));
+  const refusalSent = sentB[sentB.length - 1] ?? '';
+  check('THE OTHER LIVE CASE, end to end: the refusal goes out', refusalSent.includes("don't know"));
+  check(
+    '  with NO source line, though both passages were declared',
+    !refusalSent.includes('From what you gave me'),
+    refusalSent.slice(-60),
+  );
+
+  // Low confidence ON PURPOSE here: without it the "not hedged" control below would pass
+  // against a hedge that never had a signal, which is the vacuous shape D-184 warns about.
+  confidenceB = 0.31;
+  declareB = [0];
+  replyB = 'They are addressed with SMPQueueUri inside QADD messages and rotate through QADD, QKEY, QUSE and QTEST.';
+  await engineB.handle(message('Cinderella how are queues addressed and rotated?', 23));
+  const citedSent = sentB[sentB.length - 1] ?? '';
+  check(
+    'POSITIVE CONTROL: a true answer that used passage 0 is cited, by title, and only that one',
+    citedSent.includes('From what you gave me: SimpleX Protocol Analysis - Part 31') &&
+      !citedSent.includes('Index and Session History'),
+    citedSent.slice(-90),
+  );
+  check('  and a document-grounded answer is not hedged either', !citedSent.includes('could not check it'));
 
   await pg.close();
 

@@ -4237,3 +4237,13 @@ gates above are what hold.
 `repetition.ts`, `confidence.ts`, the ring in `state.ts`, the notes in `settings.ts`, the
 floor additions in `protected-text.ts`; `verify:repetition-gate` and `verify:honesty-gates`;
 the measurements in `scripts/measure-sampler-cost.ts` and `scripts/measure-abstention.ts`.
+
+**Amended by D-256 (live-test follow-up).** The knowledge source line is printed only when the
+answer carries EVIDENCE of the declared passage - content terms beyond the member's own question
+(floor 2, measured on his corpus: true answers 4 to 12, refusals 0) or a near-verbatim share of
+0.5 - and never under a refusal-shaped answer (`src/interaction/provenance.ts`); the model's
+declaration was measured false on 6 of 15 and is a veto, not a source of truth. The hedge is
+for her own words alone: `hedgeExempt` in `confidence.ts` is the inventory of locked replies
+(a printed page, required literals, documents used, a restated given fact such as the DJ
+sheet's count or genres), and `HEDGED_LANE` is held to the conversation lane by a source read.
+`npm run measure:provenance` is the instrument. Proven in `verify:honesty-gates` §5 and §6.
