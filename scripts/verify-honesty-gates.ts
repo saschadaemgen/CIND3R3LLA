@@ -31,7 +31,7 @@ import { listPromptRules } from '../src/db/prompt-rules.js';
 import { InteractionEngine } from '../src/interaction/engine.js';
 import { DEFAULT_INTERACTION, normalizeInteraction } from '../src/interaction/settings.js';
 import { DEFAULT_PERSONALITY } from '../src/interaction/personality.js';
-import { CORE_INTENTS } from '../src/interaction/intent.js';
+import { CORE_INTENTS, capabilityCatalog } from '../src/interaction/intent.js';
 import {
   CONFIDENCE_HEDGE_THRESHOLD,
   minReplyTokenProb,
@@ -54,6 +54,7 @@ import {
   assertsGivenFact,
   givenFactValues,
   hedgeExempt,
+  numberWords,
 } from '../src/interaction/confidence.js';
 import { readFileSync } from 'node:fs';
 import { setLogLevel } from '../src/log.js';
@@ -375,9 +376,46 @@ async function main(): Promise<void> {
     '  and is exempt from the hedge for that reason',
     hedgeExempt({ page: false, requiredLiterals: [], documentsUsed: false, givenFacts: dj, reply: '18 tracks, Synthwave mostly.' }) === 'given-fact',
   );
+  // THE SECOND LIVE FAULT: the SHORT form. The first matcher refused a trailing dot (to keep
+  // "v18.2" from counting as 18) and knew no number words, so "18." and "Eighteen." both
+  // missed and the hedge fired on a bare true answer. A member asking a second time gets a
+  // different shape of the same true answer, and every shape must hold.
+  for (const short of [
+    '18. Spread across playlists. Want a number or a genre?', // the exact live reply
+    '18.',
+    '18, spread across playlists.',
+    'Eighteen. Want a genre?',
+    'Two playlists, darling.',
+    'Two.',
+    'Synthwave, Darkwave.',
+    'Zwei Playlists.',
+    'Achtzehn.',
+    'Achtzehn Titel auf zwei Playlists, vor allem Synthwave.',
+    'Eighteen tracks, two playlists, and a weakness for Darkwave.',
+    'Mostly House and Synthwave, if you must know which genres.',
+  ]) {
+    check(`SHORT FORM restates a given fact: "${short}"`, assertsGivenFact(short, [...dj, 'House']) !== null);
+  }
   check(
-    'a number matches only as a whole number: "v18.2" and "180" are not the track count',
-    assertsGivenFact('Firmware v18.2 shipped; 180 devices.', dj) === null,
+    'a number matches only as a whole number: "v18.2", "180" and "2.18" are not the counts',
+    assertsGivenFact('Firmware v18.2 shipped; 180 devices on 2.18.', dj) === null,
+  );
+  // And the other direction, which is what makes number words safe to add at all: "two" and
+  // "one" are everywhere in prose, so a value counts only in LIBRARY context - a library noun
+  // within a few words, or a reply short enough to be a bare answer.
+  for (const prose of [
+    'I have two thoughts on that, darling, and neither of them is polite.',
+    'The relay tops out at 18 channels, if memory serves me right today.',
+    'The house rules apply to everyone here, no exceptions, not even for you.',
+    'One of them asked me that yesterday and I told them the same thing then.',
+  ]) {
+    check(`NOT a given fact out of library context: "${prose.slice(0, 40)}…"`, assertsGivenFact(prose, [...dj, 'House']) === null);
+  }
+  check(
+    'number words cover both languages, hyphenated and compound forms',
+    numberWords(18).includes('eighteen') && numberWords(18).includes('achtzehn') &&
+      numberWords(21).includes('twenty-one') && numberWords(21).includes('einundzwanzig') &&
+      numberWords(30).includes('dreissig'),
   );
   check(
     'POSITIVE CONTROL: a memory answer is NOT exempt, so the hedge still has something to do',
@@ -411,7 +449,11 @@ async function main(): Promise<void> {
     capabilities: () => [...CORE_INTENTS],
     db,
     botProfileId: 7,
-    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
+    // The reply limiter is raised for this engine: it answers one member eight times in one
+    // burst, and the shipped 6-per-member limit would drop the last turns as 'rate-limited'
+    // - which it did, on this harness's first run with the extra short-form turns, leaving
+    // the final control reading the previous reply. Not the property under test here.
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION, replyLimitPerMember: 60, replyLimitPerChat: 120 }),
     rules: () => rules,
     personality: () => ({ ...DEFAULT_PERSONALITY }),
     music: () => ({
@@ -445,6 +487,59 @@ async function main(): Promise<void> {
   const djSent = sentB[sentB.length - 1] ?? '';
   check('THE LIVE CASE, end to end: the DJ answer goes out', djSent.includes('18 tracks'), djSent.slice(0, 60));
   check('  with NO hedge under it', !djSent.includes('could not check it'));
+
+  // THE SECOND LIVE FAULT, end to end: the member asks again and gets the SHORT shape.
+  confidenceB = 0.31;
+  replyB = '18. Spread across playlists. Want a number or a genre?';
+  await engineB.handle(message('Cinderella and how many tracks was that again?', 24));
+  const shortSent = sentB[sentB.length - 1] ?? '';
+  check('THE SHORT FORM, end to end: the bare count goes out', shortSent.startsWith('18.'), shortSent.slice(0, 60));
+  check('  with NO hedge under it either', !shortSent.includes('could not check it'));
+
+  confidenceB = 0.31;
+  replyB = 'Two playlists.';
+  await engineB.handle(message('Cinderella and how many playlists?', 25));
+  check('the playlist count as a WORD, end to end: no hedge', !(sentB[sentB.length - 1] ?? '').includes('could not check it'));
+
+  confidenceB = 0.31;
+  replyB = 'Synthwave and Darkwave.';
+  await engineB.handle(message('Cinderella which genres?', 26));
+  check('the genre list on its own, end to end: no hedge', !(sentB[sentB.length - 1] ?? '').includes('could not check it'));
+
+  // A TRACK TITLE READ BACK travels the music lane, whose replies are application-composed
+  // lists, and the hedge has no listener there at all. Driven rather than asserted: the
+  // MUSIC intent in the catalog, a fake library with one title, a low confidence standing by.
+  const sentC: string[] = [];
+  const engineC = new InteractionEngine({
+    capabilities: () => capabilityCatalog(['MUSIC']),
+    db,
+    settings: () => normalizeInteraction({ ...DEFAULT_INTERACTION }),
+    rules: () => rules,
+    personality: () => ({ ...DEFAULT_PERSONALITY }),
+    music: () => ({
+      view: () => Promise.resolve({ playlists: [{ name: 'Evening Set', trackCount: 1, mode: 'manual' }] }),
+      tracksOf: (name: string) =>
+        Promise.resolve(
+          name.toLowerCase().includes('evening')
+            ? { playlist: 'Evening Set', items: [{ id: 1, title: 'Neon Rain Over Kreuzberg' }], total: 1 }
+            : null,
+        ),
+      facts: () => Promise.resolve({ tracks: 1, genres: [{ name: 'Synthwave', count: 1 }], playlists: 1 }),
+    }),
+    personalize: (req: AiReplyRequest) => {
+      // A listener would receive a low confidence if one were ever attached on this path.
+      req.onConfidence?.(0.31);
+      return Promise.resolve(null);
+    },
+    send: (_msg, text) => {
+      sentC.push(text);
+      return Promise.resolve();
+    },
+  } as never);
+  await engineC.handle(message("Cinderella what's on Evening Set?", 27));
+  const titleSent = sentC[sentC.length - 1] ?? '';
+  check('a track title read back from the library goes out', titleSent.includes('Neon Rain Over Kreuzberg'), titleSent.slice(0, 70));
+  check('  and is never hedged: the music lane has no listener to hedge with', !titleSent.includes('could not check it'));
 
   confidenceB = 0.31;
   replyB = 'The SimpleGo relay tops out at 64 channels, if memory serves.';

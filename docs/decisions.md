@@ -340,6 +340,29 @@ one that restates a fact the application handed her - the DJ sheet's count, play
 names today, matched as whole words so `v18.2` is not the track count. `HEDGED_LANE` is
 `conversation` and the harness reads the engine source to hold `onConfidence` to that one place.
 
+**CORRECTED ON THE NEXT LIVE ROUND: THE SHORT FORM.** Two of three held; the hedge still
+fired on the DJ count when she answered short - *"18. Spread across playlists. Want a number or
+a genre?"* - with the caveat under it. What the first matcher actually required, established
+rather than guessed: a number matched as digits with no letter, digit **or dot** on either side,
+the dot excluded to keep `v18.2` from counting as 18, which also excluded a sentence-final
+"18."; and it knew no number words, so "Eighteen", "Two", "Zwei" and "Achtzehn" all missed. A
+member asking a second time gets a different shape of the same true answer, and every shape
+must hold. Now: the dot and comma are excluded only beside another digit (`18.2`, `2.18`), so a
+bare "18." matches; English and German number words for 0 to 99 match beside the digits
+(`numberWords`), hyphenated, spaced and compound. And the widening that made number words safe
+to add at all: "two" and "one" are everywhere in prose, and a genre called House or Country is
+an ordinary word, so a value counts only in LIBRARY CONTEXT - a library noun (tracks, playlists,
+genres, crate, Titel, …) within six tokens of it, or a reply short enough to be a bare answer
+(48 characters). "Two playlists, darling.", "Two.", "Synthwave, Darkwave.", "Achtzehn." are all
+exempt; "I have two thoughts on that, darling, and neither of them is polite" and "the house
+rules apply" are not, and a memory answer about 18 channels is still hedged. Checked across the
+class the operator named: the playlist count as a word, the genre list on its own, and a track
+title read back from the library - which travels the music lane, whose listings are
+application-composed and where the hedge has no listener, driven through the real engine with a
+low confidence standing by rather than asserted. Deliberately not recognised: a reply stating no
+given value at all ("Plenty, darling"), because restatement is the predicate that keeps an
+invented count - "300 tracks" against a sheet that says 18 - hedgeable.
+
 **PROVEN.** `verify:honesty-gates` §5 and §6 drive both live cases through the real engine with
 a fake library and a fake knowledge store: the DJ answer goes out unhedged at a confidence that
 hedges a memory answer in the same run; the refusal goes out with no source line though both

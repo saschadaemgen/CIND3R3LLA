@@ -127,20 +127,109 @@ export function givenFactValues(
 }
 
 /**
- * Does the reply state one of the given values, as a whole word? A number matches only with
- * no digit, letter or dot on either side ("18" in "18 tracks", not in "v18.2" or "180"); a
- * name matches case-insensitively at word boundaries.
+ * The nouns that put a value in LIBRARY context: the given facts today are the DJ sheet's, and
+ * a number or a genre name counts as a restated fact when one of these stands within a few
+ * words of it, or when the reply is short enough to be a bare answer. Without that condition
+ * "two" and "one" - the playlist count, as a word - would exempt half of ordinary conversation
+ * from the hedge, and a genre called House or Country would exempt any sentence using the word.
+ * A second source of given facts brings its own context words as the third argument.
  */
-export function assertsGivenFact(reply: string, facts: readonly string[]): string | null {
+export const LIBRARY_WORDS: readonly string[] = [
+  'track', 'tracks', 'song', 'songs', 'title', 'titles', 'tune', 'tunes', 'playlist', 'playlists',
+  'genre', 'genres', 'library', 'crate', 'collection', 'album', 'albums', 'spread',
+  'titel', 'stück', 'stücke', 'stuecke', 'lied', 'lieder', 'sammlung', 'bibliothek', 'kiste',
+];
+
+/** A reply this short IS the answer, and the value in it is the fact. */
+const BARE_ANSWER_MAX_CHARS = 48;
+/** How far a library noun may stand from the value, in word tokens, to put it in context. */
+const CONTEXT_WINDOW = 6;
+
+/**
+ * English and German number words for 0..99, the range the DJ sheet's counts live in. Beyond
+ * it a model writes digits, and the digit rule covers those.
+ */
+export function numberWords(n: number): string[] {
+  if (!Number.isInteger(n) || n < 0 || n > 99) return [];
+  const enOnes = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten',
+    'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  const enTens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
+  const deOnes = ['null', 'eins', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun', 'zehn',
+    'elf', 'zwölf', 'dreizehn', 'vierzehn', 'fünfzehn', 'sechzehn', 'siebzehn', 'achtzehn', 'neunzehn'];
+  const deTens = ['', '', 'zwanzig', 'dreißig', 'vierzig', 'fünfzig', 'sechzig', 'siebzig', 'achtzig', 'neunzig'];
+  const deUnit = ['', 'ein', 'zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'acht', 'neun'];
+  const out: string[] = [];
+  if (n < 20) {
+    out.push(enOnes[n] as string, deOnes[n] as string);
+    if (n === 1) out.push('ein', 'eine', 'einen', 'einem', 'einer');
+  } else {
+    const t = Math.floor(n / 10);
+    const u = n % 10;
+    const enT = enTens[t] as string;
+    out.push(u === 0 ? enT : `${enT}-${enOnes[u] as string}`, u === 0 ? enT : `${enT} ${enOnes[u] as string}`);
+    const deT = deTens[t] as string;
+    out.push(u === 0 ? deT : `${deUnit[u] as string}und${deT}`);
+  }
+  // ß and ss spellings both occur.
+  return out.flatMap((w) => (w.includes('ß') ? [w, w.replace(/ß/g, 'ss')] : [w]));
+}
+
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Does the reply state one of the given values, in library context?
+ *
+ * A number matches as digits with no letter or digit on either side and no decimal or version
+ * neighbour ("18" in "18 tracks" and in a bare "18.", not in "v18.2", "180" or "2.18"), or as
+ * its English or German word ("eighteen", "achtzehn", "two", "zwei"). A name matches
+ * case-insensitively at word boundaries. Either counts only when a context word stands within
+ * {@link CONTEXT_WINDOW} tokens of it, or the whole reply is at most {@link BARE_ANSWER_MAX_CHARS}
+ * characters - a bare answer.
+ *
+ * What it deliberately does NOT do: recognise a reply that states no given value at all
+ * ("Plenty, darling. Want a genre?"). Restatement is the predicate because it is what keeps an
+ * invented count - "300 tracks" against a sheet that says 18 - hedgeable.
+ */
+export function assertsGivenFact(
+  reply: string,
+  facts: readonly string[],
+  contextWords: readonly string[] = LIBRARY_WORDS,
+): string | null {
   const text = reply.normalize('NFC');
+  const bare = text.trim().length <= BARE_ANSWER_MAX_CHARS;
+  const tokens = [...text.toLowerCase().matchAll(/[\p{L}\p{N}]+(?:['’-][\p{L}\p{N}]+)*/gu)].map((m) => ({
+    word: m[0],
+    at: m.index ?? 0,
+  }));
+  const contextAt = new Set<number>();
+  tokens.forEach((t, i) => {
+    if (contextWords.includes(t.word)) contextAt.add(i);
+  });
+  const inContext = (offset: number): boolean => {
+    if (bare) return true;
+    // The token the match starts in, by offset.
+    let i = tokens.findIndex((t) => t.at >= offset);
+    if (i === -1) i = tokens.length - 1;
+    for (const c of contextAt) if (Math.abs(c - i) <= CONTEXT_WINDOW) return true;
+    return false;
+  };
+
   for (const fact of facts) {
     const f = fact.normalize('NFC').trim();
     if (f === '') continue;
-    const escaped = f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const pattern = /^\d+$/.test(f)
-      ? new RegExp(`(?<![\\p{L}\\p{N}.])${escaped}(?![\\p{L}\\p{N}.])`, 'u')
-      : new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'iu');
-    if (pattern.test(text)) return f;
+    const patterns: RegExp[] = [];
+    if (/^\d+$/.test(f)) {
+      patterns.push(new RegExp(`(?<![\\p{L}\\p{N}])(?<!\\d[.,])${escapeRe(f)}(?![\\p{L}\\p{N}])(?![.,]\\d)`, 'u'));
+      for (const w of numberWords(Number(f))) {
+        patterns.push(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(w)}(?![\\p{L}\\p{N}])`, 'iu'));
+      }
+    } else {
+      patterns.push(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRe(f)}(?![\\p{L}\\p{N}])`, 'iu'));
+    }
+    for (const pattern of patterns) {
+      const m = pattern.exec(text);
+      if (m && inContext(m.index)) return f;
+    }
   }
   return null;
 }
