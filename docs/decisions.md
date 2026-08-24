@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 254 decisions</strong> — newest first. Highest allocated: <strong>D-256</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 255 decisions</strong> — newest first. Highest allocated: <strong>D-257</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-257 | A capitalised unknown is not a member: the consent lane takes people, the lookup takes things | IMPLEMENTED |
 | D-256 | The declaration is a veto, the evidence is the rule; and the hedge never touches what she was handed | IMPLEMENTED |
 | D-255 | The confidence hedge and the snippet rule: what she asserts carries its own weather report | IMPLEMENTED |
 | D-254 | The abstention rule as a scoring scheme, and the honest null beside it | IMPLEMENTED |
@@ -283,6 +284,55 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-257 - A capitalised unknown is not a member: the consent lane takes people, the lookup takes things
+
+**Status: IMPLEMENTED** (CCB-S5-060 live-test follow-up, fourth fault).
+
+**THE FAULT.** Asked *"when was the Zeliqua protocol first published?"* she answered with the
+consent-boundary line - "Only Zeliqua can open that door, and only for themselves" - a locked
+reply about somebody's published messages, given to a question about a protocol.
+
+**WHERE IT RESOLVES, ESTABLISHED WITH THE REAL RESOLVER RATHER THAN GUESSED.** Three small
+holes lined up. The PUBLISH pattern matched on the bare word "published" at exactly the 0.60
+threshold. §7a's `isStateQuestion` is a phrase list and "when was …" was not on it, so the
+question was not re-pointed to STATUS. And `findTargetName` promotes ANY capitalised token the
+lexicon does not know into a person - so "Zeliqua" became a member, and "SimpleX" reproduces
+the same resolution word for word. The seam's consent conjunction did exactly its job: the
+deterministic rules reached the intent on their own, so this was never a model failure.
+
+**THE FIXES, ALL IN THE RULES LAYER, ALL ALLOW-LIST DIRECTION.** (1) An article-preceded
+capitalised run names a THING: nobody is "the Alice" or "das Bob", so "the Zeliqua protocol"
+and "das Zeliqua-Protokoll" - where German capitalises the noun that follows and the compound
+tokenises to two - never yield a target; the thing-mark carries across the whole capitalised
+run, so "the SimpleX Chat Protocol" is one thing rather than a person trailing a product, and
+"did Anna Schmidt publish?" still refuses because articles are the mark, not word count.
+(2) A consent-verb QUESTION with no person target and no first-person marker is a topic, not a
+request - consent is first-person or it is the third-party shape the refusal exists for -
+and resolves UNKNOWN, where the conversation lane and the deterministic lookup route answer.
+(3) `asksWhatSomethingIs` gains the factual-question shapes ("when was X first published",
+"where is X hosted", "who made X", "wann wurde X veröffentlicht") with a possessive guard, so
+"when was MY archive published" can never become a web lookup; these gates only remove a
+model's claim or open the engine's own bounded lookup route, so a shape the list does not know
+falls to conversation, which answers or declines honestly. (4) Found by the probe beside the
+live fault, the same class one step over: *"is my stuff published?"* resolved PUBLISH - a
+consent prompt in front of a first-person state question, the exact §7a defect - because the
+opener list did not know the passive; "is my", "when was my", "ist mein", "wann wurde mein"
+and friends now re-point it to STATUS.
+
+**THE STATED RESIDUE.** Without an article the signal is gone: *"when was Zeliqua first
+published?"* still finds a target and refuses, because a passive question about an articleless
+capitalised unknown is indistinguishable from a question about a person by reading the sentence
+alone. The structural answer, if this bites live, is checking the target against the room's
+actual members - which brings its own questions (a silent member has posted nothing to match
+against) and is named here rather than built.
+
+**PROVEN.** `verify:interaction` drives the live question and its German compound through the
+real resolver to UNKNOWN with no target, the multi-word product name, both positive controls
+("did Alice publish?", "did Anna Schmidt publish?" still refuse), the three first-person
+passives to STATUS, and every consent REQUEST shape still resolving as itself. 26 suites green.
+
 ---
 
 ### D-256 - The declaration is a veto, the evidence is the rule; and the hedge never touches what she was handed

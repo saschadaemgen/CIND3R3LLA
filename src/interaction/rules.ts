@@ -1038,10 +1038,23 @@ function findTargetName(text: string, tokens: Token[]): string | undefined {
     if (THIRD_PARTY_PRONOUNS.has(t.norm)) return t.raw;
   }
 
+  // AN ARTICLE-PRECEDED NAME IS A THING, NOT A PERSON (D-257). Observed live: "when was the
+  // Zeliqua protocol first published?" made "Zeliqua" a member and the reply was the
+  // consent-boundary line, about somebody's published messages, to a question about a
+  // protocol. Nobody is "the Alice" or "das Bob" in either language, so a capitalised
+  // unknown after an article or demonstrative names a product, a protocol, a place - and it
+  // must never become the target of a member-scoped refusal. The thing-mark carries across
+  // a RUN of capitalised tokens, because a thing's name is often several words and German
+  // capitalises the noun that follows ("das Zeliqua-Protokoll" tokenises to two, and the
+  // second must not become the person the first was spared from being).
+  let inThingRun = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i] as Token;
     const capitalised = t.raw[0] !== undefined && t.raw[0] !== t.raw[0].toLowerCase();
-    if (!capitalised || t.norm.length < 2) continue;
+    if (!capitalised || t.norm.length < 2) {
+      inThingRun = false;
+      continue;
+    }
 
     const mentioned = t.start > 0 && text[t.start - 1] === '@';
     const possessive = /['’ʼ]s$/.test(t.raw);
@@ -1050,10 +1063,22 @@ function findTargetName(text: string, tokens: Token[]): string | undefined {
       continue;
     }
     if (hasFirstPerson || i === 0) continue;
+    const prev = tokens[i - 1];
+    if ((prev !== undefined && ARTICLES.has(prev.norm)) || inThingRun) {
+      inThingRun = true;
+      continue;
+    }
     if (!isKnownWord(t.norm)) return t.raw;
   }
   return undefined;
 }
+
+/** Articles and demonstratives, EN and DE with declensions: what precedes a thing's name. */
+const ARTICLES = new Set([
+  'the', 'a', 'an', 'this', 'that', 'these', 'those',
+  'der', 'die', 'das', 'den', 'dem', 'des', 'ein', 'eine', 'einen', 'einem', 'einer', 'eines',
+  'dieser', 'diese', 'dieses', 'diesen', 'diesem', 'jener', 'jene', 'jenes',
+]);
 
 /** Everything after the search keyword, minus a leading `for` / `nach`. */
 /**
@@ -1125,6 +1150,24 @@ const STATE_OPENERS = [
   'habe ich',
   'hast du',
   'wie viele',
+  // The first-person PASSIVE question (D-257): "is my stuff published?" is a question about
+  // their record, not a request to change it, and it resolved PUBLISH for as long as this
+  // list did not know the shape. Found by the D-257 probe beside the live fault.
+  'is my',
+  'are my',
+  'was my',
+  'were my',
+  'when was my',
+  'when were my',
+  'ist mein',
+  'sind meine',
+  'wurde mein',
+  'wurde meine',
+  'wurden meine',
+  'wann wurde mein',
+  'wann wurden meine',
+  'wann ist mein',
+  'wann sind meine',
 ].map((p) => normTokens(p));
 
 /** Openings that mark a request for an ACTION. */
@@ -1148,6 +1191,14 @@ const STATE_NOUNS = new Set(
     normTokens(w),
   ),
 );
+
+/** Question openers, for the D-257 demotion: a consent verb inside one is a topic, not a request. */
+const INTERROGATIVES = new Set([
+  'what', 'whats', 'when', 'who', 'whos', 'where', 'why', 'how',
+  'is', 'are', 'was', 'were', 'did', 'does', 'do', 'has', 'have',
+  'wann', 'wer', 'wo', 'wie', 'warum', 'wieso', 'ist', 'sind', 'war', 'waren',
+  'wurde', 'wurden', 'hat', 'haben',
+]);
 
 /** Does this instruction OPEN with one of the given phrases? */
 function opensWith(instr: string[], phrases: string[][]): boolean {
@@ -1611,6 +1662,24 @@ function resolveRules(text: string, ctx: IntentContext): IntentResult {
   if (pattern.intent === 'PUBLISH' || pattern.intent === 'UNPUBLISH') {
     const target = findTargetName(text, tokens);
     if (target !== undefined) slots.targetName = target;
+
+    // ── A QUESTION ABOUT THE WORLD IS NOT A CONSENT ASK (D-257) ────────────
+    //
+    // "when was the Zeliqua protocol first published?" matched PUBLISH on the bare word
+    // "published" at exactly the threshold. It names no person (above), it carries no
+    // first-person marker, and it is a QUESTION - three things a consent request never
+    // combines: consent is first-person ("publish me", "publish my stuff") or it is the
+    // third-party shape the refusal exists for. What is left is a member asking about
+    // publishing as a TOPIC, and the honest resolution is UNKNOWN, where the conversation
+    // lane - and the lookup route, when the question names a thing - can answer it.
+    // §7a above already took the state questions to STATUS; this takes the rest.
+    if (
+      slots.targetName === undefined &&
+      !tokens.some((t) => FIRST_PERSON.has(t.norm)) &&
+      (text.trimEnd().endsWith('?') || (instr[0] !== undefined && INTERROGATIVES.has(instr[0])))
+    ) {
+      return unknownResult(pattern.lang);
+    }
   }
 
   // The match's language is authoritative (CCB-S3-005 Addendum A) only when it
@@ -1718,6 +1787,29 @@ const DEFINITION_QUESTION =
   /^(?:hey\s+|hi\s+|ok(?:ay)?\s+|so\s+)?(?:can\s+you\s+tell\s+me\s+|tell\s+me\s+|do\s+you\s+know\s+)?(?:what(?:'?s| is| are)|who(?:'?s| is| are)|was\s+(?:ist|sind)|wer\s+(?:ist|sind))\s+(?:a|an|the|der|die|das|ein|eine)?\s*(.+?)\s*\??$/i;
 
 /**
+ * The factual-question shapes beyond a bare definition (D-257): "when was X first
+ * published", "where is X hosted", "who made X", "wann wurde X veroeffentlicht". Added when
+ * the live fault showed such a question resolving into the CONSENT lane on the word
+ * "published" and a capitalised unknown; the operator's framing is the specification - a
+ * factual question about a named thing routes to lookup. Verb lists deliberately closed:
+ * these gates can only remove a model's claim or open the deterministic route, and a shape
+ * this list does not know falls to conversation, which answers or declines honestly.
+ */
+const FACTUAL_QUESTION =
+  /^(?:hey\s+|hi\s+|ok(?:ay)?\s+|so\s+)?(?:can\s+you\s+tell\s+me\s+|tell\s+me\s+|do\s+you\s+know\s+)?(?:when\s+(?:was|is|are|were|did|does|do)|where\s+(?:is|are|was|were)|who\s+(?:made|created|built|wrote|invented|designed|founded|published|released|developed|develops|maintains|maintained|runs|owns)|wann\s+(?:wurde|wurden|ist|war|kam|erschien)|wo\s+(?:ist|liegt|liegen|laeuft|läuft)|wer\s+(?:hat|macht|machte|entwickelt|entwickelte|betreibt|schrieb|baute))\s+(?:a|an|the|der|die|das|den|dem|ein|eine)?\s*(.+?)\s*\??$/i;
+
+/**
+ * First- and second-person possessives: a factual question about MY archive or YOUR rules is
+ * never a web lookup, whatever its shape.
+ */
+const POSSESSIVE_SUBJECT = new Set([
+  'my', 'mine', 'our', 'ours', 'your', 'yours',
+  'mein', 'meine', 'meinen', 'meinem', 'meiner', 'meins',
+  'unser', 'unsere', 'unseren', 'unserem', 'unserer',
+  'dein', 'deine', 'deinen', 'deinem', 'deiner',
+]);
+
+/**
  * Does this ask what a NAMED THING is (CCB-S5-049, D-234)?
  *
  * ── THIS IS THE WIDENING rules.ts REFUSED, AND WHY IT IS NOW ALLOWED ─────────
@@ -1774,7 +1866,7 @@ const SELF_REFERENCE = new Set([
 ]);
 
 export function asksWhatSomethingIs(text: string): boolean {
-  const m = DEFINITION_QUESTION.exec(text.trim());
+  const m = DEFINITION_QUESTION.exec(text.trim()) ?? FACTUAL_QUESTION.exec(text.trim());
   if (m === null) return false;
   const subject = (m[1] ?? '').trim();
   if (subject === '') return false;
@@ -1783,6 +1875,12 @@ export function asksWhatSomethingIs(text: string): boolean {
   // ABOUT HER: never a lookup, whatever the noun. Checked FIRST and over every token,
   // because this is the closed set and the noun list below is not.
   if (tokens.some((t) => SELF_REFERENCE.has(t))) return false;
+  // ABOUT THEM OR ABOUT HER, possessively (D-257): "when was MY archive published" is a
+  // question for the archive, not for a search engine. The factual shapes carry trailing
+  // verbs in their subject ("...protocol first published"), which the generic-noun test
+  // below cannot see through, so the possessive guard holds the line the old shapes held
+  // by accident of their brevity.
+  if (tokens.some((t) => POSSESSIVE_SUBJECT.has(t))) return false;
   // At least one token that is not about this product and not a bare generic noun.
   return tokens.some((t) => !SELF_SUBJECTS.has(t) && t.length > 2);
 }

@@ -394,6 +394,52 @@ async function main(): Promise<void> {
     (await r('the rule is "publish me"')).intent === 'UNKNOWN',
   );
 
+  // ── A THING IS NOT A PERSON (D-257) ──
+  //
+  // Observed live: 'when was the Zeliqua protocol first published?' resolved PUBLISH with
+  // targetName 'Zeliqua', and the reply was the consent-boundary line, about somebody's
+  // published messages, to a question about a protocol. Three rules now hold the class: an
+  // article-preceded capitalised run names a thing; a consent-verb QUESTION with no person
+  // and no first-person marker is a topic, resolved UNKNOWN; and the first-person passive
+  // ('is my stuff published?') is a STATE question, re-pointed to STATUS by section 7a.
+  const zeliqua = await r('when was the Zeliqua protocol first published?');
+  check(
+    'THE LIVE CASE: a question about a named thing never reaches the consent lane',
+    zeliqua.intent === 'UNKNOWN' && zeliqua.slots.targetName === undefined,
+    `${zeliqua.intent} ${JSON.stringify(zeliqua.slots)}`,
+  );
+  const zeliquaDe = await r('wann wurde das Zeliqua-Protokoll veroeffentlicht?');
+  check(
+    '  and the German compound neither: the thing-mark carries across the capitalised run',
+    zeliquaDe.intent === 'UNKNOWN' && zeliquaDe.slots.targetName === undefined,
+    `${zeliquaDe.intent} ${JSON.stringify(zeliquaDe.slots)}`,
+  );
+  check(
+    '  a multi-word product name is one thing, not a person trailing a product',
+    (await r('when was the SimpleX Chat Protocol first published?')).intent === 'UNKNOWN',
+  );
+  check(
+    'POSITIVE CONTROL: "did Alice publish?" still refuses for the third party',
+    (await r('did Alice publish?')).slots.targetName === 'Alice',
+  );
+  check(
+    '  and a two-word person name still does: articles are the mark, not word count',
+    (await r('did Anna Schmidt publish?')).slots.targetName === 'Anna',
+  );
+  check(
+    'the first-person passive is a STATE question, not a consent prompt',
+    (await r('is my stuff published?')).intent === 'STATUS' &&
+      (await r('when was my archive published?')).intent === 'STATUS' &&
+      (await r('wann wurde mein Archiv veroeffentlicht?')).intent === 'STATUS',
+  );
+  check(
+    'POSITIVE CONTROL: every consent REQUEST shape still resolves as itself',
+    (await r('publish me')).intent === 'PUBLISH' &&
+      (await r('publish')).intent === 'PUBLISH' &&
+      (await r('publish everything I write')).intent === 'PUBLISH' &&
+      (await r('can you publish my messages?')).intent === 'PUBLISH' &&
+      (await r('unpublish me')).intent === 'UNPUBLISH',
+  );
   const thirdParty = await r('publish Max');
   check('"publish Max" flags a third-party target', thirdParty.slots.targetName === 'Max');
   check(
