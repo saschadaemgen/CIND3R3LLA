@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 256 decisions</strong> — newest first. Highest allocated: <strong>D-258</strong>. Not allocated: D-108, D-246. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 258 decisions</strong> — newest first. Highest allocated: <strong>D-259</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-259 | The sidebar rule is checked, because twice it was found by the operator instead | IMPLEMENTED |
 | D-258 | Two id spaces made unmistakable; a rule is not set aside for anybody who asks; and a verdict about a member needs evidence | IMPLEMENTED |
 | D-257 | A capitalised unknown is not a member: the consent lane takes people, the lookup takes things | IMPLEMENTED |
 | D-256 | The declaration is a veto, the evidence is the rule; and the hedge never touches what she was handed | IMPLEMENTED |
@@ -34,6 +35,7 @@ This has gone wrong twice.
 | D-249 | One anti-reuse sentence instead of five | IMPLEMENTED |
 | D-245 | The presence penalty does not work, measured | WITHDRAWN AFTER MEASUREMENT |
 | D-248 | Nothing disagreed; the log line could not be attributed | IMPLEMENTED |
+| D-246 | The Channel Bridge is a section, and the sidebar rule is data rather than logic | IMPLEMENTED |
 | D-247 | Her own law stopped contradicting her own capability | IMPLEMENTED |
 | D-244 | A snippet is not a page, so it is not cited as one | IMPLEMENTED |
 | D-243 | The attribution names what the answer used, and retrieval stops running on everything | IMPLEMENTED |
@@ -285,6 +287,47 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-259 - The sidebar rule is checked, because twice it was found by the operator instead
+
+**Status: IMPLEMENTED** (`verify:sidebar`).
+
+**THE RULE HELD; THE DATA DID NOT.** "The sidebar shows the sub-pages of what is open, never
+the menu above it" was settled in D-225 and `deepestSectionFor` implements it correctly and
+generically: it returns the deepest OPENED node that has children, and the sidebar renders
+that node's children. So whether a page shows its own sub-pages or the menu above it is
+decided entirely by whether its nav node HAS children - which is data, not logic.
+
+That data was wrong twice, and **the operator found it himself both times**: the Music Library
+(D-225) and the Channel Bridge (D-246). Both times the mechanism was fine and the row was
+missing. Nothing could announce it, because a page with no declared children is
+indistinguishable, to every check that existed, from a page that legitimately has none - the
+D-105 shape exactly, a rule that holds while its data quietly stops satisfying it.
+
+**SO THE RULE IS NOW A CHECK** (`verify:sidebar`), and it reads the tree the console actually
+registers rather than a list of expectations. `navItemsSnapshot` and `sidebarSectionFor` are
+exported from `html.ts` for it, because a rule nothing can read is a rule nothing can hold.
+Every `active` key any view sets is scraped FROM THE SOURCE - a list here would go stale the
+first time somebody adds a page, which is the failure being fixed - and each one must resolve
+to a section that CONTAINS it rather than to an ancestor that merely has children. Section 2b
+goes one level deeper, to the failure nothing would announce: every sub-page a section SERVES,
+read from that section's own route table, must also be OFFERED in the sidebar, so a page that
+gains a route and not a nav row is red rather than reachable only by typing the URL.
+
+**TWO EXEMPTIONS, BOTH NARROWED RATHER THAN ASSUMED**, and both were failures on the first run
+that turned out to be the verifier inventing a rule (D-111, fix the check not the code). A
+top-level page with NO children has no sub-pages and no siblings under a heading, so the root
+menu is the only thing there is; Dashboard is the whole set and it is printed in the output
+rather than hidden in a constant. And `plugin:${SOME_ID}` is how a single-page plugin names
+itself, not a section: demanding sub-pages of Crypto Prices would be asserting something the
+rule never said.
+
+**Proven both ways.** The two sections the operator found are asserted page by page, and the
+mutation restores the shipped defect - deleting the bridge's declared children and showing a
+bridge page falling back to the Plugins menu, then restoring them. The sweep found **no
+further violations**: every console page today shows its own sub-pages.
+
 ---
 
 ### D-258 - Two id spaces made unmistakable; a rule is not set aside for anybody who asks; and a verdict about a member needs evidence
@@ -996,6 +1039,38 @@ be written, and not next to whatever else was logged in the same millisecond.
 **And the report was still worth making.** An operator who sees a capability off that he set on
 should say so every time, and the cost of checking was one query. The thing to fix was the
 instrument, not his reading of it.
+
+---
+
+### D-246 - The Channel Bridge is a section, and the sidebar rule is data rather than logic
+
+**Status: IMPLEMENTED** (CCB-S5-058, commit `8e2317e`, 2026-08-21).
+
+**WRITTEN AFTER THE FACT, AND THAT IS THE FIRST THING TO SAY.** This number was cited in the
+delivering commit and in three comments in `bridge.ts`, and the entry was never written; the
+generated index listed D-246 as unallocated for three days. CLAUDE.md already records this
+exact failure ("five numbers sat cited in shipped code with no entries for anyone to read")
+and the rule it broke: **a decision entry is written in the same commit that first spends the
+number, never deferred**. Reconstructed here from the commit message and the code, which is
+strictly worse than writing it while the reasoning was fresh. The register row for CCB-S5-058
+was missing too and is added in the same pass.
+
+**THE CHANGE.** The bridge was one page you scrolled for a kilometre, and its sidebar showed
+the Plugins list rather than its own pages. The cause was one line: the page declared
+`active: 'plugins'`, so it named the menu above it and `deepestSectionFor` found the menu
+above it. The rule in `html.ts` was never wrong. Split into five sub-pages along the seams
+that were already there as cards, in the order an operator meets them: **Channels, Mappings,
+Publishing, Forward log, Diagnostics**. Nothing regrouped and nothing invented - Mappings keeps
+the pending-post digest, the Forward log keeps the suppressed list that explains its gaps,
+Diagnostics keeps the scope panel and the deployment bound. The Music Library had already
+solved this shape, so it was copied rather than designed again: same section registration,
+same sidebar behaviour, same scope panel placement.
+
+**AND THE PART WORTH KEEPING.** `PLUGIN_SUB_PAGES` in `server.ts` replaced a
+`plugin.id === 'music'` ternary in the middle of the nav builder. A second plugin needing the
+shape would have made it a second branch and a third a third, so which plugins are SECTIONS
+became a table anybody can add a row to. That is what made this change a row plus five routes
+rather than a rewrite - and it is also what makes the failure silent, which D-259 addresses.
 
 ---
 

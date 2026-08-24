@@ -63,6 +63,7 @@
     "encrypt-media": "tsx scripts/encrypt-media.ts",
     "verify:no-dashes": "tsx scripts/verify-no-dashes.ts",
     "verify:searchable": "tsx scripts/verify-searchable.ts",
+    "verify:sidebar": "tsx scripts/verify-sidebar.ts",
     "verify:queue": "tsx scripts/verify-queue.ts",
     "verify:capture-events": "tsx scripts/verify-capture-events.ts",
     "deploy": "bash deploy.sh",

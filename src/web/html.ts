@@ -183,6 +183,23 @@ export function setNavItems(items: NavItem[]): void {
   navItems = items;
 }
 
+/**
+ * The registered tree, for the sidebar audit (D-259).
+ *
+ *  is generic and correct, so whether a page shows its OWN sub-pages or
+ * the menu above it is decided entirely by whether its nav node has children. That is DATA,
+ * it has been wrong twice, and the operator found it himself both times. A check can only
+ * read that data if something exposes it.
+ */
+export function navItemsSnapshot(): readonly NavItem[] {
+  return navItems;
+}
+
+/** The node whose children the sidebar renders for `active`. Exported for the same audit. */
+export function sidebarSectionFor(active: string | undefined): NavItem | undefined {
+  return deepestSectionFor(active);
+}
+
 function containsActive(item: NavItem, active: string | undefined): boolean {
   if (!active) return false;
   if (item.key === active) return true;

@@ -4283,3 +4283,26 @@ history read was non-empty, and 18 runs against the production model produced ze
 **Where it lives.** `src/db/ids.ts`, `src/interaction/member-claims.ts`,
 `src/interaction/member-claim-log.ts`, two cards on Interaction -> Diagnostics, and
 `verify:member-claims`.
+
+## 59. The contextual sidebar, and the check that holds it (D-225, D-246, D-259)
+
+**The rule.** The sidebar shows the sub-pages of what is open, never the menu above it.
+`deepestSectionFor` in `web/html.ts` implements it generically: it returns the deepest OPENED
+nav node that has children, and the sidebar renders that node's children. A page whose node
+has no children therefore cannot be that node, so the sidebar falls back to an ancestor and
+shows the menu above the page.
+
+**Which means it is decided by DATA.** Two sections were built by adding the data and serving
+one route per row: the Music Library (D-225) and the Channel Bridge (D-246), the latter
+declared in `PLUGIN_SUB_PAGES` in `web/server.ts` - a table rather than a `plugin.id ===`
+ternary, so a third section is a row. Both times the row was missing first, the mechanism was
+correct throughout, and the operator found it himself.
+
+**So the data is checked** (`verify:sidebar`, D-259). Every `active` key any view sets is
+scraped from the source and resolved through the real resolver against the real registered
+tree; each must reach a section that contains it. A second pass compares every sub-page a
+section SERVES, read from that section's own route table, against what the sidebar OFFERS, so
+a page that gains a route without a nav row goes red instead of being reachable only by URL.
+`navItemsSnapshot` and `sidebarSectionFor` are exported from `html.ts` for it. Two exemptions,
+both narrow and both printed rather than hidden: a standalone top-level page with no children
+(Dashboard), and `plugin:<id>`, which is how a single-page plugin names itself.
