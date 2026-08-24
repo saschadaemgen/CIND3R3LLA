@@ -4247,3 +4247,39 @@ for her own words alone: `hedgeExempt` in `confidence.ts` is the inventory of lo
 (a printed page, required literals, documents used, a restated given fact such as the DJ
 sheet's count or genres), and `HEDGED_LANE` is held to the conversation lane by a source read.
 `npm run measure:provenance` is the instrument. Proven in `verify:honesty-gates` §5 and §6.
+
+## 58. Two id spaces, and what she may assert about a person (CCB-S5-060 follow-up, D-258)
+
+**The ids.** A message carries `messages.id` (the archive's IDENTITY primary key) and
+`messages.group_msg_id` (the SimpleX chat-item id, which `CapturedMessage.itemId` holds).
+They are unrelated sequences. The conversation-history guard passed the second to a query
+filtering on the first, so the exclusion of the current turn was decided by which sequence
+happened to be ahead: measured on the live archive it was dead on 11 of 12 sampled turns.
+`src/db/ids.ts` brands both types, erased at runtime, so handing one where the other belongs
+does not compile; the constructors are the only way in and sit at the SDK boundary
+(`bot/parse.ts`) and at query call sites. This is the fourth id-space confusion of the season
+(see the D-205 standing rule) and the first fixed by making the two unmistakable rather than
+by correcting one caller.
+
+**What she may be asked to set aside.** `member-claims.ts` `asksToSetAsideRules` refuses a
+request to ignore a rule, or a claim of operator authority, in the application and before the
+model is asked. It is a FLOOR: a deny-list over a vocabulary an attacker chooses, so it fails
+open on wording it has not met.
+
+**What she may assert about a person.** `unseenMemberClaims` is the rule, and it reads what
+she WROTE rather than what she was asked, so it holds whatever framing got past the floor. A
+third-party speech claim that is a universal negative is removed whatever the period, because
+absence-of-evidence cannot establish it; one reaching beyond the memory window is removed too.
+What survives is sent; below `MIN_SURVIVING_CHARS` the application's honest line goes instead.
+Positive claims inside the window are untouched.
+
+**And the one that was not reproduced.** A reply denying that she can see the conversation,
+while history was in the prompt, is recorded by `recordMemoryDenial` with the handed-count,
+the window and the bot, plus a `status.error`. It records and never strips (D-140: the two
+ways of being wrong are claiming perfect recall and denying she has any). It exists because
+the fault was reported and could not be reproduced: the law is correctly conditioned, the
+history read was non-empty, and 18 runs against the production model produced zero denials.
+
+**Where it lives.** `src/db/ids.ts`, `src/interaction/member-claims.ts`,
+`src/interaction/member-claim-log.ts`, two cards on Interaction -> Diagnostics, and
+`verify:member-claims`.

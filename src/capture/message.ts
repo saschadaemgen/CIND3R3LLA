@@ -8,6 +8,7 @@
  */
 
 import type { MemberRole, RawItem } from '../adapter/types.js';
+import type { ChatItemId } from '../db/ids.js';
 
 /** The capture type taxonomy from the briefing (§5 Stage 2). */
 export type CapturedType = 'text' | 'image' | 'video' | 'voice' | 'link' | 'file';
@@ -46,7 +47,7 @@ export interface CapturedMessage {
    * that in-group deletion events (`groupChatItemsDeleted.chatItemIDs`) refer
    * to — so this is what we persist as `group_msg_id`.
    */
-  itemId: number;
+  itemId: ChatItemId;
   /** Shared message id (base64) — stable across members; useful for tracing. */
   sharedMsgId: string | undefined;
   /** Stable group member id (NOT the display name — see briefing §9). */

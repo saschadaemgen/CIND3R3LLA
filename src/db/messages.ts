@@ -6,6 +6,7 @@
 
 import type { Queryable } from './pool.js';
 import type { CapturedType } from '../capture/message.js';
+import type { ChatItemId } from './ids.js';
 
 export interface MessageRow {
   groupId: number;
@@ -289,7 +290,7 @@ export interface GroupHistoryRow {
 export async function listGroupHistory(
   db: Queryable,
   groupId: number,
-  opts: { limit: number; sinceIso: string; beforeMessageId?: number },
+  opts: { limit: number; sinceIso: string; beforeChatItemId?: ChatItemId },
 ): Promise<GroupHistoryRow[]> {
   if (opts.limit <= 0) return [];
 
@@ -306,7 +307,12 @@ export async function listGroupHistory(
          FROM messages m
         WHERE m.group_id = $1
           AND m.sent_at >= $2
-          AND ($3::BIGINT IS NULL OR m.id < $3::BIGINT)
+          -- THE CHAT-ITEM ID, AGAINST THE CHAT-ITEM COLUMN (D-258). This compared the
+          -- caller's itemId to m.id, the archive's own primary key: two unrelated
+          -- sequences, both plain numbers, so the guard either never fired or removed
+          -- real history depending on which sequence was ahead in that group. Both ids
+          -- are branded now, so it cannot be got wrong again without failing to compile.
+          AND ($3::BIGINT IS NULL OR m.group_msg_id < $3::BIGINT)
           AND m.deleted = FALSE
           AND m.group_deleted = FALSE
           AND m.moderation_state <> 'rejected'
@@ -322,7 +328,7 @@ export async function listGroupHistory(
         LIMIT $4
      ) recent
      ORDER BY recent.sent_at ASC`,
-    [groupId, opts.sinceIso, opts.beforeMessageId ?? null, opts.limit],
+    [groupId, opts.sinceIso, opts.beforeChatItemId ?? null, opts.limit],
   );
 
   return rows

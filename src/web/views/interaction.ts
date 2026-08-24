@@ -44,6 +44,12 @@ import {
 import { forgedLineCount, recentForgedLines } from '../../interaction/forgery-log.js';
 import { blockedNameCount, recentBlockedNames } from '../../interaction/blocked-name-log.js';
 import {
+  memberClaimCount,
+  memoryDenialCount,
+  recentMemberClaims,
+  recentMemoryDenials,
+} from '../../interaction/member-claim-log.js';
+import {
   inventedRefusalCount,
   recentInventedRefusals,
 } from '../../interaction/invented-refusal-log.js';
@@ -433,6 +439,8 @@ const PERSONA_META: Record<PersonaKey, { label: string; vars: string }> = {
     vars: '',
   },
   unsureNote: { label: 'Low-confidence note (appended)', vars: '' },
+  refuseSetAside: { label: 'Refusing a request to set a rule aside', vars: '' },
+  cannotSeeMember: { label: 'When a claim about a member was removed', vars: '' },
   snippetNote: { label: 'Snippet-value note (appended)', vars: '' },
   searchNoWords: {
     label: 'A lookup ran and found something, and the reply was then lost',
@@ -1147,6 +1155,10 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           const refusals = recentInventedRefusals(25);
           const refusalTotal = inventedRefusalCount();
           const refusalLost = refusals.filter((r) => r.cost !== 'stripped').length;
+          const claims = recentMemberClaims(25);
+          const claimTotal = memberClaimCount();
+          const denials = recentMemoryDenials(25);
+          const denialTotal = memoryDenialCount();
           // Counted over what is SHOWN, and the label says so. The buffer is capped and the
           // total is not, so presenting this as a share of the total would understate it the
           // moment the cap is reached.
@@ -1445,6 +1457,80 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                           <td class="py-2 pr-3 text-slate-600">${r.ability}</td>
                           <td class="py-2 pr-3 ${r.cost === 'stripped' ? 'text-slate-500' : 'text-amber-700'}">${r.cost === 'stripped' ? 'sentence removed, rest shipped' : r.cost === 'draft' ? 'fell back to a draft' : 'answer lost'}</td>
                           <td class="py-2 text-slate-600">${r.text}</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
+          )}
+          ${card(
+            'Claims about members',
+            html`<p class="mb-3 text-sm text-slate-500">
+                Two guards, one page, because they answer one question: is she stating
+                something about a person that nobody checked. The first refuses a request to
+                set a rule aside, whoever appears to be asking. The second removes a verdict
+                about what a member said or did not say when she could not have known it: a
+                universal negative, or a claim reaching beyond the window of this chat she is
+                given. Positive claims inside that window are hers to make and are untouched.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Refused or removed since restart</dt>
+                <dd class="${claimTotal > 0 ? 'text-amber-700' : ''}">${claimTotal}</dd>
+              </dl>
+              ${claims.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    Nothing refused or removed since the last restart. Buffer holds the most
+                    recent 50 and does not survive a restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">What happened</th><th class="py-2 pr-3">Why</th><th class="py-2">The words</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${claims.map((c) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(c.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 ${c.action === 'replaced' ? 'text-amber-700' : 'text-slate-600'}">${c.action === 'refused-override' ? 'refused: asked to set a rule aside' : c.action === 'refused-authority' ? 'refused: claimed authority' : c.action === 'stripped' ? 'claim removed, rest shipped' : 'claim removed, honest line sent'}</td>
+                          <td class="py-2 pr-3 text-slate-500">${c.reason === 'universal-negative' ? 'said nobody said anything' : c.reason === 'beyond-window' ? 'reached beyond the window' : 'a request to set a rule aside'}</td>
+                          <td class="py-2 text-slate-600">${c.text}</td>
+                        </tr>`)}
+                      </tbody>
+                    </table>
+                  </div>`}`,
+          )}
+          ${card(
+            'Denied seeing the chat while holding it',
+            html`<p class="mb-3 text-sm text-slate-500">
+                A reply that says she cannot see the conversation while the conversation was
+                in her prompt. Recorded, never removed: taking out an honest "I cannot see
+                that" would put a claim of memory in its place, which is the worse of the two
+                mistakes. This exists because the fault was reported and could not be
+                reproduced afterwards, so the next one is answered from the numbers rather
+                than from reasoning. A count that stays at zero while it keeps happening is
+                itself an answer: the denial is arriving from somewhere this does not watch.
+              </p>
+              <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm">
+                <dt class="text-slate-500">Recorded since restart</dt>
+                <dd class="${denialTotal > 0 ? 'text-amber-700' : ''}">${denialTotal}</dd>
+              </dl>
+              ${denials.length === 0
+                ? html`<p class="text-sm text-slate-500">
+                    None since the last restart.
+                  </p>`
+                : html`<div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                      <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Entries in the prompt</th><th class="py-2 pr-3">Window</th><th class="py-2">What she said</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        ${denials.map((d) => html`<tr class="border-b border-slate-100 align-top">
+                          <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(d.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-amber-700">${d.handed}</td>
+                          <td class="py-2 pr-3 text-slate-500">${d.windowMinutes} min</td>
+                          <td class="py-2 text-slate-600">${d.text}</td>
                         </tr>`)}
                       </tbody>
                     </table>

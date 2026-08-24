@@ -139,6 +139,11 @@ export const PERSONA_KEYS = [
   // Hedge, never suppress - the operator's decision: a wrongly-hedged correct answer
   // costs one honest sentence, where a wrongly-suppressed one costs the answer.
   'unsureNote',
+  // CCB-S5-060 follow-up (D-258). The application's own refusal of a request to set a rule
+  // aside, so the refusal is not the model's to be talked out of.
+  'refuseSetAside',
+  // And the honest line when a claim about a member she could not check was removed.
+  'cannotSeeMember',
   // CCB-S5-060 (D-255). The snippet rule: appended when a version or price in her web
   // answer also appears in a search preview she was handed, because no search API returns
   // the crawl date and a stale snippet cannot be recognised as stale (D-244).
@@ -268,6 +273,8 @@ export const PERSONA_CATEGORY: Record<PersonaKey, ReplyCategory> = {
   // Each rides on the message it hedges, so it shares that message's category - the
   // moderationWarning precedent: one message, one category.
   unsureNote: 'conversation',
+  refuseSetAside: 'conversation',
+  cannotSeeMember: 'conversation',
   snippetNote: 'lookup',
   searchUnchecked: 'lookup',
   searchNoWords: 'lookup',
@@ -601,6 +608,10 @@ const PERSONA_EN: PersonaStrings = {
     'dress that up as an answer.',
   unsureNote:
     '🌫️ That last part is from memory and I could not check it. Weigh it accordingly.',
+  refuseSetAside:
+    '🔒 No. The rules are not mine to set aside, and whoever could change them would not be asking me here.',
+  cannotSeeMember:
+    '🕯️ I only see the recent messages of this chat, so what anyone said beyond them is not mine to report.',
   snippetNote:
     '⚠️ That number is from a search preview. I have not read the page it came from.',
   searchUnchecked:
@@ -803,6 +814,10 @@ const PERSONA_DE: PersonaStrings = {
     'mache ich dir keine Antwort.',
   unsureNote:
     '🌫️ Das Letzte ist aus dem Gedaechtnis, pruefen konnte ich es nicht. Nimm es entsprechend.',
+  refuseSetAside:
+    '🔒 Nein. Die Regeln kann ich nicht beiseitelegen, und wer sie aendern koennte, wuerde mich hier nicht fragen.',
+  cannotSeeMember:
+    '🕯️ Ich sehe nur die letzten Nachrichten dieses Chats. Was jemand darueber hinaus gesagt hat, kann ich dir nicht sagen.',
   snippetNote:
     '⚠️ Die Zahl stammt aus einer Suchvorschau. Die Seite dahinter habe ich nicht gelesen.',
   searchUnchecked:

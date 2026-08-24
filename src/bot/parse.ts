@@ -15,6 +15,7 @@
 import type { T } from '@simplex-chat/types';
 
 import { recordUnknownScope } from '../capture/scope-diagnostics.js';
+import { chatItemId } from '../db/ids.js';
 import type { MemberRole, RawItem } from '../adapter/types.js';
 import type { SentGroupItem } from '../capture/bot-message.js';
 import type {
@@ -193,7 +194,8 @@ export function parseGroupMessage(aChatItem: T.AChatItem): CapturedMessage | nul
   return {
     groupId: groupInfo.groupId,
     groupName: groupInfo.localDisplayName,
-    itemId: chatItem.meta.itemId,
+    // The SDK boundary: a raw number becomes a ChatItemId here and nowhere else (D-258).
+    itemId: chatItemId(chatItem.meta.itemId),
     sharedMsgId: chatItem.meta.itemSharedMsgId,
     senderMemberId: member.memberId,
     senderDisplayName: member.memberProfile.displayName || member.localDisplayName,
