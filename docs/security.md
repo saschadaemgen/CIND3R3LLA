@@ -355,6 +355,18 @@ nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy` (configurable),
   string (`src/config.ts:186-212`). The TOTP secret and session secret are never
   rendered; the security settings model is explicit that secrets are never stored
   or rendered there (`src/security/settings.ts:5-8`).
+- **Member data stays out of ordinary log lines** (CCB-S5-062, D-260). A member's
+  display name, a group's name, and member content (including a member's own file
+  name, which the stored media path embeds) are identified by content-free ids in
+  the journal, never by name: the blocked-name guard's throw message carries no
+  name (`src/interaction/ollama-reply.ts`; `safeErrorCategory` still files it as
+  `guard-rejection`), and the capture, media-strip, file-receive, mention and
+  avatar-flush paths log (group, item), file or message ids. The surfaces that DO
+  carry a name are deliberate and gated: the admin dashboard's status records, the
+  passkey-gated Diagnostics ring buffers, the boot log's group listing (D-193) and
+  the capture-election error (D-190), each reasoned in place. Pinned by
+  `verify:name-guard` §6, which drives the real reply runtime with the real logger
+  spied and is mutation-proven against the shipped warn line.
 
 ---
 

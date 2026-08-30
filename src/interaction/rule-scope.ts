@@ -91,6 +91,14 @@ export interface RuleScope {
  * trigger refuses to store one, so reaching this with a constitutional override means
  * something got past the trigger; ignoring it here is the difference between a defence in
  * depth and a comment claiming one.
+ *
+ * A CRITICAL rule cannot be switched off here either (CCB-S5-062, D-260): `critical`
+ * means the law must reach every prompt, the two alarms that watch for a missing one
+ * (the Book's shout and `verify:prompt-identity`) both read the shared registry, so a
+ * per-bot off-switch was a silent hole beside the loud shared one. The trigger refuses
+ * to store an off-switch on a critical law; this ignores one that predates the trigger
+ * or got past it. Its TEXT override still applies, because a reworded law still reaches
+ * the prompt.
  */
 export function applyOverrides(
   rules: PromptRuleSet,
@@ -100,9 +108,10 @@ export function applyOverrides(
   return rules.map((rule) => {
     const o = byRule.get(rule.id);
     if (o === undefined || rule.tier === 'constitutional') return rule;
+    const wanted = o.enabled ?? rule.enabled;
     return {
       ...rule,
-      enabled: o.enabled ?? rule.enabled,
+      enabled: rule.critical && wanted === false ? rule.enabled : wanted,
       text: o.text ?? rule.text,
     };
   });
@@ -142,11 +151,17 @@ export function describeScopes(
       continue;
     }
     const list = byRule.get(rule.id) ?? [];
-    const deviations = list.map((o) => ({
-      botProfileId: o.botProfileId,
-      off: o.enabled === false,
-      reworded: o.text !== null,
-    }));
+    // `off` states what applyOverrides will DO, not what the row asks for: an off-switch
+    // on a critical law is ignored there (CCB-S5-062), and a page that reported it as
+    // "switched off" would describe a state that does not exist. A row left doing nothing
+    // at all is not a deviation and is not listed as one.
+    const deviations = list
+      .map((o) => ({
+        botProfileId: o.botProfileId,
+        off: o.enabled === false && !rule.critical,
+        reworded: o.text !== null,
+      }))
+      .filter((d) => d.off || d.reworded);
     out.set(rule.id, {
       ruleId: rule.id,
       kind: deviations.length > 0 ? 'per-bot' : 'shared',
@@ -163,6 +178,20 @@ export function canOverride(rule: PromptRule): boolean {
 }
 
 /**
+ * Whether a law may be switched OFF for one bot (CCB-S5-062, D-260).
+ *
+ * Keyed on `critical`, because `critical` is the flag that MEANS "must reach every
+ * prompt": `verify:prompt-identity` asserts it and the Book shouts when a critical law is
+ * off. Both of those read the shared registry, so a per-bot off-switch was invisible to
+ * both, and a safety rule could leave one bot's prompt with nothing anywhere saying so.
+ * Rewording per bot stays available on a critical standard law; a reworded law still
+ * reaches the prompt.
+ */
+export function canDisablePerBot(rule: PromptRule): boolean {
+  return canOverride(rule) && !rule.critical;
+}
+
+/**
  * Why not, in a sentence a console can print.
  *
  * The briefing is explicit that a constitutional law must SAY it cannot be set per bot,
@@ -175,3 +204,13 @@ export const CONSTITUTIONAL_SCOPE_REASON =
   'the child-safety line have to mean the same thing everywhere, because five bots with ' +
   'five different outermost limits means nobody can say what any of them will refuse, and ' +
   'tightening a limit later would reach only the bots nobody had touched.';
+
+/**
+ * The same sentence-as-data for the off-switch a critical law does not offer per bot
+ * (CCB-S5-062). Used by the form that leaves the switch out and by the page copy, so the
+ * control's absence explains itself instead of reading as an omission.
+ */
+export const CRITICAL_OFF_SCOPE_REASON =
+  'This law is critical: it must reach every prompt. It can be reworded for one bot, but ' +
+  'switching it off is a shared act, taken on the shared law where this page is loud ' +
+  'about it. Off for one bot would be off where nothing shouts.';

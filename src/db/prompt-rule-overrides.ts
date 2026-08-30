@@ -10,6 +10,7 @@
 
 import type { Queryable } from './pool.js';
 import type { RuleOverride } from '../interaction/rule-scope.js';
+import type { OverrideRuleChange } from './prompt-rules.js';
 
 interface Row {
   bot_profile_id: string;
@@ -212,6 +213,117 @@ export async function clearOverrideRecorded(
     );
     await db.query('COMMIT');
     return true;
+  } catch (err) {
+    await db.query('ROLLBACK');
+    throw err;
+  }
+}
+
+/**
+ * Roll ONE bot's recorded change back, touching nothing shared (CCB-S5-062, D-260).
+ *
+ * This is the writer the type system reserves for per-bot history rows. Its contract is
+ * the one the history page shows the operator: after the rollback, this bot reads the
+ * row's "Was" side again. The shared law is read here and never written.
+ *
+ * ── EFFECTIVE VALUES IN, CANONICAL FORM OUT ──────────────────────────────────
+ *
+ * The history records what the bot was READING (setOverrideRecorded fills inherited
+ * fields with the shared values of their day), so what is restored is the effective
+ * state. It is then re-canonicalised against TODAY's shared law, per field: a restored
+ * value identical to the shared one is stored as NULL, meaning inherit, because 045's
+ * design is that a bot reading the shared sentence keeps tracking it, and pinning a copy
+ * of it here would freeze that bot out of every later shared edit in silence. Both
+ * fields inherited is no row at all, which the schema itself insists on.
+ *
+ * Recorded as a `rollback` WITH the bot id, so undoing a per-bot change is exactly as
+ * visible, and exactly as attributable, as making it was. The 076 scope constraint holds
+ * the action to the column.
+ */
+export async function rollbackOverrideChange(
+  db: Queryable,
+  target: OverrideRuleChange,
+  actor: string,
+): Promise<OverrideRuleChange | null> {
+  const { rows: ruleRows } = await db.query<{
+    rule_text: string;
+    enabled: boolean;
+    ord: number;
+    nameable: boolean;
+  }>('SELECT rule_text, enabled, ord, nameable FROM cinderella_prompt_rules WHERE id = $1', [
+    target.ruleId,
+  ]);
+  const shared = ruleRows[0];
+  if (!shared) throw new Error(`No prompt rule with id "${target.ruleId}".`);
+
+  const existing = (await listOverridesForBot(db, target.botProfileId)).find(
+    (o) => o.ruleId === target.ruleId,
+  );
+  const beforeText = existing?.text ?? shared.rule_text;
+  const beforeEnabled = existing?.enabled ?? shared.enabled;
+  const afterText = target.oldText;
+  const afterEnabled = target.oldEnabled;
+
+  if (beforeText === afterText && beforeEnabled === afterEnabled) return null;
+
+  const storedText = afterText === shared.rule_text ? null : afterText;
+  const storedEnabled = afterEnabled === shared.enabled ? null : afterEnabled;
+
+  await db.query('BEGIN');
+  try {
+    if (storedText === null && storedEnabled === null) {
+      await clearOverride(db, target.botProfileId, target.ruleId);
+    } else {
+      await setOverride(db, {
+        botProfileId: target.botProfileId,
+        ruleId: target.ruleId,
+        enabled: storedEnabled,
+        text: storedText,
+      });
+    }
+    const { rows: written } = await db.query<{ id: string | number; changed_at: string }>(
+      `INSERT INTO cinderella_prompt_rule_history
+         (rule_id, bot_profile_id, actor, action, old_text, new_text, old_enabled, new_enabled,
+          old_ord, new_ord, old_nameable, new_nameable)
+       VALUES ($1, $2, $3, 'rollback', $4, $5, $6, $7, $8, $8, $9, $9)
+       RETURNING id, changed_at`,
+      [
+        target.ruleId,
+        target.botProfileId,
+        actor,
+        beforeText,
+        afterText,
+        beforeEnabled,
+        afterEnabled,
+        Number(shared.ord),
+        shared.nameable,
+      ],
+    );
+    const row = written[0];
+    if (!row) {
+      throw new Error(
+        `Bot ${String(target.botProfileId)}'s ${target.ruleId} was rolled back but its ` +
+          `history row was not written.`,
+      );
+    }
+    await db.query('COMMIT');
+    return {
+      scope: 'override',
+      botProfileId: target.botProfileId,
+      id: Number(row.id),
+      ruleId: target.ruleId,
+      changedAt: new Date(row.changed_at).toISOString(),
+      actor,
+      action: 'rollback',
+      oldText: beforeText,
+      newText: afterText,
+      oldEnabled: beforeEnabled,
+      newEnabled: afterEnabled,
+      oldOrd: Number(shared.ord),
+      newOrd: Number(shared.ord),
+      oldNameable: shared.nameable,
+      newNameable: shared.nameable,
+    };
   } catch (err) {
     await db.query('ROLLBACK');
     throw err;

@@ -247,8 +247,10 @@ export async function flushAvatarToGroups(db: Queryable, bot: AvatarBot): Promis
       // So a defect is re-thrown and a group failure is still skipped (CCB-S3-023: a
       // caught error must not become a value that reads as a legitimate result).
       if (err instanceof SchedulerReentryError) throw err;
+      // The group id, not its name: a room's name in the journal is community data in an
+      // ordinary log line (CCB-S5-062); the bot's own name is the operator's and stays.
       log.warn(
-        `Could not flush ${bot.displayName}'s profile to group ${g.localDisplayName}: ${
+        `Could not flush ${bot.displayName}'s profile to group ${g.groupId}: ${
           err instanceof Error ? err.message : String(err)
         }`,
       );

@@ -2842,24 +2842,52 @@ watch the next three replies follow the old one.
 ### 38.4 History
 
 One row per change, carrying **both sides of all three editable fields** plus actor, timestamp
-and an action (`edit` / `enable` / `disable` / `reorder` / `rollback`). Full snapshots rather
-than diffs, so a rollback is an assignment rather than a replay. The rule and its history row
-are written in one transaction: a rule that moved with no history row is a change nobody can
-find later.
+and an action (`create` / `edit` / `enable` / `disable` / `reorder` / `visibility` /
+`rollback` / `override` / `revert`). Full snapshots rather than diffs, so a rollback is an
+assignment rather than a replay. The rule and its history row are written in one transaction:
+a rule that moved with no history row is a change nobody can find later.
+
+**Every row is in exactly one of two spaces** (CCB-S5-062, D-260): `bot_profile_id` NULL is a
+change to the shared law, a bot id is a change to that one bot's deviation. The reader builds
+a discriminated union from it — `SharedRuleChange` | `OverrideRuleChange` — and
+`rollbackPromptRule` dispatches to two writers whose signatures each accept only their own
+kind, because before that split the rollback path re-applied EVERY row's before-side to the
+shared law and an act on one bot silently rewrote all of them. Migration 076's scope CHECK
+ties the action to the bot dimension (`override`/`revert` name a bot, `rollback` is legal in
+both spaces and names one exactly when it rolled a per-bot change back, everything else names
+none), so a row lying about its space is unrepresentable. The per-bot rollback restores the
+row's before-side as that bot's EFFECTIVE state, re-canonicalised per field against today's
+shared law (a value equal to the shared one becomes inherit; both-inherit removes the row).
+The history page badges every row "the shared law" or "\<bot\> only" and the rollback button
+states what it touches and what it leaves alone.
 
 A no-op save writes nothing. A rollback is recorded as a change in its own right and does not
 delete the change it undoes.
 
-**The oldest row per rule is what that rule shipped as.** There is deliberately no
+**The oldest SHARED row per rule is what that rule shipped as.** There is deliberately no
 `shipped_text` column: D-144 settled that the migration is the only authored copy, and a second
-column holding the same sentence would have made that untrue. A rule with no history has never
-been edited.
+column holding the same sentence would have made that untrue. A rule with no shared history has
+never been edited; per-bot rows are excluded from the map, because a bot deviating from a law
+is not the law having moved.
 
 ### 38.5 A disabled critical rule
 
-Allowed, loud, recorded, reversible. The book renders an alarm at the top naming the rule and
-quoting what it said, states that `verify:prompt-identity` is red, and the history holds the
-change. Nothing prevents it. The operator may weaken her; nobody may do it unnoticed.
+Allowed, loud, recorded, reversible — **shared**. The book renders an alarm at the top naming
+the rule and quoting what it said, states that `verify:prompt-identity` is red, and the
+history holds the change. Nothing prevents it. The operator may weaken her; nobody may do it
+unnoticed.
+
+**Per bot it is refused, not alarmed** (CCB-S5-062, D-260): both alarms read the shared
+registry, so a per-bot off-switch on a critical law would be off where nothing shouts. The
+guards key on `critical` — the flag that means "must reach every prompt" — in four layers: the
+per-bot form does not offer the switch and prints `CRITICAL_OFF_SCOPE_REASON`, the route
+cannot express one, the migration 076 trigger refuses `enabled = FALSE` on a critical law, and
+`applyOverrides` ignores a stored one (with `describeScopes` reporting what applyOverrides
+will do, never what a dead row asks for). Rewording a critical standard law per bot stays
+allowed: a reworded law still reaches the prompt. Eight critical standard laws exist in the
+shipped registry (the two `overview.*` rules, the five `disclosure.*` rules, and
+`prompt.concise-no-dashes`); every constitutional law is also critical, so its own broader
+refusal is untouched.
 
 ### 38.6 Drift, and what the baseline actually pins
 
@@ -3414,6 +3442,11 @@ how the prompt is BUILT rather than to what it says.
 the control and says why instead, the application gate refuses with a sentence, and a
 BEFORE INSERT OR UPDATE trigger refuses it in the database. `applyOverrides` additionally ignores
 a constitutional override it is handed, so a row that somehow existed would change nothing.
+
+**Critical laws cannot be switched OFF per bot** (CCB-S5-062, D-260), the same shape keyed on
+the flag that means "must reach every prompt": form, route, the 076 trigger (which replaced
+045's constitutional-only guard function with one holding both refusals), and `applyOverrides`
+ignoring a stored off-switch. Their TEXT stays overridable per bot; see §38.5.
 
 **Scope is visible wherever a law appears**: a badge per law in the Book, the deviating bots
 named on the law's own page, an edit warning stating what the edit touches and how many bots it

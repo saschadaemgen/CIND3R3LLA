@@ -109,14 +109,15 @@ export function makePersistenceHooks(cfg: Config): CaptureHooks {
           `Downloaded media for (group ${msg.groupId}, item ${msg.itemId}) but no message row ` +
             `exists — orphaned at ${media.mediaPath}. Persist likely failed earlier.`,
         );
-        log.warn(
-          `Orphaned media (no row): ${media.mediaPath} (group ${msg.groupId}, item ${msg.itemId})`,
-        );
+        // The journal line carries ids only: the stored path embeds the member's own file
+        // name (CCB-S5-062). The status line above keeps the path, because an orphan has
+        // no row to point at and the dashboard is the gated surface built to carry it.
+        log.warn(`Orphaned media (no row): group ${msg.groupId}, item ${msg.itemId}.`);
         return;
       }
       log.info(
         `Stored media for (group ${msg.groupId}, item ${msg.itemId}): ` +
-          `${media.mediaPath} (${media.mediaSize} bytes, ${media.mediaMime}) ✓`,
+          `${media.mediaSize} bytes, ${media.mediaMime} ✓`,
       );
 
       const id = await messageIdFor(getPool(), msg.groupId, msg.itemId);
@@ -150,8 +151,9 @@ export function makePersistenceHooks(cfg: Config): CaptureHooks {
           await stripAndRecord(getPool(), cfg.mediaRoot, id, media.mediaPath, media.mediaMime);
         }
       } catch (err) {
+        // Ids, not the name-bearing path (CCB-S5-062).
         log.error(
-          `Could not strip metadata from ${media.mediaPath} (${
+          `Could not strip metadata from the media of (group ${msg.groupId}, item ${msg.itemId}) (${
             err instanceof Error ? err.message : String(err)
           }); it will NOT be published until stripping succeeds.`,
         );
@@ -159,9 +161,11 @@ export function makePersistenceHooks(cfg: Config): CaptureHooks {
     },
 
     onFileFailed: async (msg, error) => {
+      // The item id, not the file name: the name is the member's own and this is an
+      // ordinary log line (CCB-S5-062). `status.fileFailed` below carries the name to the
+      // dashboard, which is the gated surface that records it on purpose.
       log.warn(
-        `File receipt failed for item ${msg.itemId} (${msg.file?.fileName}); ` +
-          `row saved without media: ${error.message}`,
+        `File receipt failed for item ${msg.itemId}; row saved without media: ${error.message}`,
       );
       status.fileFailed({
         itemId: msg.itemId,

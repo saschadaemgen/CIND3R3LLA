@@ -936,7 +936,11 @@ function applyBlockedNameGuard(text: string, request: AiReplyRequest): string {
     const stripped = stripBlockedName(current, literal, request.lang);
     if (stripped.length < 2 || matchesBlockedName(stripped, literal)) {
       noteBlockedName(literal, current, request);
-      throw new Error(`Ollama reply exposed blocked text: ${literal}.`);
+      // The message deliberately does NOT carry the literal: it is the member's display
+      // name, this error's one consumer logs it at warn level, and the standing rule is
+      // redact before logging (CCB-S5-062). The name is on the blocked-name record above,
+      // which is the surface that records it on purpose.
+      throw new Error('Ollama reply exposed blocked text.');
     }
     // What she had written is what the card shows; the strip is the recovery.
     recordBlockedName({
@@ -952,7 +956,9 @@ function applyBlockedNameGuard(text: string, request: AiReplyRequest): string {
   const still = containsBlockedLiteral(current, request);
   if (still) {
     noteBlockedName(still, current, request);
-    throw new Error(`Ollama reply exposed blocked text: ${still}.`);
+    // Same redaction as above: the literal is the member's name and this message is
+    // headed for an ordinary log line.
+    throw new Error('Ollama reply exposed blocked text.');
   }
   return current;
 }

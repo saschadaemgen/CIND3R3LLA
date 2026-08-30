@@ -107,9 +107,11 @@ export async function recordBotReply(
         memberId = await resolveMemberByDisplayName(db, m.displayName);
       } catch (err) {
         // An unresolved name is the SAFE outcome (it is treated as
-        // non-consenting), so a lookup failure needs nothing beyond a note.
+        // non-consenting), so a lookup failure needs nothing beyond a note. The note
+        // does not carry the name: it is a member's display name and this is an
+        // ordinary log line, whatever its level (CCB-S5-062).
         log.debug(
-          `Bot capture: could not resolve "${m.displayName}" to a member: ${
+          `Bot capture: could not resolve a mentioned display name to a member: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );

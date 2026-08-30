@@ -6,6 +6,7 @@
  */
 
 import type { Queryable } from './pool.js';
+import { rollbackOverrideChange } from './prompt-rule-overrides.js';
 import {
   PROMPT_RULE_CONDITIONS,
   PROMPT_RULE_LANES,
@@ -104,7 +105,7 @@ export type PromptRuleAction =
   | 'visibility'
   | 'rollback';
 
-export interface PromptRuleChange {
+interface RuleChangeFields {
   id: number;
   ruleId: string;
   changedAt: string;
@@ -120,9 +121,36 @@ export interface PromptRuleChange {
   newNameable: boolean;
 }
 
+/**
+ * A change to the SHARED law, the one every bot inherits.
+ */
+export interface SharedRuleChange extends RuleChangeFields {
+  scope: 'shared';
+}
+
+/**
+ * A change to ONE bot's deviation from a law.
+ *
+ * A separate type rather than a nullable field, and that is the whole fix (CCB-S5-062,
+ * D-260). The override store's comment had said the bot dimension "matters most at the
+ * moment somebody rolls one back", and the rollback path was the one place that never
+ * consulted it: it re-applied an override row's before-side to the shared law, so an act
+ * on one bot silently rewrote every bot. Two things that look alike, one shared and one
+ * per bot, is the same class D-258 met in the id spaces, and it gets the same treatment
+ * one level up: a function that restores a shared law cannot be handed a per-bot change,
+ * because the compiler refuses before any runtime ever could.
+ */
+export interface OverrideRuleChange extends RuleChangeFields {
+  scope: 'override';
+  botProfileId: number;
+}
+
+export type PromptRuleChange = SharedRuleChange | OverrideRuleChange;
+
 interface ChangeRow {
   id: string | number;
   rule_id: string;
+  bot_profile_id: string | number | null;
   changed_at: string;
   actor: string;
   action: string;
@@ -137,7 +165,7 @@ interface ChangeRow {
 }
 
 function toChange(row: ChangeRow): PromptRuleChange {
-  return {
+  const fields: RuleChangeFields = {
     id: Number(row.id),
     ruleId: row.rule_id,
     changedAt: new Date(row.changed_at).toISOString(),
@@ -152,6 +180,9 @@ function toChange(row: ChangeRow): PromptRuleChange {
     oldNameable: row.old_nameable,
     newNameable: row.new_nameable,
   };
+  return row.bot_profile_id === null
+    ? { ...fields, scope: 'shared' }
+    : { ...fields, scope: 'override', botProfileId: Number(row.bot_profile_id) };
 }
 
 /**
@@ -188,7 +219,7 @@ export async function updatePromptRule(
   next: PromptRuleEdit,
   actor: string,
   action?: PromptRuleAction,
-): Promise<PromptRuleChange | null> {
+): Promise<SharedRuleChange | null> {
   const { rows } = await db.query<{
     rule_text: string;
     enabled: boolean;
@@ -240,7 +271,7 @@ export async function updatePromptRule(
       `INSERT INTO cinderella_prompt_rule_history
          (rule_id, actor, action, old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, rule_id, changed_at, actor, action,
+       RETURNING id, rule_id, bot_profile_id, changed_at, actor, action,
                  old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable`,
       [
         ruleId,
@@ -262,7 +293,13 @@ export async function updatePromptRule(
       throw new Error(`Prompt rule ${ruleId} changed but its history row was not written.`);
     }
     await db.query('COMMIT');
-    return toChange(row);
+    const change = toChange(row);
+    if (change.scope !== 'shared') {
+      // Unreachable: this INSERT names no bot. Stated rather than cast, so a schema change
+      // that made it reachable would fail here instead of returning the wrong type.
+      throw new Error(`Prompt rule ${ruleId}'s shared change was recorded as a per-bot one.`);
+    }
+    return change;
   } catch (error) {
     await db.query('ROLLBACK');
     throw error;
@@ -276,7 +313,7 @@ export async function listPromptRuleHistory(
   limit = 50,
 ): Promise<PromptRuleChange[]> {
   const { rows } = await db.query<ChangeRow>(
-    `SELECT id, rule_id, changed_at, actor, action,
+    `SELECT id, rule_id, bot_profile_id, changed_at, actor, action,
             old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       WHERE rule_id = $1
@@ -293,7 +330,7 @@ export async function listRecentPromptRuleChanges(
   limit = 100,
 ): Promise<PromptRuleChange[]> {
   const { rows } = await db.query<ChangeRow>(
-    `SELECT id, rule_id, changed_at, actor, action,
+    `SELECT id, rule_id, bot_profile_id, changed_at, actor, action,
             old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       ORDER BY changed_at DESC, id DESC
@@ -311,11 +348,18 @@ export async function listRecentPromptRuleChanges(
  * holding the same sentence would have made that quietly untrue.
  *
  * A rule absent from this map has never been edited. That is the whole drift check.
+ *
+ * SHARED rows only: a per-bot override records the effective text that bot was reading,
+ * and a bot deviating from a law is not the law having been edited. Before the scope
+ * filter this happened to coincide (an override row's old side is the shared text of its
+ * day), but a coincidence a schema change could break is not what a drift badge should
+ * stand on (CCB-S5-062).
  */
 export async function shippedPromptRuleText(db: Queryable): Promise<Map<string, string>> {
   const { rows } = await db.query<{ rule_id: string; old_text: string }>(
     `SELECT DISTINCT ON (rule_id) rule_id, old_text
        FROM cinderella_prompt_rule_history
+      WHERE bot_profile_id IS NULL
       ORDER BY rule_id, changed_at ASC, id ASC`,
   );
   return new Map(rows.map((row) => [row.rule_id, row.old_text]));
@@ -327,6 +371,15 @@ export async function shippedPromptRuleText(db: Queryable): Promise<Map<string, 
  * Recorded as a `rollback` rather than as an ordinary edit, so undoing something is exactly
  * as visible in the history as doing it was. It is not a delete: the change being undone
  * stays in the record, because a history an operator can prune is not an audit trail.
+ *
+ * ── THE DISPATCH IS THE FIX (CCB-S5-062, D-260) ──────────────────────────────
+ *
+ * A history row is in one of two spaces, and the row itself says which: `bot_profile_id`
+ * NULL is a change to the shared law, a bot id is a change to that one bot's deviation.
+ * This function used to re-apply EVERY row's before-side to the shared law, so rolling
+ * back a per-bot change rewrote the sentence every bot reads. Now the row is read as the
+ * union type and each branch takes a writer that only accepts its own kind; handing the
+ * per-bot rollback a shared change, or the reverse, does not compile.
  */
 export async function rollbackPromptRule(
   db: Queryable,
@@ -334,23 +387,38 @@ export async function rollbackPromptRule(
   actor: string,
 ): Promise<PromptRuleChange | null> {
   const { rows } = await db.query<ChangeRow>(
-    `SELECT id, rule_id, changed_at, actor, action,
+    `SELECT id, rule_id, bot_profile_id, changed_at, actor, action,
             old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable
        FROM cinderella_prompt_rule_history
       WHERE id = $1`,
     [changeId],
   );
-  const target = rows[0];
-  if (!target) throw new Error(`No prompt rule change with id ${String(changeId)}.`);
+  const row = rows[0];
+  if (!row) throw new Error(`No prompt rule change with id ${String(changeId)}.`);
 
+  const target = toChange(row);
+  switch (target.scope) {
+    case 'shared':
+      return rollbackSharedChange(db, target, actor);
+    case 'override':
+      return rollbackOverrideChange(db, target, actor);
+  }
+}
+
+/** Restore a SHARED change's before-side to the shared law every bot inherits. */
+async function rollbackSharedChange(
+  db: Queryable,
+  target: SharedRuleChange,
+  actor: string,
+): Promise<SharedRuleChange | null> {
   return updatePromptRule(
     db,
-    target.rule_id,
+    target.ruleId,
     {
-      text: target.old_text,
-      enabled: target.old_enabled,
-      ord: Number(target.old_ord),
-      nameable: target.old_nameable,
+      text: target.oldText,
+      enabled: target.oldEnabled,
+      ord: target.oldOrd,
+      nameable: target.oldNameable,
     },
     actor,
     'rollback',
@@ -432,7 +500,7 @@ export async function createPromptRule(
       `INSERT INTO cinderella_prompt_rule_history
          (rule_id, actor, action, old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable)
        VALUES ($1, $2, 'create', '', $3, $4, $4, $5, $5, $6, $6)
-       RETURNING id, rule_id, changed_at, actor, action,
+       RETURNING id, rule_id, bot_profile_id, changed_at, actor, action,
                  old_text, new_text, old_enabled, new_enabled, old_ord, new_ord, old_nameable, new_nameable`,
       [rule.id, actor, rule.text, rule.enabled, Math.trunc(rule.ord), rule.nameable],
     );

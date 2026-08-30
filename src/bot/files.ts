@@ -155,10 +155,10 @@ export class FileReceiver {
     const { fileId } = ev.rcvFileTransfer;
     const entry = this.pending.get(fileId);
     if (!entry) return;
-    this.reject(
-      fileId,
-      new Error(`file receive failed (${entry.fileName}, id=${fileId}): ${ev.agentError.type}`),
-    );
+    // The id, not the name: this message becomes `error.message` in the caller's warn
+    // line and in the media_error record, and the file name is the member's own
+    // (CCB-S5-062). The dashboard's fileFailed record carries the name separately.
+    this.reject(fileId, new Error(`file receive failed (id=${fileId}): ${ev.agentError.type}`));
   }
 
   /** Wire to `rcvFileWarning` — a TRANSIENT XFTP warning; the transfer continues. */
@@ -167,7 +167,7 @@ export class FileReceiver {
     const entry = this.pending.get(fileId);
     if (!entry) return;
     log.warn(
-      `Transient file-receive warning (${entry.fileName}, id=${fileId}): ${ev.agentError.type} — still trying.`,
+      `Transient file-receive warning (id=${fileId}): ${ev.agentError.type} — still trying.`,
     );
   }
 

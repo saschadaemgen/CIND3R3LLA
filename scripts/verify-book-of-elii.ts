@@ -13,6 +13,9 @@
  * "the form saves": they are that a constitutional rule cannot be changed without the typed
  * confirmation, that turning a critical rule off is loud rather than quiet, that every change
  * leaves a record with both sides of it, and that a rollback restores the exact previous text.
+ * Since CCB-S5-062: that rolling back a per-bot change touches that bot alone and never the
+ * shared law (section 10, with the shipped defect reconstructed as the mutation), and that a
+ * critical law's off-switch does not exist per bot at any layer (section 11).
  *
  *   npx tsx scripts/verify-book-of-elii.ts
  */
@@ -30,6 +33,12 @@ import {
   shippedPromptRuleText,
   updatePromptRule,
 } from '../src/db/prompt-rules.js';
+import {
+  clearOverride,
+  listOverridesForBot,
+  setOverride,
+} from '../src/db/prompt-rule-overrides.js';
+import { applyOverrides, describeScopes } from '../src/interaction/rule-scope.js';
 import {
   bookByLane,
   bookByMode,
@@ -949,6 +958,252 @@ async function main(): Promise<void> {
     (await get('/interaction/memory?bot=shared')).body.includes(
       escapeHtml("Measured with no bot's character or dials"),
     ),
+  );
+
+  /* ── 10. A rollback touches the space its row is in, and no other (CCB-S5-062) ── */
+  //
+  // The override store's own comment says the bot dimension "matters most at the moment
+  // somebody rolls one back", and the rollback path was the one place that never consulted
+  // it: pressing "Put it back" on a per-bot row re-applied that row's before-side to the
+  // SHARED law, so an act on one bot silently rewrote every bot. Every assertion here
+  // reads the shared law back character for character across a per-bot rollback, and the
+  // mutation reconstructs the shipped behaviour to prove those reads can go red.
+
+  console.log('\n10. Rolling back a per-bot change touches that bot alone');
+
+  const ROLLED = 'prompt.no-meta';
+  const OWN_WORDS = 'DIALLEDBOT OWN WORDING SENTINEL.';
+  const sharedBefore = (await listPromptRules(db)).find((r) => r.id === ROLLED)!;
+
+  const overrodeVia = await postPage(`/book/rule/${ROLLED}/bot`, {
+    botProfileId: String(dialledId),
+    text: OWN_WORDS,
+    enabled: 'on',
+  });
+  check('a per-bot wording saves through the real route', overrodeVia.statusCode === 302);
+  const overrideRow = (await listPromptRuleHistory(db, ROLLED, 5))[0]!;
+  check(
+    'and its history row is typed as a per-bot change, naming its bot',
+    overrideRow.scope === 'override' &&
+      overrideRow.action === 'override' &&
+      overrideRow.botProfileId === dialledId,
+  );
+
+  const historyPage2 = await get('/book/history');
+  check(
+    'the history page badges the row with the bot it was for',
+    historyPage2.body.includes('DialledBot only'),
+  );
+  check(
+    'and the rollback button says whose law it puts back, and what it leaves alone',
+    historyPage2.body.includes(escapeHtml(`Put DialledBot's version back to "Was"`)) &&
+      historyPage2.body.includes('the shared law stays as it is'),
+  );
+
+  const undoOverride = await postPage('/book/rollback', { change: String(overrideRow.id) });
+  check('rolling the per-bot change back goes through the real route', undoOverride.statusCode === 302);
+
+  const sharedAfter = (await listPromptRules(db)).find((r) => r.id === ROLLED)!;
+  check(
+    'THE FIX: the shared law is character for character what it was before',
+    sharedAfter.text === sharedBefore.text &&
+      sharedAfter.enabled === sharedBefore.enabled &&
+      sharedAfter.ord === sharedBefore.ord &&
+      sharedAfter.nameable === sharedBefore.nameable,
+  );
+  check(
+    'and the bot is back on the shared law, because before its own words it inherited',
+    !(await listOverridesForBot(db, dialledId)).some((o) => o.ruleId === ROLLED),
+  );
+  const undoneRow = (await listPromptRuleHistory(db, ROLLED, 5))[0]!;
+  check(
+    'the undo is recorded as a rollback IN the per-bot space, attributable to its bot',
+    undoneRow.scope === 'override' && undoneRow.action === 'rollback',
+  );
+
+  // Rolling THAT back re-establishes the deviation: the per-bot history is walkable in
+  // both directions, exactly as the shared one is.
+  await postPage('/book/rollback', { change: String(undoneRow.id) });
+  const reestablished = (await listOverridesForBot(db, dialledId)).find((o) => o.ruleId === ROLLED);
+  check(
+    'rolling the per-bot rollback back restores the deviation',
+    reestablished?.text === OWN_WORDS,
+  );
+  check(
+    'as inherit-plus-wording, so the bot keeps tracking the shared enabled flag',
+    reestablished?.enabled === null,
+  );
+  check(
+    'and the shared law has still not moved',
+    (await listPromptRules(db)).find((r) => r.id === ROLLED)!.text === sharedBefore.text,
+  );
+
+  // A `revert` row (the bot put back on the shared law) rolls back the same way.
+  await postPage(`/book/rule/${ROLLED}/bot`, { botProfileId: String(dialledId), action: 'clear' });
+  const revertRow = (await listPromptRuleHistory(db, ROLLED, 5))[0]!;
+  check('clearing writes a revert row in the per-bot space', revertRow.scope === 'override' && revertRow.action === 'revert');
+  await postPage('/book/rollback', { change: String(revertRow.id) });
+  check(
+    'and rolling the revert back brings the deviation back',
+    (await listOverridesForBot(db, dialledId)).find((o) => o.ruleId === ROLLED)?.text === OWN_WORDS,
+  );
+
+  // An override row alone does not mark the law as edited: the drift badge is about the
+  // shared sentence, and a bot deviating from it is not the law having moved. Proven on a
+  // rule no earlier section has touched, so the only history it has is the override pair.
+  const PRISTINE = 'voice.command.teammate';
+  await postPage(`/book/rule/${PRISTINE}/bot`, {
+    botProfileId: String(dialledId),
+    text: 'A DEVIATION, NOT AN EDIT.',
+    enabled: 'on',
+  });
+  check(
+    'POSITIVE CONTROL: the pristine rule now has a history row for the map to misread',
+    (await listPromptRuleHistory(db, PRISTINE, 5))[0]?.scope === 'override',
+  );
+  check(
+    'per-bot history rows do not put the law on the drift list',
+    !(await shippedPromptRuleText(db)).has(PRISTINE),
+  );
+  await postPage(`/book/rule/${PRISTINE}/bot`, {
+    botProfileId: String(dialledId),
+    action: 'clear',
+  });
+
+  // ── MUTATION: the shipped behaviour, reconstructed ────────────────────────
+  //
+  // What the defect did with a per-bot row: hand its before-side to the SHARED writer.
+  // Done here on the revert row, whose before-side is the bot's own wording, it moves the
+  // shared law - which is exactly what every byte-identical read above refuses, so this
+  // proves those reads are load-bearing rather than vacuous.
+  await updatePromptRule(
+    db,
+    ROLLED,
+    {
+      text: revertRow.oldText,
+      enabled: revertRow.oldEnabled,
+      ord: revertRow.oldOrd,
+      nameable: revertRow.oldNameable,
+    },
+    OPERATOR,
+    'rollback',
+  );
+  const mutated = (await listPromptRules(db)).find((r) => r.id === ROLLED)!;
+  check(
+    'MUTATION: the pre-fix behaviour rewrites the shared law with one bot’s text',
+    mutated.text === OWN_WORDS && mutated.text !== sharedBefore.text,
+  );
+  const mutationRow = (await listPromptRuleHistory(db, ROLLED, 5))[0]!;
+  check('and lands in the shared space, where rolling it back belongs to every bot', mutationRow.scope === 'shared');
+  await postPage('/book/rollback', { change: String(mutationRow.id) });
+  check(
+    'rolled back, the shared law reads exactly as it did before the mutation',
+    (await listPromptRules(db)).find((r) => r.id === ROLLED)!.text === sharedBefore.text,
+  );
+  await postPage(`/book/rule/${ROLLED}/bot`, { botProfileId: String(dialledId), action: 'clear' });
+
+  /* ── 11. A critical law cannot be switched off for one bot (CCB-S5-062) ──── */
+  //
+  // Eight critical laws are standard rather than constitutional, so the constitutional
+  // refusal never covered them, and the two alarms that watch for a missing critical law
+  // (section 7's shout, verify:prompt-identity) both read the SHARED registry. A per-bot
+  // off-switch was therefore silent. The guard keys on `critical`, which is the flag that
+  // MEANS "must reach every prompt": the form does not offer the switch and says why, the
+  // route cannot express it, the trigger refuses it, and applyOverrides ignores a stored
+  // one. Rewording per bot stays allowed, with the control proving it.
+
+  console.log('\n11. The critical off-switch does not exist per bot');
+
+  const CRITICAL_STANDARD = 'prompt.concise-no-dashes';
+  const criticalRule = (await listPromptRules(db)).find((r) => r.id === CRITICAL_STANDARD)!;
+  check(
+    'the proof case is real: a critical law that is standard, not constitutional',
+    criticalRule.critical && criticalRule.tier === 'standard',
+  );
+
+  const criticalPage = await get(`/book/rule/${CRITICAL_STANDARD}`);
+  check(
+    'its per-bot panel states the law is always in effect, with the reason',
+    criticalPage.body.includes('Always in effect.') &&
+      criticalPage.body.includes('This law is critical'),
+  );
+  check(
+    'a non-critical law still offers the per-bot switch, so the panel is selective',
+    (await get(`/book/rule/${ROLLED}`)).body.includes('In effect for this bot'),
+  );
+
+  // A forged body carrying no checkbox (which is all the form can send now) stores no
+  // off-switch and no empty deviation.
+  await postPage(`/book/rule/${CRITICAL_STANDARD}/bot`, {
+    botProfileId: String(plainId),
+    text: '',
+  });
+  check(
+    'the route cannot be made to store an off-switch on it',
+    !(await listOverridesForBot(db, plainId)).some((o) => o.ruleId === CRITICAL_STANDARD),
+  );
+
+  let triggerSaid = '';
+  try {
+    await setOverride(db, {
+      botProfileId: plainId,
+      ruleId: CRITICAL_STANDARD,
+      enabled: false,
+      text: null,
+    });
+  } catch (err) {
+    triggerSaid = err instanceof Error ? err.message : String(err);
+  }
+  check(
+    'the database trigger refuses the off-switch with the route bypassed entirely',
+    triggerSaid.includes('critical') && triggerSaid.includes('cannot be switched off for one bot'),
+    triggerSaid.slice(0, 80) || 'no refusal',
+  );
+
+  // CONTROL: the same law can still be REWORDED per bot, so the guard refuses the
+  // off-switch and not the law.
+  await setOverride(db, {
+    botProfileId: plainId,
+    ruleId: CRITICAL_STANDARD,
+    enabled: null,
+    text: 'REWORDED FOR ONE BOT, STILL IN EFFECT.',
+  });
+  const criticalBook = applyOverrides(
+    await listPromptRules(db),
+    await listOverridesForBot(db, plainId),
+  );
+  const rewordedCritical = criticalBook.find((r) => r.id === CRITICAL_STANDARD)!;
+  check(
+    'CONTROL: the reworded critical law reaches that bot, enabled',
+    rewordedCritical.text === 'REWORDED FOR ONE BOT, STILL IN EFFECT.' && rewordedCritical.enabled,
+  );
+  await clearOverride(db, plainId, CRITICAL_STANDARD);
+
+  // CONTROL: the trigger is not a refuse-everything - the off-switch on a NON-critical
+  // standard law still stores and still takes effect.
+  await setOverride(db, { botProfileId: plainId, ruleId: ROLLED, enabled: false, text: null });
+  check(
+    'CONTROL: a non-critical standard law still switches off per bot',
+    applyOverrides(await listPromptRules(db), await listOverridesForBot(db, plainId)).find(
+      (r) => r.id === ROLLED,
+    )?.enabled === false,
+  );
+  await clearOverride(db, plainId, ROLLED);
+
+  // MUTATION: even a row the trigger would never have stored removes nothing. This is the
+  // depth layer, and it is what turns red if applyOverrides loses its critical guard.
+  const forgedOff = [
+    { botProfileId: plainId, ruleId: CRITICAL_STANDARD, enabled: false, text: null },
+  ];
+  const rules11 = await listPromptRules(db);
+  check(
+    'MUTATION: a forged off-switch on a critical law changes nothing in the rulebook',
+    applyOverrides(rules11, forgedOff).find((r) => r.id === CRITICAL_STANDARD)?.enabled === true,
+  );
+  check(
+    'and the scope view does not report it as off, because it is not',
+    describeScopes(rules11, forgedOff, 2).get(CRITICAL_STANDARD)?.deviations.every((d) => !d.off) ??
+      false,
   );
 
   setPromptRuleService(null);

@@ -73,6 +73,7 @@ import {
   type PromptRuleSet,
 } from '../src/interaction/prompt-rules.js';
 import { seededPromptRules } from './seeded-rules.js';
+import { applyOverrides } from '../src/interaction/rule-scope.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURE = join(ROOT, 'scripts', 'fixtures', 'prompt-baseline.json');
@@ -549,6 +550,36 @@ async function run(): Promise<void> {
   check(
     'the permissiveness ceiling is among them',
     criticalRules.filter((rule) => rule.id.startsWith('ceiling.')).length === 4,
+  );
+
+  // ── AND NO PER-BOT OVERRIDE CAN REMOVE ONE (CCB-S5-062) ───────────────────
+  //
+  // This check pins what ships, and per-bot overrides are deployment data - but the
+  // FUNCTION that applies them ships, and it is the depth layer behind the trigger. A
+  // forged off-switch on every critical rule at once must change nothing; the same shape
+  // on a non-critical standard rule must take effect, or the assertion above is proving a
+  // function that ignores overrides altogether.
+  const forgedOffEverything = rules.map((rule) => ({
+    botProfileId: 1,
+    ruleId: rule.id,
+    enabled: false as boolean | null,
+    text: null,
+  }));
+  const afterForgery = applyOverrides(rules, forgedOffEverything);
+  const criticalLost = afterForgery.filter(
+    (rule) => rule.critical && rule.enabled !== rules.find((r) => r.id === rule.id)?.enabled,
+  );
+  check(
+    'a forged per-bot off-switch removes no critical rule from the assembled set',
+    criticalLost.length === 0,
+    criticalLost.map((rule) => rule.id).join(', ') || `${criticalRules.length} held`,
+  );
+  const standardVictim = rules.find((rule) => rule.tier === 'standard' && !rule.critical && rule.enabled);
+  check(
+    'CONTROL: the same forged shape does switch off a non-critical standard rule',
+    standardVictim !== undefined &&
+      afterForgery.find((rule) => rule.id === standardVictim.id)?.enabled === false,
+    standardVictim?.id ?? 'no candidate',
   );
 
   /**

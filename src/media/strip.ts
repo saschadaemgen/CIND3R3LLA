@@ -93,8 +93,13 @@ export async function stripToDerivative(
     // derivative, so it is also the only place the two representations meet.
     source = await readMediaFile(absSource);
   } catch (err) {
+    // The message id, not the stored path: the path embeds the member's own file name
+    // (`<fileId>-<name>`), and a member's file name in the journal is member content in an
+    // ordinary log line (CCB-S5-062). The id resolves it in the console, which is gated.
     log.warn(
-      `Media strip: could not read ${relPath} (${err instanceof Error ? err.message : String(err)}).`,
+      `Media strip: could not read the original of message ${messageId} (${
+        err instanceof Error ? err.message : String(err)
+      }).`,
     );
     return { stripped: false, found: readExifSummary(Buffer.alloc(0)), reason: 'decode-failed' };
   }
@@ -121,8 +126,9 @@ export async function stripToDerivative(
     await rename(tmp, absDest);
     return { stripped: true, derivedPath: derivedRel, found };
   } catch (err) {
+    // Same redaction as the read failure above: the id, never the name-bearing path.
     log.warn(
-      `Media strip: could not re-encode ${relPath} (${
+      `Media strip: could not re-encode the original of message ${messageId} (${
         err instanceof Error ? err.message : String(err)
       }); the original will not be published.`,
     );

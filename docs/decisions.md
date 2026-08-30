@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 258 decisions</strong> — newest first. Highest allocated: <strong>D-259</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 259 decisions</strong> — newest first. Highest allocated: <strong>D-260</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-260 | The three serious ones: a rollback stays in its space, the critical off-switch is refused per bot, and names leave the journal | IMPLEMENTED |
 | D-259 | The sidebar rule is checked, because twice it was found by the operator instead | IMPLEMENTED |
 | D-258 | Two id spaces made unmistakable; a rule is not set aside for anybody who asks; and a verdict about a member needs evidence | IMPLEMENTED |
 | D-257 | A capitalised unknown is not a member: the consent lane takes people, the lookup takes things | IMPLEMENTED |
@@ -287,6 +288,110 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-260 - The three serious ones: a rollback stays in its space, the critical off-switch is refused per bot, and names leave the journal
+
+**Status: IMPLEMENTED** (CCB-S5-062, migration 076; `verify:book` §10 and §11,
+`verify:prompt-identity` §2, `verify:multi-bot` §6, `verify:name-guard` §6).
+
+Three of the roughly seventy defect entries the six site-material blocks produced were not
+cosmetic and went first; the rest follow in a second briefing.
+
+**ONE: A PER-BOT ROLLBACK REWROTE THE SHARED LAW.** The history page rendered its rollback
+button on every row, override rows included, and `rollbackPromptRule` selected the target row
+without reading `bot_profile_id` and handed its before-side to `updatePromptRule` - the shared
+writer - unconditionally. So pressing "Put it back to Was" on one bot's change silently
+rewrote the sentence every bot reads, and recorded the act as an innocent-looking `rollback`.
+The sharpest line in the file is the one the code had already written about itself: **the
+override store says the bot dimension "matters most at the moment somebody rolls one back",
+and the rollback path is the one place that never consults it. A defect the code had already
+described and nobody had read.** Migration 045's prose says it too: a reader must tell the two
+apart, "not least because rolling back the wrong one puts back the wrong text".
+
+**The blast radius was established before the fix, and it is zero.** The production history
+holds exactly one row in its whole life (the `create` of `identity.swearing`, 2026-08-07), no
+override has ever been set, and no shared law differs from what shipped for any reason. The
+fix is purely forward-looking; nothing needed repair.
+
+**The treatment is D-258's, one level up**: two things that look alike, one shared and one
+per bot, made unmistakable in the type system rather than patched at the call site.
+`PromptRuleChange` is now a union - `SharedRuleChange` and `OverrideRuleChange`, discriminated
+by `scope` and built from `bot_profile_id` by the one row reader - and the rollback entry
+point dispatches to two writers whose signatures each accept only their own kind, so handing
+the shared writer a per-bot change does not compile. The per-bot writer
+(`rollbackOverrideChange`) restores the row's before-side as that bot's EFFECTIVE state and
+re-canonicalises it against today's shared law per field: a restored value identical to the
+shared one becomes NULL-means-inherit (045's design - a bot reading the shared sentence keeps
+tracking it), and both-inherit is no row at all. The undo is recorded as a `rollback` WITH the
+bot id; migration 076 adds the scope CHECK that ties every action to its bot dimension, so a
+history row lying about its space is unrepresentable. The surface says it too: history rows
+are badged "shared law" or "<bot> only", and the button reads "Put <bot>'s version back to
+Was - touches <bot> alone; the shared law stays as it is" (D-235: the control says what it
+acts on). `shippedPromptRuleText` now reads shared rows only, so a deviation can never mark a
+law as drifted.
+
+**TWO: A CRITICAL STANDARD LAW COULD BE SWITCHED OFF PER BOT, SILENTLY.** The constitutional
+refusal has three layers, all keyed on `tier`; the Book's red alarm and
+`verify:prompt-identity` both key on `critical` - and both read the SHARED registry, so a
+per-bot `enabled = FALSE` override on a critical law escaped every guard at once. `critical`
+is the flag that MEANS "must reach every prompt", so the guards now key on it: the per-bot
+form does not offer the off-switch on a critical law and prints why
+(`CRITICAL_OFF_SCOPE_REASON`), the route cannot express one (a critical save reads no
+`enabled` field at all), the 076 trigger refuses one when both are bypassed, and
+`applyOverrides` ignores a stored one so even a row predating the migration removes nothing -
+with `describeScopes` reporting what applyOverrides will DO, never what a dead row asks for.
+Rewording a critical standard law per bot stays allowed: a reworded law still reaches the
+prompt, and the shared off-switch stays allowed-and-loud, which is the operator's stated
+right.
+
+**What was reachable before the fix, for the record: eight critical standard laws exist in
+the shipped registry today**, and a per-bot disable of each would have removed, for that one
+bot with nothing anywhere saying so: `overview.counts` (the overview's grounding numbers),
+`overview.quote-nothing` (the fence against the wall of quoted laws production rejected),
+`disclosure.more-in-area` (say there is more rather than summarise rules she was not given),
+`disclosure.follow-up-shape` (quoted laws go word for word, in quotation marks),
+`disclosure.invocations` (claims about when a law fired stay bounded to the quoted rules),
+`disclosure.page-handed-over` and `disclosure.page-unseen` (the D-159 settlement: the
+application prints the page, she never recites or numbers one she has not seen - the pair
+that stands between a member and a fabricated law), and `prompt.concise-no-dashes` (the
+model-side half of CCB-S3-021's no-dashes guarantee). Every constitutional law is also
+critical, so the new refusal is a superset on the enabled dimension and changes nothing for
+them.
+
+**THREE: A MEMBER'S NAME REACHED A WARN-LEVEL LOG LINE.** The blocked-name guard threw
+`Ollama reply exposed blocked text: <name>.` and the reply runtime's catch logs
+`errorMessage(error)` at warn - beside the standing rule to redact before logging. The name is
+gone from both throw sites; the message keeps the words `blocked text` so
+`safeErrorCategory` still files it as `guard-rejection`, and the dedicated blocked-name
+record (memory-only, passkey-gated Diagnostics) keeps the name on purpose, as it always did.
+Operated: the real pipeline driven to a rejection prints
+`[WARN] ... (Ollama reply exposed blocked text.)` and nothing else.
+
+**The same class, swept wider** - a member's name, a group name, or member content in an
+ordinary log line - and eleven more sites fixed across six files: the mention-resolution
+`log.debug` carried a member's display name (`capture/bot-message.ts`); the avatar flush warn
+carried a group's name (`bot/avatar.ts`, now the group id); the file receiver put the
+member's file name into a transient warn AND into its rejection `Error`, whose message
+becomes the caller's warn line and the `media_error` record (`bot/files.ts`, now the file
+id); and the capture/strip path logged the stored media path in four places
+(`capture/persist.ts`, `media/strip.ts`) - which embeds the member's own file name
+(`YYYY/MM/<fileId>-<name>`), so those lines now carry (group, item) or message ids. The
+name-bearing surfaces that remain are DELIBERATE and stay: `status.fileFailed` and the
+orphaned-media `status.error` (the gated dashboard, and an orphan has no row to point at),
+the boot log's group listing (D-193 made the profile name the point after a week of
+`localDisplayName` confusion), the capture-election error (paired with `status.error`, the
+room's name IS the operator surface, D-190), `connect.ts` (an interactive onboarding CLI
+confirming the group the operator just joined), and the excerpt-bearing diagnostics journal
+lines for HER OWN output (D-239/D-248/D-258 decisions, each bounded and reasoned in place).
+
+**All three mutation-proven.** Restoring the shipped rollback dispatch turns four §10 checks
+red; neutering the trigger's critical branch and applyOverrides' guard turns their checks red
+one layer each; restoring the name-bearing throw turns both §6 reads red, including the
+logger-spy read of the REAL warn line from the REAL runtime. Every negative has a positive
+control beside it: the deviation that does restore, the non-critical law that does switch
+off, the dedicated record that does carry the name.
+
 ---
 
 ### D-259 - The sidebar rule is checked, because twice it was found by the operator instead

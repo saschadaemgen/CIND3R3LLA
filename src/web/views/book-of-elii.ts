@@ -68,9 +68,11 @@ import {
 } from '../../db/prompt-rule-overrides.js';
 import {
   applyOverrides,
+  canDisablePerBot,
   canOverride,
   describeScopes,
   CONSTITUTIONAL_SCOPE_REASON,
+  CRITICAL_OFF_SCOPE_REASON,
   type RuleOverride,
   type RuleScope,
 } from '../../interaction/rule-scope.js';
@@ -213,7 +215,10 @@ function perBotPanel(
     <h3 class="text-sm font-bold text-slate-900">This law, per bot</h3>
     <p class="mt-1 text-sm text-slate-600">
       Leave a bot alone and it reads the shared sentence, and keeps tracking it when the
-      shared sentence is edited. Switch it off, or give that one bot different words.
+      shared sentence is edited.
+      ${canDisablePerBot(rule)
+        ? 'Switch it off, or give that one bot different words.'
+        : 'Give one bot different words; the law itself stays in effect for every bot.'}
     </p>
     <div class="mt-3 flex flex-col gap-3">
       ${bots.map((bot) => {
@@ -234,15 +239,20 @@ function perBotPanel(
             ${deviates ? badge('has its own version', 'amber') : badge('shared', 'slate')}
           </div>
           <div class="mt-2 flex flex-wrap items-center gap-4">
-            <label class="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                name="enabled"
-                ${(o?.enabled ?? rule.enabled) ? raw('checked') : ''}
-                class="rounded"
-              />
-              In effect for this bot
-            </label>
+            ${canDisablePerBot(rule)
+              ? html`<label class="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    name="enabled"
+                    ${(o?.enabled ?? rule.enabled) ? raw('checked') : ''}
+                    class="rounded"
+                  />
+                  In effect for this bot
+                </label>`
+              : html`<p class="text-xs text-slate-600">
+                  <span class="font-semibold">Always in effect.</span>
+                  ${CRITICAL_OFF_SCOPE_REASON}
+                </p>`}
           </div>
           <label class="mt-2 flex flex-col gap-1 text-sm">
             <span class="text-slate-700">
@@ -1224,7 +1234,9 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           <p class="mb-4 text-sm"><a class="underline" href="/book">Back to the book</a></p>
           ${ruleCard(entry, csrf, rule.id, scopeView, lawPages(rules))}
           ${perBotPanel(rule, bots, ruleOverrides, csrf)}
-          <div class="mt-4">${changeTable(history, csrf, false)}</div>
+          <div class="mt-4">
+            ${changeTable(history, csrf, false, new Map(bots.map((b) => [b.id, b.displayName])))}
+          </div>
         `,
       });
     },
@@ -1400,13 +1412,19 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       }
 
       const text = bodyString(req.body, 'text').replace(/\r\n/g, '\n').trim();
-      const enabled = bodyString(req.body, 'enabled') !== '';
+      // A critical law offers no per-bot off-switch, so nothing this form can send reads
+      // as one: `enabled` stays inherited whatever the body carries, and the database
+      // trigger refuses the off-switch for any caller that is not this route
+      // (CCB-S5-062). For every other law the checkbox means what it says.
+      const enabled: boolean | null = canDisablePerBot(rule)
+        ? bodyString(req.body, 'enabled') !== ''
+        : null;
       // An empty box means INHERIT rather than an empty rule: a law with no words is not a
       // law, and the placeholder in the form says the shared sentence is what fills it.
       const nextText = text.length === 0 ? null : text;
       // Nothing to store when the bot would read exactly the shared law anyway. Writing a
       // row here would show the bot as deviating on the page while changing nothing.
-      if (nextText === null && enabled === rule.enabled) {
+      if (nextText === null && (enabled === null || enabled === rule.enabled)) {
         await clearOverrideRecorded(ctx.db, { botProfileId, ruleId, ...shared }, actor);
         invalidatePromptRules();
         return reply.redirect(back('', true));
@@ -1551,6 +1569,11 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       const changes = ruleId
         ? await listPromptRuleHistory(ctx.db, ruleId, 100)
         : await listRecentPromptRuleChanges(ctx.db, 100);
+      // Which bot a per-bot row was for, by name: a rollback button that does not say
+      // whose law it puts back is how one bot's undo reached every bot (CCB-S5-062).
+      const botNames = new Map(
+        (await listBotOnboardingProfiles(ctx.db)).map((p) => [p.id, p.displayName]),
+      );
       reply.type('text/html');
 
       return page({
@@ -1581,7 +1604,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             weeks later as "she has been a bit off". This is how you find which edit did it.
             Rolling one back is itself recorded, so undoing something is as visible as doing it.
           </p>
-          ${changeTable(changes, csrf, true)}
+          ${changeTable(changes, csrf, true, botNames)}
         `,
       });
     },
@@ -1613,6 +1636,7 @@ function changeTable(
   changes: PromptRuleChange[],
   csrf: string,
   showRule: boolean,
+  botNames: Map<number, string>,
 ): SafeHtml {
   if (changes.length === 0) {
     return card(
@@ -1627,10 +1651,20 @@ function changeTable(
   return card(
     `${String(changes.length)} change${changes.length === 1 ? '' : 's'}`,
     html`<div class="flex flex-col gap-3">
-      ${changes.map(
-        (change) => html`<div class="rounded-lg border border-slate-200 p-3">
+      ${changes.map((change) => {
+        // Which of the two spaces this row is in, said on the row itself. An override row
+        // that looked exactly like a shared one is how a per-bot undo rewrote the shared
+        // law (CCB-S5-062): the button below acts on what this badge names, and only that.
+        const botName =
+          change.scope === 'override'
+            ? (botNames.get(change.botProfileId) ?? `bot ${String(change.botProfileId)}`)
+            : null;
+        return html`<div class="rounded-lg border border-slate-200 p-3">
           <div class="flex flex-wrap items-center gap-2 text-sm">
             ${badge(change.action, change.action === 'rollback' ? 'amber' : 'slate')}
+            ${botName === null
+              ? badge('the shared law', 'slate')
+              : badge(`${botName} only`, 'amber')}
             ${showRule
               ? html`<a class="font-mono font-semibold underline" href="/book/rule/${change.ruleId}"
                   >${change.ruleId}</a
@@ -1670,11 +1704,18 @@ ${change.newText}</p>
               type="submit"
               class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
             >
-              Put it back to "Was"
+              ${botName === null
+                ? 'Put the shared law back to "Was"'
+                : `Put ${botName}'s version back to "Was"`}
             </button>
+            <span class="ml-2 text-xs text-slate-400">
+              ${botName === null
+                ? 'Reaches every bot that has no version of its own.'
+                : `Touches ${botName} alone; the shared law stays as it is.`}
+            </span>
           </form>
-        </div>`,
-      )}
+        </div>`;
+      })}
     </div>`,
   );
 }

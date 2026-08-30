@@ -419,6 +419,43 @@ async function main(): Promise<void> {
       dbRefused.slice(0, 80),
     );
 
+    // The gap BESIDE the constitutional refusal (CCB-S5-062): a critical law that is
+    // standard could be switched off per bot, and both alarms read the shared registry,
+    // so nothing anywhere said so. The same trigger now keys the off-switch on
+    // `critical`. Rewording stays allowed; section 5 above is the standing control that
+    // a NON-critical standard law still switches off per bot.
+    const criticalStandard = rules.find((r) => r.tier === 'standard' && r.critical);
+    if (!criticalStandard) throw new Error('no critical standard rule in the registry');
+    let offRefused = '';
+    try {
+      await setOverride(db, {
+        botProfileId: warm,
+        ruleId: criticalStandard.id,
+        enabled: false,
+        text: null,
+      });
+    } catch (err) {
+      offRefused = err instanceof Error ? err.message : String(err);
+    }
+    check(
+      'the trigger refuses a per-bot off-switch on a critical standard law',
+      offRefused.includes('critical') && offRefused.includes('cannot be switched off for one bot'),
+      offRefused.slice(0, 80) || 'no refusal',
+    );
+    await setOverride(db, {
+      botProfileId: warm,
+      ruleId: criticalStandard.id,
+      enabled: null,
+      text: 'CRITICAL, REWORDED FOR ONE BOT.',
+    });
+    check(
+      'CONTROL: the same critical law still takes a per-bot rewording, enabled',
+      applyOverrides(rules, await listOverridesForBot(db, warm)).find(
+        (r) => r.id === criticalStandard.id,
+      )?.text === 'CRITICAL, REWORDED FOR ONE BOT.',
+    );
+    await clearOverride(db, warm, criticalStandard.id);
+
     // MUTATION: even if a row somehow existed, the assembler ignores it. Proven by
     // handing applyOverrides an override the database would never have stored.
     const forced = applyOverrides(rules, [

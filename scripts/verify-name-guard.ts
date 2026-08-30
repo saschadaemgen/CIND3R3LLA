@@ -60,7 +60,8 @@ import {
 import { modelQueue } from '../src/interaction/model-queue.js';
 import type { LocalAiConfig } from '../src/config.js';
 import type { CapturedMessage } from '../src/capture/message.js';
-import { setLogLevel } from '../src/log.js';
+import { log, setLogLevel } from '../src/log.js';
+import { AiRuntimeService } from '../src/interaction/ai-runtime.js';
 
 let failures = 0;
 function check(label: string, ok: boolean, detail = ''): void {
@@ -474,6 +475,79 @@ async function main(): Promise<void> {
     silently.text === 'Here it is.' && blockedNameCount() === 1,
     `shipped=${JSON.stringify(silently.text)} recorded=${String(blockedNameCount())}`,
   );
+
+  /* ── 6. The name stays out of the journal (CCB-S5-062) ───────────────────── */
+  //
+  // The guard's throw message carried the member's display name, and the one consumer of
+  // that message is `AiRuntime.personalize`'s catch, which logs it at WARN - beside the
+  // standing rule to redact before logging. The dedicated record (asserted throughout this
+  // file) carries the name on purpose, behind the passkey; the journal may not.
+
+  console.log('\n6. A rejection is logged without the name it rejected for');
+
+  const noted = await guarded('Priscilla!', 'Priscilla');
+  check('the reply is rejected, so there is an error headed for the journal', noted.error !== null);
+  check(
+    'POSITIVE CONTROL: the dedicated record carries the name, so it was there to leak',
+    noted.events.some((e) => e.literal === 'Priscilla' && e.text.includes('Priscilla')),
+  );
+  check(
+    "the throw's message does not carry it",
+    noted.error !== null && !noted.error.includes('Priscilla'),
+    noted.error ?? '',
+  );
+  check(
+    'and still names the kind of failure, so the AI page category survives the redaction',
+    noted.error?.includes('blocked text') === true,
+  );
+
+  // The warn line itself, from the REAL runtime with the REAL logger spied on: this is
+  // the line the operator's journal holds, and the surface the name leaked on.
+  setLogLevel('warn');
+  const captured: string[] = [];
+  const realWarn = log.warn;
+  log.warn = (message, meta) => {
+    captured.push(meta === undefined ? message : `${message} ${JSON.stringify(meta)}`);
+  };
+  try {
+    const runtime = await AiRuntimeService.load(db, config, { fetchImpl: fakeFetch });
+    nextReply = 'Priscilla!';
+    const out = await runtime.personalize({
+      kind: 'conversation',
+      lang: 'en',
+      memberMessage: 'hello',
+      deterministicDraft: 'a draft to fall back on',
+      mode: 'conversation',
+      rules,
+      blockedLiterals: ['Priscilla'],
+      botProfileId: 1,
+      now: { at: new Date(), timeZone: 'UTC' },
+    } as unknown as AiReplyRequest);
+    check(
+      'the runtime fell back and wrote its warn line',
+      out === null && captured.length > 0,
+      `${String(captured.length)} line(s)`,
+    );
+    check(
+      'no line that reached the logger carries the name',
+      captured.every((line) => !line.includes('Priscilla')),
+      captured.find((line) => line.includes('Priscilla'))?.slice(0, 120) ?? '',
+    );
+    // MUTATION: the shipped warn line, reconstructed character for character, trips the
+    // read above - so "no line carries the name" is a detector that can go red, not a
+    // tautology over an empty capture.
+    captured.push(
+      'Local AI reply wording failed; using the deterministic fallback ' +
+        '(Ollama reply exposed blocked text: Priscilla.).',
+    );
+    check(
+      'MUTATION: the shipped warn line would have been caught by that read',
+      captured.some((line) => line.includes('Priscilla')),
+    );
+  } finally {
+    log.warn = realWarn;
+    setLogLevel('error');
+  }
 
   console.log(
     failures === 0

@@ -757,7 +757,13 @@ in one database and broken in the one beside it is not a promise.
   020 trigger aborts a bulk statement on ONE held row, the cascade takes her published replies
   through `reply_to_id`, `(group_id, group_msg_id)` is what makes capture idempotent so a
   deleted row returns on the next re-capture, and `media_path` is the only handle on the
-  encrypted original).
+  encrypted original)
+  · 076 the rollback scope and the critical law (CCB-S5-062, D-260: the scope CHECK tying every
+  history action to its bot dimension, so a row claiming the wrong space is unrepresentable -
+  rolling back a per-bot row used to rewrite the SHARED law, the defect 045's own comment had
+  described; and the override trigger rebuilt to also refuse `enabled = FALSE` on a CRITICAL
+  law, because critical means "must reach every prompt" and both alarms that watch for a
+  missing one read only the shared registry. Rewording per bot stays allowed).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -765,9 +771,10 @@ in one database and broken in the one beside it is not a promise.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **070**, since 070 landed the retention tombstone). Stated as a rule
-  rather than a fixed number, because the fixed
-  number went stale once already. See D-069.
+  (currently **076**, since 076 landed the rollback scope and the critical-law guard). Stated
+  as a rule rather than a fixed number, because the fixed number went stale once already - and
+  had gone stale AGAIN by CCB-S5-062, when this line said 070 over a tree whose highest was
+  075. See D-069.
   **Read the whole working tree and not only `main`.** 047 and 048 were allocated within an hour
   of each other by two briefings running at once, both from a highest-on-disk of 046, which is
   the same parallel-allocation failure the decision numbers already have twice.
@@ -814,7 +821,12 @@ counts and badges. An ENGINEER changing a rule in a migration re-baselines with 
 `verify:book` (the Book of Elii: reading and search, an edit recording both sides of itself, a
 constitutional rule refusing to change without its own id typed out, a switched-off critical
 rule going loud on the page, a rollback restoring the exact previous text, and a probe of one
-rule per lane so a preview can never again show "nothing moved" for a change that is real),
+rule per lane so a preview can never again show "nothing moved" for a change that is real.
+Since CCB-S5-062 also the two serious ones: §10 proves rolling back a per-bot change touches
+that bot alone and never the shared law - the shipped defect reconstructed as the mutation
+turns four checks red - and §11 proves a critical law's off-switch does not exist per bot at
+any of its four layers, with the reworded-critical and off-non-critical positive controls
+beside it),
 `verify:personality` (the five dials, her identity and the nickname retort lane: that each
 dial changes the prompt that is actually sent, that the permissiveness ceiling is in every
 conversation prompt at every value and also with no personality configured, that her name
