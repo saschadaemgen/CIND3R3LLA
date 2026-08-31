@@ -69,7 +69,12 @@ const CLEAR: LookupScreen = { refused: false };
 const OUTRIGHT: readonly { term: RegExp; category: LookupRefusal }[] = [
   // Sexual material. Explicit-by-name terms and the sites themselves.
   { term: /\bporn(?:o|os|ography|hub)?\b/i, category: 'sexual-explicit' },
-  { term: /\bpornografie|pornografisch|pornographie\b/i, category: 'sexual-explicit' },
+  // One stem, both German spellings, compounds and inflections included ON PURPOSE
+  // ("Internetpornografie", "pornografischen"): a substring of the stem, stated as such.
+  // The old pattern bound its \b anchors only to the outer alternatives, so what it
+  // matched depended on which spelling you read; it failed in the refusing direction,
+  // but a safety pattern should say what it means (CCB-S5-063).
+  { term: /pornogra(?:f|ph)/i, category: 'sexual-explicit' },
   { term: /\bxxx\b|\bhardcore\s+sex\b|\bsex\s*(?:movies?|videos?|clips?|tapes?|cams?)\b/i, category: 'sexual-explicit' },
   { term: /\bsexfilme?|sexvideos?|erotikfilme?\b/i, category: 'sexual-explicit' },
   { term: /\bnudes?\b|\bnackt(?:bilder|fotos)\b|\bonlyfans\b/i, category: 'sexual-explicit' },

@@ -1607,7 +1607,7 @@ export class InteractionEngine {
    * The given facts about her, including the model that is actually running (CCB-S4-042).
    *
    * ONE builder, because there are four prompt sites and a fact attached at three of them
-   * is a fact she states inconsistently.  reads the operator-configured
+   * is a fact she states inconsistently. It reads the operator-configured interaction
    * settings; the model comes from the AI routing, which is not a setting on that page.
    */
   private facts(s: InteractionSettings): BotIdentity {
@@ -3399,9 +3399,10 @@ export class InteractionEngine {
           .join('\n');
         // Secondary facts: where it trades, and how old the figure is.
         const detail = [
-          outcome.kind === 'conversion'
-            ? `via _${s.defaultLanguage === 'de' ? 'USD' : 'USD'}_ cross rate`
-            : '',
+          // The currency comes from the outcome, which knows what it crossed through
+          // (CCB-S5-063): this was a hardcoded USD in a ternary with two identical
+          // branches, wrong on any deployment with another base currency.
+          outcome.kind === 'conversion' && outcome.via ? `via _${outcome.via}_ cross rate` : '',
           'chain' in outcome.base && outcome.base.chain ? `_${outcome.base.chain}_` : '',
           describeAge(outcome.at, now, lang),
         ]
@@ -4618,55 +4619,55 @@ export class InteractionEngine {
             // that loses one is rejected here and the deterministic answer goes out
             // instead, which is the right direction to fail in.
             requiredLiterals: overviewLiterals(disclosure.ruleOverview),
-              // The same guard as every other reply: her words never carry the
-              // sender's display name, because the prefix is what names them.
-              blockedLiterals: [msg.senderDisplayName],
-              // The dials (CCB-S4-029). Read here rather than held, so an operator who
-              // saves the Personality page and immediately talks to her hears the change
-              // on this reply and not on the next boot.
-              personality: this.deps.personality?.() ?? null,
-              // Who she is (CCB-S4-030, widened in CCB-S4-031). The wake word is the
-              // authoritative name: it is what a member must type to reach her, and it is
-              // already what the persona copy substitutes for `{wake}`. Without it the
-              // model was told everything about her voice and nothing about her identity,
-              // and denied the name.
-              identity: this.facts(s),
-              // THE ROOM (CCB-S4-044, D-147). The whole group thread, hers included, fenced
-              // in the user message and incapable of causing anything. This is the field
-              // that turns "what did I just say" into an answerable question.
-              history: toPromptHistory(history, HISTORY_FENCE),
-              historyWindowMinutes: s.memory.windowMinutes,
-              // THE OPERATOR'S DOCUMENTS (CCB-S5-022), fenced in the user message and
-              // incapable of causing anything, exactly as the history and the search
-              // results are. Empty unless something cleared the relevance floor.
-              ...(knowledgePassages.length ? { knowledgePassages } : {}),
-              // WHICH OF THEM THE ANSWER USED (CCB-S5-055, D-243), the web mechanism one
-              // source along. Fires only when passages were attached and the model answered,
-              // so a thrown request or a missing field leaves this null and nothing is
-              // attributed. The declaration can only NARROW what retrieval already admitted.
-              onDocumentsUsed: (indices) => {
-                declaredDocuments = indices;
-              },
-              onConfidence: (p) => {
-                replyConfidence = p;
-              },
-              // The book, when they are asking about it (CCB-S4-045).
-              ...disclosure,
-              // A page answer tells her only THAT a page is being printed under her reply,
-              // never which one (CCB-S5-005): see `renderBookPage` for what a model does with
-              // a law and a number when it is given both.
-              lawPage: page !== undefined,
-              // ONE LINE above a printed page (CCB-S5-005). At the ordinary conversation
-              // budget she used the room to invent a law and, once, to announce that the
-              // page did not exist while it was being printed. Neither reached a member;
-              // both were wasted calls.
-              ...(page ? { maxChars: PAGE_FRAMING_MAX_CHARS } : {}),
-              // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
-              // the violation counter read. THIS is the path that matters for it: free
-              // conversation is where somebody asks what year it is, and where she
-              // answered from two-year-old training data because nobody had told her.
-              now: { at: new Date(this.now()), timeZone: this.timeZone },
-              music: musicFacts,
+            // The same guard as every other reply: her words never carry the
+            // sender's display name, because the prefix is what names them.
+            blockedLiterals: [msg.senderDisplayName],
+            // The dials (CCB-S4-029). Read here rather than held, so an operator who
+            // saves the Personality page and immediately talks to her hears the change
+            // on this reply and not on the next boot.
+            personality: this.deps.personality?.() ?? null,
+            // Who she is (CCB-S4-030, widened in CCB-S4-031). The wake word is the
+            // authoritative name: it is what a member must type to reach her, and it is
+            // already what the persona copy substitutes for `{wake}`. Without it the
+            // model was told everything about her voice and nothing about her identity,
+            // and denied the name.
+            identity: this.facts(s),
+            // THE ROOM (CCB-S4-044, D-147). The whole group thread, hers included, fenced
+            // in the user message and incapable of causing anything. This is the field
+            // that turns "what did I just say" into an answerable question.
+            history: toPromptHistory(history, HISTORY_FENCE),
+            historyWindowMinutes: s.memory.windowMinutes,
+            // THE OPERATOR'S DOCUMENTS (CCB-S5-022), fenced in the user message and
+            // incapable of causing anything, exactly as the history and the search
+            // results are. Empty unless something cleared the relevance floor.
+            ...(knowledgePassages.length ? { knowledgePassages } : {}),
+            // WHICH OF THEM THE ANSWER USED (CCB-S5-055, D-243), the web mechanism one
+            // source along. Fires only when passages were attached and the model answered,
+            // so a thrown request or a missing field leaves this null and nothing is
+            // attributed. The declaration can only NARROW what retrieval already admitted.
+            onDocumentsUsed: (indices) => {
+              declaredDocuments = indices;
+            },
+            onConfidence: (p) => {
+              replyConfidence = p;
+            },
+            // The book, when they are asking about it (CCB-S4-045).
+            ...disclosure,
+            // A page answer tells her only THAT a page is being printed under her reply,
+            // never which one (CCB-S5-005): see `renderBookPage` for what a model does with
+            // a law and a number when it is given both.
+            lawPage: page !== undefined,
+            // ONE LINE above a printed page (CCB-S5-005). At the ordinary conversation
+            // budget she used the room to invent a law and, once, to announce that the
+            // page did not exist while it was being printed. Neither reached a member;
+            // both were wasted calls.
+            ...(page ? { maxChars: PAGE_FRAMING_MAX_CHARS } : {}),
+            // The clock (CCB-S4-036), from the same `this.now` the follow-up windows and
+            // the violation counter read. THIS is the path that matters for it: free
+            // conversation is where somebody asks what year it is, and where she
+            // answered from two-year-old training data because nobody had told her.
+            now: { at: new Date(this.now()), timeZone: this.timeZone },
+            music: musicFacts,
             })
           )?.trim() || null;
         const fresh = await this.withFreshWords(msg.groupId, attempt, lockedBy);

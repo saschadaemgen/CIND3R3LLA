@@ -20,8 +20,10 @@
  *
  * ── AND WHY TURNING IT ON IS NOT AVAILABLE ───────────────────────────────────
  *
- * The reply is bounded by `max_tokens: 320`, and the reasoning pass spends the SAME budget.
- * Measured in the production request shape, over five substantive questions:
+ * The reply was bounded by `max_tokens: 320` when this was measured, and the reasoning pass
+ * spends the SAME budget (D-232 has since derived the cap from the verbosity budget, floored
+ * at 320, so the argument holds at the floor and the measurement predates the derivation).
+ * Measured in the request shape of its day, over five substantive questions:
  *
  *   none    0 of 5 truncated,  0 of 5 unusable
  *   low     3 of 5 truncated,  3 of 5 unusable
@@ -128,18 +130,17 @@ export const CONTEXT_MEASUREMENTS: readonly ContextMeasurement[] = Object.freeze
 /**
  * The window the Ollama host actually serves (D-231).
  *
- * ── IT IS NOT A SETTING THIS APPLICATION CAN MAKE, AND THAT WAS MEASURED ─────
+ * ── IT IS A SETTING THIS APPLICATION DECLINES TO MAKE, AND THE HISTORY MATTERS ──
  *
- * The transport is `/v1/chat/completions`, Ollama's OpenAI-compatible endpoint, and it
- * IGNORES an Ollama `options.num_ctx`: a request carrying `num_ctx: 24576` was verified to
- * load the model at 8192 and 10.47 GB rather than 24576 and 13.19 GB. So the only lever is
- * `OLLAMA_CONTEXT_LENGTH` on the host, and it needs an Ollama restart to take effect.
- *
- * That is why `verify:reasoning` still asserts no `num_ctx` anywhere in the codebase: it is
- * not restraint any more, it is the fact that setting one there would do nothing while
- * looking exactly like it had. Moving the transport to `/api/chat`, which does honour
- * options, is the change that would give this application its own window; it is not made
- * here because it touches the whole reply path.
+ * When this was measured the transport was `/v1/chat/completions`, which IGNORES an Ollama
+ * `options.num_ctx`: a request carrying `num_ctx: 24576` was verified to load the model at
+ * 8192 and 10.47 GB rather than 24576 and 13.19 GB. D-252 has since moved the reply path to
+ * the native `/api/chat`, which DOES honour options, so sending no `num_ctx` is now
+ * restraint rather than impossibility (CCB-S5-063 corrected this comment; it used to state
+ * the opposite). The restraint stands for the same reason `verify:reasoning` still asserts
+ * no `num_ctx` anywhere in the codebase: `OLLAMA_CONTEXT_LENGTH` on the host is the one
+ * lever, one number rules every request, and a per-request override would let a caller
+ * quietly disagree with the figure every surface reports.
  *
  * Held as data so the console and the "What it costs" card state the same number, and so a
  * check can catch this drifting from the host the way the old 32768 claims did.

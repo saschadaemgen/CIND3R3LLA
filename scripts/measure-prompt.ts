@@ -49,6 +49,7 @@ import {
   type PromptRuleSet,
 } from '../src/interaction/prompt-rules.js';
 import { seededPromptRules } from './seeded-rules.js';
+import { SERVED_CONTEXT_TOKENS } from '../src/interaction/reasoning.js';
 
 const NOW: CurrentTime = { at: new Date('2026-08-18T12:00:00.000Z'), timeZone: 'Europe/Berlin' };
 
@@ -295,7 +296,10 @@ async function main(): Promise<void> {
       console.log('='.repeat(96));
       console.log(`${scenario.id}  -  ${scenario.what}`);
       console.log(
-        `  ${String(total)} characters  (~${String(Math.round(total / 3.2))} tokens of 8192, ${pct(total / 3.2, 8192)})` +
+        // The denominator is READ, not typed (CCB-S5-063): a hardcoded "of 8192" survived
+        // here after D-231 removed the same hand-typed figure from the console card, so the
+        // instrument the docs quote reported against a window the host stopped serving.
+        `  ${String(total)} characters  (~${String(Math.round(total / 3.2))} tokens of ${String(SERVED_CONTEXT_TOKENS)}, ${pct(total / 3.2, SERVED_CONTEXT_TOKENS)})` +
           `  from ${String(selected.length)} rules` +
           `  [attribution ${faithful ? 'PROVEN against systemPrompt' : 'DOES NOT MATCH systemPrompt'}]`,
       );

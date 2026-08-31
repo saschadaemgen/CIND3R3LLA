@@ -40,7 +40,7 @@ export const musicUploadsPlugin = definePlugin({
   id: MUSIC_UPLOADS_ID,
   name: 'Member Uploads (play back)',
   description:
-    'A member drops an audio file into the chat and asks her to make it playable; she fetches it and sends it back as a player. Played without being stored, size-bounded, audio only by allow-list.',
+    'A member drops an audio file into the chat and asks her to make it playable; she fetches it and sends it back as a player. Played without being stored, size-bounded, MP3 only by allow-list.',
   version: '1.0.0',
   defaultEnabled: false,
   // No intent of its own: the ask rides the MUSIC intent's "make this playable"

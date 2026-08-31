@@ -102,7 +102,8 @@ INSERT INTO cinderella_prompt_rules
 
 -- ── Visibility ──────────────────────────────────────────────────────────────
 --
--- All four are NAMEABLE, and 039's reasoning for the honesty group applies exactly: these
+-- All five are NAMEABLE (this line said "four" over an insert of five; corrected under
+-- CCB-S5-063, data untouched), and 039's reasoning for the honesty group applies exactly: these
 -- are the rules a member is entitled to hold her to. Somebody who has just caught her
 -- claiming a power, or suspects she is dodging, is precisely the person who should be able
 -- to get the rule quoted at them verbatim. Withholding these would make the honest answer

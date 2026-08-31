@@ -1875,7 +1875,18 @@ async function main(): Promise<void> {
     'the publish prompt states forward-only',
     /from this moment on|never anything from before/i.test(pubPrompt),
   );
-  check('and that taking it back is final', /final|no bringing it back/i.test(pubPrompt));
+  // CCB-S5-063. This check used to assert the DEFECT: the copy claimed taking it back
+  // was "final; there is no bringing it back after", while hide is restorable by design
+  // (CCB-S3-013), and the check pinned that sentence. It now asserts the true promise,
+  // and asserts the false one is GONE, so the old wording coming back turns this red.
+  check(
+    'and states the true revocation promise: hidden at once, then the member chooses',
+    /hides everything at once/i.test(pubPrompt) && /hidden or destroying them is yours/i.test(pubPrompt),
+  );
+  check(
+    'and no longer claims a finality the product does not enforce',
+    !/is final|no bringing it back/i.test(pubPrompt),
+  );
 
   coolDown();
   const unpubPrompt = (await say('Cinderella unpublish me')).replies[0] ?? '';

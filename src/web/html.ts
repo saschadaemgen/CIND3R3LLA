@@ -6,6 +6,18 @@
  * that genuinely need them.
  */
 
+import { createRequire } from 'node:module';
+
+/**
+ * The version the footer wears, READ from package.json rather than typed twice
+ * (CCB-S5-063): the two copies were unlinked and nothing tied them. Resolved relative to
+ * this file, which sits at the same depth under src/ and under dist/, so `../../` reaches
+ * the repository root from both.
+ */
+const PACKAGE_VERSION: string = (
+  createRequire(import.meta.url)('../../package.json') as { version: string }
+).version;
+
 const ESCAPE_RE = /[&<>"']/g;
 const ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -186,7 +198,7 @@ export function setNavItems(items: NavItem[]): void {
 /**
  * The registered tree, for the sidebar audit (D-259).
  *
- *  is generic and correct, so whether a page shows its OWN sub-pages or
+ * `deepestSectionFor` is generic and correct, so whether a page shows its OWN sub-pages or
  * the menu above it is decided entirely by whether its nav node has children. That is DATA,
  * it has been wrong twice, and the operator found it himself both times. A check can only
  * read that data if something exposes it.
@@ -263,7 +275,6 @@ const MEGA_GROUPS_BY_SECTION: Record<string, Record<string, string>> = {
     settings: 'Core',
     security: 'Core',
     embeds: 'Delivery',
-    site: 'Delivery',
   },
 };
 
@@ -304,7 +315,8 @@ const MEGA_ITEM_DESCRIPTIONS: Record<string, string> = {
   settings: 'General system configuration.',
   security: 'Authentication, sessions, and access controls.',
   embeds: 'Public embed configuration.',
-  site: 'Website content and delivery controls.',
+  // A `site` entry lived here for a nav key nothing registers: the marketing site left for
+  // its own repository under D-089 and its menu metadata stayed behind (CCB-S5-063).
 };
 
 function megaGroup(root: NavItem, child: NavItem): string {
@@ -668,7 +680,7 @@ function fixedFooter(): SafeHtml {
     <div class="admin-footer-version">
       <span class="admin-footer-product">CIND3R3LLA</span>
       <span aria-hidden="true"> · </span>
-      <span>Version 0.0.1-alpha</span>
+      <span>Version ${PACKAGE_VERSION}</span>
     </div>
     <a
       class="admin-footer-copyright"

@@ -40,8 +40,8 @@ import {
   type PersonalityAxis,
 } from '../../interaction/personality.js';
 import { previewMusicFacts } from '../music-facts.js';
-import { botIdentity } from '../../interaction/settings.js';
-import { aiRuntimeSnapshot, currentReplyModel } from '../../interaction/ai-runtime.js';
+import { previewIdentityFor } from '../preview-personality.js';
+import { aiRuntimeSnapshot } from '../../interaction/ai-runtime.js';
 import {
   listBotOnboardingProfiles,
   updateBotPersonality,
@@ -90,7 +90,6 @@ function selectedProfile(
 function whichBotCard(
   profiles: BotOnboardingProfile[],
   active: BotOnboardingProfile,
-  csrf: string,
 ): SafeHtml {
   return card(
     'Bot being edited',
@@ -105,10 +104,10 @@ function whichBotCard(
       ${
         // The picker went in CCB-S5-018 (two controls doing one job, one in the sidebar and
         // one here) and the primary badge in CCB-S5-019. What is left is what the sidebar
-        // does not say: the slug, and that a save here needs no restart.
+        // does not say: the slug, and that a save here needs no restart. A hidden CSRF
+        // input outlived the picker's form and sat here doing nothing; gone (CCB-S5-063).
         null
       }
-      <input type="hidden" name="_csrf" value="${csrf}" />
     `,
   );
 }
@@ -258,11 +257,6 @@ function ceilingCard(rules: PromptRuleSet): SafeHtml {
 }
 
 /** What the model is actually told, for the SAVED values. The proof the dial reaches it. */
-/** The given facts, including the model the AI routing has selected right now. */
-function previewIdentity(settings: Parameters<typeof botIdentity>[0]): BotIdentity {
-  const model = currentReplyModel();
-  return { ...botIdentity(settings), ...(model ? { model } : {}) };
-}
 
 function promptCard(
   rules: PromptRuleSet,
@@ -344,7 +338,7 @@ function body(
           no reach into any of it. Consent stays deterministic in every direction.
         </p>`,
     )}
-    <div class="mt-4">${whichBotCard(profiles, active, csrf)}</div>
+    <div class="mt-4">${whichBotCard(profiles, active)}</div>
     <div class="mt-4">${editorCard(active, csrf)}</div>
     <div class="mt-4 grid gap-4 lg:grid-cols-2">
       ${ceilingCard(rules)} ${promptCard(rules, active.personality, identity, music)}
@@ -372,7 +366,9 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
 
     return renderAiPage(
       'AI Personality',
-      'Her base character and the four dials that decide how she sounds when she is talking rather than executing.',
+      // The dial count is DERIVED (CCB-S5-063): this subtitle said "the four dials" for
+      // the whole life of the verbosity axis, exactly as migration 035 predicted it would.
+      `Her base character and the ${String(Object.keys(AXIS_DEFINITIONS).length)} dials that decide how she sounds when she is talking rather than executing.`,
       'ai:personality',
       req.session?.csrfToken ?? '',
       req.query,
@@ -387,7 +383,10 @@ export function registerAiPersonality(app: FastifyInstance, ctx: ViewContext): v
         req.session?.csrfToken ?? '',
         // The live reply model, so the preview is the prompt (CCB-S4-042). A preview that
         // omitted it would be a second description of the prompt rather than the prompt.
-        previewIdentity(ctx.interaction.get()),
+        // The SELECTED bot's effective record, from the rows (CCB-S5-063): wake words are
+        // per bot since CCB-S5-006, and this read the shared one, so the preview named the
+        // wrong bot on a multi-bot deployment.
+        await previewIdentityFor(ctx.db, ctx.interaction.get(), selection.selectedId),
         rules,
         music,
       ),

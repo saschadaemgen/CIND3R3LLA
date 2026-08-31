@@ -50,11 +50,10 @@ import {
   type BookSection,
 } from '../../interaction/prompt-book.js';
 import type { PromptRule, PromptRuleSet } from '../../interaction/prompt-rules.js';
-import {
-  replyCharBudget,
-  type BotIdentity,
-  type BotPersonality,
-  type MusicPromptFacts,
+import type {
+  BotIdentity,
+  BotPersonality,
+  MusicPromptFacts,
 } from '../../interaction/personality.js';
 import { previewMusicFacts } from '../music-facts.js';
 import { invalidatePromptRules } from '../../interaction/prompt-rule-service.js';
@@ -78,13 +77,17 @@ import {
 } from '../../interaction/rule-scope.js';
 import { resolveSelectedBot } from '../selected-bot.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
-import { currentReplyModel } from '../../interaction/ai-runtime.js';
-import { botIdentity } from '../../interaction/settings.js';
-import { previewPersonality } from '../preview-personality.js';
+import { previewIdentityFor, previewPersonality } from '../preview-personality.js';
 import { html, page, raw, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, fmtDate, pageHeader } from './ui.js';
-import { systemPrompt, type AiReplyMode } from '../../interaction/ollama-reply.js';
+import {
+  effectiveMaxChars,
+  systemPrompt,
+  type AiReplyMode,
+  type AiReplyRequest,
+} from '../../interaction/ollama-reply.js';
+import type { Intent } from '../../interaction/intent.js';
 import {
   PROMPT_RULE_CONDITIONS,
   PROMPT_RULE_LANES,
@@ -533,10 +536,6 @@ ${shippedText}</p>
  * message when no runtime is up rather than inventing a bot to preview against.
  */
 /** The given facts, live, so a preview is the prompt rather than a description of one. */
-function previewIdentity(ctx: ViewContext): BotIdentity {
-  const model = currentReplyModel();
-  return { ...botIdentity(ctx.interaction.get()), ...(model ? { model } : {}) };
-}
 
 /**
  * Which mode actually carries this rule.
@@ -594,6 +593,19 @@ interface PreviewBot {
   personality: BotPersonality | null;
   /** Its DJ sheet, or undefined when the music plugin is off for it (D-220). */
   music: MusicPromptFacts | undefined;
+  /**
+   * Its EFFECTIVE identity - per-bot wake word and nicknames applied, live model merged
+   * (CCB-S5-063). Previews used to read the SHARED interaction record, so on a multi-bot
+   * deployment a preview showed bot X's dials under the shared name, and the new-law
+   * preview additionally dropped the model line its sibling carried.
+   */
+  identity: BotIdentity;
+  /**
+   * Its capability catalog (CCB-S5-063): what selects the has-web-search rules, which no
+   * previewed prompt used to carry - so the offer rule a lookup-enabled bot really
+   * receives appeared in no preview, including the Assembled Word.
+   */
+  capabilities: readonly Intent[];
 }
 
 /**
@@ -617,7 +629,6 @@ function previewCard(
   current: PromptRuleSet,
   proposed: PromptRuleSet,
   rule: PromptRule,
-  identity: BotIdentity,
   bot: PreviewBot,
 ): SafeHtml {
   const personality = bot.personality;
@@ -626,28 +637,31 @@ function previewCard(
 
   const render = (rules: PromptRuleSet): string => {
     try {
-      return systemPrompt(
-        {
-          kind: 'preview',
-          lang: 'en',
-          memberMessage: '',
-          deterministicDraft: '',
-          mode,
-          rules,
-          personality,
-          identity,
-          now: {
-            at: new Date(),
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-          },
-          // The DJ sheet rides like the clock (D-218), read for the bot the operator
-          // has selected, so a has-music law previews against the prompt that law
-          // actually lands in rather than showing "nothing moved" for a real change
-          // (D-220). Undefined when the plugin is off, which is also the truth.
-          music,
+      const request: AiReplyRequest = {
+        kind: 'preview',
+        lang: 'en',
+        memberMessage: '',
+        deterministicDraft: '',
+        mode,
+        rules,
+        personality,
+        identity: bot.identity,
+        now: {
+          at: new Date(),
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
         },
-        replyCharBudget(personality?.verbosity ?? 5),
-      );
+        // The DJ sheet rides like the clock (D-218), read for the bot the operator
+        // has selected, so a has-music law previews against the prompt that law
+        // actually lands in rather than showing "nothing moved" for a real change
+        // (D-220). Undefined when the plugin is off, which is also the truth.
+        music,
+        // The catalog (CCB-S5-063): what selects the has-web-search rules, which no
+        // previewed prompt used to carry.
+        capabilities: bot.capabilities,
+      };
+      // The TRANSPORT'S bound for this mode, not the conversation budget for every mode
+      // (CCB-S5-063): a retort or locked preview used to state a limit nobody is sent.
+      return systemPrompt(request, effectiveMaxChars(request));
     } catch (error) {
       return `(could not assemble: ${errorMessage(error)})`;
     }
@@ -796,6 +810,8 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
       name: selection.selectedName,
       personality: await previewPersonality(ctx.db, selection.selectedId),
       music: await previewMusicFacts(ctx, selection.selectedId),
+      identity: await previewIdentityFor(ctx.db, ctx.interaction.get(), selection.selectedId),
+      capabilities: ctx.plugins.capabilitiesFor(selection.selectedId ?? undefined),
     };
   };
 
@@ -1165,7 +1181,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <strong>${chapterForNewRule(chapters, id)?.titleEn ?? 'none'}</strong>, at position
             ${String(ord)} of ${String(rules.length + 1)}.
           </p>
-          ${previewCard(rules, [...rules, proposed], proposed, botIdentity(ctx.interaction.get()), bot)}
+          ${previewCard(rules, [...rules, proposed], proposed, bot)}
           <div class="mt-4">
             <a class="text-sm underline" href="${back('')}">Back to the form</a>
           </div>
@@ -1296,7 +1312,7 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
             <p class="mb-4 text-sm">
               <a class="underline" href="/book/rule/${ruleId}">Back to the rule</a>
             </p>
-            ${previewCard(rules, proposed, rule, previewIdentity(ctx), bot)}
+            ${previewCard(rules, proposed, rule, bot)}
             <div class="mt-4">
               ${card(
                 'Write it',
@@ -1473,7 +1489,12 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     // two preview branches above read the rows; a third answer to the same question on the
     // same page is how the two halves of a page come to disagree.
     const personality = await previewPersonality(ctx.db, selected?.id);
-    const identity = previewIdentity(ctx);
+    // The SELECTED bot's effective identity and catalog (CCB-S5-063): the identity used to
+    // be the shared record (wrong wake word on a multi-bot deployment) and no catalog was
+    // passed at all, so the has-web-search rules a lookup-enabled bot receives appeared in
+    // no assembled word.
+    const identity = await previewIdentityFor(ctx.db, ctx.interaction.get(), selected?.id);
+    const capabilities = ctx.plugins.capabilitiesFor(selected?.id);
     // The DJ sheet, when the music plugin is on for this bot (D-220): the reply path
     // has carried it since D-218, so an assembled word without it was a prompt nobody
     // receives - the exact lie this page exists to prevent.
@@ -1487,25 +1508,27 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
     // implementation with its own opinion about which rules apply.
     const assembled = (mode: AiReplyMode): string => {
       try {
-        return systemPrompt(
-          {
-            kind: 'preview',
-            lang: 'en',
-            memberMessage: '',
-            deterministicDraft: '',
-            mode,
-            rules,
-            personality,
-            identity,
-            // The server's own zone, which is what the engine passes at reply time.
-            now: {
-              at: new Date(),
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
-            },
-            music,
+        const request: AiReplyRequest = {
+          kind: 'preview',
+          lang: 'en',
+          memberMessage: '',
+          deterministicDraft: '',
+          mode,
+          rules,
+          personality,
+          identity,
+          // The server's own zone, which is what the engine passes at reply time.
+          now: {
+            at: new Date(),
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           },
-          replyCharBudget(personality?.verbosity ?? 5),
-        );
+          music,
+          capabilities,
+        };
+        // Each mode card states the bound the TRANSPORT sends that mode (CCB-S5-063):
+        // this passed the conversation budget to all five, so the retort and locked
+        // cards printed a character limit nobody is sent.
+        return systemPrompt(request, effectiveMaxChars(request));
       } catch (error) {
         return `(not assembled: ${errorMessage(error)})`;
       }
@@ -1545,8 +1568,9 @@ export function registerBookOfElii(app: FastifyInstance, ctx: ViewContext): void
           The book lists rules; this lists <strong>prompts</strong>. A rule's lane and condition
           decide whether it appears at all, so the only way to see what a mode actually receives
           is to assemble it. Values she is given, her name, her origin, the clock and the dial
-          block, are rendered into these sentences at reply time and appear here as their
-          placeholders when no runtime is up. The library lines appear only when the music
+          block, are rendered into these sentences at reply time; a value this preview does not
+          have simply leaves its rule out of the assembly, because a rule whose placeholders
+          cannot be filled is never sent half-empty. The library lines appear only when the music
           plugin is on for this bot, with the numbers counted live from what its
           <a class="underline" href="/music">playlist assignments</a> reach, exactly as the
           reply path counts them.

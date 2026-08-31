@@ -47,10 +47,13 @@ export interface HistoryLimits {
  *
  * ── WHY THESE NUMBERS ────────────────────────────────────────────────────────
  *
- * The model runs an 8192-token context. Her rules and given facts already occupy roughly
- * 2500 of it and her reply may take another 400, so the history has to live comfortably
- * inside what is left with room to spare. 4000 characters is about 1000 to 1400 tokens
- * depending on language, which lands the whole prompt near half the window.
+ * Sized against the 8192-token context the model ran when this shipped. Her rules and
+ * given facts occupied roughly 2500 of it and her reply another 400, so the history had to
+ * live comfortably inside what was left: 4000 characters is about 1000 to 1400 tokens
+ * depending on language, near half that window. The served window has since grown
+ * (`SERVED_CONTEXT_TOKENS` in reasoning.ts is the authority; 24576 as of D-231), which
+ * makes these defaults MORE conservative, not stale in the unsafe direction - they are
+ * conversational-span numbers, not window-filling ones, and stand on their own reasoning.
  *
  * 20 messages and 30 minutes are the conversational span the defect was about: following a
  * thread somebody started a few minutes ago, including one started by a different member.
@@ -75,8 +78,11 @@ export const DEFAULT_HISTORY_LIMITS: Readonly<HistoryLimits> = Object.freeze({
  * {@link normalizeHistoryLimits} rather than by a warning nobody reads.
  *
  * 8000 characters is roughly 2000 to 2800 tokens. With a ~2500-token rule set and a
- * 400-token reply that is about 5700 of 8192 at worst, which leaves real headroom for a
- * long member message and the search fence on top.
+ * 400-token reply that was about 5700 of the 8192-token window this ceiling was sized
+ * against - already real headroom - and the host now serves a larger window
+ * (`SERVED_CONTEXT_TOKENS`), so the guarantee only widened. The ceiling deliberately does
+ * NOT chase the window: a bigger context is headroom for safety, not an invitation to
+ * fill it (CCB-S5-063 corrected the figures here; the bound itself is unchanged).
  */
 export const MAX_HISTORY_LIMITS: Readonly<HistoryLimits> = Object.freeze({
   maxMessages: 100,

@@ -19,6 +19,8 @@ import {
   DEFAULT_INTERACTION,
   normalizeInteraction,
   wakeWordProblem,
+  MAX_PREFIX_CHARS_BOUND,
+  MAX_PREFIX_WORDS_BOUND,
   REPLY_LANGUAGE_MODES,
   REPLY_MODES,
   PERSONA_KEYS,
@@ -89,6 +91,7 @@ import { currentPromptRules } from '../../interaction/prompt-rule-service.js';
 import { replyCharBudget, type BotPersonality } from '../../interaction/personality.js';
 import { previewPersonality } from '../preview-personality.js';
 import { botIdentity } from '../../interaction/settings.js';
+import type { Intent } from '../../interaction/intent.js';
 import type { MusicPromptFacts } from '../../interaction/personality.js';
 import { previewMusicFacts } from '../music-facts.js';
 import { MAX_HISTORY_LIMITS } from '../../interaction/history.js';
@@ -184,12 +187,18 @@ ${value}</textarea>`;
  *
  * A parameter rather than a reach, so a caller that forgets it does not compile, and so the
  * card stays a pure function of what it is given.
+ *
+ * The CAPABILITY CATALOG is handed in for the same reason (CCB-S5-063, the third instance
+ * of this card's own corrected class after D-220's music and D-229's voice): without it the
+ * `has-web-search` offer rule a lookup-enabled bot really receives was missing from the
+ * measurement, an under-count that reads safer than the prompt she is sent.
  */
 function memorySizeCard(
   s: InteractionSettings,
   personality: BotPersonality | null,
   botName: string | null,
   music: MusicPromptFacts | undefined,
+  capabilities: readonly Intent[],
 ): SafeHtml {
   const rules = currentPromptRules();
   const worstCase = Array.from({ length: s.memory.maxMessages }, () => ({
@@ -218,6 +227,9 @@ function memorySizeCard(
           // the measurement under-counted by the has-music rules, which is a headroom
           // figure that reads safer than the prompt she is actually sent.
           music,
+          // The catalog, for the same reason (CCB-S5-063): it is what selects the
+          // has-web-search rules in the prompt she is really sent.
+          capabilities,
         },
         // The verbosity dial's own budget, not the 500 this used to hardcode. The number is
         // rendered INTO the prompt as the length instruction, so measuring with a different
@@ -277,9 +289,14 @@ function memorySizeCard(
       <p class="mt-3 text-sm text-slate-500">
         ${botName === null
           ? "Measured with no bot's character or dials, because none is selected. Pick a bot above to see what one is actually sent."
-          : `Measured for ${botName}, carrying that bot's own dials, base character and origin${
-              music ? ', and the music library it can reach' : ''
-            }, exactly as its replies carry them.`}
+          : `Measured for ${botName}, carrying that bot's own dials, base character and origin${[
+              ...(music ? [' the music library it can reach'] : []),
+              ...(capabilities.includes('LOOKUP')
+                ? [' the web-lookup rules its catalog selects']
+                : []),
+            ]
+              .map((clause) => `, and${clause}`)
+              .join('')}, exactly as its replies carry them.`}
       </p>
       <p class="mt-2 text-sm text-slate-500">
         ${tight
@@ -931,8 +948,8 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${labelled('Maximum instruction length (characters)', numberField('maxInstructionLength', s.addressing.maxInstructionLength, 20, 4000), 'Longer than this and she will not EXECUTE a command unless the intent is very confident. She still answers: a long message she was plainly addressed in goes to free conversation instead. It never causes silence.')}
                   ${labelled('Confidence required above that length', numberField('lengthGuardConfidence', s.addressing.lengthGuardConfidence, 0, 1, '0.05'), 'Raise it to send more long text to conversation rather than to a command. It does not decide whether she replies, only whether a command may run.')}
                   ${labelled('Filler prefixes', textField('fillerPrefixes', s.fillerPrefixes.join(', ')), 'Short discourse words allowed before her name (so, hey, also). Comma separated.')}
-                  ${labelled('Max filler words before the name', numberField('maxPrefixWords', s.maxPrefixWords, 0, 8))}
-                  ${labelled('Max filler characters before the name', numberField('maxPrefixChars', s.maxPrefixChars, 0, 60))}
+                  ${labelled('Max filler words before the name', numberField('maxPrefixWords', s.maxPrefixWords, 0, MAX_PREFIX_WORDS_BOUND))}
+                  ${labelled('Max filler characters before the name', numberField('maxPrefixChars', s.maxPrefixChars, 0, MAX_PREFIX_CHARS_BOUND))}
                   ${checkbox('logNearMisses', 'Record ignored messages (see Diagnostics)', s.addressing.logNearMisses)}
                   ${saveButton()}
                 `,
@@ -1006,7 +1023,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   ${saveButton()}
                 `,
               )}
-              ${memorySizeCard(s, personality, selectedName, music)}`,
+              ${memorySizeCard(
+                s,
+                personality,
+                selectedName,
+                music,
+                ctx.plugins.capabilitiesFor(selectedBotId ?? undefined),
+              )}`,
           ),
         language: () =>
           card(
@@ -1145,6 +1168,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
           )}`,
         archiving: () => archiveCard(ctx.archive.get(), csrf),
         diagnostics: () => {
+          // WHICH BOT each entry belongs to, by name (CCB-S5-063). Every stream has carried
+          // `botProfileId` since CCB-S5-006 precisely so this page could say it, and no
+          // table did: with two bots, every stream interleaved unattributed.
+          const botNameOf = (id: number | null | undefined): string =>
+            id === null || id === undefined
+              ? 'shared'
+              : (bots.find((b) => b.id === id)?.displayName ?? `bot ${String(id)}`);
           const nearMisses = recentNearMisses(25);
           const conversations = recentConversations(25);
           const conversationStats = conversationSummary();
@@ -1261,12 +1291,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                   <table class="w-full text-left text-sm">
                     <thead>
                       <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                        <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Who</th><th class="py-2 pr-3">Why</th><th class="py-2 pr-3">Message</th><th class="py-2">Resolver</th>
+                        <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Who</th><th class="py-2 pr-3">Why</th><th class="py-2 pr-3">Message</th><th class="py-2">Resolver</th>
                       </tr>
                     </thead>
                     <tbody>
                       ${nearMisses.map((n) => html`<tr class="border-b border-slate-100 align-top">
                         <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(n.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                        <td class="py-2 pr-3 text-slate-500">${botNameOf(n.botProfileId)}</td>
                         <td class="py-2 pr-3">${n.who}</td>
                         <td class="py-2 pr-3 text-slate-600">${NEAR_MISS_REASONS[n.reason]}</td>
                         <td class="py-2 pr-3 text-slate-500">${n.excerpt}</td>
@@ -1307,12 +1338,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Chat</th><th class="py-2 pr-3">Outcome</th><th class="py-2">Model latency</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Chat</th><th class="py-2 pr-3">Outcome</th><th class="py-2">Model latency</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${conversations.map((c) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(c.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(c.botProfileId)}</td>
                           <td class="py-2 pr-3 text-slate-500">${String(c.groupId)}</td>
                           <td class="py-2 pr-3 ${c.outcome === 'spoken' ? 'text-slate-600' : 'text-amber-700'}">${CONVERSATION_OUTCOMES[c.outcome]}</td>
                           <td class="whitespace-nowrap py-2 text-slate-500">${c.latencyMs} ms</td>
@@ -1351,12 +1383,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Where</th><th class="py-2">What was removed</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Where</th><th class="py-2">What was removed</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${forged.map((f) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(f.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(f.botProfileId)}</td>
                           <td class="py-2 pr-3 text-slate-500">${f.kind}</td>
                           <td class="py-2 pr-3 text-slate-500">${f.where === 'line' ? 'own line' : 'end of a sentence'}</td>
                           <td class="py-2 text-slate-600">${f.text}</td>
@@ -1402,12 +1435,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Cost</th><th class="py-2">What she had written</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Name</th><th class="py-2 pr-3">Cost</th><th class="py-2">What she had written</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${blocked.map((b) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(b.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(b.botProfileId)}</td>
                           <td class="py-2 pr-3 text-slate-500">${b.kind}</td>
                           <td class="py-2 pr-3 text-slate-600">${b.literal}</td>
                           <td class="py-2 pr-3 ${b.cost === 'silence' ? 'text-amber-700' : 'text-slate-500'}">${b.cost === 'stripped' ? 'name removed, reply shipped' : b.cost === 'silence' ? 'answer lost' : 'fell back to a draft'}</td>
@@ -1447,12 +1481,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Refused</th><th class="py-2 pr-3">Cost</th><th class="py-2">The sentence removed</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Lane</th><th class="py-2 pr-3">Refused</th><th class="py-2 pr-3">Cost</th><th class="py-2">The sentence removed</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${refusals.map((r) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(r.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(r.botProfileId)}</td>
                           <td class="py-2 pr-3 text-slate-500">${r.kind}</td>
                           <td class="py-2 pr-3 text-slate-600">${r.ability}</td>
                           <td class="py-2 pr-3 ${r.cost === 'stripped' ? 'text-slate-500' : 'text-amber-700'}">${r.cost === 'stripped' ? 'sentence removed, rest shipped' : r.cost === 'draft' ? 'fell back to a draft' : 'answer lost'}</td>
@@ -1485,12 +1520,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">What happened</th><th class="py-2 pr-3">Why</th><th class="py-2">The words</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">What happened</th><th class="py-2 pr-3">Why</th><th class="py-2">The words</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${claims.map((c) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(c.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(c.botProfileId)}</td>
                           <td class="py-2 pr-3 ${c.action === 'replaced' ? 'text-amber-700' : 'text-slate-600'}">${c.action === 'refused-override' ? 'refused: asked to set a rule aside' : c.action === 'refused-authority' ? 'refused: claimed authority' : c.action === 'stripped' ? 'claim removed, rest shipped' : 'claim removed, honest line sent'}</td>
                           <td class="py-2 pr-3 text-slate-500">${c.reason === 'universal-negative' ? 'said nobody said anything' : c.reason === 'beyond-window' ? 'reached beyond the window' : 'a request to set a rule aside'}</td>
                           <td class="py-2 text-slate-600">${c.text}</td>
@@ -1522,12 +1558,13 @@ export function registerInteraction(app: FastifyInstance, ctx: ViewContext): voi
                     <table class="w-full text-left text-sm">
                       <thead>
                         <tr class="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-500">
-                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Entries in the prompt</th><th class="py-2 pr-3">Window</th><th class="py-2">What she said</th>
+                          <th class="py-2 pr-3">When</th><th class="py-2 pr-3">Bot</th><th class="py-2 pr-3">Entries in the prompt</th><th class="py-2 pr-3">Window</th><th class="py-2">What she said</th>
                         </tr>
                       </thead>
                       <tbody>
                         ${denials.map((d) => html`<tr class="border-b border-slate-100 align-top">
                           <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${new Date(d.at).toISOString().replace('T', ' ').slice(0, 16)}</td>
+                          <td class="py-2 pr-3 text-slate-500">${botNameOf(d.botProfileId)}</td>
                           <td class="py-2 pr-3 text-amber-700">${d.handed}</td>
                           <td class="py-2 pr-3 text-slate-500">${d.windowMinutes} min</td>
                           <td class="py-2 text-slate-600">${d.text}</td>

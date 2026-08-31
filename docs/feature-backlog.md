@@ -1,6 +1,6 @@
 # Cinderella — Feature Backlog
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-039**._
+> _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme, per change rather than per season, so a "last updated under" stamp here is not kept - it went stale the first time nobody remembered it (CCB-S5-063)._
 
 Cinderella's living record of what is built, what is scoped for Season 2, and what is
 waiting on the operator. **The code is the source of truth.** Every "Done" item below
@@ -181,7 +181,7 @@ The history below records the pre-CCB-S2-003 state.
 
 ### 4a. Retention auto-delete
 
-- [ ] **Abo-dependent, admin-configurable retention, default 10 years, auto-delete after expiry (D-027)** — nothing auto-expires today; existing takedown/`/unpublish`/in-group-deletion are unchanged. The deletion mechanism is a Season 3 build and must be disclosed in the Privacy Policy. Decided, not yet built.
+- [ ] **Abo-dependent, admin-configurable retention, default 10 years, auto-delete after expiry (D-027)** — nothing auto-expires today *under this feature*: the D-027 subscription-tied expiry is decided, not built. (Qualified under CCB-S5-063 because the unqualified sentence stopped being safe to quote: since migration 070 the archive DOES sweep unconsented content nightly — that is CCB-S5-054's retention floor, a different mechanism with a different reason.) Existing takedown/`/unpublish`/in-group-deletion are unchanged. The deletion mechanism must be disclosed in the Privacy Policy when built.
 
 ### 5. Optional durable-ban identity layer
 
@@ -658,8 +658,9 @@ Recorded so the gap between what the admin surface suggests and what exists is v
       (CCB-S4-002 to S4-007) is that work, built offline with no runtime caller.
 - [ ] **Live creation of multiple SimpleX identities from the setup assistant, and automated contact
       creation and group invitation execution.** The onboarding service stores intent only and does
-      not invoke the SDK. Depends on the multi-profile runtime, which is on
-      `feature/multi-profile-core-foundation` and unmerged.
+      not invoke the SDK. The multi-profile runtime it depends on is MERGED and hosting every
+      enabled bot since CCB-S5-001 (this row said "unmerged" long after the same file recorded the
+      merge; CCB-S5-063) - what remains open is the assistant driving it.
 - [ ] **Matrix transport.** Recorded elsewhere in this file; M1 §22 is explicit that SimpleX is
       finished first.
 - [ ] **Rewritten README and redesigned repository banner.** Presentation work, never done.
@@ -1634,10 +1635,12 @@ end of Season 4.
       (`src/config.ts:348`). So ~8 concurrent requests reach the ceiling and ~2 reach the default. A
       member who will not be answered in budget must be told, in her voice, before the budget expires
       — CCB-S3-023 applied to load.
-- [ ] **The channel bridge plugin** — map a SimpleX channel to one or more groups, mirror posts with
-      **origin attributed, never passed off as hers**, optionally onward to the activity stream and the
-      website blog. Open: one-way or reply-back; edits, deletions and media; how attribution renders in
-      each of the three surfaces.
+- [x] **The channel bridge plugin** — SHIPPED (CCB-S5-032, D-187; publishing to the website per
+      channel since CCB-S5-043, D-215). Channel posts arrive as standing announcements with origin
+      attributed, never passed off as hers; edits recompose, deletions withdraw, media re-hosts at
+      intake. The open questions resolved: one-way (no reply-back), and attribution renders via the
+      structured origin on all three surfaces. This row sat unchecked for eleven briefings after the
+      feature shipped (CCB-S5-063).
 - [ ] **The gallery**, coordinated with the site repository, cheapest first: ranking with **no model**
       (counting and sorting on the stable `senderMemberId`); then linked video from the metadata that
       arrives with the link; then images through a vision model; then uploaded video. **Settle the

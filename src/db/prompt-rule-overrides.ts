@@ -3,9 +3,12 @@
  * (CCB-S5-001, D-155, migration 045).
  *
  * The reading model is `src/interaction/rule-scope.ts`; this is only the SQL. The
- * constitutional refusal lives in the database as a trigger and is repeated here as a
- * gate, because an application that relies on a constraint for its error message gives
- * the operator a Postgres exception where a sentence was needed.
+ * constitutional refusal lives in the database as a trigger (extended to the critical
+ * off-switch by migration 076); the sentence the operator reads instead of a Postgres
+ * exception comes from the ROUTE, which gates on `canOverride` /
+ * `canDisablePerBot` before writing. This header used to claim the gate was repeated in
+ * this file, over a `ConstitutionalOverrideError` class nothing ever threw - a claimed
+ * share of a real guarantee that did not exist here (CCB-S5-063; the dead class is gone).
  */
 
 import type { Queryable } from './pool.js';
@@ -64,13 +67,6 @@ export async function listOverridesForRule(
     [ruleId],
   );
   return rows.map(toOverride);
-}
-
-export class ConstitutionalOverrideError extends Error {
-  constructor(ruleId: string, reason: string) {
-    super(`${ruleId} cannot be set per bot. ${reason}`);
-    this.name = 'ConstitutionalOverrideError';
-  }
 }
 
 /**

@@ -181,9 +181,9 @@ The sanitiser does **not** claim to detect prompt injection. That is not a solva
 
 `npm run verify:search-live` plants five real prompt injections in the result set, gives each one a tell that would only appear if it worked, prints her answer to every one, and separately proves each detector fires on text that would mean the attack landed - so a green run cannot mean the patterns match nothing.
 
-### Coming: the channel bridge
+### The channel bridge
 
-Designed, not built. Map a SimpleX channel onto one or more groups and mirror posts with their **origin attributed, never passed off as hers**, and onward to an activity stream or a blog. Open questions are recorded honestly in [`docs/feature-backlog.md`](docs/feature-backlog.md): one-way or reply-back, how edits and deletions and media behave, and how attribution renders on each of the three surfaces.
+Built and publishing (CCB-S5-032, CCB-S5-043). A SimpleX channel maps onto one or more groups and posts arrive as standing announcements with their **origin attributed, never passed off as hers** - forwarded verbatim, no model anywhere on the path. Edits recompose in place, deletions withdraw the forwarded copy, media is re-hosted at intake because relay links expire. Per channel, the operator can also publish the announcements to the public website: in the activity stream, or as a standalone block a site can embed without the stream.
 
 ---
 
@@ -200,11 +200,11 @@ Everything above is in this repository. Nothing is held back to make a hosted op
 | **AI** | Ollama on a machine you control, with a card that holds your chosen model |
 | **Network** | A hostname with TLS for the admin console. No SimpleX port is exposed |
 
-**The GPU is the real requirement.** Production runs `qwen3:32b`, measured at **22.11 GB of VRAM** at the context Ollama picks by default. Raising the context to 32768 pushes total footprint to 29.15 GB and spills **6.21 GB to CPU**, which is the point where it stops being fast. So a 24 GB card fits that model and a smaller one does not, which is arithmetic from the measurement rather than a benchmark of its own. Smaller models work, and the routing supports picking different ones for classification and for wording.
+**The GPU is the real requirement.** Production runs `qwen3:14b` at a served window of 24,576 tokens, measured at **13.19 GB of VRAM** fully on GPU with the embedder resident beside it (D-231; the earlier `qwen3:32b` was measured at 22.11 GB at Ollama's default context and spilled 6.21 GB to CPU at 32768, which is the point where it stops being fast - that measurement is why the move happened). A 24 GB card runs the shipped model with real headroom; smaller cards work with smaller models, and the routing supports picking different ones for classification and for wording.
 
 Measured on the operator's hardware against the smaller `qwen3.5:9b`: warm classification 0.9-1.5 s, cold request including model load 5.5-6.6 s, roughly 1.7-1.8 requests per second. An addressed message costs **two model calls** and about 7 s end to end. These are recorded observations on one machine, not properties of the code, and nothing in this repository can reproduce them.
 
-**Thinking is off, on purpose.** `qwen3:32b` is a reasoning model and Ollama would run a reasoning pass by default. This application sends `reasoning_effort: 'none'` on every request. With reasoning on, latency went from 2.8 s to over 16 s and **three replies in five came back empty** and fell back to the deterministic line, because the reasoning pass spends the same token budget as the answer. No depth dial was built, since the levels are not even a gradient.
+**Thinking is off, on purpose.** The qwen3 family are reasoning models and Ollama would run a reasoning pass by default. This application turns it off on every request (`think: false` on the native endpoint the reply path uses since D-252; `reasoning_effort: 'none'` in the era the measurement below was taken). With reasoning on, latency went from 2.8 s to over 16 s and **three replies in five came back empty** and fell back to the deterministic line, because the reasoning pass spends the same token budget as the answer. No depth dial was built, since the levels are not even a gradient.
 
 ### Install
 
@@ -345,7 +345,7 @@ Details, control by control, in [`docs/security.md`](docs/security.md).
 | Child-safety screening | Foundation only, no provider connected |
 | Public demo | Backend built, visitor pane not |
 | GPU telemetry | Not integrated |
-| Channel bridge plugin | Designed |
+| Channel bridge plugin | Built, publishing to the website per channel |
 | Human-operated agent controls, NPC scheduling | Planned |
 | RAG and long-term memory | Planned |
 | Additional transports | Planned |

@@ -10,8 +10,9 @@
  * paraphrased law is her stating her own rule inaccurately, which is worse than not answering.
  * Her framing around the quotes is hers.
  *
- * HOW MUCH AT ONCE. Forty-six nameable rules is a wall, and it would cost more context than
- * the whole rest of the prompt. So the set is SELECTED:
+ * HOW MUCH AT ONCE. The full nameable set is a wall (forty-six rules when this was written,
+ * and it only grows), and it would cost more context than the whole rest of the prompt. So
+ * the set is SELECTED:
  *
  *   - A SPECIFIC question ("why won't you do that", "what about my name") keyword-matches
  *     against the rule text and returns what matched.
@@ -115,7 +116,10 @@ export function asksForRecital(text: string): boolean {
  * "rules" against rule text returns whatever happens to contain the word.
  */
 const GENERAL_QUESTION =
-  /\b(all|every|list|what)\b.{0,24}\b(rules?|laws?)\b|\brules?\b.{0,16}\b(are|do you have|have you)\b|\brule\s?book\b|\bbook\s+of\s+elii\b|\bdeine\s+regeln\b/i;
+  // `eli+`, matching its two sibling predicates above (CCB-S5-063): this one alone
+  // demanded the exact spelling, so "what is the book of eli" reached the rules path
+  // through BOOK_NAME while missing the overview shape here.
+  /\b(all|every|list|what)\b.{0,24}\b(rules?|laws?)\b|\brules?\b.{0,16}\b(are|do you have|have you)\b|\brule\s?book\b|\bbook\s+of\s+eli+\b|\bdeine\s+regeln\b/i;
 
 /**
  * Whether this asks for the rules AS A BODY rather than about one thing.

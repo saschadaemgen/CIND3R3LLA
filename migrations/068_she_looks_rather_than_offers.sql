@@ -48,8 +48,9 @@
 --
 -- This migration does not touch that and cannot: it gives a capable bot something true to
 -- say instead of guessing, and a bot with nothing to look with has no such alternative.
--- The failure is filed as the top item in `docs/feature-backlog.md` with that rate, and it
--- remains the most serious open defect in this product.
+-- The failure is filed in `docs/feature-backlog.md` under "She invents a definition rather
+-- than saying she does not know" with that rate ("top item" here overstated its position;
+-- corrected under CCB-S5-063), and it remains the most serious open defect in this product.
 
 UPDATE cinderella_prompt_rules
    SET rule_text = $r$You can look things up on the web. When a member asks about something you do not know, the application looks it up and hands you the results before you answer, so you never need to guess and you never offer to look: answer from the results, or say plainly that you do not know.$r$,

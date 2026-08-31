@@ -618,7 +618,7 @@ export async function botModerationRules(
  * gives about the ordering guarantee: a box is something you tick once and then tick
  * forever. Typing cannot be done absent-mindedly, it cannot be done by a stray click, and
  * it cannot be done by a browser restoring a form. This is the switch that turns
- * recordings into consequences and it should cost six keystrokes.
+ * recordings into consequences and it should cost the keystrokes of typing the word out.
  */
 export const ARM_CONFIRMATION = 'ARM';
 

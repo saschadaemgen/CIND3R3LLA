@@ -359,12 +359,14 @@ the core never went quiet, and it also raises an entry on the admin dashboard.
 normally throughout; only replies wait, and a question asked during the window is
 answered once the core settles rather than dropped.
 
-**Rollback, in order of cost.** If the first live boot misbehaves, add
-`BOT_RUNTIME_HOSTING=false` to `/etc/cinderella/cinderella.env` and
-`systemctl restart cinderella`: that returns the bot to the pre-runtime path with no
-rebuild and no checkout change. Only if that also fails is the previous revision the
-answer (`git checkout <sha> && npm ci && npm run build && systemctl restart cinderella`).
-No migration is involved either way, so nothing has to be undone in the database.
+**Rollback.** The previous revision is the answer:
+`git checkout <sha> && npm ci && npm run build && systemctl restart cinderella`.
+(An earlier version of this section prescribed `BOT_RUNTIME_HOSTING=false` as the cheap
+first step; D-155 removed that flag and the pre-runtime boot path it selected, so the
+lever no longer exists - it would silently have reduced a multi-bot deployment to one
+bot even when it did.) Check whether the bad deploy applied a migration before rolling
+the checkout back: migrations are forward-only, and a revision from before one may not
+read the schema it left behind.
 
 > **Migration 013 rewrites the `messages` table.** It drops and recreates the
 > generated `search` column and its GIN index, which takes an `ACCESS EXCLUSIVE`

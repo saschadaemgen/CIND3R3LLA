@@ -4,7 +4,7 @@
 --
 -- D-144: every sentence the model reads is a row in this table, and there is no fallback copy
 -- in the source. She is about to be told what a page of the Book is, so those sentences are
--- rows here, editable in the Book of Elii like the other 106, and `verify:prompt-identity` is
+-- rows here, editable in the Book of Elii like every other rule, and `verify:prompt-identity` is
 -- re-baselined on purpose because the assembled prompt has moved.
 --
 -- ── THE NUMBER IS NOT HERS TO WRITE, AND THAT WAS MEASURED ───────────────────

@@ -609,9 +609,12 @@ export async function applyProfileUpdate(
   await runtime.scheduler.run(simplexUserId, 'update-profile', async () => {
     await runtime.chat.apiUpdateProfile(simplexUserId, desired);
   });
+  // `withImage` states what this write actually carried (CCB-S5-063): it logged a
+  // hardcoded `true` even on the words-only path, where the image is only the stored one
+  // carried forward.
   log.info('runtime: stored profile updated to match the configured one', {
     simplexUserId,
-    withImage: true,
+    withImage: desired.image !== undefined,
   });
   return true;
 }

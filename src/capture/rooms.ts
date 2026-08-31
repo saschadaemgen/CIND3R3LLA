@@ -279,7 +279,16 @@ export function decideCapture(
     const live = room.records.filter((r) => r.active && hasCapability(r.botProfileId));
     const candidates = [...new Set(live.map((r) => r.botProfileId))].sort((a, b) => a - b);
 
-    /** That bot's current record here; the most recent when a re-join left several. */
+    /**
+     * That bot's current record here; the most recent when a re-join left several.
+     *
+     * "Most recent" is decided by the HIGHEST local group id, which leans on the core
+     * assigning its per-profile ids monotonically - a rejoin gets a larger one (the very
+     * property D-205 records for the operator's own 4 -> 8 move). That is an assumption
+     * about the core's allocator, stated here because it was previously leaned on in
+     * silence (CCB-S5-063); if it ever broke, the cost would be capture keyed to an older
+     * record of the SAME bot, which the Capture page's clear-record control repairs.
+     */
     const recordFor = (botProfileId: number): number | null =>
       live
         .filter((r) => r.botProfileId === botProfileId)

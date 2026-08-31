@@ -49,8 +49,10 @@
  * how cheeky she is strictly below a fixed limit; it does not lift the limit, and
  * there is no value of it that can. The ceiling rules (`ceiling.*` in the registry, named
  * by {@link CEILING_RULE_IDS}) are emitted on every dialled prompt, at every value,
- * including when no personality is configured at all, and the axis guidance is emitted
- * underneath them. See {@link conversationVoice}.
+ * including when no personality is configured at all. In the assembled prompt the axis
+ * guidance renders ABOVE the ceiling (ords 500s against 600s; this sentence had it
+ * "underneath", CCB-S5-063) - position is presentation, and the ceiling rules bind
+ * whatever stands where. See {@link conversationVoice}.
  */
 
 import {
@@ -94,7 +96,10 @@ export const BASE_CHARACTER_MAX_CHARS = 600;
  * where she came from, and the operator's written origin is 1.7 KB of it on its own.
  * CCB-S4-034 asked for at least 4000, which is what this is: room for the text that
  * exists plus room to extend it, while the whole conversation prompt stays a small
- * fraction of the context window. The measurement is in {@link originLines}.
+ * fraction of the context window. The origin reaches the prompt through the `origin.*`
+ * rules in the registry (migration 035), whose placeholders {@link dialledPromptInputs}
+ * fills. (An `{@link originLines}` reference stood here for a symbol that never existed
+ * after D-144 moved the sentences into the registry; CCB-S5-063.)
  */
 export const ORIGIN_MAX_CHARS = 4000;
 
@@ -103,7 +108,8 @@ export interface BotPersonality {
   baseCharacter: string;
   /**
    * Where she came from, in the operator's own words. Empty means "no history", which is
-   * a valid choice and not an unfinished one. See {@link originLines}.
+   * a valid choice and not an unfinished one. Rendered through the `origin.*` registry
+   * rules via {@link dialledPromptInputs}.
    */
   origin: string;
   /** Soft to cutting. */
@@ -155,8 +161,6 @@ export const DEFAULT_PERSONALITY: Readonly<BotPersonality> = Object.freeze({
  * deflected or invented one. The standing guard against inventing facts was doing its
  * job and had nothing true to offer instead. This is the true thing.
  *
- * ── WHY THE SAME TEXT IS ALSO IN A MIGRATION, AND HOW THAT STAYS HONEST ──────
- *
  * ── IT NAMES NO MODEL, AND THAT IS THE POINT (CCB-S4-042, D-145) ────────────
  *
  * It used to. "She thinks on qwen3.5, nine billion parameters" was true the day it was
@@ -175,7 +179,7 @@ export const DEFAULT_PERSONALITY: Readonly<BotPersonality> = Object.freeze({
  * statements are needed and the existing bot would otherwise keep saying the old thing.
  * The original 031 is NOT edited, because an applied migration is never edited (D-069).
  *
- * The mechanism is unchanged: a `.sql` file applied by a
+ * The mechanism is unchanged: a `.sql` column default
  * that fills the existing bot and any new one. It has to: a `.sql` file applied by a
  * plain runner cannot import a TypeScript constant. Two copies of 1.7 KB of prose is
  * exactly the kind of duplication that drifts silently, so `verify:personality` creates
@@ -753,13 +757,16 @@ function formatNow(time: CurrentTime): string {
 }
 
 /**
- * The per-axis guidance, rendered from the three `dial-axis` template rules.
+ * The per-axis guidance, rendered from the `dial-axis` template rules (two since
+ * migration 074).
  *
  * This is the one place where the registry is used as a TEMPLATE rather than as a stream:
- * the three sentences under each axis are identical in shape and differ only in the values
- * an axis supplies, so they are stored once and rendered five times. Storing fifteen rows
- * would have put the same sentence in the registry five times over, and a console that let
- * an operator edit one of the five would produce a prompt that contradicts itself.
+ * the sentences under each axis (two since migration 074 moved the anti-reuse sentence out
+ * of the per-axis template; this comment said "three" after that) are identical in shape
+ * and differ only in the values an axis supplies, so they are stored once and rendered five
+ * times. Storing a row per axis would have put the same sentence in the registry five times
+ * over, and a console that let an operator edit one of the five would produce a prompt that
+ * contradicts itself.
  *
  * Fills the {{dialAxes}} placeholder on the `dials.axes` rule, which is what puts this block
  * in the right position without the position being decided here.

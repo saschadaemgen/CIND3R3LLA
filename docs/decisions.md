@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 259 decisions</strong> — newest first. Highest allocated: <strong>D-260</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 260 decisions</strong> — newest first. Highest allocated: <strong>D-261</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-261 | Everything that said something no longer true, and what would catch the next one | IMPLEMENTED |
 | D-260 | The three serious ones: a rollback stays in its space, the critical off-switch is refused per bot, and names leave the journal | IMPLEMENTED |
 | D-259 | The sidebar rule is checked, because twice it was found by the operator instead | IMPLEMENTED |
 | D-258 | Two id spaces made unmistakable; a rule is not set aside for anybody who asks; and a verdict about a member needs evidence | IMPLEMENTED |
@@ -288,6 +289,126 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-261 - Everything that said something no longer true, and what would catch the next one
+
+**Status: IMPLEMENTED** (CCB-S5-063, no migration). The stale-surface share of the six
+site-material annexes' ~70 defect entries: roughly forty instances fixed across four classes,
+two items handed to the operator undecided, and the proposal below reported rather than built.
+
+**THE MEMBER-FACING ONE WENT FIRST, at the operator's direction.** The publish confirmation
+told a member, in both languages, that taking their words back was "final; there is no
+bringing it back after" - while the revocation flow it describes hides everything at once and
+then offers hide, restorable by the member whenever they like (CCB-S3-013). The product was
+telling a member something untrue about their own rights on the one surface where accuracy is
+the whole promise. The copy now states what happens: hidden at once, then the choice of
+keeping or destroying is theirs. The help one-liners lost the same false "for good" /
+"endgültig", and `verify:interaction` - **which had pinned the defect**, asserting
+`/final|no bringing it back/` - now asserts the true promise AND that the false one is gone,
+so the old wording coming back turns it red.
+
+**THE FIX OF CHOICE WAS DERIVE, NOT RETYPE** (ground rule 3, the Book's derived count as
+precedent). Where a figure could come from the thing it describes, it now does: the dial
+count from `AXIS_DEFINITIONS`; the token-cap figures from `replyTokenCap(replyCharBudget(n))`;
+`measure-prompt`'s denominator from `SERVED_CONTEXT_TOKENS` (the hand-typed "of 8192" D-231
+had already removed from the console card, surviving in the instrument the docs quote); the
+Web Search page's example source line built from the shipped persona default instead of
+quoting the pre-D-244 opener; the footer version read from package.json (two unlinked
+copies); the recital's "N recorded decisions" from `COUNT(*)` instead of a 100-row fetch's
+length (the capped-buffer shape `forgery-log.ts` warns against); the endpoint badge from
+`isPrivateAiHost`, the boot guard's own exported predicate, after its private copy called
+guard-accepted `*.localhost` and fc00::/7 addresses "External" (D-205's shape); the
+filler-prefix form bounds from the same exported constants the normalizer clamps by (the form
+offered 0..8 words over a clamp of 6, and 0..60 chars over a clamp of 80); and the crypto
+conversion's "via USD cross rate" - a ternary with two identical branches - replaced by a
+`via` field set where the cross actually runs, so a non-USD deployment names its own base
+currency.
+
+**THE PREVIEW FAMILY WAS BROUGHT ONTO THE REPLY PATH'S OWN INPUTS**, three at once:
+`effectiveMaxChars` extracted from the transport so every mode card states the bound that
+mode is sent (the Assembled Word passed the conversation budget to all five);
+`previewIdentityFor` resolving the SELECTED bot's effective wake word and nicknames from the
+rows (previews read the shared record) with the live model merged (the new-law preview had
+dropped it); and the capability catalog carried by every preview and by the "What it costs"
+card - the third instance of that card's own corrected class after D-220's music and D-229's
+voice, and the card's copy now names everything it carries. The Diagnostics page grew the Bot
+column its entries have carried the id for since CCB-S5-006: with two bots, six streams
+interleaved unattributed.
+
+**Documentation that named what no longer exists**: the RUNBOOK's and `.env.example`'s
+`BOT_RUNTIME_HOSTING=false` rollback lever (removed by D-155; rolling back is a checkout
+now, with a warning about applied migrations); the backup contradiction resolved in
+`backup.sh`'s favour - the env file IS captured, encrypted under the passphrase that lives
+outside it, and the passphrase is what must be kept separately; the README's `qwen3:32b` and
+"Designed, not built" bridge; the backlog's unchecked bridge row (eleven briefings after it
+shipped), "unmerged" multi-profile runtime, "Seasons 1-4" headers, and the unqualified
+"nothing auto-expires today" that migration 070's nightly sweep made unsafe to quote;
+architecture.md's opening still describing one bot in one named group; CLAUDE.md's "hourly"
+retention pass (nightly), "seventeen conditions" (30), "24 configurations" (30), "SimpleGoX",
+and the Parked line that read as if the whole embed front were parked; the Holds page
+subtitle claiming no hold withholds publication (true of report-holds only, false for
+csam/escalated); the AI pages' "Private RAG - Not configured" (false since the knowledge
+base), the pre-D-252 transport story ("ignores num_ctx" became restraint-not-impossibility,
+stated as such), and the "bounded at 320 tokens" claims in three places; D-026's stale
+timing sentence corrected in place per D-193.
+
+**False comments corrected where they stand**, each now stating where the truth lives: the
+dead `ConstitutionalOverrideError` deleted with its header's claimed share of a guarantee
+that lived in the route; `setting-scope.ts`'s claim that invocation rows carry the bot (no
+such column, deliberately); `personality.ts`'s prompt-order claim ("underneath the ceiling";
+above it), its duplicated heading, garbled sentence, "three sentences per axis" (two since
+074) and phantom `{@link originLines}` (echoed in migration 066's column comment);
+`capture/handler.ts` saying consent commands "are not persisted" above the code persisting
+them by design; `lookup-announcement.ts` describing the knowledge attribution as still
+withdrawn after D-256 reprinted it through the evidence rule - with the note that the
+never-disagree check now covers `web` alone; the gate regex whose `\b` bound only its outer
+alternatives, rewritten to say what it means (a stem substring, refusing direction
+unchanged); `host.ts` logging `withImage: true` on the words-only path; `rooms.ts`'s
+highest-id-is-newest assumption stated instead of leaned on; migration comment counts
+(042/046/048) reworded countless or corrected beside untouched data - safe because the
+runner keys on filename with no content checksum, verified before editing; and the stale
+point-in-time counts in `disclosure.ts` and `law-numbers.ts` made explicitly point-in-time.
+The `elii`-exact spelling in GENERAL_QUESTION was harmonised to its two siblings' `eli+`.
+`renderLawNumbers` is documented as what it is: no production caller, by D-159's measurement,
+kept as the deterministic phrase-builder the harness pins.
+
+**THE TWO OPERATOR DECISIONS, UNTOUCHED AS INSTRUCTED**: the moderation ladder's rungs have
+no names, only numbers one to four; and bridge posts plus re-hosted files under
+`BRIDGE_MEDIA_ROOT` have no retention at all.
+
+**JUDGED NOT FIXED, AND WHY.** Behavioural defects the annexes flagged that are not stale
+surfaces and deserve their own briefing: the Welcome once-rule cascading away on bot deletion
+(schema change), bridge intake MIME-by-extension, `latestMemberAudio` picking newest media
+rather than newest audio, the probe conflating could-not-look with looked-and-absent, the
+crypto quote cache never evicting, the missing console controls (four crypto settings,
+hideWords/deleteWords), mega-menu grouping, raw group ids on Moderation pages. Standing
+recorded debts merely restated: `cloud_allowed`, `auto_accept_contacts`, D-245's follow-up,
+the D-205 bridge re-key, marketing-ahead-of-legal, D-224's delivery watches. Historical
+records left historical: measurement provenance naming `qwen3:32b`, the Web Search page's
+incident retelling quoting the old source line as what it said that day, decisions entries
+other than the in-place corrections named above. The unrecorded YouTube-downloader refusal is
+flagged for the operator: a decision entry should carry his reasoning, not an invented one.
+
+**WHAT WOULD CATCH THE NEXT ONE - reported, not built** (the briefing's own bar against a
+sweeping checker). The class splits three ways. (1) **Derivable figures**: every fix above
+that became `${derived}` is now structurally immune, and the convention to carry forward is
+that operator-copy quoting a figure, a line, or a count renders it from the constant that is
+the figure - cost: nothing at runtime, one import per surface, precedent now in twelve
+places. (2) **Assertable claims**: two cheap checks are worth building next - every env var
+documented in `.env.example` is read somewhere in `src/config.ts` (this alone would have
+turned the dead `BOT_RUNTIME_HOSTING` lever red the day D-155 removed it), and every
+`{@link symbol}` in source resolves to an existing export (would have caught `originLines`);
+each is a small script over greppable facts with a printed allow-list, D-259's shape. A
+manifest-driven doc-figure checker (file, pattern, source constant) is possible but the
+manifest is itself a typed list that goes stale - not recommended. (3) **Prose judgment**:
+counts and mechanisms in living documents cannot be derived, so the convention is the fix -
+no bare counts (name the deriving command instead, as CLAUDE.md now does thrice), no
+"last updated under" stamps (both headers lost theirs as unkeepable), and point-in-time
+figures written as point-in-time. Six independent passes found the same class because prose
+accumulates it faster than anyone notices; the two checks and the conventions shrink the
+class to the part only a reader can find.
+
 ---
 
 ### D-260 - The three serious ones: a rollback stays in its space, the critical off-switch is refused per bot, and names leave the journal
@@ -12773,8 +12894,10 @@ terms**. **Caveat (load-bearing):** any Pro edition that still _links_ the AGPL-
 `simplex-chat` library remains **AGPL-bound** — a commercial licence for Pro is only possible if
 (a) SimpleX grants a commercial library licence for `simplex-chat`, **or** (b) Pro is architected
 to **not link** `simplex-chat` (e.g. a separate process / service boundary). This constraint is
-decided now so Season 3's multi-tenancy/Pro work (§Part D.7 of the Season 2 protocol) is built with
-the licence boundary in mind from the start.
+decided now so the multi-tenancy/Pro work is built with
+the licence boundary in mind from the start. *(Correction in place, CCB-S5-063: this sentence
+originally said "Season 3's multi-tenancy/Pro work"; no such work happened in Season 3 and none
+is scheduled as Season 5 closes. The PLANNED status and the caveat are unchanged and current.)*
 **Rationale.** Open-core: AGPL keeps the community edition open and trustworthy; a paid Pro tier
 funds sustainability and customer self-service. The AGPL copyleft reaches anything that links the
 covered library, so "commercial terms" for Pro are not free to assert — the caveat records the

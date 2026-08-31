@@ -27,8 +27,8 @@
  * number, on the ground that a withheld law's number reveals nothing. That is true of one
  * number and false of all of them together, which is the shape CCB-S4-046 keeps finding.
  * Ids are family-clustered (`ceiling.*`, `memory.*`, `moderation.*`), so an id-sorted
- * numbering puts a withheld law between two she will read out; a member who walks 1..106 and
- * writes down which numbers come back withheld can read each one's SUBJECT off its
+ * numbering puts a withheld law between two she will read out; a member who walks the numbered
+ * pages in order and writes down which numbers come back withheld can read each one's SUBJECT off its
  * neighbours. That is narrowing the withheld set by topic, which is precisely what
  * `disclosure.never-narrow` forbids and what the elimination gate exists to stop.
  *
@@ -153,11 +153,15 @@ export function nextLawAfter(rules: PromptRuleSet, lawId: string | null): Prompt
 }
 
 /**
- * The numbers of the laws quoted to her, as one phrase for the prompt.
+ * The numbers of a set of laws, as one deterministic phrase.
  *
- * Application-supplied like every other count on this path (D-137). She is told which numbers
- * these are; she is not asked to work them out, because a model counting positions in a list
- * it was handed is a model that will hand a member the wrong page.
+ * NO PRODUCTION CALLER, and that is not an accident to fix (CCB-S5-063 corrected this
+ * comment, which described a prompt contribution that does not happen): D-159 measured
+ * what a model does when handed laws and their numbers - it put the number on the wrong
+ * law - so the application PRINTS the page itself and no prompt carries these phrases.
+ * The function stays as the one deterministic renderer of "law N" / "laws N, M and K"
+ * (`verify:book-scene` pins it) for any future surface that needs the phrase where the
+ * application, not the model, does the counting (D-137).
  */
 export function renderLawNumbers(
   rules: PromptRuleSet,

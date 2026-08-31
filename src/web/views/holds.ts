@@ -90,7 +90,14 @@ export function registerHolds(app: FastifyInstance, ctx: ViewContext): void {
     const body = html`
       ${pageHeader(
         'Evidence holds',
-        'Content held against destruction while a report is reviewed. A hold never hides content and never publishes it: it only defers erasure.',
+        // The old subtitle said "a hold never hides content and never publishes it",
+        // which is true of report-holds only: a csam or escalated hold DOES withhold
+        // publication and relocates the bytes to quarantine (migration 022). A page
+        // header that overstates a guarantee for two of the kinds it lists is the
+        // D-212 class (CCB-S5-063).
+        'Content held against destruction while a report is reviewed. Every hold defers ' +
+          'erasure; a report-hold changes nothing else, while a csam or escalated hold also ' +
+          'withholds the item from publication and moves its bytes to quarantine.',
       )}
       ${flash ? html`<div class="rounded-lg bg-blue-900/40 px-4 py-2 text-sm">${flash}</div>` : ''}
       ${expiringSoon > 0 && view === 'live'

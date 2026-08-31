@@ -529,8 +529,10 @@ function cleanReply(value: string, preserveLines: boolean): string {
  * Sizing on the average would reintroduce the same defect for exactly the messages this
  * product's members write. The envelope's own tokens are added on top.
  *
- * The 320 floor keeps every budget at verbosity 8 and below sending precisely what it sent
- * before, so this cannot change a reply anybody has already tuned.
+ * The 320 floor keeps every budget at verbosity 5 and below sending precisely what it sent
+ * before (500 chars -> 250 + 48 = 298, still under the floor); from verbosity 6 up the cap
+ * grows with the budget (368 / 448 / 538 / 638 / 748). An earlier version of this sentence
+ * claimed "verbosity 8 and below", which the formula it sits above contradicts (CCB-S5-063).
  */
 export function replyTokenCap(maxChars: number): number {
   // `{"reply":"..."}` plus a safety margin for the schema's own structure.
@@ -1088,42 +1090,56 @@ function guardProtectedText(raw: string, request: AiReplyRequest): string {
   return text;
 }
 
+/**
+ * The character bound a request is actually sent, per mode.
+ *
+ * EXTRACTED so the console previews and the transport read ONE derivation (CCB-S5-063):
+ * the Assembled Word and the per-rule preview used to pass the conversation budget for
+ * every mode, so a retort or locked card stated a limit nobody is sent, under copy
+ * asserting "what you read here is what she would be told". An explicit `maxChars` from a
+ * caller still wins, because a caller that named a length meant it.
+ *
+ * Mode by mode: `locked` writes only a short lead. `searching` is a HOLDING LINE, bounded
+ * far below anything else she says - it scales with verbosity like everything else,
+ * because a terse bot should be terse about this too, but the ceiling is low at every
+ * setting: this is one sentence. `retort` scales with the dial under a one-liner cap
+ * (CCB-S4-038: told to be expansive under a fixed cap she writes past it, the reply is
+ * rejected for length, and the operator concludes the slider does nothing - the
+ * instruction and the limit come from the same number instead; see `retortCharBudget`).
+ * `conversation` is the verbosity budget itself, and `free` rewrites a draft under the
+ * default cap.
+ */
+export function effectiveMaxChars(request: AiReplyRequest): number {
+  return request.mode === 'locked'
+    ? LOCKED_LEAD_MAX_CHARS
+    : request.mode === 'searching'
+      ? Math.max(
+          40,
+          Math.min(
+            request.maxChars ??
+              Math.round(retortCharBudget(request.personality?.verbosity ?? 5) * 0.6),
+            200,
+          ),
+        )
+      : request.mode === 'retort'
+        ? Math.max(
+            40,
+            Math.min(request.maxChars ?? retortCharBudget(request.personality?.verbosity ?? 5), 400),
+          )
+        : request.mode === 'conversation'
+          ? Math.max(
+              80,
+              Math.min(request.maxChars ?? replyCharBudget(request.personality?.verbosity ?? 5), 1400),
+            )
+          : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
+}
+
 export async function generateOllamaReply(
   config: LocalAiConfig,
   request: AiReplyRequest,
   fetchImpl: FetchLike = fetch,
 ): Promise<string> {
-  const maxChars =
-    request.mode === 'locked'
-      ? LOCKED_LEAD_MAX_CHARS
-      : request.mode === 'searching'
-        ? // A HOLDING LINE, bounded far below anything else she says. It scales with
-          // verbosity like everything else, because a terse bot should be terse about
-          // this too, but the ceiling is low at every setting: this is one sentence.
-          Math.max(40, Math.min(request.maxChars ?? Math.round(retortCharBudget(request.personality?.verbosity ?? 5) * 0.6), 200))
-        : request.mode === 'retort'
-        ? // THE DIAL MOVES THE BOUND (CCB-S4-038). Told to be expansive under a fixed cap,
-          // she writes past it, the reply is rejected for length and the member gets the
-          // deterministic fallback, so the operator concludes the slider does nothing. The
-          // instruction and the limit come from the same number instead. An explicit
-          // `maxChars` from a caller still wins, because a caller that named a length meant
-          // it. A retort scales far less and stays a one-liner: see `retortCharBudget`.
-          Math.max(
-            40,
-            Math.min(
-              request.maxChars ?? retortCharBudget(request.personality?.verbosity ?? 5),
-              400,
-            ),
-          )
-        : request.mode === 'conversation'
-          ? Math.max(
-              80,
-              Math.min(
-                request.maxChars ?? replyCharBudget(request.personality?.verbosity ?? 5),
-                1400,
-              ),
-            )
-          : Math.max(80, Math.min(request.maxChars ?? DEFAULT_MAX_CHARS, 1600));
+  const maxChars = effectiveMaxChars(request);
   const hasWebResults = (request.webResults?.length ?? 0) > 0;
   const hasDocuments = (request.knowledgePassages?.length ?? 0) > 0;
   // ── THE NATIVE ENDPOINT, SINCE CCB-S5-060 (D-252) ────────────────────────

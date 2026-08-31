@@ -17,7 +17,8 @@ first capability**; later she brings a team of additional agents. Treat
 As the archive, she joins a public SimpleX group the operator controls, captures
 opted-in members' messages (text/image/video/voice/file/link) into PostgreSQL +
 a media tree on disk, and (later season) republishes them as a searchable public
-web archive. Standalone — NOT part of CARVILON, CyberDesk, or SimpleGoX.
+web archive. Standalone — NOT part of CARVILON, CyberDesk, or SimpleGo (spelled "SimpleGoX"
+here for five seasons; every other reference in the tree says SimpleGo).
 
 ## The one rule: consent-first
 
@@ -398,7 +399,8 @@ in one database and broken in the one beside it is not a promise.
   `archive/` (whether her own messages publish, name redaction, destruction, the
   deferred-destruction sweeper, and `retention.ts`, **which stops keeping what nobody agreed
   to** (CCB-S5-054, D-240): the allow-list predicate, the tombstone that clears content and
-  keeps the skeleton, and the hourly pass. The sentence to repeat is *the content is gone, the
+  keeps the skeleton, and the nightly pass at local midnight (this line said "hourly"; the
+  shipped sweep is nightly). The sentence to repeat is *the content is gone, the
   fact that a message existed is not*. Nothing here can move the published set, and that is
   STRUCTURAL rather than careful: `message_publish_state` reads none of the columns the sweep
   clears, and opt-in is forward-only, so every swept row sits on the unreachable side of every
@@ -413,7 +415,9 @@ in one database and broken in the one beside it is not a promise.
   on but must never recite or raise unprompted (D-138).
   **The RULES she is given are not in the code at all** (D-144): every sentence the model
   reads is a row in `cinderella_prompt_rules`, seeded by migration 035, assembled by
-  `prompt-rules.ts` (pure: lanes, the seventeen fixed conditions, placeholder rendering),
+  `prompt-rules.ts` (pure: lanes, the fixed conditions - `PROMPT_RULE_CONDITIONS` is the
+  count, which this line once typed as "seventeen" and let go stale at 30 - and placeholder
+  rendering),
   loaded by `db/prompt-rules.ts` and cached by `prompt-rule-service.ts`. **The migration is
   the only authored copy and there is deliberately no fallback in code**, because a fallback
   is a second source; an unreadable registry makes her fall back to the deterministic reply
@@ -803,8 +807,9 @@ that the page's controls are reachable (D-162); that was done in a browser),
 matches the headings byte for byte, that every entry has a Status, and above all that **no decision
 number is allocated twice**, which has happened twice. Mutation-proven four ways. Regenerate with
 `npm run verify:decisions-index -- --update` after touching a decision heading or its Status),
-`verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: 24
-configurations covering every lane and every condition branch, compared against
+`verify:prompt-identity` (**the byte-identity check on the whole prompt**, D-144: one
+configuration per lane and condition branch - the count lives in the baseline file and grows
+with the conditions, so it is not typed here; it said "24" while 30 were on disk - compared against
 `scripts/fixtures/prompt-baseline.json`, which was captured from the code one commit BEFORE
 the rule registry moved the sentences into the database. It is not specific to that
 briefing: any change to any prompt line, from any briefing or any future rule edit, fails it
@@ -1251,8 +1256,10 @@ code. See architecture §26, D-075/D-076.
 
 ## Parked (do not build now)
 
-Public `/embed/<id>` widget render + Web-Component (later season; config model + admin
-UI already exist), AI moderation / CSAM scanning (separate track — the
+The `/embed/<id>` **widget render and Web-Component alone** (later season; the config model
+and admin UI exist, and the public SSR front — the activity stream, the channel block at
+`/embed/:id/channels`, the site — SHIPPED and is not parked; this line read as if the whole
+embed front were parked, CCB-S5-063), AI moderation / CSAM scanning (separate track — the
 `moderation_state` column is the hook), self-hosted relay/super-peer capture.
 
 **The bot avatar left this list under CCB-S5-007** and had arguably left it earlier: it was

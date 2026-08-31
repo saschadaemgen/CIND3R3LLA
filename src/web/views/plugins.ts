@@ -48,6 +48,7 @@ import { captureCounts } from '../../capture/room-service.js';
 import { CAPTURE_ID } from '../../plugins/capture/plugin.js';
 import { isPluginEnabled, listPlugins } from '../../plugins/registry.js';
 import { WEB_SEARCH_ID } from '../../plugins/web-search/plugin.js';
+import { DEFAULT_INTERACTION } from '../../interaction/settings.js';
 import { webSearchDiagnostics } from '../../plugins/web-search/service.js';
 import {
   SEARCH_PROVIDERS,
@@ -1103,7 +1104,19 @@ export function registerPlugins(app: FastifyInstance, ctx: ViewContext): void {
             ${card(
               'What the source line contains',
               html`<p class="text-sm text-slate-600">
-                  <code>🔎 From the web: example.org [1](https://example.org/the/page), ...</code>
+                  <code
+                    >${
+                      // The example is BUILT from the shipped default rather than typed
+                      // (CCB-S5-063): this card went on quoting the pre-D-244 opener
+                      // ("From the web:") after the line itself was reworded, which is the
+                      // stale-quote class. A deployment that edits the line on the Voice
+                      // page edits what she sends; this card shows what ships.
+                      (DEFAULT_INTERACTION.persona['en']?.searchSources ?? '').replace(
+                        '{sources}',
+                        'example.org [1](https://example.org/the/page), ...',
+                      )
+                    }</code
+                  >
                 </p>
                 <p class="mt-3 text-sm text-slate-600">
                   The <strong>domain</strong> is the part you read to judge whether to trust the

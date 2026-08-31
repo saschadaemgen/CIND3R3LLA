@@ -40,8 +40,12 @@
  */
 
 import type { Queryable } from '../db/pool.js';
-import type { BotPersonality } from '../interaction/personality.js';
+import type { BotIdentity, BotPersonality } from '../interaction/personality.js';
 import { botPersonalityById } from '../profiles/bot-onboarding.js';
+import { botDisplayName, listSettingOverridesForBot } from '../db/interaction-overrides.js';
+import { applySettingOverrides } from '../interaction/setting-scope.js';
+import { botIdentity, type InteractionSettings } from '../interaction/settings.js';
+import { currentReplyModel } from '../interaction/ai-runtime.js';
 
 /**
  * The personality a preview of this bot's prompt must carry.
@@ -56,4 +60,29 @@ export async function previewPersonality(
 ): Promise<BotPersonality | null> {
   if (botProfileId === null || botProfileId === undefined) return null;
   return await botPersonalityById(db, botProfileId);
+}
+
+/**
+ * The identity a preview of this bot's prompt must carry (CCB-S5-063): the bot's EFFECTIVE
+ * interaction record - per-bot wake word and nicknames applied over the shared one, from
+ * the ROWS for the same first-request reason the header gives - with the live reply model
+ * merged in, exactly as the reply path's `facts()` merges it. Previews used to read the
+ * shared record, so on a multi-bot deployment they showed one bot's dials under the shared
+ * name.
+ */
+export async function previewIdentityFor(
+  db: Queryable,
+  shared: InteractionSettings,
+  botProfileId: number | null | undefined,
+): Promise<BotIdentity> {
+  let settings = shared;
+  if (botProfileId !== null && botProfileId !== undefined) {
+    const [overrides, displayName] = await Promise.all([
+      listSettingOverridesForBot(db, botProfileId),
+      botDisplayName(db, botProfileId),
+    ]);
+    settings = applySettingOverrides(shared, overrides, displayName ?? undefined);
+  }
+  const model = currentReplyModel();
+  return { ...botIdentity(settings), ...(model ? { model } : {}) };
 }

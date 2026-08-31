@@ -52,8 +52,10 @@ const CAPABILITIES: Partial<Record<Intent, Capability>> = {
   },
   UNPUBLISH: {
     keyword: 'unpublish',
-    en: '*unpublish* - take everything you have published back out, for good',
-    de: '*unpublish* - alles Veröffentlichte endgültig zurücknehmen',
+    // CCB-S5-063: "for good" / "endgültig" claimed a finality the product does not
+    // enforce; after unpublish the member chooses hide (restorable) or delete.
+    en: '*unpublish* - take everything you have published back out, all at once',
+    de: '*unpublish* - alles Veröffentlichte auf einmal zurücknehmen',
   },
   STATUS: {
     keyword: 'status',

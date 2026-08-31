@@ -226,8 +226,9 @@ export class ModelQueueMeter {
    * default for, they are THREE TIMES apart, and the operator's own production figure of a
    * 16.4 second reply matches neither, because production is different hardware again.
    *
-   * A constant would therefore have made her announce a two second wait on one deployment
-   * and stay silent through a sixteen second one on another. There is no number that is
+   * A constant would therefore have made her announce a one second wait on one deployment
+   * and stay silent through a sixteen second one on another (the figure as D-184 records
+   * it; this retelling said "two"). There is no number that is
    * right for a deployment this code has never run on, so it is read from her own replies
    * instead. It costs one integer per call on a meter that was already recording the times.
    *

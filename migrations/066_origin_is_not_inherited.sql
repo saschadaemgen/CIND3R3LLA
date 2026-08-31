@@ -62,4 +62,6 @@ COMMENT ON COLUMN cinderella_bot_profiles.origin IS
   'What she is and where she came from, per bot (CCB-S4-034). NULL means this bot has no '
   'history to draw on and the prompt says nothing about its past. NOT defaulted: a new bot '
   'arrives with none rather than with another bot''s (CCB-S5-045, D-230). '
-  'See originLines() in src/interaction/personality.ts.';
+  'Rendered through the origin.* registry rules; dialledPromptInputs() in '
+  'src/interaction/personality.ts fills their placeholders. (This comment named an '
+  'originLines() that never existed after D-144; corrected under CCB-S5-063.)';

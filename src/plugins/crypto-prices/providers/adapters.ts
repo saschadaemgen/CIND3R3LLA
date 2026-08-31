@@ -419,7 +419,7 @@ export class DexscreenerProvider implements PriceProvider {
       throw new ProviderError(this.name, 'no pairs for token', true);
     }
 
-    let chosen: { price: number; liquidity: number; at: number } | undefined;
+    let chosen: { price: number; liquidity: number } | undefined;
     for (const raw of pairs) {
       const p = rec(raw);
       if (s(p['chainId']).toLowerCase() !== chain.toLowerCase()) continue;
@@ -431,10 +431,15 @@ export class DexscreenerProvider implements PriceProvider {
       const liquidity = num(rec(p['liquidity'])['usd']) ?? 0;
       if (liquidity < (this.opts.minLiquidityUsd?.() ?? DEFAULT_MIN_LIQUIDITY_USD)) continue;
       if (!chosen || liquidity > chosen.liquidity) {
-        chosen = { price, liquidity, at: num(p['pairCreatedAt']) ?? Date.now() };
+        chosen = { price, liquidity };
       }
     }
     if (!chosen) throw new ProviderError(this.name, 'no pool above the liquidity floor', true);
+    // `at` is the FETCH time, deliberately: Dexscreener's payload carries no price
+    // timestamp, only `pairCreatedAt`, which a `chosen.at` used to compute and then
+    // discard here - and surfacing a pool's creation date as a quote's age would state
+    // the wrong kind of time entirely (CCB-S5-063). Age from a cache hit still reads
+    // honestly, because the cached quote keeps the fetch time it was taken at.
     return { price: chosen.price, vs: 'usd', at: Date.now(), provider: this.name };
   }
 }

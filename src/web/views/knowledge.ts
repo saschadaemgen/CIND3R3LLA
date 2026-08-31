@@ -503,7 +503,11 @@ export function registerKnowledge(app: FastifyInstance, ctx: ViewContext): void 
                 ${field(
                   'Minimum relevance (cosine)',
                   num('minScore', settings.minScore, -1, 1, '0.01'),
-                  'THE control that decides whether this is trustworthy. Below it nothing is retrieved and she says she has nothing rather than delivering the least-bad chunk. Measured on your material: a relevant chunk scores 0.62 to 0.75, an unrelated question 0.39 to 0.43, a different topic from this project 0.49.',
+                  // No typed bands (CCB-S5-063): this text quoted the FIRST measurement's
+                  // figures while the default shipped from the SECOND (D-226, off-topic
+                  // noise up to 0.58 on real material). Bands belong to a deployment's own
+                  // documents, so the instrument is named instead of a number.
+                  'THE control that decides whether this is trustworthy. Below it nothing is retrieved and she says she has nothing rather than delivering the least-bad chunk. The shipped default is measured, twice (D-226): off-topic noise on real material reached 0.58, so the floor sits above it. Before moving it, run npm run calibrate:knowledge-relevance to print the bands for your own documents.',
                 )}
                 ${field(
                   'Prompt budget (characters)',

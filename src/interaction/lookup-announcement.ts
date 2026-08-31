@@ -192,11 +192,15 @@ export function lookupBrief(kind: LookupKind): string {
  * `archive` has none: its answer is a count of what this group said, and there is no source
  * to name beyond the group itself.
  *
- * `knowledge` has none SINCE CCB-S5-056, and that is a withdrawal rather than an absence.
- * The line printed a false attribution six times in a week; the sixth put a document name
- * under invented claims about a third party. The application stops printing it until an
- * attribution can be proven to name the source the answer actually used, which is
- * CCB-S5-055. **The persona string itself stays** - `protected-text.ts` derives what she may
+ * `knowledge` is null HERE, and since D-256 that no longer means no line is printed: the
+ * CCB-S5-056 withdrawal (a false attribution six times in a week, the sixth putting a
+ * document name under invented claims about a third party) was lifted when the evidence
+ * rule landed, and the ENGINE now prints the knowledge attribution itself from the titles
+ * that survived that rule - not through this key. The null therefore means "no line owned
+ * by this table", and the never-disagree check that reads this key covers `web` alone;
+ * the knowledge line's honesty is held by the evidence rule instead (CCB-S5-063 corrected
+ * this comment, which still described the withdrawal as standing).
+ * **The persona string itself stays** - `protected-text.ts` derives what she may
  * not write from the templates carrying placeholders, so removing it would take the marker
  * with it and let her forge the line herself with nothing left to strip it (D-180).
  *

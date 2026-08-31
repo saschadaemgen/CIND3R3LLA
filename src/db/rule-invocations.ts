@@ -72,6 +72,18 @@ export async function summariseRuleInvocations(
   );
 }
 
+/**
+ * The TOTAL, which is not the length of any fetched page (CCB-S5-063): the console
+ * presented a 100-row fetch's length as "N recorded decisions", the exact capped-buffer
+ * shape `forgery-log.ts` warns against, understating the moment the table outgrew the page.
+ */
+export async function countRuleInvocations(db: Queryable): Promise<number> {
+  const result = await db.query<{ n: string }>(
+    'SELECT count(*) AS n FROM cinderella_rule_invocations',
+  );
+  return Number(result.rows[0]?.n ?? 0);
+}
+
 /** The chronological view. */
 export async function listRecentRuleInvocations(
   db: Queryable,

@@ -55,9 +55,11 @@ export const MUSIC_DEFAULTS: Readonly<MusicSettings> = Object.freeze({
  * so a member knows it is a policy, not a fault. Video and every other audio
  * container are deliberately absent: this feature is "make my MP3 playable",
  * not a transcoding service.
+ *
+ * (A MEMBER_UPLOAD_MIMES twin used to sit here with no consumer anywhere in the
+ * tree; removed under CCB-S5-063 rather than left implying a MIME check the
+ * service never made.)
  */
-export const MEMBER_UPLOAD_MIMES: readonly string[] = Object.freeze(['audio/mpeg']);
-
 export const MEMBER_UPLOAD_EXTENSIONS: readonly string[] = Object.freeze(['.mp3']);
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {

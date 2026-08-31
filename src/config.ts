@@ -188,7 +188,16 @@ function optionalInteger(name: string, fallback: number, min: number, max: numbe
   return value;
 }
 
-function isPrivateAiHost(hostname: string): boolean {
+/**
+ * Whether an AI endpoint host is loopback or private address space.
+ *
+ * Exported since CCB-S5-063 because the AI page's endpoint badge used to REIMPLEMENT this
+ * with a narrower list (no `.localhost` suffix, no fc00::/7, no fe80), so addresses the
+ * boot guard accepts wore an amber "External endpoint" badge - a surface contradicting its
+ * own guard, the D-205 shape. One predicate, two consumers: the guard refuses at boot, the
+ * badge describes, and they cannot disagree.
+ */
+export function isPrivateAiHost(hostname: string): boolean {
   const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
 

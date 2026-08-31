@@ -354,7 +354,10 @@ export const SETTING_SCOPES: readonly SettingPlacement[] = Object.freeze([
     key: 'invocationRecord',
     scope: 'shared',
     section: 'diagnostics',
-    reason: 'An operator-facing record and its retention. The rows already carry which bot fired.',
+    // This reason used to claim "the rows already carry which bot fired"; they do not
+    // (migration 042 has no bot column, deliberately content-free). Corrected under
+    // CCB-S5-063 to the reason that is actually true.
+    reason: 'An operator-facing record and its retention: one record for the deployment.',
   },
 ]);
 

@@ -22,6 +22,9 @@ import {
 import { html, page, raw, type BotSwitcher, type SafeHtml } from '../html.js';
 import type { ViewContext } from '../server.js';
 import { badge, card, pageHeader, stat } from './ui.js';
+import { isPrivateAiHost } from '../../config.js';
+import { replyTokenCap } from '../../interaction/ollama-reply.js';
+import { replyCharBudget } from '../../interaction/personality.js';
 import { meanMs, modelQueue, type BotModelStats } from '../../interaction/model-queue.js';
 import { listBotOnboardingProfiles } from '../../profiles/bot-onboarding.js';
 
@@ -80,20 +83,14 @@ function endpointScope(baseUrl: string): string {
   if (!baseUrl) return 'Not configured';
 
   try {
-    const host = new URL(baseUrl).hostname.toLowerCase();
-
-    if (
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '::1' ||
-      host.startsWith('10.') ||
-      host.startsWith('192.168.') ||
-      /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host)
-    ) {
-      return 'Private or loopback endpoint';
-    }
-
-    return 'External endpoint';
+    // The boot guard's OWN predicate, not a local copy (CCB-S5-063): this badge used to
+    // reimplement it narrower, so `*.localhost` and fc00::/7 addresses the guard accepts
+    // wore "External endpoint". A configured deployment can therefore only ever show the
+    // private badge; the external branch stays as the honest fallback for a URL that
+    // somehow never went through the guard.
+    return isPrivateAiHost(new URL(baseUrl).hostname)
+      ? 'Private or loopback endpoint'
+      : 'External endpoint';
   } catch {
     return 'Invalid endpoint';
   }
@@ -435,8 +432,11 @@ function reasoningCard(): SafeHtml {
     </table>
 
     <p class="setup-card-note">
-      <strong>Why there is no dial.</strong> A reply is bounded at 320 tokens and the reasoning
-      pass spends the same budget. Measured in the real request shape, turning thinking on made
+      <strong>Why there is no dial.</strong> A reply's token cap is derived from the verbosity
+      dial's character budget (D-232), floored at
+      ${String(replyTokenCap(replyCharBudget(1)))} tokens and reaching
+      ${String(replyTokenCap(replyCharBudget(10)))} at verbosity 10, and the reasoning pass
+      spends the same budget. Measured in the real request shape, turning thinking on made
       three replies in five come back empty and fail their schema, which in production throws
       and falls back to the deterministic line. A control that silently replaced three in five
       of her answers with a canned one is not a control worth having, and the quality at each
@@ -452,8 +452,10 @@ function reasoningCard(): SafeHtml {
       Measured on the 24 GB card. The host serves
       <strong>${String(SERVED_CONTEXT_TOKENS)}</strong> tokens, set by
       <code>OLLAMA_CONTEXT_LENGTH</code> on the machine that runs Ollama and not by this
-      application: the OpenAI-compatible endpoint it talks to ignores a per-request
-      <code>num_ctx</code>, which was tested rather than assumed.
+      application. The application deliberately sends no per-request <code>num_ctx</code>: the
+      native endpoint the reply path has used since D-252 would honour one, so this is
+      restraint rather than impossibility, and it keeps the host's figure the one answer
+      instead of every caller carrying its own.
     </p>
     <table class="setup-table">
       <thead>
@@ -793,12 +795,16 @@ function capabilityMatrix(snapshot: AiRuntimeSnapshot): SafeHtml {
             'slate',
             'No route can silently leave the private lane',
           )}
-          ${capabilityRow(
-            'Private RAG',
-            'Not configured',
-            'amber',
-            'Knowledge indexing is reserved for a later controlled phase',
-          )}
+          ${
+            // "Not configured / reserved for a later phase" survived the knowledge base
+            // shipping (CCB-S5-022/023); corrected under CCB-S5-063.
+            capabilityRow(
+              'Private RAG (knowledge base)',
+              'Built, switched per bot',
+              'green',
+              'Local retrieval over documents the operator uploads, fenced as quoted material',
+            )
+          }
           ${capabilityRow(
             'Model comparison',
             'Disabled',
@@ -829,7 +835,10 @@ function privateDataPath(): SafeHtml {
       </div>
       <div class="rounded-lg border border-slate-200 p-3">
         <strong class="block text-slate-900">3. Private model lane</strong>
-        <span class="text-slate-600">The VPS reaches Ollama over the private WireGuard route.</span>
+        <span class="text-slate-600"
+          >Ollama is reached over a private route only; the boot guard refuses any endpoint
+          outside loopback or private address space.</span
+        >
       </div>
       <div class="rounded-lg border border-slate-200 p-3">
         <strong class="block text-slate-900">4. Guarded result</strong>

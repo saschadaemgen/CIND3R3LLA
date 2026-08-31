@@ -39,9 +39,11 @@ export interface CaptureHooks {
   /** Called if an attached file fails to download (timeout, XFTP error, …). */
   onFileFailed?: (msg: CapturedMessage, error: Error) => Promise<void> | void;
   /**
-   * Called for a recognised consent command instead of onMessage — command
-   * messages are control messages, not archive content, so they are not
-   * persisted.
+   * Called for a recognised consent command instead of onMessage. The command IS
+   * persisted, deliberately, under the `consent` category, which ships excluded from
+   * publication: capturing it and then excluding it is what makes the operator's category
+   * switch mean something. (This doc said "not persisted" directly above the code that
+   * persists; corrected under CCB-S5-063.)
    */
   onCommand?: (msg: CapturedMessage, command: ConsentCommand) => Promise<void> | void;
   /**
@@ -221,7 +223,8 @@ export function registerCapture(
       const msg = parseGroupMessage(aChatItem);
       if (!msg || !inScope(msg)) continue;
 
-      // Consent commands are control messages — handle and do NOT persist.
+      // Consent commands are control messages for the CONSENT machinery; for the
+      // ARCHIVE they persist like anything else, excluded by category (below).
       const command = commandFor(msg);
       if (command) {
         // Archived like anything else, under the `consent` category, which ships

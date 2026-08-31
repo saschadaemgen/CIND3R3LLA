@@ -1,8 +1,8 @@
 # Cinderella — Architecture
 
-> _Living document — Cinderella, Seasons 1–4. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S4-044**._
+> _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme, per change rather than per season; a "last updated under" stamp is not kept here, because it went stale the moment nobody remembered it (CCB-S5-063)._
 
-Cinderella is a consent-first archive bot for a public SimpleX group. She joins the group (`Cyb3rD3sk`), captures opted-in members' messages into PostgreSQL and an on-disk media store, and exposes a hardened admin console. Nothing a member posts is ever published unless that member sent `/publish` — publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined in `004_moderation.sql` / `005_deletion_provenance.sql`).
+Cinderella is a consent-first archive AI for public SimpleX groups. A deployment hosts one or more bots on one core (multi-bot since CCB-S5-001); each enabled bot joins the rooms its operator puts it in, one capturing record per room (CCB-S5-033), captures opted-in members' messages into PostgreSQL and an on-disk media store, and the deployment exposes one hardened admin console. Nothing a member posts is ever published unless that member opted in — by `/publish` or in plain language — and publication is _derived_ from the `consent` table and the message-state views, never a stored flag (the views are created in `migrations/002_consent.sql` and refined onward; migration 062 is the latest rebuild). The opening sentence of this document described one bot in one named group for four seasons after that stopped being the shape (CCB-S5-063).
 
 This document describes the _runtime_ architecture as it exists in code. Where the task outline and the code differ, the code is treated as ground truth and the divergence is called out inline (and collected in the appendix).
 
@@ -2812,6 +2812,17 @@ The same read backs the Interaction page's context-size card (§38.2's sibling s
 had the identical defect and therefore under-reported the assembled prompt by the whole voice
 section - 58% on the preview fixture, in the direction that reads as headroom.
 
+**Since CCB-S5-063 the previews and the cost card also carry the last three per-bot inputs
+the reply path carries**: the bot's EFFECTIVE identity (per-bot wake word and nicknames,
+resolved from the rows by `previewIdentityFor` beside `previewPersonality`, with the live
+model merged - previews used to read the SHARED interaction record, so a multi-bot deployment
+saw one bot's dials under the shared name, and the new-law preview dropped the model line its
+sibling carried), the bot's **capability catalog** (what selects the `has-web-search` offer
+rules; no previewed or measured prompt used to carry it, the third instance of the card's own
+corrected class), and the **transport's own per-mode character bound** (`effectiveMaxChars`,
+extracted from `generateOllamaReply` so the Assembled Word's retort and locked cards state
+the limit that mode is actually sent instead of the conversation budget for all five).
+
 **Every per-bot input to a preview is ONE value, resolved in ONE place.** D-220 and D-229 were
 written on two branches at the same time and fixed the same defect for two different inputs:
 the previewed prompt was missing the DJ sheet, and it was missing the dials, the character and
@@ -3379,8 +3390,9 @@ table `ON DELETE CASCADE`, so it would erase the record the Book exists to keep.
 mutation in `verify:rule-creation`.
 ## 45. What she thinks with (CCB-S4-052, D-154)
 
-`qwen3:32b` is a reasoning model and Ollama runs a reasoning pass by default for models that
-support it. This application does not: `ollama-reply.ts` turns thinking off on every request -
+The qwen3 family are reasoning models and Ollama runs a reasoning pass by default for models
+that support it (the measurements below were taken on `qwen3:32b`, the production model of
+their day; D-231 has since moved production to `qwen3:14b`). This application does not: `ollama-reply.ts` turns thinking off on every request -
 `reasoning_effort: 'none'` on the OpenAI-compatible endpoint when this was built, `think: false`
 since the reply path moved to the native endpoint (CCB-S5-060, D-252) - and Ollama 0.32.6
 honours both spellings on their respective endpoints. The resolver, still on `/v1`, keeps the
@@ -3395,9 +3407,11 @@ old spelling.
 | `high` | 16.9s | 1228 chars | **3** |
 | no parameter | 14.8s | 889 chars | **3** |
 
-A reply is bounded at `max_tokens: 320` and the reasoning pass spends the same budget, so
-thinking truncates the answer to an empty completion that fails the JSON schema. In production
-that throws and falls back to the deterministic line.
+A reply was bounded at `max_tokens: 320` when this was measured - since D-232 the cap is
+derived from the verbosity budget, `replyTokenCap` (floored at 320, 748 at verbosity 10) -
+and the reasoning pass spends the same budget, so thinking truncates the answer to an empty
+completion that fails the JSON schema. In production that throws and falls back to the
+deterministic line.
 
 **No per-kind control was built.** The levels are not a gradient either (reasoning length is
 non-monotonic across low/medium/high), so there was never a depth dial to offer.

@@ -38,7 +38,7 @@ import {
   storeChapterImage,
 } from '../../media/assets.js';
 import { FOLLOW_UP_MAX_RULES } from '../../interaction/rule-overview.js';
-import { listRecentRuleInvocations } from '../../db/rule-invocations.js';
+import { countRuleInvocations, listRecentRuleInvocations } from '../../db/rule-invocations.js';
 import {
   RECITAL_MAX_MESSAGES,
   RECITAL_MAX_PACING_MS,
@@ -187,6 +187,9 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
       const scene = ctx.interaction.get().bookScene;
       const record = ctx.interaction.get().invocationRecord;
       const invocations = record.enabled ? await listRecentRuleInvocations(ctx.db, 100) : [];
+      // The COUNT is the table's, not the page's (CCB-S5-063): "N recorded decisions" used
+      // to be the length of this 100-row fetch, silently understating past 100.
+      const invocationTotal = record.enabled ? await countRuleInvocations(ctx.db) : 0;
 
       // What each chapter HOLDS against what the plan actually reads, so a bound that quietly
       // drops laws is visible as a number rather than as a surprise in a group.
@@ -469,7 +472,10 @@ export function registerRecital(app: FastifyInstance, ctx: ViewContext): void {
 
               <div class="mt-4 border-t border-slate-200 pt-4">
                 <p class="text-sm font-medium text-slate-700">
-                  ${String(invocations.length)} recorded decisions
+                  ${String(invocationTotal)} recorded decisions${invocationTotal >
+                  invocations.length
+                    ? ` (most recent ${String(invocations.length)} shown)`
+                    : ''}
                 </p>
                 ${invocations.length === 0
                   ? html`<p class="mt-1 text-xs text-slate-500">

@@ -71,6 +71,13 @@ export type PriceOutcome =
       at: number;
       provider: string;
       attribution: string;
+      /**
+       * The fiat a conversion crossed through: the CONFIGURED base currency, set where
+       * the cross actually runs (CCB-S5-063). The reply used to hardcode "USD" in a
+       * ternary whose two branches were identical, which named the wrong currency on any
+       * non-USD deployment.
+       */
+      via?: string;
     }
   | { kind: 'ambiguous'; symbol: string; options: AssetCandidate[]; provider: string }
   | { kind: 'unknown-asset'; symbol: string }
@@ -679,6 +686,7 @@ export class CryptoPriceService {
       amount,
       base,
       quote: other,
+      via: via.symbol,
       value: (amount * a.price) / b.price,
       at: Math.min(a.at, b.at),
       provider: a.provider === b.provider ? a.provider : `${a.provider}+${b.provider}`,

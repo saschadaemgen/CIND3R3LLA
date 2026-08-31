@@ -534,11 +534,26 @@ export interface InteractionSettings {
 
 /* ── Preconfigured copy (§5, §6) ─────────────────────────────────────────── */
 
+/**
+ * The one pair of bounds the filler-prefix form and its normalizer both read
+ * (CCB-S5-063): the form used to offer 0..8 words over a clamp of 6 (7 and 8 silently
+ * saved as 6) and 0..60 characters over a clamp of 80 (61..80 legal but unreachable).
+ * A form range is a promise about what saves; it and the clamp must be one number.
+ */
+export const MAX_PREFIX_WORDS_BOUND = 6;
+export const MAX_PREFIX_CHARS_BOUND = 80;
+
 const PERSONA_EN: PersonaStrings = {
+  // CCB-S5-063: this sentence used to claim taking it back was "final; there is no
+  // bringing it back after", which contradicted the member's own rights two screens
+  // later: revocation hides everything at once and the member then chooses hide
+  // (restorable by them, whenever) or delete. Consent copy is the one surface where
+  // accuracy is the whole promise, so it states what actually happens and no more.
   publishConfirm:
     '🕯️ Shall I carry your words into the light? Say *yes* and it is done. Only what you say ' +
-    'from this moment on, never anything from before. It stays public until you take it back, ' +
-    'and taking it back is final; there is no bringing it back after.',
+    'from this moment on, never anything from before. It stays public until you take it back; ' +
+    'taking it back hides everything at once, and then the choice of keeping your words hidden ' +
+    'or destroying them is yours.',
   // CCB-S4-033. WORDED TO BE TRUE IN BOTH MODES. It states three things that are facts
   // right now: this is a warning, it is counted, and continuing advances the ladder. It
   // does NOT promise a mute, because while enforcement is observing no mute follows, and
@@ -764,10 +779,13 @@ const PERSONA_EN: PersonaStrings = {
 };
 
 const PERSONA_DE: PersonaStrings = {
+  // CCB-S5-063: same correction as the English. "Endgültig; danach gibt es kein
+  // Zurückholen" was untrue about the member's own rights: hide is restorable by design.
   publishConfirm:
     '🕯️ Soll ich deine Worte ans Licht tragen? Sag *ja*, und es ist getan. Nur das, was du ab ' +
-    'jetzt sagst, nie etwas von vorher. Es bleibt öffentlich, bis du es zurücknimmst, und das ' +
-    'Zurücknehmen ist endgültig; danach gibt es kein Zurückholen.',
+    'jetzt sagst, nie etwas von vorher. Es bleibt öffentlich, bis du es zurücknimmst; das ' +
+    'Zurücknehmen verbirgt alles auf einmal, und danach entscheidest du, ob ich deine Worte ' +
+    'verborgen aufbewahre oder vernichte.',
   moderationWarning:
     '⚠️ Das ist Verwarnung {n} von {total}, und sie steht im Protokoll. Mach weiter, dann ' +
     'eskaliert das ueber mein blosses Genervtsein hinaus.',
@@ -1474,8 +1492,8 @@ export function normalizeInteraction(input: unknown): InteractionSettings {
       'fillerPrefixes' in o
         ? parseList(o['fillerPrefixes'], { max: 60, maxLen: 40 })
         : [...d.fillerPrefixes],
-    maxPrefixWords: int(o['maxPrefixWords'], 0, 6, d.maxPrefixWords),
-    maxPrefixChars: int(o['maxPrefixChars'], 0, 80, d.maxPrefixChars),
+    maxPrefixWords: int(o['maxPrefixWords'], 0, MAX_PREFIX_WORDS_BOUND, d.maxPrefixWords),
+    maxPrefixChars: int(o['maxPrefixChars'], 0, MAX_PREFIX_CHARS_BOUND, d.maxPrefixChars),
     followUpSeconds: int(o['followUpSeconds'], 0, 3600, d.followUpSeconds),
     // Bounded by the model rather than by the form, so a hand-crafted POST cannot produce
     // a history that crowds her own rules out of the context.

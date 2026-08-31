@@ -16,7 +16,7 @@
 -- ── AND THE LIMIT, WHICH IS THE DESIGN RATHER THAN A CAVEAT ──────────────────
 --
 -- When the MODEL declines something on its own, no rule fired in a way the application can
--- attribute. The ceiling is in its prompt, and so are ninety-nine other rules, and which one
+-- attribute. The ceiling is in its prompt, and so is every other selected rule, and which one
 -- it was weighing is not knowable from outside. This table stays silent about those, and the
 -- console says so in as many words.
 --
