@@ -87,6 +87,14 @@ export interface BridgeDeps {
     | null;
   /** The deployment bound on a re-hosted file, in bytes. */
   maxFileBytes: () => number;
+  /**
+   * The retention bound on stored files (CCB-S5-064): read per tick, so the operator's
+   * save takes effect on the next tick rather than the next boot, like everything else
+   * here.
+   */
+  mediaRetention: () => { enabled: boolean; days: number };
+  /** Where the re-hosted files live; null when nothing is hosting (no sweep then). */
+  mediaRoot: string | null;
   now?: () => Date;
 }
 

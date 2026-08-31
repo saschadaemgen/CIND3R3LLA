@@ -539,6 +539,10 @@ async function main(): Promise<void> {
     }),
     storeMedia: null,
     maxFileBytes: () => 1024 * 1024,
+    // Retention OFF, the shipped default: this harness proves the forwarding rhythm, and
+    // the sweep has its own harness (verify:bridge-retention, CCB-S5-064).
+    mediaRetention: () => ({ enabled: false, days: 30 }),
+    mediaRoot: null,
     now: () => clock,
   };
 

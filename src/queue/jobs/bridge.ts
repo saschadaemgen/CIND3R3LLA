@@ -32,6 +32,7 @@ import {
   type BridgeDeps,
 } from '../../plugins/channel-bridge/service.js';
 import { noteBridgeTickAlive } from '../../plugins/channel-bridge/bridge-log.js';
+import { maybeSweepBridgeMedia } from '../../plugins/channel-bridge/media-retention.js';
 
 export const BRIDGE_TICK_JOB = 'bridge.tick';
 export const BRIDGE_PROPAGATE_JOB = 'bridge.propagate';
@@ -85,6 +86,23 @@ export const bridgeTickHandler: JobHandler = async () => {
     return;
   }
   await runBridgeTick(resolved);
+  // The media retention pass rides the tick and gates itself to once per local day
+  // (CCB-S5-064). Its own try, because a sweep that throws must cost the sweep and not
+  // the announcements: a failed unlink is not a reason to retry forwarding.
+  try {
+    await maybeSweepBridgeMedia({
+      db: resolved.db,
+      root: resolved.mediaRoot,
+      retention: resolved.mediaRetention(),
+      now: resolved.now?.() ?? new Date(),
+    });
+  } catch (err) {
+    log.error(
+      `bridge: the media retention pass failed and will retry on the next tick (${
+        err instanceof Error ? err.message : String(err)
+      }).`,
+    );
+  }
 };
 
 export const bridgePropagateHandler: JobHandler = async (payload) => {

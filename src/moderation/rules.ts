@@ -84,6 +84,61 @@ export const ENFORCEMENT_ACTIONS = ['none', 'warn', 'mute', 'block', 'remove'] a
 export type EnforcementAction = (typeof ENFORCEMENT_ACTIONS)[number];
 
 /**
+ * The person-readable name of each action, and what it does, as DATA (CCB-S5-064, D-262).
+ *
+ * ── WHY THE NAME IS DERIVED FROM THE ACTION AND NOT FIXED PER RUNG ───────────
+ *
+ * The operator asked for rung names so a person reading the page can tell what each rung
+ * does. But a rung is a positional slot whose action is an operator-editable dropdown: a
+ * fixed name per POSITION goes false the moment a dropdown changes, and against the
+ * shipped ladder the proposed fixed sequence (Notice / Warning / Mute / Removal) is wrong
+ * three times over - rung 3 does not mute (rung 2 does), rung 4 removes nobody (both hard
+ * rungs ship inert on purpose), and rung 1's stored action is literally 'warn', which the
+ * system GUARANTEES for the first live rung on save and on arming. So the name follows
+ * the ACTION, which is the thing that is true whatever the operator configures, and the
+ * number stays beside it because the number is what the records keep.
+ *
+ * "Notice" appears nowhere, because nothing in either ladder notices: the closest true
+ * sentence is that the verbal ladder sharpens her tone, and that is worded as what it is.
+ *
+ * `whatItDoes` states the OBSERVED/ARMED split honestly: a warning speaks today in both
+ * modes; the three hard actions are computed and recorded only, until arming is unlocked.
+ */
+export const ENFORCEMENT_ACTION_NAMES: Readonly<
+  Record<EnforcementAction, { name: string; whatItDoes: string }>
+> = Object.freeze({
+  none: Object.freeze({
+    name: 'Does nothing',
+    whatItDoes: 'The rung is inert and is skipped; a higher rung still applies.',
+  }),
+  warn: Object.freeze({
+    name: 'Warning',
+    whatItDoes:
+      'She warns the member in the chat, with the count. The warning is spoken in ' +
+      'observed mode too; it acts on nobody.',
+  }),
+  mute: Object.freeze({
+    name: 'Mute',
+    whatItDoes:
+      'The member’s role changes to Observer for the set duration, then is restored; a ' +
+      'duration of 0 means until it is lifted by hand. Liftable from the Active page ' +
+      'either way. Recorded only, until enforcement is armed.',
+  }),
+  block: Object.freeze({
+    name: 'Block',
+    whatItDoes:
+      'The member’s messages are hidden from everyone; they stay in the group. Not ' +
+      'liftable from this console. Recorded only, until enforcement is armed.',
+  }),
+  remove: Object.freeze({
+    name: 'Removal',
+    whatItDoes:
+      'The member is removed from the group. Not reversible from this console. Recorded ' +
+      'only, until enforcement is armed.',
+  }),
+});
+
+/**
  * The kind of rule a violation belongs to.
  *
  * GENERIC BY CONSTRUCTION. Nicknames are the first trigger and deliberately not the

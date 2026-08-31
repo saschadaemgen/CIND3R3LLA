@@ -788,6 +788,35 @@ async function main(): Promise<void> {
       (rulesPage.body.match(/name="enforcement\.\d\.action"/g) ?? []).length === 4,
   );
   check('every enforcement rung can be set to none', (rulesPage.body.match(/value="none"/g) ?? []).length === 4);
+  // ── THE RUNG NAMES FOLLOW THE ACTION, NEVER THE POSITION (CCB-S5-064) ─────
+  //
+  // The operator asked for rung names, and a fixed sequence per position would lie: the
+  // shipped ladder is Warning / Mute / inert / inert, and every action is an editable
+  // dropdown. So the name beside each rung number is DERIVED from the saved action, and
+  // this asserts the derivation against the shipped defaults: rung 1 wears Warning, rung
+  // 2 wears Mute, rungs 3 and 4 say plainly that they do nothing - and the verbal rungs
+  // say what they do (sharpen), because sanction names on the tone ladder would be false
+  // four times over.
+  check(
+    'the enforcement rungs wear the names of their saved actions',
+    flat(rulesPage.body).includes('Warning') &&
+      flat(rulesPage.body).includes('Mute') &&
+      (flat(rulesPage.body).match(/Does nothing/g) ?? []).length >= 2,
+  );
+  check(
+    'the verbal rungs say they sharpen, not that they sanction',
+    (flat(rulesPage.body).match(/sharpens her tone by \+\d/g) ?? []).length === 4,
+  );
+  check(
+    'the action legend states what each action does, including the irreversible two',
+    flat(rulesPage.body).includes('What each action does') &&
+      flat(rulesPage.body).includes('role changes to Observer') &&
+      flat(rulesPage.body).includes('Not reversible from this console'),
+  );
+  check(
+    'and the first-live-rung-warns invariant is stated where the ladder is edited',
+    flat(rulesPage.body).includes('The first live rung must be a Warning'),
+  );
   // CCB-S4-035 changed what is correct here, and these are rewritten rather than
   // "fixed": before arming, the right behaviour was a disabled control and a sentence
   // saying why. Now it is a working control that states the consequences and demands a
@@ -875,7 +904,8 @@ async function main(): Promise<void> {
     headers: { cookie: session },
   });
   check('the Log page renders', logPage.statusCode === 200);
-  check('it shows the step', flat(logPage.body).includes('mute'));
+  // The step wears its person-readable name since CCB-S5-064; the stored value stays 'mute'.
+  check('it shows the step, by name', flat(logPage.body).includes('Mute'));
   check('marked observed', flat(logPage.body).includes('observed, nothing done'));
   check('with the rule and count that produced it', flat(logPage.body).includes('nickname: 10 in 10 minute(s)'));
   check('and the violations it counted', flat(logPage.body).includes('Violations counted'));

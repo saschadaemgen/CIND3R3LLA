@@ -404,6 +404,8 @@ async function main(): Promise<void> {
     }),
     storeMedia: null,
     maxFileBytes: () => 1024 * 1024,
+    mediaRetention: () => ({ enabled: false, days: 30 }),
+    mediaRoot: null,
     now: () => clock,
   };
 

@@ -433,6 +433,7 @@ const PLUGIN_SUB_PAGES: Record<string, { key: string; href: string; label: strin
     { key: 'publishing', href: '/bridge/publishing', label: 'Publishing' },
     { key: 'log', href: '/bridge/log', label: 'Forward log' },
     { key: 'diagnostics', href: '/bridge/diagnostics', label: 'Diagnostics' },
+    { key: 'retention', href: '/bridge/retention', label: 'Retention' },
   ],
 };
 

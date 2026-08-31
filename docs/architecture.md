@@ -2377,6 +2377,21 @@ inert rather than blocking, so a live rung above it still applies. Every fired r
 written to `cinderella_sanctions` with `mode = 'observed'` and the rule, count, window and
 rung that produced it. Nothing happens to anybody.
 
+**The rungs wear names since CCB-S5-064 (D-262), and the names are DERIVED.** The operator
+asked for rung names; a fixed sequence per position would lie (a rung is a slot whose
+action is a dropdown, and the shipped ladder is Warning / Mute / inert / inert - rung 3
+does not mute). So Ladder B's rungs wear the person-readable name of their SAVED action -
+Warning · Mute · Block · Removal · Does nothing, from `ENFORCEMENT_ACTION_NAMES` in
+`rules.ts`, the one table the dropdown, the rung column, the Log, the Active page and the
+website all read - and Ladder A's rungs say what they do ("sharpens her tone by +N"),
+because sanction names on the tone ladder would be false four times over. The number stays
+beside the name: sanction records keep the raw action word, and "the name is what a person
+reads; the number is what the data keeps" is the operator's own framing. "Notice" appears
+nowhere - the first live rung is GUARANTEED to be a warning (refused on save and on
+arming), and its stored action is literally `warn`. A legend under Ladder B states what
+each action does, that block and removal are not reversible from the console, and the
+first-live-rung invariant.
+
 **The no-act guarantee, three ways.** Structural: the engine's one outbound is `send`, and
 nothing under `src/moderation/` imports anything that reaches the SDK, so a computed
 sanction has nothing to act through. Behavioural: driving a member past every rung with a
@@ -4002,6 +4017,26 @@ per hosted bot on the same event source capture uses, listening to the same four
 routes by that direction; media is received through the bot's own FileReceiver into
 `BRIDGE_MEDIA_ROOT` (a sibling of MEDIA_ROOT, refused inside it, plaintext - see D-187 and
 docs/security.md).
+
+**Bridge media has a retention bound since CCB-S5-064** (D-262, migration 077;
+`plugins/channel-bridge/media-retention.ts`). A file whose announcement can never send
+again - the post terminally resolved or source-deleted - is swept once it is older than an
+operator-set bound (30-day default: the relays expire their own copies in ~48 h, so
+everything past that is convenience, not delivery). The row becomes a D-240 tombstone
+(`media_state = 'swept'`, path NULL, mime and size kept; a half-swept row is
+unrepresentable by CHECK), a STANDING announcement keeps its file however old because a
+repeat reads it at send time, and orphaned files - the bytes every cascade path
+(Clear record, mapping delete, bot delete) used to abandon with no row left to find them -
+are swept by mtime, with referenced files excluded through resolved paths. One shared
+WHERE backs the count and the sweep, so the number the operator reads is the number the
+sweep acts on. Shipped OFF; the Bridge section's Retention page shows the count first,
+takes the bound, and offers Sweep now only while the switch is on; the daily pass rides
+`bridge.tick` behind a local-day marker. **No bridge file is ever published** (the
+archived announcement is hardcoded text-only and no public route serves bridge media), so
+the operator's published-file exception is structurally empty and deliberately not built -
+recorded in the migration, the module and the page, because it becomes load-bearing the
+day bridge media publishes: a published file must be excepted before the first one ages
+past the bound.
 
 **The tree.** `plugins/channel-bridge/`: `cadence.ts` (PURE: whichever-trigger-first,
 the age window, the repeat cap, the digest that accounts for every pending post, and the

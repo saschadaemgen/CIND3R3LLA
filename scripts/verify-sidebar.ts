@@ -196,7 +196,8 @@ function main(): void {
 
   for (const [plugin, expected] of [
     ['music', ['Library', 'Playlists', 'Assignments', 'Storage']],
-    ['channel-bridge', ['Channels', 'Mappings', 'Publishing', 'Forward log', 'Diagnostics']],
+    // Retention joined under CCB-S5-064 (the bridge media sweep's own page).
+    ['channel-bridge', ['Channels', 'Mappings', 'Publishing', 'Forward log', 'Diagnostics', 'Retention']],
   ] as const) {
     const node = findNode(tree, `plugin:${plugin}`);
     const labels = (node?.children ?? []).map((c) => c.label);

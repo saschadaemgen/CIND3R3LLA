@@ -20,6 +20,7 @@ import {
   ARMING_UNLOCKED,
   DEFAULT_MODERATION_RULES,
   ENFORCEMENT_ACTIONS,
+  ENFORCEMENT_ACTION_NAMES,
   LADDER_RUNGS,
   type EnforcementAction,
   type ModerationRules,
@@ -110,21 +111,29 @@ function numberField(name: string, value: number, min: number, max: number): Saf
 }
 
 function actionField(name: string, current: EnforcementAction): SafeHtml {
-  const labels: Record<EnforcementAction, string> = {
-    none: 'none (rung is inert)',
-    warn: 'warn',
-    mute: 'mute (role to Observer)',
-    block: 'block',
-    remove: 'remove from group',
+  // The person-readable names, from the one place they live (CCB-S5-064): the dropdown,
+  // the rung column, the Log and the Active page all read ENFORCEMENT_ACTION_NAMES, so
+  // they cannot drift from each other or from what the site quotes.
+  const detail: Record<EnforcementAction, string> = {
+    none: ' (rung is inert)',
+    warn: '',
+    mute: ' (role to Observer)',
+    block: '',
+    remove: ' (from the group)',
   };
   return html`<select name="${name}" class="${INPUT_CLS}">
     ${ENFORCEMENT_ACTIONS.map(
       (action) =>
         html`<option value="${action}" ${action === current ? raw('selected') : ''}>
-          ${labels[action]}
+          ${ENFORCEMENT_ACTION_NAMES[action].name}${detail[action]}
         </option>`,
     )}
   </select>`;
+}
+
+/** The stored action string, worn as its person-readable name; the raw word stays in the data. */
+function actionName(action: string): string {
+  return (ENFORCEMENT_ACTION_NAMES as Record<string, { name: string }>)[action]?.name ?? action;
 }
 
 /**
@@ -335,7 +344,26 @@ function verbalCard(rules: ModerationRules, csrf: string, botId: number): SafeHt
           <tbody>
             ${rules.verbal.map(
               (rung, index) => html`<tr class="border-b border-slate-100">
-                <td class="py-2 pr-3 text-slate-500">${String(index + 1)}</td>
+                <td class="py-2 pr-3">
+                  ${
+                    // The number is what the data keeps; the words are what a person reads
+                    // (CCB-S5-064), DERIVED from the saved rung so they cannot lie. These
+                    // rungs sharpen her tone and do nothing else, which is why they carry
+                    // no sanction names: naming this ladder Notice/Warning/Mute/Removal
+                    // would have been false four times over.
+                    ''
+                  }
+                  <span class="text-slate-500">${String(index + 1)}</span>
+                  <span class="ml-1 text-xs text-slate-500"
+                    >${rung.sharpnessBonus > 0
+                      ? `sharpens her tone by +${String(rung.sharpnessBonus)}`
+                      : // NOT "inert": the highest reached rung's bonus WINS, so a
+                        // 0-bonus rung at a higher threshold overrides the sharper rungs
+                        // below it and puts her back on the base voice (CCB-S5-064's
+                        // review caught the first wording claiming otherwise).
+                        'resets her tone to the base'}</span
+                  >
+                </td>
                 <td class="py-2 pr-3">
                   ${numberField(`verbal.${index}.threshold`, rung.threshold, 1, 100000)}
                 </td>
@@ -425,7 +453,32 @@ function enforcementCard(rules: ModerationRules, csrf: string, botId: number): S
           <tbody>
             ${rules.enforcement.map(
               (rung, index) => html`<tr class="border-b border-slate-100">
-                <td class="py-2 pr-3 text-slate-500">${String(index + 1)}</td>
+                <td class="py-2 pr-3">
+                  ${
+                    // The rung's NAME follows its SAVED action, never its position
+                    // (CCB-S5-064): a rung is a slot whose action is the dropdown beside
+                    // it, so a fixed per-position name would go false on the next save.
+                    // The number stays, because the number is what the records keep.
+                    ''
+                  }
+                  <span class="text-slate-500">${String(index + 1)}</span>
+                  ${
+                    // The name states what WOULD HAPPEN, which for a warn rung under
+                    // "Warnings before escalating = 0" is nothing: the operator chose no
+                    // warnings and the decision code goes inert. Rendering "Warning" at
+                    // full strength there would be the label that lies (CCB-S5-064).
+                    rung.action === 'warn' && rules.warningCount === 0
+                      ? html`<span class="ml-1 text-xs font-medium text-slate-400"
+                          >Warning (inert while warnings are 0)</span
+                        >`
+                      : html`<span
+                          class="ml-1 text-xs font-medium ${rung.action === 'none'
+                            ? 'text-slate-400'
+                            : 'text-slate-700'}"
+                          >${ENFORCEMENT_ACTION_NAMES[rung.action].name}</span
+                        >`
+                  }
+                </td>
                 <td class="py-2 pr-3">
                   ${derivedRung === index
                     ? html`<div class="flex flex-col gap-1">
@@ -453,6 +506,24 @@ function enforcementCard(rules: ModerationRules, csrf: string, botId: number): S
             )}
           </tbody>
         </table>
+      </div>
+
+      <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+        <p class="text-sm font-medium text-slate-700">What each action does</p>
+        <dl class="mt-1 grid gap-x-4 gap-y-1 text-xs text-slate-600 sm:grid-cols-[auto_1fr]">
+          ${ENFORCEMENT_ACTIONS.filter((a) => a !== 'none').map(
+            (action) => html`<dt class="font-semibold text-slate-700">
+                ${ENFORCEMENT_ACTION_NAMES[action].name}
+              </dt>
+              <dd>${ENFORCEMENT_ACTION_NAMES[action].whatItDoes}</dd>`,
+          )}
+        </dl>
+        <p class="mt-2 text-xs text-slate-500">
+          The first live rung must be a Warning; a ladder that escalates without warning is
+          refused when it is saved and again when enforcement is armed. The one exception is
+          deliberate: setting the warning count above to 0 chooses no warnings at all, and
+          then the warn rung goes inert and neither gate refuses.
+        </p>
       </div>
 
       <div class="flex flex-col gap-2">
@@ -623,7 +694,7 @@ function activeBody(
                     <td class="whitespace-nowrap py-2 pr-3 text-slate-500">${fmt(row.decidedAt)}</td>
                     <td class="py-2 pr-3">${row.memberDisplayName}</td>
                     <td class="py-2 pr-3 text-slate-500">${String(row.groupId)}</td>
-                    <td class="py-2 pr-3">${badge(row.action, 'red')}</td>
+                    <td class="py-2 pr-3">${badge(actionName(row.action), 'red')}</td>
                     <td class="py-2 pr-3 text-slate-500">
                       ${row.previousRole ?? 'unknown'}
                     </td>
@@ -725,7 +796,7 @@ function logBody(
                     <td class="py-2 pr-3">${row.memberDisplayName}</td>
                     <td class="py-2 pr-3 text-slate-500">${row.memberRole ?? 'unknown'}</td>
                     <td class="py-2 pr-3">
-                      ${badge(row.action, row.mode === 'observed' ? 'amber' : 'red')}
+                      ${badge(actionName(row.action), row.mode === 'observed' ? 'amber' : 'red')}
                     </td>
                     <td class="py-2 pr-3 text-slate-600">
                       ${row.reason}

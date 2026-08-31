@@ -17,7 +17,8 @@
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ViewContext } from '../server.js';
-import { html, page, type SafeHtml } from '../html.js';
+import type { Queryable } from '../../db/pool.js';
+import { html, page, raw, type SafeHtml } from '../html.js';
 import { badge, card, factList, fmtDate, pageHeader, scopePanel, type ScopeLine } from './ui.js';
 import { listEmbedInstances } from '../../db/embeds.js';
 import { captureRoomState } from '../../capture/room-service.js';
@@ -53,6 +54,20 @@ import {
 } from '../../plugins/channel-bridge/cadence.js';
 import { bridgeDiagnostics, noteBridgeError } from '../../plugins/channel-bridge/bridge-log.js';
 import { CHANNEL_BRIDGE_ID } from '../../plugins/channel-bridge/plugin.js';
+import {
+  MEDIA_RETENTION_MAX_DAYS,
+  MEDIA_RETENTION_MIN_DAYS,
+  type ChannelBridgeSettings,
+} from '../../plugins/channel-bridge/settings.js';
+import {
+  BRIDGE_RETENTION_MARKER_KEY,
+  countOrphanBridgeMedia,
+  countSweepableBridgeMedia,
+  localDay,
+  retentionCutoff,
+  sweepBridgeMedia,
+} from '../../plugins/channel-bridge/media-retention.js';
+import { getSetting, setSetting } from '../../db/settings.js';
 import {
   applyPluginOverrides,
   describePluginScopes,
@@ -546,7 +561,74 @@ const BRIDGE_SECTIONS: readonly {
       'The last tick, the last error, and the storage limits. The limits are deployment-wide ' +
       'rather than {bot}’s.',
   },
+  {
+    key: 'retention',
+    path: '/bridge/retention',
+    label: 'Retention',
+    blurb:
+      'What the bridge media tree holds, and when a file whose announcement is over is ' +
+      'deleted. Deployment-wide, and off until you switch it on.',
+  },
 ];
+
+interface BridgeRetentionFacts {
+  sweepable: { rows: number; bytes: number };
+  orphans: { files: number; bytes: number; pastBound: number; pastBoundBytes: number };
+  stored: { rows: number; bytes: number };
+  sweptSoFar: number;
+  lastSweepDay: string | null;
+  cutoffIso: string;
+  /**
+   * False when this process has no bridge media root (a harness or preview config
+   * without one): the row counts still render, the disk half says so honestly, and the
+   * page does not 500 - which is how the D-212 look found this field's reason to exist.
+   */
+  diskReadable: boolean;
+}
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${String(n)} B`;
+  const units = ['KiB', 'MiB', 'GiB', 'TiB'];
+  let v = n;
+  let unit = 'B';
+  for (const u of units) {
+    v /= 1024;
+    unit = u;
+    if (v < 1024) break;
+  }
+  return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${unit}`;
+}
+
+async function loadBridgeRetentionFacts(
+  db: Queryable,
+  bridgeMediaRoot: string | undefined,
+  settings: ChannelBridgeSettings,
+): Promise<BridgeRetentionFacts> {
+  const now = new Date();
+  const cutoff = retentionCutoff(now, settings.mediaRetentionDays);
+  const sweepable = await countSweepableBridgeMedia(db, cutoff);
+  const diskReadable = typeof bridgeMediaRoot === 'string' && bridgeMediaRoot !== '';
+  const orphans = diskReadable
+    ? await countOrphanBridgeMedia(db, bridgeMediaRoot, cutoff)
+    : { files: 0, bytes: 0, pastBound: 0, pastBoundBytes: 0 };
+  const { rows: storedRows } = await db.query<{ n: string; bytes: string | null }>(
+    `SELECT count(*) AS n, COALESCE(sum(media_size), 0)::text AS bytes
+       FROM cinderella_bridge_posts WHERE media_state = 'stored'`,
+  );
+  const { rows: sweptRows } = await db.query<{ n: string }>(
+    `SELECT count(*) AS n FROM cinderella_bridge_posts WHERE media_state = 'swept'`,
+  );
+  const marker = await getSetting(db, BRIDGE_RETENTION_MARKER_KEY);
+  return {
+    sweepable,
+    orphans,
+    stored: { rows: Number(storedRows[0]?.n ?? 0), bytes: Number(storedRows[0]?.bytes ?? 0) },
+    sweptSoFar: Number(sweptRows[0]?.n ?? 0),
+    lastSweepDay: typeof marker === 'string' ? marker : null,
+    cutoffIso: cutoff.toISOString().slice(0, 10),
+    diskReadable,
+  };
+}
 
 export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
   const { db, plugins } = ctx;
@@ -643,6 +725,14 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       liveGroupIds.size === 0 ? [] : allChannels.filter((c) => !liveGroupIds.has(c.sourceGroupId));
     const mappings = selectedBotId === null ? [] : await listBridgeMappings(db, selectedBotId);
     const settings = plugins.channelBridgeSettings();
+    // The retention page's shape (CCB-S5-064, the D-240 rule): the COUNT is computed and
+    // shown before any switch is touched, so the operator reads what a sweep would do
+    // before anything can do it. Loaded only for this section - the orphan half walks the
+    // media tree.
+    const retentionFacts =
+      section === 'retention'
+        ? await loadBridgeRetentionFacts(db, ctx.cfg.bridgeMediaRoot, settings)
+        : null;
     const diag = bridgeDiagnostics();
     const suppressions = await listBridgeSuppressions(db, 20);
 
@@ -1115,19 +1205,131 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
               ${labelled(
                 'Largest re-hosted file (bytes)',
                 numberField('maxFileBytes', String(settings.maxFileBytes), 65536, 1073741824),
-                'Channel files are fetched on arrival and kept, because relays expire them in about 48 hours. A larger file forwards as text with the omission shown above.',
+                'Channel files are fetched on arrival, because relays expire them in about 48 hours. A larger file forwards as text with the omission shown above. How long a finished announcement keeps its file is decided on the Retention page.',
               )}
               <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700">
                 Save
               </button>
             </form>`,
         ) : ''}
+        ${section === 'retention' && retentionFacts
+          ? html`${card(
+              'What a sweep would delete, right now',
+              html`<div class="grid gap-3 text-sm sm:grid-cols-3">
+                  <div class="rounded-lg border border-slate-200 p-3">
+                    <p class="text-2xl font-semibold text-slate-900">
+                      ${String(retentionFacts.sweepable.rows)}
+                    </p>
+                    <p class="text-slate-600">
+                      file(s) past the bound (${fmtBytes(retentionFacts.sweepable.bytes)}),
+                      belonging to announcements that are over
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 p-3">
+                    <p class="text-2xl font-semibold text-slate-900">
+                      ${String(retentionFacts.orphans.pastBound)}
+                    </p>
+                    <p class="text-slate-600">
+                      ${retentionFacts.diskReadable
+                        ? html`orphaned file(s) past the bound
+                          (${fmtBytes(retentionFacts.orphans.pastBoundBytes)}), of
+                          ${String(retentionFacts.orphans.files)} orphan(s) on disk. A cleared
+                          channel or a deleted mapping removed their records without their
+                          bytes, until this page existed.`
+                        : html`orphans counted. This process has no bridge media root
+                          configured, so the disk half cannot be read here; the row counts
+                          beside are real.`}
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 p-3">
+                    <p class="text-2xl font-semibold text-slate-900">
+                      ${String(retentionFacts.stored.rows)}
+                    </p>
+                    <p class="text-slate-600">
+                      file(s) stored in all (${fmtBytes(retentionFacts.stored.bytes)});
+                      ${String(retentionFacts.sweptSoFar)} swept so far
+                    </p>
+                  </div>
+                </div>
+                <p class="mt-3 text-sm text-slate-600">
+                  A file is swept only when its announcement can never be sent again - the
+                  post is finished or was deleted at the source - and it was posted before
+                  ${retentionFacts.cutoffIso}. A standing announcement keeps its file
+                  however old it is, because a repeat reads the file when it sends.
+                </p>
+                <p class="mt-2 text-sm text-slate-600">
+                  The default is 30 days because the relays expire their own copies in about
+                  48 hours; everything past that is a copy kept for your convenience, not for
+                  delivery. No bridge file is ever published: a published announcement is
+                  text on the web, so no public page can lose a picture to this sweep. If
+                  bridge media ever does publish, a published file must be excepted from the
+                  bound before the first one ages past it - a picture vanishing from a live
+                  page is worse than a full disk, and that reasoning is recorded here so it
+                  is not lost with the simplification.
+                </p>`,
+            )}
+            ${card(
+              'The bound',
+              html`<form
+                  method="post"
+                  action="/bridge/retention/settings"
+                  class="flex flex-wrap items-end gap-4"
+                >
+                  <input type="hidden" name="_csrf" value="${csrf}" />
+                  <label class="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      name="mediaRetentionEnabled"
+                      ${settings.mediaRetentionEnabled ? raw('checked') : ''}
+                      class="rounded"
+                    />
+                    Sweep files past the bound, once a day
+                  </label>
+                  ${labelled(
+                    'Days a finished announcement keeps its file',
+                    numberField(
+                      'mediaRetentionDays',
+                      String(settings.mediaRetentionDays),
+                      MEDIA_RETENTION_MIN_DAYS,
+                      MEDIA_RETENTION_MAX_DAYS,
+                    ),
+                  )}
+                  <button
+                    type="submit"
+                    class="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700"
+                  >
+                    Save
+                  </button>
+                </form>
+                ${settings.mediaRetentionEnabled
+                  ? html`<form method="post" action="/bridge/retention/sweep" class="mt-3">
+                      <input type="hidden" name="_csrf" value="${csrf}" />
+                      <button
+                        type="submit"
+                        class="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        Sweep now: ${String(retentionFacts.sweepable.rows)} file(s) and
+                        ${String(retentionFacts.orphans.pastBound)} orphan(s)
+                      </button>
+                      <span class="ml-2 text-xs text-slate-500">
+                        ${retentionFacts.lastSweepDay
+                          ? `Last sweep: ${retentionFacts.lastSweepDay}.`
+                          : 'Not swept yet.'}
+                        The nightly pass runs once per local day on its own.
+                      </span>
+                    </form>`
+                  : html`<p class="mt-3 text-sm text-slate-600">
+                      <strong>The sweep is off, which is how it ships.</strong> Nothing is
+                      deleted until you read the numbers above and switch it on.
+                    </p>`}`,
+            )}`
+          : ''}
       `,
     });
-  };
-  // ONE HANDLER, REGISTERED FIVE TIMES (CCB-S5-058, D-246). Fastify takes an array of
-  // paths at runtime and its typed overloads do not, so this is a loop rather than a cast:
-  // five real routes, one body, and the types still checked.
+  };
+  // ONE HANDLER, REGISTERED FIVE TIMES (CCB-S5-058, D-246). Fastify takes an array of
+  // paths at runtime and its typed overloads do not, so this is a loop rather than a cast:
+  // five real routes, one body, and the types still checked.
   for (const s of BRIDGE_SECTIONS) app.get<{ Querystring: BridgeQuery }>(s.path, renderBridge);
 
   /* ── actions ────────────────────────────────────────────────────────────── */
@@ -1427,5 +1629,50 @@ export function registerBridge(app: FastifyInstance, ctx: ViewContext): void {
       req.session?.username ?? 'unknown',
     );
     return reply.redirect('/bridge?saved=1');
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/bridge/retention/settings', async (req, reply) => {
+    await plugins.saveChannelBridge(
+      {
+        // The checkbox's absence IS the off, stated explicitly rather than left to a
+        // spread keeping the old value (CCB-S5-064).
+        mediaRetentionEnabled: 'mediaRetentionEnabled' in (req.body ?? {}),
+        mediaRetentionDays: bodyString(req.body, 'mediaRetentionDays'),
+      },
+      req.session?.username ?? 'unknown',
+    );
+    return reply.redirect('/bridge/retention?saved=1');
+  });
+
+  app.post<{ Body: Record<string, unknown> }>('/bridge/retention/sweep', async (req, reply) => {
+    const s = plugins.channelBridgeSettings();
+    if (!s.mediaRetentionEnabled) {
+      // The refusal states the reason; the page renders no sweep button while off, so
+      // reaching this is a stale tab, not a broken control (D-201's trap, named).
+      return reply.redirect(
+        '/bridge/retention?error=' +
+          encodeURIComponent('The sweep is off. Switch it on above, then sweep.'),
+      );
+    }
+    if (typeof ctx.cfg.bridgeMediaRoot !== 'string' || ctx.cfg.bridgeMediaRoot === '') {
+      return reply.redirect(
+        '/bridge/retention?error=' +
+          encodeURIComponent('This process has no bridge media root configured; nothing to sweep.'),
+      );
+    }
+    const now = new Date();
+    const report = await sweepBridgeMedia({
+      db,
+      root: ctx.cfg.bridgeMediaRoot,
+      now,
+      days: s.mediaRetentionDays,
+    });
+    // A manual sweep counts as today's sweep, so the nightly pass does not repeat it.
+    await setSetting(db, BRIDGE_RETENTION_MARKER_KEY, localDay(now));
+    const note =
+      `Swept ${String(report.sweptRows)} file(s) and ${String(report.sweptOrphans)} ` +
+      `orphan(s), freeing ${String(report.bytesFreed)} bytes` +
+      (report.failures > 0 ? `; ${String(report.failures)} failure(s), see the log.` : '.');
+    return reply.redirect('/bridge/retention?notice=' + encodeURIComponent(note));
   });
 }

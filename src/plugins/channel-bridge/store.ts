@@ -44,7 +44,9 @@ export interface BridgeMapping {
   createdAt: Date;
 }
 
-export type BridgeMediaState = 'none' | 'pending' | 'stored' | 'failed' | 'too-large';
+// 'swept' is the retention tombstone (CCB-S5-064, migration 077): the file is gone, the
+// fact that one was held is not - mime and size stay as the record.
+export type BridgeMediaState = 'none' | 'pending' | 'stored' | 'failed' | 'too-large' | 'swept';
 
 /** A post row in full, for the console; the planner's PendingPost is a subset. */
 export interface BridgePostRow extends PendingPost {

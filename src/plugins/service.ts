@@ -510,6 +510,8 @@ export class PluginService {
     await setSetting(this.db, settingsKey(CHANNEL_BRIDGE_ID), normalized);
     await writeAudit(this.db, actor, 'plugin.settings', `plugin:${CHANNEL_BRIDGE_ID}`, {
       maxFileBytes: normalized.maxFileBytes,
+      mediaRetentionEnabled: normalized.mediaRetentionEnabled,
+      mediaRetentionDays: normalized.mediaRetentionDays,
     });
     this.channelBridge = normalized;
     return normalized;

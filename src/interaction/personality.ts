@@ -98,8 +98,11 @@ export const BASE_CHARACTER_MAX_CHARS = 600;
  * exists plus room to extend it, while the whole conversation prompt stays a small
  * fraction of the context window. The origin reaches the prompt through the `origin.*`
  * rules in the registry (migration 035), whose placeholders {@link dialledPromptInputs}
- * fills. (An `{@link originLines}` reference stood here for a symbol that never existed
- * after D-144 moved the sentences into the registry; CCB-S5-063.)
+ * fills. (A link-tag reference to an `originLines` symbol stood here for a symbol that
+ * never existed after D-144 moved the sentences into the registry; CCB-S5-063. Spelled
+ * without the tag since CCB-S5-064, because `verify:doc-links` now resolves every link
+ * tag and a quoted example of a dead one would be either its first false red or a
+ * backtick loophole every future dead link could hide in.)
  */
 export const ORIGIN_MAX_CHARS = 4000;
 

@@ -18,10 +18,11 @@ This has gone wrong twice.
 
 <!-- BEGIN DECISION INDEX -->
 <details>
-<summary><strong>Index of all 260 decisions</strong> — newest first. Highest allocated: <strong>D-261</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
+<summary><strong>Index of all 261 decisions</strong> — newest first. Highest allocated: <strong>D-262</strong>. Not allocated: D-108. (Generated; run <code>npm run verify:decisions-index -- --update</code> after adding one.)</summary>
 
 | Id | Decision | Status |
 |---|---|---|
+| D-262 | The rungs wear the names of what they do, a finished announcement's file has a bound, and two checks hold the docs to the code | IMPLEMENTED |
 | D-261 | Everything that said something no longer true, and what would catch the next one | IMPLEMENTED |
 | D-260 | The three serious ones: a rollback stays in its space, the critical off-switch is refused per bot, and names leave the journal | IMPLEMENTED |
 | D-259 | The sidebar rule is checked, because twice it was found by the operator instead | IMPLEMENTED |
@@ -289,6 +290,127 @@ This has gone wrong twice.
 ---
 ---
 ---
+---
+
+### D-262 - The rungs wear the names of what they do, a finished announcement's file has a bound, and two checks hold the docs to the code
+
+**Status: IMPLEMENTED** (CCB-S5-064, migration 077; `verify:bridge-retention`,
+`verify:env-docs`, `verify:doc-links`, and the naming checks in `verify:moderation`).
+
+**ONE: THE LADDER NAMES, AND WHAT ESTABLISHING THEM FIRST REVEALED.** The proposed fixed
+sequence - Notice / Warning / Mute / Removal - could not be shipped truthfully against
+either ladder, which is exactly the trap the briefing set ("if rung three does not mute,
+the name is wrong rather than the rung"). What the rungs actually do: **Ladder A**, the one
+numbered 1-4 with nothing beside the numbers, is the CONVERSATIONAL ladder - its rungs
+sharpen her tone by +1..+4 and do nothing else; every sanction name would be false on it.
+**Ladder B** owns the action vocabulary, and a rung there is a positional slot whose action
+is an operator-editable dropdown - the shipped ladder is warn(5) / mute(10, 600 s) /
+none(20) / none(30), so rung 3 does not mute (rung 2 does) and rung 4 removes nobody (the
+hard rungs ship inert on purpose). A fixed per-position name would go false on the next
+dropdown save.
+
+So the names are DERIVED from what is true: Ladder B's rungs wear the person-readable name
+of their SAVED action - **Warning · Mute · Block · Removal · Does nothing**, from
+`ENFORCEMENT_ACTION_NAMES` in `rules.ts`, one data table the dropdown, the rung column, the
+Log, the Active page and the website can all quote - and Ladder A's rungs say what they do
+("sharpens her tone by +N"), derived from the saved bonus. The numbers stay beside the
+names, because the number is what the records keep (sanction rows store the raw action
+word, untouched). "Notice" appears nowhere: nothing in either ladder notices, and the
+system GUARANTEES the first live rung is a warning (refused on save and on arming
+otherwise) - naming rung 1 "Notice" would contradict the literal `warn` every record
+stores. A "What each action does" legend now sits under Ladder B, including the two
+irreversible-from-the-console actions and the first-live-rung invariant. Operated: saving
+rung 3 as `remove` made its name read Removal on the next render.
+
+**Reported for the operator (ground rule 5), beyond the naming**: nothing can enforce
+today - `ARMING_UNLOCKED = false` is a build constant pending the live-group proof
+CCB-S4-035 left owed, triple-gated behind the mode column and the typed ARM word; the warn
+rung already SPEAKS in observed mode ("warning {n} of {total}", `warningCount` times);
+mute is a role change to Observer with a stored previous role and a queued expiry; block
+and remove are implemented and irreversible from the console; and rung 2's threshold is
+derived from the warning count, deliberately not directly editable.
+
+**TWO: THE RETENTION BOUND, AND HOW THE RULE SIMPLIFIED.** Established in stage 0 and
+re-proven in the harness: **no bridge file is ever published** - the archived announcement
+is hardcoded text-only, no public route serves a bridge file, and serving one would bypass
+the strip pipeline every published image passes. So the published-file exception is
+structurally empty and the shipped rule is: a file whose announcement is OVER (terminally
+resolved or source-deleted) and older than the bound is deleted; the bound defaults to 30
+days (the relays expire their own copies in ~48 h, so everything past that is convenience,
+not delivery), operator-settable 3..3650, **shipped OFF until he reads the count**. The
+load-bearing reasoning is RECORDED in migration 077, `media-retention.ts` and on the page
+itself: the day bridge media publishes, a published file must be excepted before the first
+one ages past the bound - a picture vanishing from a live page is worse than a full disk.
+The exception that IS operative is in-chat: a repeat reads the stored file at send time,
+so a STANDING announcement keeps its file however old it is (the cadence's age window
+resolves every post eventually, so nothing is kept forever by accident).
+
+The sweep also ends the **orphan-file accumulation stage 0 found**: every row-deletion
+path (Clear record, mapping delete, bot delete) cascaded away the only row holding
+`media_path` while nothing unlinked the bytes - files nothing could ever reference again.
+Orphans past the bound are swept by mtime; referenced files are excluded through a
+resolved-path set, because an orphan walk that eats referenced files is the one failure
+the module must not have. A swept row is the D-240 tombstone: `media_state = 'swept'`,
+path NULL, mime and size kept, with a 077 CHECK making a swept row that still holds a path
+unrepresentable, and one shared WHERE so the count the operator reads is the count the
+sweep acts on. The pass rides `bridge.tick` once per local day behind the switch; the
+Bridge section gained a Retention page (count first, the bound, Sweep now), and the
+console refuses a sweep while the switch is off, with the reason. Proven by operating:
+real files in a real tree - past-bound swept, standing and young and outside-root spared,
+the published announcement byte-identical across the sweep - and the terminal-state clause
+neutered at the source turned four checks red before being restored. The D-212 look then
+caught what the harness could not: a process with no bridge media root 500'd the page,
+which now renders the row counts and says the disk half is unreadable instead.
+
+**THE ADVERSARIAL REVIEW BEFORE THE PUSH FOUND FOURTEEN REAL DEFECTS IN THE FIRST BUILD,
+and every one was fixed before anything shipped.** The two serious ones were in the orphan
+sweep, and both were the same lesson: deletion-by-exclusion is a loaded gun. (1) The
+orphan pass deleted EVERY aged unreferenced file under the root, and every existing
+root-nesting guard was one-directional - nothing refused MEDIA_ROOT or the SimpleX state
+sitting INSIDE a broadly-configured BRIDGE_MEDIA_ROOT, so one plausible misconfiguration
+plus the new switch would have destroyed member originals and quarantined evidence. Fixed
+three layers deep: the config now refuses any data root nested inside the bridge root
+(the symmetric guard the one-directional ones always implied), the sweep deletes ONLY
+files shaped as the intake writes them (`<botId>/<postId>-<name>`; anything foreign is
+left alone and surfaced), and the counts count only that shape. (2) Orphan classification
+was lexical string equality, so a re-spelled root (casing, symlink, moved mount) would
+have made every referenced file look orphaned while sends kept working. Fixed with
+canonical comparison (realpath, case-folded on win32) plus a tripwire: when the rows
+reference files and the walk matches NONE of them, the orphan pass refuses to run at all,
+loudly - failing toward keeping. The dozen minor findings were this season's own
+stale-surface class in freshly written copy, all corrected: the warn rung's derived name
+now says it is inert while the warning count is 0 (the decision code makes it so), a
+0-bonus verbal rung says it RESETS her tone (highest rung wins, so it masks the sharper
+rungs below - "inert" lied), the legend carries the deliberate warningCount-0 exception
+its unconditional sentence contradicted, the mute description covers the 0-duration case,
+the Diagnostics file-bound help now points at the Retention page instead of claiming files
+are "kept", ENOENT stopped counting as a sweep failure, the two new checks were hardened
+against their own reviewed holes (comments stripped from every resolution corpus, dotted
+members resolved within the base's declaring files, annotation- and import-position
+targets accepted), and the harness gained the assertions the review showed missing: the
+page's rendered count compared against the database's, the manual sweep proven to mark
+the day, the foreign-tree and case-respelling and tripwire cases each operated on real
+files.
+
+**THREE: THE TWO CHECKS, AS APPROVED.** `verify:env-docs`: every ASSIGNMENT-shaped
+variable in `.env.example` must be read - `process.env` access or a config reader helper
+naming it - somewhere under `src/`; scoped to src/ rather than config.ts alone because
+`MEDIA_SECRET` is read in the at-rest layer on purpose, and assignment-shaped on the doc
+side because the file's prose legitimately mentions `BOT_RUNTIME_HOSTING` (as removed) and
+`BACKUP_PASSPHRASE_FILE` (backup.sh's). A comment mention is not a read. The reverse
+direction is printed as a note, not failed - and the note prints empty because the seven
+variables config.ts read undocumented (`BRIDGE_MEDIA_ROOT`, `ASSET_ROOT`, `AVATAR_PATH`,
+`SITE_ORIGIN`, the three backup paths) were documented in the same commit.
+`verify:doc-links`: all 181 `{@link}` tags in src/ and scripts/ must resolve,
+declaration- or member-shaped (member-shaped accepted deliberately: seventeen real links
+point at methods and properties, measured before shipping). The one pre-existing dead
+link - CCB-S5-063's own historical note about `originLines`, written with real braces -
+was reworded rather than taught to the matcher as a backtick loophole; the check's one
+exclusion is its own file, which must hold the forged fixtures, printed with that reason.
+**Both mutation-proven in-script AND against the real tree**: a `DEAD_LEVER_XYZ=` line in
+`.env.example` and a `{@link NoSuchSymbolMutationTest}` in a source file each turned their
+check red before being reverted.
+
 ---
 
 ### D-261 - Everything that said something no longer true, and what would catch the next one

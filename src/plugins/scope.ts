@@ -371,6 +371,22 @@ export const PLUGIN_SETTING_SCOPES: readonly PluginSettingPlacement[] = Object.f
     reason:
       'A storage bound. The bridge keeps its own copy of channel media because relays expire files, and disk is a deployment cost, not a bot choice.',
   },
+  {
+    pluginId: CHANNEL_BRIDGE_ID,
+    key: 'mediaRetentionEnabled',
+    scope: 'shared',
+    label: 'Sweep files past the bound',
+    reason:
+      'The retention switch (CCB-S5-064). One media tree, one disk, one sweep: what is deleted from it is a deployment decision, not a bot choice.',
+  },
+  {
+    pluginId: CHANNEL_BRIDGE_ID,
+    key: 'mediaRetentionDays',
+    scope: 'shared',
+    label: 'Days a finished announcement keeps its file',
+    reason:
+      'The retention bound (CCB-S5-064), for the same reason as the switch: the tree and its disk are the deployment’s.',
+  },
   // PER BOT by question 1 of the three above, and the sharpest example of it: whether this
   // bot records what is said is exactly "does this bot have the capability", and it is what
   // makes a second bot in a room something other than a duplicated archive. The choice of

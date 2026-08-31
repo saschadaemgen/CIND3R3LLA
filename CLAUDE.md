@@ -516,7 +516,15 @@ in one database and broken in the one beside it is not a promise.
   on the path: posts forward VERBATIM under application-written persona attribution. Her
   announcements archive under the 'bridge' category, EXCLUDED by default. Media re-hosts at
   intake (relays expire ~48h) under `BRIDGE_MEDIA_ROOT`, a SIBLING of MEDIA_ROOT (the
-  destruction sweeper walks that whole tree), plaintext with the reasoning in security §16.
+  destruction sweeper walks MEDIA_ROOT's tree, which is exactly why bridge files may not sit
+  inside it), plaintext with the reasoning in security §16.
+  **Bridge media has its own retention since CCB-S5-064** (D-262, migration 077):
+  `channel-bridge/media-retention.ts` sweeps a file whose announcement can never send again
+  once it is past an operator-set bound (30-day default, shipped OFF, count-first Retention
+  page under the Bridge section), tombstones the row 'swept', and sweeps by age the orphaned
+  bytes every cascade path used to abandon. A STANDING announcement keeps its file - repeats
+  read it at send time - and NO bridge file is ever published (the announcement is text-only
+  on the web), so the published-file exception is recorded, not built.
   The transport is `bot/bridge-port.ts` (recital-port pattern, plus in-place edit and
   BROADCAST delete, a separate runtime method from the Internal-mode consent erasure so no
   caller defaults into the wrong scope); the rhythm is `bridge.tick`, a self-chaining queue
@@ -767,7 +775,13 @@ in one database and broken in the one beside it is not a promise.
   rolling back a per-bot row used to rewrite the SHARED law, the defect 045's own comment had
   described; and the override trigger rebuilt to also refuse `enabled = FALSE` on a CRITICAL
   law, because critical means "must reach every prompt" and both alarms that watch for a
-  missing one read only the shared registry. Rewording per bot stays allowed).
+  missing one read only the shared registry. Rewording per bot stays allowed)
+  · 077 bridge media retention (CCB-S5-064, D-262: 'swept' joins the bridge posts'
+  media-state vocabulary as the D-240 tombstone - the file is gone, the fact that one was
+  held is not, mime and size kept - with the CHECK that makes a swept row still holding a
+  path unrepresentable, and the sweepable partial index that SHRINKS as the sweep works.
+  The migration's header records the published-file exception the simplified rule made
+  empty, for the day bridge media publishes).
   Runner: `node dist/db/migrate.js`.
   **Numbers 017, 018 and 019 each exist TWICE** — the unconsolidated local-AI work (D-068)
   added `017_cinderella_profiles`, `018_runtime_policy_decisions` and `019_bot_onboarding`
@@ -775,7 +789,7 @@ in one database and broken in the one beside it is not a promise.
   **full filename** and applies files in filename order, so all six apply exactly once. But
   **never rename an applied migration** (it would re-apply), the number is a label rather
   than an ordinal, and new migrations allocate from **the highest number on disk plus one**
-  (currently **076**, since 076 landed the rollback scope and the critical-law guard). Stated
+  (currently **077**, since 077 landed the bridge media retention tombstone). Stated
   as a rule rather than a fixed number, because the fixed number went stale once already - and
   had gone stale AGAIN by CCB-S5-062, when this line said 070 over a tree whose highest was
   075. See D-069.
@@ -1010,6 +1024,22 @@ that no room is captured twice - mutation-proven by restoring the shipped "every
 behaviour and by showing a per-groupId check finding six ids and no conflict. The console harness
 drives the real routes: the warning, the switch as ONE action read back out of the database, and a
 membership change appearing on the page. Neither can see that a control is reachable (D-162)),
+`verify:bridge-retention` (the bound on re-hosted bridge media, CCB-S5-064, D-262: real
+files in a real tree - a file past the bound whose announcement is over is swept to the
+077 tombstone, a STANDING announcement keeps its file however old because repeats read it
+at send time, the published announcement is byte-identical across a sweep, orphans sweep
+by age with referenced files excluded, shipped OFF with the once-per-local-day gate and
+the count proven equal to what the sweep acts on, containment refusing a path outside the
+root loudly, and the Retention page driven through its real routes. The terminal-state
+clause is mutation-proven: neutered at the source it turns four checks red, and the
+in-script twin shows it selecting the standing announcement),
+`verify:env-docs` and `verify:doc-links` (the two CCB-S5-063-proposed checks, D-262:
+every assignment-shaped variable `.env.example` documents must be READ somewhere under
+`src/` - scoped wider than config.ts because MEDIA_SECRET is read in the at-rest layer on
+purpose, with prose mentions excluded so documenting a REMOVED lever stays legal - and
+every `{@link}` tag in src/ and scripts/ must resolve, declaration- or member-shaped.
+Both carry positive controls against the real tree and in-script mutations, and both were
+also proven red against real forgeries before shipping),
 `verify:bridge` (the channel bridge, CCB-S5-032, D-187: the two parsers proven exclusive in
 both directions with positive controls, the cadence's whichever-comes-first at both orderings,
 the age window, the repeat cap, dismissal, the digest proven to ACCOUNT for every pending post,

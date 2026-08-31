@@ -283,6 +283,7 @@ function makeBridgeDeps(
   interaction: InteractionService,
   plugins: PluginService,
   storeMedia: BridgeDeps['storeMedia'],
+  bridgeMediaRoot: string | null,
 ): BridgeDeps {
   const linesFor = (botProfileId: number): ReturnType<BridgeDeps['linesFor']> => {
     // THIS bot's persona in ITS default language (CCB-S5-006): the strings are
@@ -306,6 +307,13 @@ function makeBridgeDeps(
     linesFor,
     storeMedia,
     maxFileBytes: () => plugins.channelBridgeSettings().maxFileBytes,
+    // Read per tick like the file bound, so the operator's save on the Retention page
+    // takes effect on the next tick rather than the next boot (CCB-S5-064).
+    mediaRetention: () => {
+      const s = plugins.channelBridgeSettings();
+      return { enabled: s.mediaRetentionEnabled, days: s.mediaRetentionDays };
+    },
+    mediaRoot: bridgeMediaRoot,
   };
 }
 
@@ -776,6 +784,7 @@ function buildBotGraph(bot: HostedBot, deps: BotGraphDeps): BotGraph {
       deps.interaction,
       deps.plugins,
       bridgeMediaStore(bot.fileReceiver, cfg.bridgeMediaRoot),
+      cfg.bridgeMediaRoot,
     ),
   );
 
@@ -849,7 +858,10 @@ async function startCaptureWorker(
     // The job deps carry NO media store - the tick and propagation never fetch
     // bytes, only the per-bot intake does.
     setBridgeSendPort(sdkBridgePort(host.runtime));
-    setBridgeJobDeps(() => makeBridgeDeps(interaction, plugins, null));
+    // The media root DOES ride on the job deps (CCB-S5-064): the tick never fetches
+    // bytes, but its once-a-day retention pass deletes them, and a sweep with no root
+    // would be a switch that silently does nothing.
+    setBridgeJobDeps(() => makeBridgeDeps(interaction, plugins, null, cfg.bridgeMediaRoot));
     setMusicSendPort(sdkMusicPort(host.runtime));
     setMusicJobDeps(() => makeMusicDeps(cfg, interaction, plugins));
     // D-224: the outbound-file watcher's read, through the scheduler like

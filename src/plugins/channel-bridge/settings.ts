@@ -22,6 +22,23 @@ export interface ChannelBridgeSettings {
    * media state, never a silent gap).
    */
   maxFileBytes: number;
+  /**
+   * Whether the media retention sweep runs at all (CCB-S5-064, D-262).
+   *
+   * SHIPPED OFF, the retention page's own rule: nothing is deleted until the
+   * operator has read the count and turned the sweep on himself.
+   */
+  mediaRetentionEnabled: boolean;
+  /**
+   * Days a re-hosted file is kept once its post can never send again.
+   *
+   * 30 because the relays expire their own copies in about 48 hours, so
+   * everything past that is a copy kept for convenience rather than delivery.
+   * A file whose post can STILL send (a standing announcement mid-lifecycle)
+   * is never swept whatever this says; see media-retention.ts for the
+   * predicate and for the recorded published-file reasoning.
+   */
+  mediaRetentionDays: number;
 }
 
 export const CHANNEL_BRIDGE_DEFAULTS: Readonly<ChannelBridgeSettings> = Object.freeze({
@@ -29,6 +46,8 @@ export const CHANNEL_BRIDGE_DEFAULTS: Readonly<ChannelBridgeSettings> = Object.f
   // busy channel at a number an operator can reason about. Settable on the
   // bridge page, because the right bound is a property of the host's disk.
   maxFileBytes: 25 * 1024 * 1024,
+  mediaRetentionEnabled: false,
+  mediaRetentionDays: 30,
 });
 
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -42,6 +61,10 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.trunc(parsed)));
 }
 
+/** The bounds the console form and this normalizer share (the CCB-S5-063 rule). */
+export const MEDIA_RETENTION_MIN_DAYS = 3;
+export const MEDIA_RETENTION_MAX_DAYS = 3650;
+
 export function normalizeChannelBridgeSettings(raw: unknown): ChannelBridgeSettings {
   const o =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -54,6 +77,17 @@ export function normalizeChannelBridgeSettings(raw: unknown): ChannelBridgeSetti
       64 * 1024,
       1024 * 1024 * 1024,
       CHANNEL_BRIDGE_DEFAULTS.maxFileBytes,
+    ),
+    // Strictly `=== true`: anything else, including an absent key on an old stored
+    // blob, is the shipped OFF. A sweep must never turn itself on by normalization.
+    mediaRetentionEnabled: o['mediaRetentionEnabled'] === true,
+    // 3-day floor: below the relays' own ~48 h there is nothing left to be a copy OF,
+    // and a sweep racing a delivery window is a bound nobody could want.
+    mediaRetentionDays: clampInt(
+      o['mediaRetentionDays'],
+      MEDIA_RETENTION_MIN_DAYS,
+      MEDIA_RETENTION_MAX_DAYS,
+      CHANNEL_BRIDGE_DEFAULTS.mediaRetentionDays,
     ),
   };
 }

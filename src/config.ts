@@ -281,6 +281,38 @@ export function loadConfig(): Config {
     logLevel: parseLogLevel(process.env['LOG_LEVEL']),
   };
 
+  // ── NO OTHER DATA ROOT MAY SIT INSIDE BRIDGE_MEDIA_ROOT (CCB-S5-064) ──────
+  //
+  // Every existing nesting guard is one-directional ("X must not be inside MEDIA_ROOT"),
+  // which was sufficient while nothing ever DELETED under the bridge root. The retention
+  // sweep changed that: its orphan pass removes aged files nothing references, so a
+  // bridge root configured ABOVE the other trees (e.g. BRIDGE_MEDIA_ROOT=/var/lib/
+  // cinderella with MEDIA_ROOT under it) would put consent-governed member originals,
+  // quarantined evidence and the SimpleX state inside a tree a sweep walks. The sweep
+  // itself also refuses to delete anything that is not shaped like a bridge file, but a
+  // configuration that ARRANGES the hazard is refused at boot, exactly as the inverse
+  // nesting always was.
+  const bridge = cfg.bridgeMediaRoot;
+  const inside = (p: string): boolean => p === bridge || p.startsWith(bridge + sep);
+  const nested = (
+    [
+      ['MEDIA_ROOT', cfg.mediaRoot],
+      ['QUARANTINE_ROOT', cfg.quarantineRoot],
+      ['MUSIC_ROOT', cfg.musicRoot],
+      ['ASSET_ROOT', cfg.assetRoot],
+      ['SIMPLEX_FILES_FOLDER', cfg.simplexFilesFolder],
+      ['SIMPLEX_DB_PREFIX', dirname(cfg.simplexDbPrefix)],
+    ] as const
+  ).filter(([, p]) => inside(p));
+  if (nested.length > 0) {
+    throw new ConfigError(
+      `BRIDGE_MEDIA_ROOT (${bridge}) must not contain ${nested
+        .map(([name, p]) => `${name} (${p})`)
+        .join(', ')}. The bridge media retention sweep deletes aged files under its root ` +
+        `that no bridge post references, and every other data tree holds exactly such files.`,
+    );
+  }
+
   cached = cfg;
   return cfg;
 }

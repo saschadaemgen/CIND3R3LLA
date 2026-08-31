@@ -1701,6 +1701,16 @@ encryption (D-075) protects member privacy, and a channel file is the operator's
 that every carrying relay could already read. Encrypting it would spend the hot path on a
 secrecy the content never had.
 
+**And bounded in time since CCB-S5-064** (D-262, migration 077): a file whose announcement is
+over is swept after an operator-set bound (30-day default, shipped off), a standing
+announcement keeps its file, and the orphaned bytes the cascade paths used to abandon sweep
+by age. The sweep's containment refuses to follow a stored path outside `BRIDGE_MEDIA_ROOT`,
+loudly - the owned-files rule, applied to the one tree the destruction machinery deliberately
+never touches. No consent property is involved: these are the operator's own broadcast
+copies, which is also why the published-announcement guarantee costs the sweep nothing (the
+announcement publishes as text; no bridge file is served on any public route, re-proven by
+`verify:bridge-retention`).
+
 ## 17. The music plugin: operator content, member uploads, and no model near either (CCB-S5-044)
 
 **MUSIC_ROOT is plaintext and outside MEDIA_ROOT**, both halves of the bridge-media reasoning

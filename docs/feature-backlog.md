@@ -868,11 +868,12 @@ either side commits.
       arrive, a new destination must be a `bridge_forwards`-shaped record joined to a published
       row, never a second forwarding pipeline. The 'bridge' publication category (migration 057,
       excluded by default) is the switch that day; nothing else should need schema.
-- [ ] **Bridge media has no retention sweep.** Re-hosted channel files accumulate under
-      `BRIDGE_MEDIA_ROOT`, bounded per file by `maxFileBytes` and by nothing over time. Resolved
-      posts' files could be swept after their last live copy is withdrawn; that needs a decision
-      about whether a withdrawn announcement's media should survive for the site's later use,
-      which is exactly the onward-publication question, so it waits with it.
+- [x] **Bridge media retention sweep** - SHIPPED (CCB-S5-064, D-262, migration 077). The
+      operator decided: a file whose announcement is over is swept after a settable bound
+      (30-day default, shipped off until the count is read), a standing announcement keeps its
+      file, orphaned bytes sweep by age, and the onward-publication question this row waited on
+      was answered by establishing that no bridge file is ever published - the exception is
+      recorded (migration 077, media-retention.ts, the Retention page) for the day one is.
 - [ ] **The tick does not run per-second cadences and does not pretend to.** The tick sweeps
       every minute, so a cadence is granular to the minute; the console's minimum interval is 1.
       Stated here because a sub-minute expectation would read as the bridge being late.
