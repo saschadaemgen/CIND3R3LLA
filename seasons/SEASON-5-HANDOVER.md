@@ -3,8 +3,10 @@
 - Season: 5
 - Repository: `saschadaemgen/CIND3R3LLA`
 - Opened: 2026-08-08 by CCB-S5-001
-- Status: **in progress**. This is a forward-looking document and it will be superseded by
-  `SEASON-5-PROTOKOLL.md` at close.
+- Status: **superseded.** The season closed under CCB-S5-065 on 2026-09-01; the record is
+  [SEASON-5-PROTOCOL.md](SEASON-5-PROTOCOL.md) (English filename, not the `PROTOKOLL` this line
+  originally announced), which measures the season against the plan below, item by item. This
+  document is kept unchanged beneath this line as the plan it was.
 - Written under **CCB-S5-003**. The concept work it summarises is under
   [`concepts/`](concepts/), which is **proposal, not decision** - read
   [`concepts/README.md`](concepts/README.md) before citing anything there.

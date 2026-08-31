@@ -6,6 +6,16 @@ Cinderella is a consent-first archive AI for public SimpleX groups. A deployment
 
 This document describes the _runtime_ architecture as it exists in code. Where the task outline and the code differ, the code is treated as ground truth and the divergence is called out inline (and collected in the appendix).
 
+> **Known numbering defect, stated rather than hidden** (found on the Season 5 close,
+> CCB-S5-065): two section numbers are used twice — **§44** ("Enacting a law" and "The
+> knowledge base") and **§48** ("Backups" and "Which interaction settings are one bot's") —
+> the "Appendix: divergences" sits mid-file with sections after it, and §42's subsections run
+> 42.5 before 42.4. Renumbering was deliberately **not** done in a documentation-only close,
+> because section numbers are cited from `CLAUDE.md`, the decisions, the backlog and code
+> comments, and a renumber that breaks citations is worse than a stated duplicate. When a
+> future briefing renumbers, it must sweep every `architecture.md §N` citation in the same
+> change. Until then, cite duplicated numbers with their titles.
+
 ## 1. System overview
 
 Cinderella runs as **one Node.js process** (`src/index.ts`) that hosts three cooperating parts:
@@ -28,7 +38,7 @@ node dist/index.js --check    → validate config and exit 0 (Stage 0 check)
 ```mermaid
 flowchart TB
   subgraph proc["Single Node.js process — src/index.ts"]
-    bot["Capture bot\n(embedded SimpleX core via bot.run)\nsrc/bot/"]
+    bot["Bot runtime host\n(embedded SimpleX core, every enabled bot)\nsrc/bot/ · src/bot/runtime/"]
     pipe["Capture pipeline\nparse → persist → receive-media\nsrc/capture/"]
     admin["Admin console (Fastify)\nhtmx + Tailwind, 127.0.0.1\nsrc/web/"]
   end
@@ -81,7 +91,9 @@ sequenceDiagram
 
 ## 2. In-process SDK topology — no WebSocket daemon
 
-`package.json` declares `"simplex-chat": "^6.5.4"` (`package.json:45`); the SDK docstring in `src/bot/avatar.ts:6` references the 6.5.4 `bot.ts`. The SDK embeds the Haskell core in-process as a native addon. `src/bot/client.ts::startBot` calls `bot.run(...)` (`client.ts:80`), loading the core, opening the local SimpleX DB, and starting the event loop inside Cinderella's own process. There is **no separate SimpleX daemon and no exposed WebSocket port** — the deprecated ≤0.3.x WebSocket-daemon model is not used. Events are wired on the in-process `chat` handle: `newChatItems`, `chatItemUpdated`, `groupChatItemsDeleted`, `chatItemsDeleted` in `handler.ts`; `rcvFileComplete` / `rcvFileError` / `rcvFileWarning` in `client.ts:116-120`.
+`package.json` declares `"simplex-chat": "^6.5.4"` (`package.json:45`); the SDK docstring in `src/bot/avatar.ts:6` references the 6.5.4 `bot.ts`. The SDK embeds the Haskell core in-process as a native addon. There is **no separate SimpleX daemon and no exposed WebSocket port** — the deprecated ≤0.3.x WebSocket-daemon model is not used.
+
+> Note (Season 5 close): **the production loader is `startRuntimeHost`** (`src/bot/runtime/host.ts`, called from `src/index.ts`), which hosts every enabled bot on the one core — see §32. `src/bot/client.ts::startBot` and its `bot.run(...)` call (`client.ts:80`) remain, but since **D-155** they serve only `npm run connect`; this section described `startBot` as *the* loader for two seasons after that stopped being true (the same correction `NOTICE` received earlier). The mechanics below (core loading, DB opening, the in-process event loop) are unchanged and apply to both entry points. Events are wired on the in-process `chat` handle — through the runtime router's per-profile fan-out in production (`src/bot/runtime/events.ts`), directly in `handler.ts` / `client.ts:116-120` for `npm run connect`.
 
 ## 3. Two databases, kept separate
 
@@ -109,7 +121,7 @@ Parse (`message.ts::parseGroupMessage`, keeps only group + `groupRcv` + `rcvMsgC
 
 ## 7. The admin console
 
-`web/server.ts` builds Fastify with `trustProxy: 'loopback'` (`server.ts:82`), listening on `127.0.0.1:ADMIN_PORT` (default 8787), never a public interface; nginx TLS fronts it at `<admin-host>`. Server-rendered HTML with htmx (`public/assets/htmx.min.js`, vendored by `scripts/copy-assets.mjs`, detected via the `hx-request` header) plus Tailwind (`assets/app.css` → `public/assets/app.css`); no SPA. Since CCB-S3-015 Stage 3 the console wears the **website's dark-neon design system** (cyan accent): `assets/app.css` carries the site design tokens (originally mirrored from the site's `css.ts`, which left with the site under D-089; the copy in `assets/app.css` is now the console's own and no longer tracks it), the self-hosted Source Sans 3 / JetBrains Mono woff2, and un-layered overrides that remap the light Tailwind utilities to the dark palette centrally — so no view was rewritten. Only the admin links `app.css` (the public front and marketing site inline their own CSS), and the theme adds no inline styles and needs no CSP change (same-origin sheet + `default-src 'self'` fonts). Controls enforced in-process: configurable security headers (`applySecurityHeaders`), a global rate limit and IP allow/deny policy (`GlobalRateLimiter`, `ipAllowed`), session read + auth guard, CSRF on all mutations (`csrfOk`), and step-up re-verification for sensitive mutations. Primary auth is passkeys/WebAuthn (`@simplewebauthn`) with an Argon2id break-glass path (+ optional TOTP). Sessions are persisted in PostgreSQL (`admin_sessions`, `007_sessions.sql`).
+`web/server.ts` builds Fastify with `trustProxy: 'loopback'` (`server.ts:82`), listening on `127.0.0.1:ADMIN_PORT` (default 8787), never a public interface; nginx TLS fronts it at `<admin-host>`. Server-rendered HTML with htmx (`public/assets/htmx.min.js`, vendored by `scripts/copy-assets.mjs`, detected via the `hx-request` header) plus Tailwind (`assets/app.css` → `public/assets/app.css`); no SPA. Since CCB-S3-015 Stage 3 the console wears the **website's dark-neon design system** (cyan accent): `assets/app.css` carries the site design tokens (originally mirrored from the site's `css.ts`, which left with the site under D-089; the copy in `assets/app.css` is now the console's own and no longer tracks it), `@font-face` declarations for Source Sans 3 / JetBrains Mono — the woff2 files themselves are **not tracked and not produced by the build** (they left with the site, `NOTICE`; `scripts/copy-assets.mjs` copies no fonts), so a fresh clone falls back to the stacks' system fonts and only a host with the leftover files under git-ignored `public/assets/site/fonts/` renders the named faces; this sentence claimed "self-hosted woff2" until the Season 5 close — and un-layered overrides that remap the light Tailwind utilities to the dark palette centrally — so no view was rewritten. Only the admin links `app.css` (the public front and marketing site inline their own CSS), and the theme adds no inline styles and needs no CSP change (same-origin sheet + `default-src 'self'` fonts). Controls enforced in-process: configurable security headers (`applySecurityHeaders`), a global rate limit and IP allow/deny policy (`GlobalRateLimiter`, `ipAllowed`), session read + auth guard, CSRF on all mutations (`csrfOk`), and step-up re-verification for sensitive mutations. Primary auth is passkeys/WebAuthn (`@simplewebauthn`) with an Argon2id break-glass path (+ optional TOTP). Sessions are persisted in PostgreSQL (`admin_sessions`, `007_sessions.sql`).
 
 ## 8. Configuration and secrets
 
@@ -148,8 +160,10 @@ exist twice** (017, 018, 019), because the parallel-chat AI work reused numbers 
 CCB-attributed work had already taken. The runner keys `schema_migrations` on the **full
 filename**, so all six apply exactly once and nothing is broken — but the number is a label
 rather than an ordinal, **no applied migration may be renamed**, and new migrations allocate
-from the highest number on disk plus one (currently **054**, since 053 landed with the knowledge
-base controls). See **D-069** and the appendix.
+from the highest number on disk plus one — read the number off the tree, because a number typed
+here goes stale: this line said "currently 054" while the tree held 077, found on the Season 5
+close (the highest on disk at that close was **077**, bridge media retention). See **D-069** and
+the appendix.
 
 > Note: `CLAUDE.md`'s migrations list labels 004 the "moderation gate"; the file itself is headed "Cinderella admin views support — Season 0, Stage 5" (`migrations/004_moderation.sql:1`) and its concrete effect is adding `media_error` and folding `rejected` into the publish views. It implements the takedown gate in the views but is not exclusively about moderation.
 
@@ -3662,6 +3676,15 @@ fixes. `critical()` now logs the label, the user id and `describeChatError(err)`
 `setActiveUser` throws, and **rethrows the original object unchanged**: wrapping it would hide
 `.chatError` from every catch site above, which is the masking CCB-S3-023 forbids.
 
+**A command may not schedule another from inside itself** (CCB-S5-015, added to this section on
+the Season 5 close). A nested `run` call from within a critical section would deadlock behind
+its own tail, and until CCB-S5-015 it did — surfacing only as the 60-second timeout above, which
+points at the core rather than at the caller. Re-entry is now refused **immediately**, with an
+error naming both commands and its own alarm distinct from the timeout's, and a nested call for
+a DIFFERENT bot is refused too, because there is one queue. Ordinary sequential and concurrent
+scheduling are proven untouched (`verify:scheduler-reentry`, whose section 2 exists because a
+guard that refused everything would pass every re-entry assertion).
+
 ### 49.2 The three ways a reply stops
 
 Between the model returning and the group receiving, and all three now loud:
@@ -4388,3 +4411,35 @@ a page that gains a route without a nav row goes red instead of being reachable 
 `navItemsSnapshot` and `sidebarSectionFor` are exported from `html.ts` for it. Two exemptions,
 both narrow and both printed rather than hidden: a standalone top-level page with no children
 (Dashboard), and `plugin:<id>`, which is how a single-page plugin names itself.
+
+## 60. Which record captures which room (CCB-S5-033, D-190)
+
+Written on the Season 5 close: this shipped in mid-season and was recorded in `CLAUDE.md` and
+the decisions, but this document had no section for it — added here from the code.
+
+**A room is a connected component of member sets, not a group id.** A member's wire id is
+scoped to the ROOM, so two `groups` records are one room exactly when their member sets
+intersect — measured on the production data at 941/830/**1** shared members within rooms and
+**0** across, and because the 1 is load-bearing the predicate is `>= 1`, never a ratio
+(`src/capture/rooms.ts`). **The unit of capture is the RECORD, not the bot**: `apiListGroups`
+returns ended memberships too, so one bot can hold several records in one room. Exactly one
+record captures a room (`capture_assignments`, migration 058, assigned in `assignCapture`'s
+single transaction because "a room" is not a column); an unresolved conflict ELECTS the lowest
+SimpleX user id (the D-182 rule) and is reported loudly; and every uncertain case fails
+TOWARDS capturing (a duplicate is visible, a lost message is gone — the second predicate of
+D-201, named as such). `room-service.ts` is the live index, refreshed at boot and on
+membership change; migration 059 is the append-only membership history. Checked by
+`verify:capture-rooms` and `verify:capture-console`.
+
+## 61. The welcome plugin (CCB-S5-041)
+
+Also added on the close, same reason. A member who joins a room is greeted **once** by the
+greeting bot — per-bot text, one of the eight per-bot `enabled` switches in
+`src/plugins/scope.ts`. The trigger is `joinedGroupMember`, deliberately not
+`connectedToGroupMember`, which fires once per EXISTING member when SHE joins a group and
+would have greeted the whole room (the D-209 grammar, settled by reading the Kotlin client;
+recorded in `src/plugins/welcome/trigger.ts:8-9` and wire-format §8c). The once-rule is a
+database record, not process memory, so a restart does not re-greet. Status at season close:
+**delivered in build; live cases unproven and stated as such** (register, CCB-S5-041). The
+known open defect — the once-record cascades away when a bot is deleted — is queued in the
+backlog per D-261, judged a schema change rather than a stale surface.

@@ -11,7 +11,8 @@ see [`../docs/decisions.md`](../docs/decisions.md) **D-014**.
 | 2 | Public product — archive front, SEO, stream experience, reporting, website foundation | Content-complete, in production | [SEASON-2-PROTOCOL.md](SEASON-2-PROTOCOL.md) |
 | 3 | Interaction layer, plugin framework, public front polish, queue foundation, latent-fault audit, the site split | **Closed** by CCB-S3-043 | [SEASON-3-PROTOCOL.md](SEASON-3-PROTOCOL.md) |
 | 4 | The AI she actually is — character, constitution, memory, backups, moderation, search | **Closed** by CCB-S4-052 | [SEASON-4-PROTOKOLL.md](SEASON-4-PROTOKOLL.md) |
-| 5 | More than one of her, and the Avatar layer | **In progress**; opened by CCB-S5-001 | [SEASON-5-HANDOVER.md](SEASON-5-HANDOVER.md) (forward-looking) |
+| 5 | More than one of her, and the Avatar layer | **Closed** by CCB-S5-065 | [SEASON-5-PROTOCOL.md](SEASON-5-PROTOCOL.md) |
+| 6 | Not yet titled | **Not yet opened** | [SEASON-6-HANDOVER.md](SEASON-6-HANDOVER.md) (forward-looking) |
 
 > **Two season counts run in parallel.** The above is the *product's* count. The
 > marketing site has its own, beginning at **site Season 1**, in its own repository
@@ -131,22 +132,33 @@ child-safety detection provider, and multi-tenancy & Pro (D-026).
 
 ## Season 5 — More than one of her, and the Avatar layer
 
-**In progress.** Opened by CCB-S5-001 on 2026-08-08. Forward-looking scope is in
-[SEASON-5-HANDOVER.md](SEASON-5-HANDOVER.md), with the concept work under
-[`concepts/`](concepts/).
+**Closed** by CCB-S5-065 on 2026-09-01; the record is
+[SEASON-5-PROTOCOL.md](SEASON-5-PROTOCOL.md). Opened by CCB-S5-001 on 2026-08-08; season
+dates 2026-08-08 to 2026-08-31 per the register's own rows.
 
-Delivered so far:
+**Delivered and live:** multi-bot hosting from day one (every enabled bot on one core, per-bot
+laws over a shared constitution, CCB-S5-001/D-155) with the console catching up over the
+briefings that followed;
+the rooms model (one record captures one room, CCB-S5-033/D-190); the knowledge base with
+verbatim chunks and the evidence-gated source line (CCB-S5-022/023, D-256); the channel bridge
+with per-channel web publication and its retention bound (CCB-S5-032/043/064); the music
+library (CCB-S5-044); the retention floor that stopped keeping what nobody agreed to — 64% of
+the archive — with its tombstone (CCB-S5-054, D-240/D-241); the honesty guard family (branded
+ids, the repetition gate, the injection floor, the evidence rule, D-252–D-258); and the
+site-material review that closed the season (CCB-S5-062/063/064, ~70 defect entries from six
+annexes).
 
-- **CCB-S5-001** (D-155) — **more than one of her.** Every enabled bot is hosted rather than
-  one, each with its own event source, engine and consent handler; one rulebook with per-bot
-  deviations where the constitution is shared and cannot be overridden; and `runtime.runForGroup`
-  as the seam that **throws on an unknown owner rather than acting as whichever profile is
-  active**. D-125 had named three unscheduled call sites into the core; there were five, and one
-  of them would have marked a member's erasure done with the content still on the host.
-- **CCB-S5-002** (D-156) — **she claims powers she does not have.** The invented-facts fence now
-  covers powers she claims over herself, in both directions, and both halves are constitutional.
-- **CCB-S5-003** — this record: the Season 4 protocol filed and corrected, this index, the
-  adapter-contract audit, and the Season 5 handover.
+**What the plan said and did not happen:** none of the three Avatar-layer pillars was started —
+the moderation is still observe-only (`ARMING_UNLOCKED = false`, awaiting the live-group
+proofs), no privileged channel, no learning path as scoped. The protocol measures the whole
+plan honestly, gives the failures equal weight (the 38 source-line emissions, the eighteen
+failed probes, the four id-space confusions, the deny-lists that failed open again), and
+records a register gap found on filing: six briefing ids with no register row.
+
+_**Season 6 (from the Season 5 vantage point):** scope will be set by its own briefings; the
+carried spine is in [SEASON-6-HANDOVER.md](SEASON-6-HANDOVER.md) — arm the moderation, the
+learning path's correction-and-memory halves, the queue, the gallery, the hardware page, and
+the record debts the close queued._
 
 ## Appendix: the Season 3/4 boundary, settled
 

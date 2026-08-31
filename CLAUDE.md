@@ -1255,7 +1255,9 @@ ever added, this rule, its companion above, the register's documentation checkpo
 `README.md` all state the count and all need updating together.
 
 **Two season counts now run in parallel, and they must never be conflated.** This
-repository has the product's seasons (`CCB-S<n>-<NNN>`, currently closing Season 3).
+repository has the product's seasons (`CCB-S<n>-<NNN>`; the current season is whatever
+`seasons/SEASON-INDEX.md` says — this line said "currently closing Season 3" until the
+Season 5 close, two seasons stale, so it no longer names one).
 The marketing site has its own, starting at **its own Season 1**, in its own
 repository with its own briefings and its own protocol documents. A bare "Season 1"
 is ambiguous from now on: say *product Season 1* or *site Season 1*. Briefing ids are

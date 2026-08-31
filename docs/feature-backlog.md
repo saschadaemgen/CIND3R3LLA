@@ -2,10 +2,11 @@
 
 > _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme, per change rather than per season, so a "last updated under" stamp here is not kept - it went stale the first time nobody remembered it (CCB-S5-063)._
 
-Cinderella's living record of what is built, what is scoped for Season 2, and what is
-waiting on the operator. **The code is the source of truth.** Every "Done" item below
-is anchored to a file and, where useful, a line. Where the planning outline and the
-code disagree, the divergence is called out inline.
+Cinderella's living record of what is built, what is queued, and what is waiting on the
+operator. (This sentence said "scoped for Season 2" until the Season 5 close — the document
+long ago became the cross-season record its section headings show.) **The code is the source
+of truth.** Every "Done" item below is anchored to a file and, where useful, a line. Where
+the planning outline and the code disagree, the divergence is called out inline.
 
 Season boundaries follow the close-out briefing CCB-S1-017
 ([`seasons/SEASON-1-PROTOCOL.md`](../seasons/SEASON-1-PROTOCOL.md)). The unit of work
@@ -580,12 +581,17 @@ can actually do, so each is dated by publication rather than by convenience.
 
 ---
 
-## Unconsolidated — the local AI subsystem already in `main` (D-068)
+## The local AI subsystem that arrived without briefings (D-068) — reviewed under CCB-S4-008/010; residuals below
 
-**Season 4's first task, and it blocks everything else** ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md)
-Part D). 23 commits between 2026-07-25 and 2026-07-27 (`b308201`..`e236ccf`), roughly 17,700
-inserted lines across 46 files, **none carrying a `Briefing:` trailer**. It is deployed and its
-harnesses pass; what is missing is the reasoning, the reconciliation and the review. Inventory in
+_This heading read "Season 4's first task, and it blocks everything else" until the Season 5
+close, which its own ticked rows below had contradicted for a season: the consolidation, the
+reconciliation and the injection review were done under CCB-S4-008/010. What follows is the
+record of that work plus the sub-items still genuinely open (the live adversarial test, the
+`profiles/` consolidation, the runtime `degraded` state)._
+
+Origin ([`seasons/SEASON-3-PROTOCOL.md`](../seasons/SEASON-3-PROTOCOL.md)
+Part D): 23 commits between 2026-07-25 and 2026-07-27 (`b308201`..`e236ccf`), roughly 17,700
+inserted lines across 46 files, **none carrying a `Briefing:` trailer**. Inventory in
 [`architecture.md`](architecture.md) §24.
 
 - [x] **Built and deployed** — local Ollama intent resolver behind the existing seam, individualized
@@ -1608,12 +1614,18 @@ proven it has something, reintroduces the CCB-S5-037 defect exactly.
 
 ---
 
-## Carried into Season 5 (recorded under CCB-S5-003)
+## Carried into Season 5 (recorded under CCB-S5-003) — and what Season 5 did with it
 
 The narrative is in [`../seasons/SEASON-5-HANDOVER.md`](../seasons/SEASON-5-HANDOVER.md) and the
 concept work in [`../seasons/concepts/`](../seasons/concepts/); this is the item list, and it is the
 authoritative one. Nothing here is new work invented at close-out: every line was already open at the
 end of Season 4.
+
+_Season 5 closed (CCB-S5-065) with the three pillars below still open — none of the three was
+started — while the season's actual work went to multi-bot hosting, the channel bridge, the
+knowledge base, music, retention and the honesty gates. The open rows here are re-carried into
+Season 6; see [`../seasons/SEASON-6-HANDOVER.md`](../seasons/SEASON-6-HANDOVER.md). Three rows
+gained notes on the close where Season 5 work overlapped them without closing them._
 
 **The Avatar layer, in three pillars.**
 
@@ -1628,6 +1640,11 @@ end of Season 4.
       into something stored. Governed by two existing rules: anything stored from a conversation is
       untrusted text (D-147), and anything that shapes what she says next is a rule, so it must be
       readable (D-144, D-146). Correction path first, retrieval last.
+      _Close note (CCB-S5-065): the RAG third arguably shipped as the knowledge base
+      (CCB-S5-022/023, D-176/D-177) — operator documents, not conversation memory, so the
+      correction path and long-term member memory remain the open substance of this row. The
+      knowledge machinery was deliberately built under `src/knowledge/` rather than `plugins/`
+      because per-member memory is the same machinery over different material._
 
 **Platform.**
 
@@ -1636,6 +1653,9 @@ end of Season 4.
       (`src/config.ts:348`). So ~8 concurrent requests reach the ceiling and ~2 reach the default. A
       member who will not be answered in budget must be told, in her voice, before the budget expires
       — CCB-S3-023 applied to load.
+      _Close note (CCB-S5-065): the honest-feedback half partially arrived as the lookup
+      announcement ("she says she is going to look", CCB-S5-025, D-184, architecture §52) —
+      scoped to lookups, not to load. The queue itself remains unbuilt._
 - [x] **The channel bridge plugin** — SHIPPED (CCB-S5-032, D-187; publishing to the website per
       channel since CCB-S5-043, D-215). Channel posts arrive as standing announcements with origin
       attributed, never passed off as hers; edits recompose, deletions withdraw, media re-hosts at
@@ -1659,6 +1679,10 @@ end of Season 4.
 - [ ] **The plugin live-switch and diagnostics.**
 - [ ] **The role-mismatch warning** — the page that must not collapse the three roles of D-129.
 - [ ] **Wizard mode** for onboarding.
+      _Close note (CCB-S5-065): a creation wizard shipped under CCB-S5-008/010
+      (`src/web/views/ai-onboarding.ts`). Whether it satisfies what this row meant — the row
+      predates it and names no acceptance shape — is the operator's call; left open rather than
+      quietly ticked._
 - [ ] **The AI Control inventory.**
 
 **Left by CCB-S5-001, specifically.**
@@ -1852,13 +1876,18 @@ short, the explanation is there for whoever wants it.
       exists in the code comments and the decision entries; most of these tooltips are a matter
       of surfacing what is written rather than writing something new.
 
-## Verification note
+## Verification note (historical — Season 1 vantage point)
+
+_This note describes the state at the document's first writing and is kept as a record of
+method, not of state. Its headline finding is long superseded: the public SSR embed front
+shipped in Season 2 and has grown since (activity stream, permalinks, the channel block at
+`/embed/:id/channels`); only the widget render / Web Component alone remains parked. Until
+the Season 5 close the note read as current and asserted the route "does not exist in code"._
 
 This backlog was written against the code on `main`. Every "Done" checkbox was
 confirmed against a named file and line; every Season 2 item was confirmed **absent**
 from the codebase (no route, table, or module implementing it), not merely
-undocumented. The single most important verification result: **the public
-`/embed/:id` route does not exist in code** — only its admin-side configuration does.
+undocumented.
 
 ## Extend files.watch to every file-bearing send path (D-224)
 

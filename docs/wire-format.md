@@ -1,6 +1,6 @@
 # Cinderella — SimpleX Wire-Format Findings
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
+> _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme, per change rather than per season; a "last updated under" stamp is not kept here, because it went stale the first time nobody remembered it — this header still said "Seasons 1–3, last updated under CCB-S3-020" while the body had gained CCB-S5-007 and CCB-S5-032 notes (corrected on the Season 5 close, CCB-S5-065; the same correction the other living documents received under CCB-S5-063)._
 
 This document records the SimpleX protocol and SDK behaviours that materially affect Cinderella's implementation. Everything below is verified against the code in this repo; where the working outline and the code disagree, the code wins and the divergence is called out inline and collected at the end.
 
@@ -605,9 +605,16 @@ different facts**, and neither is the operator's expected role. See D-129.
 
 The SDK can deliver every event in `ChatEvent` (`events.d.ts:2`). Cinderella subscribes to
 `newChatItems`, `chatItemUpdated`, `chatItemsDeleted`, `groupChatItemsDeleted`, `groupUpdated`,
-`userJoinedGroup`, the file events (`rcvFileComplete/Error/Warning`), and, for onboarding,
-`receivedContactRequest` and `contactConnected`. Notable events she does
-**not** listen to, and what each would enable:
+`userJoinedGroup`, the file events (`rcvFileComplete/Error/Warning`), the send-side file events
+(`sndFileCompleteXFTP`, `sndFileError`, `sndFileWarning` — the D-224 delivery watches,
+`src/bot/runtime/host.ts:322-344`), the member-arrival events for the welcome plugin
+(`joinedGroupMember`, `connectedToGroupMember`, `joinedGroupMemberConnecting`,
+`host.ts:374-376`; `connectedToGroupMember` fires once per EXISTING member when SHE joins, so
+`joinedGroupMember` is the greeting trigger — the D-209 grammar, recorded in
+`src/plugins/welcome/trigger.ts:8-9`), and, for onboarding, `receivedContactRequest` and
+`contactConnected`. (This list said she ignored `joinedGroupMember` until the Season 5 close;
+the welcome plugin, CCB-S5-041, had subscribed it and this section was not updated with it.)
+Notable events she does **not** listen to, and what each would enable:
 
 - `chatItemReaction` — a member reacted; enables reading reactions (8b).
 - `groupMemberUpdated`, `memberRole`, `memberBlockedForAll` — a member's profile/role/block
@@ -615,7 +622,7 @@ The SDK can deliver every event in `ChatEvent` (`events.d.ts:2`). Cinderella sub
 - `deletedMember`, `leftMember` — someone left or was removed; enables tidy "member left" handling
   and consent cleanup (their id is now gone — see §5).
 - `chatItemsStatusesUpdated` — delivery/read receipts; enables knowing a reply was seen.
-- `receivedGroupInvitation`, `sentGroupInvitation`, `groupLinkConnecting`, `joinedGroupMember` —
+- `receivedGroupInvitation`, `sentGroupInvitation`, `groupLinkConnecting` —
   the join lifecycle; enables onboarding hooks.
 - `hostConnected` / `hostDisconnected` / `subscriptionStatus` — transport health; enables a real
   connectivity indicator on the dashboard instead of inferring it.
@@ -755,6 +762,35 @@ and `adapter-contract.md` §7.
 already records it. The inconsistency is the point: which commands are user-scoped by argument and
 which by the active-user switch cannot be inferred, and has to be checked per command.
 
+### 8h. Season 5 wire facts (added on the season close, CCB-S5-065)
+
+These landed across Season 5 and were recorded in `CLAUDE.md`, the decisions and the code, but
+this document — whose subject they are — had no entry for them.
+
+- **A channel post has no member.** A channel surfaces as a group whose items carry direction
+  `channelRcv` with **no member on the item**, which is why a channel post can never travel the
+  consent path: `parseChannelPost` sits beside `parseGroupMessage` and the two are exclusive by
+  direction (CCB-S5-032, D-187; `src/capture/parse.ts`, `verify:bridge` proves the exclusivity
+  in both directions).
+- **The core's numeric group id is local to one profile's database.** Two bots in one room hold
+  two different ids, and a **rejoin gives the same room a new one** (measured: the operator's
+  group moved 4 → 8 and the channel 7 → 9 in one day). Anything that must identify a channel
+  across profiles or across time derives its key from the channel's **link**
+  (`channelKeyFor`, `src/plugins/channel-bridge/origin.ts`), never from the local id
+  (standing rule, D-205).
+- **The two music send shapes, decided by the cover alone** (CCB-S5-044, D-216): a track with
+  a cover goes as **one `MsgContent.Video` message**; a track without goes as a title line plus
+  a bare `MsgContent.Voice` player. Both were proven as sends before shipping
+  (`src/bot/music-port.ts`, `verify:music-encode`).
+- **`/_ttl <userId> <seconds>`** is the raw command that bounds the SimpleX core's **own** copy
+  of message content — the second half of the retention promise, issued through the scheduler
+  from the same console page as the archive sweep (CCB-S5-054, D-240; `src/archive/retention.ts`).
+- **File sends are no longer hypothetical.** §8b's "send a file" row was recorded as merely
+  *usable*; it is now **used** by three paths — recital chapter images, bridge re-hosted media,
+  and music — and the send-side events (`sndFileCompleteXFTP` / `sndFileError` / `sndFileWarning`)
+  are subscribed as delivery watches on the music paths (D-224; the bridge and recital sends have
+  the event half only, recorded in the backlog).
+
 ## 9. The local AI subsystem adds no wire behaviour (D-068)
 
 Recorded because the commit subjects suggest otherwise. "Persistent SimpleX bot onboarding
@@ -777,8 +813,10 @@ So the wire contracts recorded in §1–§8 are unchanged by that work: the same
 `bot.run`-carried profile (§1), the same group-message event shape and support-scope
 distinction (§8), the same file-transfer behaviour below. The one place where local AI
 touches an external wire at all is the **Ollama HTTP endpoint**, which is not a SimpleX
-surface; its configuration and reachability are an open Season 4 security question
-([`security.md`](security.md) §12).
+surface; its configuration and reachability were reviewed and settled under CCB-S4-008/010
+([`security.md`](security.md) §12: the validator refuses a non-private host, `isPrivateAiHost`
+in `src/config.ts`). This sentence called it "an open Season 4 security question" until the
+Season 5 close; it had been closed for a season.
 
 If a future briefing makes any of these services actually drive the SDK, this section must be
 rewritten from the code, because the containment property it records is what keeps onboarding
@@ -790,7 +828,7 @@ Not in the outline, but relevant to the same "what SimpleX actually puts on the 
 
 ## Summary of divergences from the outline
 
-1. **Private per-member channel does not exist.** The outline's "member-support scope as the only private per-member channel" is not implemented. Consent is group-only; there is no direct/DM path (`src/capture/message.ts:119-123`), and consent confirmations are posted publicly into the group as group replies (`src/consent/commands.ts:63`). Planned / not yet implemented.
+1. **Private per-member channel does not exist.** The outline's "member-support scope as the only private per-member channel" is not implemented. Consent is group-only; there is no direct/DM path (`src/capture/message.ts:119-123`), and consent confirmations are posted publicly into the group as group replies (`src/consent/commands.ts:63`). Planned / not yet implemented — but see §8a, which establishes the wire path DOES exist and the build is what waits (the CCB-S3-017 audit's corrective; this summary row and that section disagreed without a pointer until the Season 5 close).
 2. **Avatar size is a range, not a fixed 192px.** The outline's "~192px square JPEG" is the starting size; the code steps down through 160px/128px and five quality levels to fit budget (`SIZES`/`QUALITIES`, `src/bot/avatar.ts:37-38`).
 3. **The enforced budget is 12000 URI characters, not the ~15,610-byte envelope.** The 15,610 figure is only an explanatory comment (`src/bot/avatar.ts:17`, `35`); the actual check is `MAX_DATA_URI_CHARS = 12000` (`src/bot/avatar.ts:36`, `52`, `73`).
 4. **MIME type is `image/jpg`, not `image/jpeg`.** Literal prefix `data:image/jpg;base64,` (`src/bot/avatar.ts:50`).

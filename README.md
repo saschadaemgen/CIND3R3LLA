@@ -24,18 +24,18 @@ Every model you talk to runs under instructions somebody wrote and you will neve
 
 Here the script is a database table.
 
-Every sentence this bot is told is a row in `cinderella_prompt_rules` - **106 of them today**, seeded by [`migrations/035_prompt_rules.sql`](migrations/035_prompt_rules.sql) and the migrations after it. There is no second copy in the TypeScript and deliberately **no fallback in the code**, because a fallback is a second source and a second source drifts. If the registry cannot be read she falls back to a deterministic reply rather than speaking with no rules at all.
+Every sentence this bot is told is a row in `cinderella_prompt_rules` - **123 of them at the Season 5 close** (derived by applying the seeded migrations and counting, not typed from memory; the figure moves as migrations land), seeded by [`migrations/035_prompt_rules.sql`](migrations/035_prompt_rules.sql) and the migrations after it. There is no second copy in the TypeScript and deliberately **no fallback in the code**, because a fallback is a second source and a second source drifts. If the registry cannot be read she falls back to a deterministic reply rather than speaking with no rules at all.
 
 That has four consequences a hidden prompt cannot offer:
 
 - **They are readable.** The Book of Elii, a section of the admin console, lists every rule with its text, tier, lane and the line of code it came from.
 - **They are editable.** By the operator, from the console, without an engineer and without a deploy.
 - **They are versioned.** Every edit writes both sides of itself to a history table with who and when. The oldest row for any rule is what that rule shipped as.
-- **She can quote them.** 66 of the 106 are marked quotable; a member can ask what she is told and get the rule, rendered. The other 40 are withheld, and the boundary is held by deterministic code that answers before the model is ever asked, not by a sentence in the prompt asking it nicely.
+- **She can quote them.** 74 of the 123 are marked quotable; a member can ask what she is told and get the rule, rendered. The other 49 are withheld, and the boundary is held by deterministic code that answers before the model is ever asked, not by a sentence in the prompt asking it nicely.
 
 She can also read the whole thing out loud, in her own voice, in six authored chapters.
 
-The rules are not a fig leaf. 47 of the 106 are constitutional: changing one in the console requires typing that rule's own id, and no per-bot deviation from a constitutional rule is possible, refused in the console, in the application and by a database trigger. `verify:prompt-identity` compares the assembled prompt across 24 configurations against a byte-for-byte fixture, so no rule change reaches production unnoticed - a deliberate change is re-baselined on purpose, and the diff to the fixture is the reviewable record of what she is now told.
+The rules are not a fig leaf. 59 of the 123 are constitutional: changing one in the console requires typing that rule's own id, and no per-bot deviation from a constitutional rule is possible, refused in the console, in the application and by a database trigger - and since migration 076 a critical rule cannot be switched off per bot either. `verify:prompt-identity` compares the assembled prompt across every pinned configuration (30 at the Season 5 close; the count lives in the baseline fixture and grows with the conditions) against a byte-for-byte fixture, so no rule change reaches production unnoticed - a deliberate change is re-baselined on purpose, and the diff to the fixture is the reviewable record of what she is now told.
 
 Five of those rules exist because she broke them. Pushed on existential questions in production she told a member she would break a bad rule, stop working for anyone who bought her, and break her own rules when they were dumb. All three were false. The fix was five new rules (migration 046), and the first draft of the fence caused the failure it was meant to prevent, because a prohibition phrased as a statement about herself became a line she could recite back. That is the sort of thing you find by reading output, not by reading exit codes.
 
@@ -84,7 +84,7 @@ Every route reads through the `published_messages` view - the consent gate - inc
 
 Configurable wake words and natural addressing: a member can use a slash command or simply say her name and ask. What counts as addressing her is an operator setting with two modes - `relaxed` accepts a bare leading name, `strict` requires a greeting before it - plus individually switchable guards for direct replies and the follow-up window.
 
-Everything she can be asked to do is a **closed catalog of ten intents**. A resolver reports what it believes was meant and never executes anything; the engine acts, and the existing consent code enforces the rules. An intent outside the catalog - including one a model invented - is treated as "not understood", not as authorisation.
+Everything she can be asked to do is a **closed catalog of eleven intents**. A resolver reports what it believes was meant and never executes anything; the engine acts, and the existing consent code enforces the rules. An intent outside the catalog - including one a model invented - is treated as "not understood", not as authorisation.
 
 Her own replies are archived too, linked to the member message that triggered them, and they publish under their own rules rather than inheriting anybody's consent.
 
@@ -220,13 +220,13 @@ Configuration is environment-only. `DATABASE_URL`, the SimpleX and media paths, 
 
 ### Verify it
 
-69 `verify:*` harnesses, 56 of which need no model, no GPU and no network. 39 of them drive **real PostgreSQL compiled to WebAssembly**, so there is no database server to set up; the rest are pure computation or checks that read the source tree itself:
+114 `verify:*` harnesses at the Season 5 close (counted from `package.json`, where the number lives), 96 of which need no model, no GPU and no network. 70 of them drive **real PostgreSQL compiled to WebAssembly**, so there is no database server to set up; the rest are pure computation or checks that read the source tree itself:
 
 ```bash
 npm run build && npm run lint && npm run verify:consent && npm run verify:prompt-identity
 ```
 
-The remaining 13 are `-live` harnesses that talk to a real model. They exist because the offline set cannot answer the questions that matter most: whether she actually refuses an injection, whether a dial actually changes her voice, whether the withheld rules stay withheld under pressure. Several of them tell you to read their output rather than their exit code, and that instruction is there because real defects were found in fully green runs.
+The remaining 18 are `-live` harnesses that talk to a real model. They exist because the offline set cannot answer the questions that matter most: whether she actually refuses an injection, whether a dial actually changes her voice, whether the withheld rules stay withheld under pressure. Several of them tell you to read their output rather than their exit code, and that instruction is there because real defects were found in fully green runs.
 
 ### The sharp edges
 
@@ -238,7 +238,6 @@ Stated because you will hit them:
 - **SimpleX is the only transport.** A chat-adapter seam exists with the bot's own domain types and an in-memory fake, and it is enforced (nothing outside the adapter may import the SDK), but its only production consumer today is the demo.
 - **GPU telemetry is not integrated.** The console says so in those words and claims no utilisation, temperature or VRAM figures rather than showing plausible zeroes.
 - **The public demo's backend is built and its visitor pane is not.** The hostname answers 404, which is correct until the pane exists.
-- **The onboarding console pages still assume one primary bot** and will tell you a non-primary bot is not hosted. That was true before multi-bot hosting and is false now.
 - **Migration numbers 017, 018 and 019 each exist twice.** Nothing is broken - the runner keys on the full filename - but the number is a label, not an ordinal, and no applied migration may ever be renamed.
 
 The full list of what is open, including everything carried into Season 5, is in [`docs/feature-backlog.md`](docs/feature-backlog.md).
@@ -301,7 +300,7 @@ Private local AI                      <- classifies and phrases; authorises noth
 
 **The transport seam is enforced rather than merely described.** `verify:adapter-seam` proves nothing outside the adapter imports the SDK, and proves itself by failing on a deliberate violation.
 
-The full picture is [`docs/architecture.md`](docs/architecture.md), fifty sections, maintained from the code.
+The full picture is [`docs/architecture.md`](docs/architecture.md), maintained from the code.
 
 ## Security and privacy
 
@@ -336,8 +335,14 @@ Details, control by control, in [`docs/security.md`](docs/security.md).
 | Conversation memory | Live |
 | Web Search plugin | Live (ships off) |
 | Crypto Prices plugin | Live |
+| Knowledge base - operator documents, per-bot grants, evidence-gated citations | Live |
+| Music library plugin | Live (member-upload playback ships off) |
+| Welcome plugin | Built; live cases unproven, stated as such |
 | Multi-bot hosting, one core, many profiles | Live |
+| One capturing record per room | Live |
 | Per-bot rulebook deviations | Live |
+| Retention: the unconsented-content sweep, with tombstones | Built; ships off until the operator reads the count |
+| Bridge media retention | Built; ships off, same shape |
 | Encrypted backups with a privilege boundary | Live |
 | Durable job queue, capture write-ahead log | Live |
 | Moderation ladders | Built, shipped locked in observation mode |
@@ -347,7 +352,7 @@ Details, control by control, in [`docs/security.md`](docs/security.md).
 | GPU telemetry | Not integrated |
 | Channel bridge plugin | Built, publishing to the website per channel |
 | Human-operated agent controls, NPC scheduling | Planned |
-| RAG and long-term memory | Planned |
+| Long-term member memory and the correction path | Planned (the RAG machinery shipped as the knowledge base) |
 | Additional transports | Planned |
 
 ### Identity model

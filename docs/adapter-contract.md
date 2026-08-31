@@ -324,3 +324,13 @@ than *broken* — which is how enforcement ships **locked** (D-139) while its co
 reversible. If `ChatAdapter` ever gets a second implementation, the question to answer first is
 whether these ports fold into it or stay beside it. Reactions and creating a contact from a member
 still have no caller and stay out.
+
+**Reviewed again on the Season 5 close (CCB-S5-065): no clause change needed.** Everything Season 5
+added after the audit above reached the core through the port pattern this section already records —
+`src/bot/bridge-port.ts` (with its broadcast delete kept as a **separate method** from the
+Internal-mode consent erasure, so no caller defaults into the wrong scope) and
+`src/bot/music-port.ts` joined `recital-port.ts` in the same shape — and none of it moved
+`ChatAdapter`, the domain types, or the guarantees in sections 1 to 9. One wire fact a second
+implementation would need is recorded where wire facts live rather than here: a channel post
+surfaces with direction `channelRcv` and **no member**, and must never reach the consent path
+(wire-format §8h, D-187).

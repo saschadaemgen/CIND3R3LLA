@@ -1,6 +1,6 @@
 # Cinderella — Security Posture
 
-> _Living document — Cinderella, Seasons 1–3. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme; last updated under **CCB-S3-020**._
+> _Living document — Cinderella, Seasons 1–5. Ground truth is the code in this repository; where an earlier briefing outline diverged from the code, the divergence is noted inline. Maintained under the CCB briefing scheme, per change rather than per season; a "last updated under" stamp is not kept here, because it went stale the first time nobody remembered it — this header still said "Seasons 1–3, last updated under CCB-S3-020" while the body had been maintained through Season 5, which is exactly the drift the stamp was supposed to prevent (corrected on the Season 5 close, CCB-S5-065; the same correction the other living documents received under CCB-S5-063)._
 
 _Living document. Ground truth is the code; every claim below is anchored to a
 repo-relative `file:line`. Where the project outline and the code diverge, the
